@@ -4930,6 +4930,7 @@ static SeedDispClass classifySeedGapDisp(const cv::Mat& combined, int sPx) {
     }
     bool anyNot = false;
     float maxSpanS = 0.f;
+    std::vector<int> stableMeds;
     for (const Band& band : bands) {
         const int by0 = band.y0, by1 = band.y1;
         const int bh = by1 - by0;
@@ -5001,21 +5002,19 @@ static SeedDispClass classifySeedGapDisp(const cv::Mat& combined, int sPx) {
             const int sp = ch.span();
             const float spS = static_cast<float>(sp) / Sf;
             if (spS > maxSpanS) maxSpanS = spS;
-            if (sp <= sPx) continue;
-            const int n = ch.nRows();
-            if (n >= sPx) {
+            if (sp > sPx) {
                 anyNot = true;
                 continue;
             }
-            bool interiorPeak = false;
-            for (int i = 0; i < n; ++i) {
-                if (i < edgeM || i >= n - edgeM) continue;
-                if (ch.widths[static_cast<size_t>(i)] >= ch.maxW) {
-                    interiorPeak = true;
-                    break;
-                }
-            }
-            if (interiorPeak) anyNot = true;
+            if (ch.widths.empty()) continue;
+            std::vector<int> sortedW = ch.widths;
+            std::sort(sortedW.begin(), sortedW.end());
+            const int nw = static_cast<int>(sortedW.size());
+            const int med = ((nw & 1) != 0)
+                ? sortedW[static_cast<size_t>(nw / 2)]
+                : (sortedW[static_cast<size_t>(nw / 2 - 1)] +
+                    sortedW[static_cast<size_t>(nw / 2)]) / 2;
+            stableMeds.push_back(med);
         }
         int gMin = 0, gMax = 0;
         bool haveG = false;
@@ -5033,6 +5032,23 @@ static SeedDispClass classifySeedGapDisp(const cv::Mat& combined, int sPx) {
             }
         }
         if (haveG && gMax - gMin >= 2) anyNot = true;
+    }
+    if (static_cast<int>(stableMeds.size()) < 2) {
+        anyNot = true;
+    } else {
+        std::sort(stableMeds.begin(), stableMeds.end());
+        const int nMed = static_cast<int>(stableMeds.size());
+        int bestN = 1;
+        int j = 0;
+        for (int i = 0; i < nMed; ++i) {
+            while (j < nMed &&
+                stableMeds[static_cast<size_t>(j)] -
+                    stableMeds[static_cast<size_t>(i)] <= sPx) {
+                ++j;
+            }
+            if (j - i > bestN) bestN = j - i;
+        }
+        if (bestN < 2 || bestN < nMed) anyNot = true;
     }
     out.gapDriftP90S = maxSpanS;
     if (anyNot) {
