@@ -2884,7 +2884,7 @@ static int maxInkRunRow(
 
 static int maxInkRunCol(
     const cv::Mat& bin, int x, int y0, int y1, const ObjPack* pack,
-    bool virtSp = false
+    bool virtSp
 ) {
     if (x < 0 || x >= bin.cols) return 0;
     int best = 0;
@@ -4684,7 +4684,7 @@ struct PoisonReg {
 
 static bool rowHasStrokeBar(
     const cv::Mat& bin, int y, int minRun, int glareW, const ObjPack* pack,
-    int x0, int x1, bool virtSp = false
+    int x0, int x1, bool virtSp
 ) {
     if (y < 0 || y >= bin.rows) return false;
     const uint8_t* p = bin.ptr<uint8_t>(y);
