@@ -4271,11 +4271,12 @@ static int seedCombine255(
         fillKeepHist(hist64, &nKeep, &nValley, valleys);
         fillGate.nValley = nValley;
         recordAttempt(0);
-        if (fillGate.fill > fillHi) {
-            fillGate.retryWhy = 2;
-            fillGate.nRetry = 0;
-        } else if (fillGate.fill < fillLo || fillGate.nLookBin == 0) {
-            fillGate.retryWhy = 1;
+        const bool highFill = fillGate.fill > fillHi;
+        const bool lowFill = fillGate.fill < fillLo || fillGate.nLookBin == 0;
+        const bool swDiscarded = v0Clean <= 4 || needFbClean;
+        const int retryWhyWant = highFill ? 2 : (lowFill ? 1 : (swDiscarded ? 3 : 0));
+        if (retryWhyWant != 0) {
+            fillGate.retryWhy = retryWhyWant;
             fillGate.nRetry = 0;
             const int nLookBin0 = fillGate.nLookBin;
             std::vector<int> tried;
@@ -4303,14 +4304,34 @@ static int seedCombine255(
             int extras = 0;
             auto noteAttempt = [&](int kind) -> bool {
                 fillGate.nRetry = extras;
-                fillGate.retryWhy = 1;
+                fillGate.retryWhy = retryWhyWant;
                 fillGate.nValley = nValley;
                 recordAttempt(kind);
                 const bool inBandNow =
                     fillGate.fill >= fillLo && fillGate.fill <= fillHi;
+                const HorizSW hhNow = horizPeakSW(bin, seedH, seedW);
+                const int vNow = hhNow.peak;
+                const float fracNow = srcIsBin
+                    ? (cv::countNonZero(bin) /
+                        static_cast<float>(std::max(1, seedH * seedW)))
+                    : cleanInkFrac;
+                const bool acceptedSpx =
+                    vNow > 4 && !strokeNeedFb(hhNow, vNow, seedW, fracNow);
                 const bool emptyToInk =
                     nLookBin0 == 0 && fillGate.nLookBin > 0;
-                if (inBandNow || emptyToInk) {
+                bool take = false;
+                bool stop = false;
+                if (retryWhyWant == 3) {
+                    take = inBandNow && acceptedSpx;
+                    stop = take;
+                } else if (retryWhyWant == 2) {
+                    take = inBandNow;
+                    stop = inBandNow;
+                } else {
+                    take = inBandNow || emptyToInk;
+                    stop = inBandNow;
+                }
+                if (take) {
                     haveCommit = true;
                     bin.copyTo(commitBin);
                     poison.copyTo(commitPoison);
@@ -4320,12 +4341,12 @@ static int seedCombine255(
                     commitFrac = cleanInkFrac;
                     commitFirstThr = poisonFirstThr;
                     copyFillGateChosen(fillGate, &commitGate);
-                    if (inBandNow) return true;
+                    if (stop) return true;
                 }
                 return false;
             };
             bool inBand = false;
-            if ((nKeep < 2 || nLookBin0 == 0) && extras < 3) {
+            if (retryWhyWant == 1 && (nKeep < 2 || nLookBin0 == 0) && extras < 3) {
                 float histAll[64] = {};
                 for (int yy = 0; yy < kh; ++yy) {
                     const uint8_t* yp = seedY.ptr<uint8_t>(yy);
@@ -4415,7 +4436,12 @@ static int seedCombine255(
                     }
                     if (seen) continue;
                     const bool moreInk = cleanDark ? (thr > usedKeep) : (thr < usedKeep);
-                    if (nLookBin0 != 0 && !moreInk) continue;
+                    const bool lessInk = cleanDark ? (thr < usedKeep) : (thr > usedKeep);
+                    if (retryWhyWant == 1) {
+                        if (nLookBin0 != 0 && !moreInk) continue;
+                    } else if (retryWhyWant == 2) {
+                        if (!lessInk) continue;
+                    }
                     cands.push_back(thr);
                 }
                 std::sort(cands.begin(), cands.end(), [&](int a, int b) {
@@ -4462,7 +4488,7 @@ static int seedCombine255(
                     copyFillGateChosen(attempt0Gate, &fillGate);
                 }
                 fillGate.nRetry = extras;
-                fillGate.retryWhy = 1;
+                fillGate.retryWhy = retryWhyWant;
                 fillGate.nValley = nValley;
             }
         }
