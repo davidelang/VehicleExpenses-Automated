@@ -477,7 +477,7 @@ static void countSeedFillGate(
             q.push_back(ni);
         }
     }
-    out->fill = static_cast<float>(out->nLookBin + out->nRecovered) /
+    out->fill = static_cast<float>(out->nLookBin) /
         static_cast<float>(std::max(1, area));
 }
 
@@ -3322,11 +3322,158 @@ static void flood255LookIds(
     }
 }
 
+static bool strokeNeedFb(const HorizSW& hh, int vSW, int seedW, float inkFrac);
+static bool strokesAgree(int a, int b);
+static double otsuThrFromHist(const int hist[256], int n);
+
+/** Seed-style valley retry on a band-clipped poison CC. Ink pixels only on keep. */
+static bool retryPoisonChunkInk(
+    const cv::Mat& src, const std::vector<int>& pix, int lookW,
+    int bx0, int by0, int bw, int bh, int seedSPx, cv::Mat* inkBin
+) {
+    if (!inkBin || pix.size() < 2 || bw < 1 || bh < 1) return false;
+    int hist[256] = {};
+    int n = 0;
+    for (int i : pix) {
+        const int y = i / lookW, x = i - y * lookW;
+        if (y < 0 || x < 0 || y >= src.rows || x >= src.cols) continue;
+        hist[src.ptr<uint8_t>(y)[x]]++;
+        ++n;
+    }
+    if (n < 2) return false;
+    const double otsu = otsuThrFromHist(hist, n);
+    const int ti = static_cast<int>(otsu);
+    int nz = 0;
+    for (int t = 0; t <= ti && t < 256; ++t) nz += hist[t];
+    float inkFrac = nz / static_cast<float>(n);
+    bool dark = true;
+    if (inkFrac >= 0.45f) dark = false;
+    const int area = std::max(1, n);
+    const float fillLo = 0.05f;
+    const float fillHi = 0.45f;
+    cv::Mat bin(bh, bw, CV_8UC1);
+    auto applyThr = [&](double thr, bool d) -> int {
+        bin.setTo(0);
+        int nInk = 0;
+        const int ith = static_cast<int>(std::lround(thr));
+        for (int i : pix) {
+            const int y = i / lookW, x = i - y * lookW;
+            if (y < 0 || x < 0 || y >= src.rows || x >= src.cols) continue;
+            const int yy = y - by0, xx = x - bx0;
+            if (yy < 0 || xx < 0 || yy >= bh || xx >= bw) continue;
+            const int yv = static_cast<int>(src.ptr<uint8_t>(y)[x]);
+            const bool ink = d ? (yv <= ith) : (yv > ith);
+            if (ink) {
+                bin.ptr<uint8_t>(yy)[xx] = 255;
+                ++nInk;
+            }
+        }
+        return nInk;
+    };
+    int nInk = applyThr(otsu, dark);
+    float fill = nInk / static_cast<float>(area);
+    HorizSW hh = horizPeakSW(bin, bh, bw, false);
+    int vNow = hh.peak;
+    bool acceptedSpx = vNow > 4 && !strokeNeedFb(hh, vNow, bw, fill);
+    const bool highFill = fill > fillHi;
+    const bool lowFill = fill < fillLo || nInk == 0;
+    const bool swDiscarded = vNow <= 4 || !acceptedSpx;
+    const int retryWhyWant = highFill ? 2 : (lowFill ? 1 : (swDiscarded ? 3 : 0));
+    const int nInk0 = nInk;
+    cv::Mat commitBin;
+    int commitPeak = 0;
+    bool haveCommit = false;
+    int nAttempts = 0;
+    auto noteAttempt = [&]() -> bool {
+        ++nAttempts;
+        hh = horizPeakSW(bin, bh, bw, false);
+        vNow = hh.peak;
+        fill = nInk / static_cast<float>(area);
+        acceptedSpx = vNow > 4 && !strokeNeedFb(hh, vNow, bw, fill);
+        const bool inBandNow = fill >= fillLo && fill <= fillHi;
+        const bool emptyToInk = nInk0 == 0 && nInk > 0;
+        bool take = false;
+        bool stop = false;
+        if (retryWhyWant == 0) {
+            take = inBandNow && acceptedSpx;
+            stop = true;
+        } else if (retryWhyWant == 2 || retryWhyWant == 3) {
+            take = inBandNow && acceptedSpx;
+            stop = take;
+        } else {
+            take = inBandNow || emptyToInk;
+            stop = inBandNow && acceptedSpx;
+        }
+        if (take) {
+            bin.copyTo(commitBin);
+            commitPeak = vNow;
+            haveCommit = true;
+        }
+        return stop;
+    };
+    if (noteAttempt()) {
+        if (haveCommit && strokesAgree(commitPeak, seedSPx)) {
+            *inkBin = commitBin;
+            return true;
+        }
+        return false;
+    }
+    float hist64[64] = {};
+    for (int i : pix) {
+        const int y = i / lookW, x = i - y * lookW;
+        if (y < 0 || x < 0 || y >= src.rows || x >= src.cols) continue;
+        int b = static_cast<int>(src.ptr<uint8_t>(y)[x]) / 4;
+        if (b < 0) b = 0;
+        if (b > 63) b = 63;
+        hist64[b] += 1.f;
+    }
+    int valleys[64];
+    int nValley = 0;
+    findValleyMidpoints64(hist64, valleys, &nValley);
+    const int usedKeep = static_cast<int>(std::lround(otsu));
+    std::vector<int> tried;
+    tried.push_back(usedKeep);
+    std::vector<int> cands;
+    cands.reserve(static_cast<size_t>(nValley));
+    for (int v = 0; v < nValley; ++v) {
+        const int thr = valleys[v] * 4 + 2;
+        if (thr < 0 || thr > 255) continue;
+        bool seen = false;
+        for (int t : tried) {
+            if (t == thr) { seen = true; break; }
+        }
+        if (seen) continue;
+        const bool moreInk = dark ? (thr > usedKeep) : (thr < usedKeep);
+        const bool lessInk = dark ? (thr < usedKeep) : (thr > usedKeep);
+        if (retryWhyWant == 1) {
+            if (nInk0 != 0 && !moreInk) continue;
+        } else if (retryWhyWant == 2) {
+            if (!lessInk) continue;
+        }
+        cands.push_back(thr);
+    }
+    std::sort(cands.begin(), cands.end(), [&](int a, int b) {
+        const int da = std::abs(a - usedKeep);
+        const int db = std::abs(b - usedKeep);
+        if (da != db) return da < db;
+        return a < b;
+    });
+    for (int thr : cands) {
+        if (nAttempts >= kSeg7AttemptMax) break;
+        nInk = applyThr(static_cast<double>(thr), dark);
+        if (noteAttempt()) break;
+    }
+    if (!haveCommit || !strokesAgree(commitPeak, seedSPx)) return false;
+    *inkBin = commitBin;
+    return true;
+}
+
 static void recoverStrokeNearInk(
-    cv::Mat* look, int sPx, int y0, int y1, ObjPack* pack, int seedIndex,
+    const cv::Mat& src, cv::Mat* look, int sPx, int y0, int y1, ObjPack* pack, int seedIndex,
     int lookL = 0, int lookT = 0, int lookR = -1, int lookB = -1
 ) {
     if (!look || look->empty() || sPx < 1 || !pack) return;
+    if (src.empty() || src.type() != CV_8UC1) return;
     const int h = look->rows, w = look->cols;
     if (lookR < 0 || lookR > w) lookR = w;
     if (lookB < 0 || lookB > h) lookB = h;
@@ -3335,65 +3482,61 @@ static void recoverStrokeNearInk(
     if (y0 < lookT) y0 = lookT;
     if (y1 > lookB) y1 = lookB;
     if (y1 <= y0 || lookR <= lookL) return;
-    const int lo = std::max(1, sPx - sPx / 4);
-    const int hi = sPx + sPx / 4;
     auto isPoison = [&](uint8_t v) {
         return v >= 1 && v < pack->lookNextNon;
     };
-    auto adjacentInk = [&](int x, int y) {
-        for (int dy = -1; dy <= 1; ++dy) {
-            for (int dx = -1; dx <= 1; ++dx) {
-                if (!dx && !dy) continue;
-                const int ny = y + dy, nx = x + dx;
-                if (ny < lookT || nx < lookL || ny >= lookB || nx >= lookR) continue;
-                if (isLookInkId(look->ptr<uint8_t>(ny)[nx], pack)) return true;
-            }
-        }
-        return false;
-    };
-    auto hRunAt = [&](int x, int y) {
-        const uint8_t* pr = look->ptr<uint8_t>(y);
-        int a = x, b = x;
-        while (a > lookL && isPoison(pr[a - 1])) --a;
-        while (b + 1 < lookR && isPoison(pr[b + 1])) ++b;
-        return b - a + 1;
-    };
-    auto vRunAt = [&](int x, int y) {
-        int a = y, b = y;
-        while (a > lookT && isPoison(look->ptr<uint8_t>(a - 1)[x])) --a;
-        while (b + 1 < lookB && isPoison(look->ptr<uint8_t>(b + 1)[x])) ++b;
-        return b - a + 1;
-    };
+    const int bandW = lookR - lookL;
+    std::vector<uint8_t> vis(static_cast<size_t>(bandW * (y1 - y0)), 0);
+    std::vector<int> st;
+    std::vector<int> pix;
+    st.reserve(256);
+    pix.reserve(256);
     for (int y = y0; y < y1; ++y) {
         uint8_t* pr = look->ptr<uint8_t>(y);
         for (int x = lookL; x < lookR; ++x) {
             if (!isPoison(pr[x])) continue;
-            if (!adjacentInk(x, y)) continue;
-            const int hr = hRunAt(x, y);
-            const int vr = vRunAt(x, y);
-            if (hr < lo || hr > hi || vr < lo || vr > hi) continue;
-            uint8_t id = 0;
-            if (!lookAlloc(pack, true, seedIndex, kKindInk, &id)) return;
-            std::vector<int> st;
+            const int vi = (y - y0) * bandW + (x - lookL);
+            if (vis[static_cast<size_t>(vi)]) continue;
+            st.clear();
+            pix.clear();
             st.push_back(y * w + x);
-            pr[x] = id;
+            vis[static_cast<size_t>(vi)] = 1;
+            int x0 = x, x1 = x + 1, cy0 = y, cy1 = y + 1;
             while (!st.empty()) {
                 const int i = st.back();
                 st.pop_back();
+                pix.push_back(i);
                 const int cy = i / w, cx = i - cy * w;
+                if (cx < x0) x0 = cx;
+                if (cx + 1 > x1) x1 = cx + 1;
+                if (cy < cy0) cy0 = cy;
+                if (cy + 1 > cy1) cy1 = cy + 1;
                 for (int dy = -1; dy <= 1; ++dy) {
                     for (int dx = -1; dx <= 1; ++dx) {
                         if (!dx && !dy) continue;
                         const int ny = cy + dy, nx = cx + dx;
-                        if (ny < lookT || nx < lookL || ny >= lookB || nx >= lookR) continue;
-                        uint8_t& nv = look->ptr<uint8_t>(ny)[nx];
-                        if (!isPoison(nv) || nv == id) continue;
-                        if (hRunAt(nx, ny) < lo || hRunAt(nx, ny) > hi) continue;
-                        if (vRunAt(nx, ny) < lo || vRunAt(nx, ny) > hi) continue;
-                        nv = id;
+                        if (ny < y0 || nx < lookL || ny >= y1 || nx >= lookR) continue;
+                        if (!isPoison(look->ptr<uint8_t>(ny)[nx])) continue;
+                        const int nvi = (ny - y0) * bandW + (nx - lookL);
+                        if (vis[static_cast<size_t>(nvi)]) continue;
+                        vis[static_cast<size_t>(nvi)] = 1;
                         st.push_back(ny * w + nx);
                     }
                 }
+            }
+            const int cw = x1 - x0, ch = cy1 - cy0;
+            cv::Mat inkBin;
+            if (!retryPoisonChunkInk(src, pix, w, x0, cy0, cw, ch, sPx, &inkBin)) {
+                continue;
+            }
+            uint8_t id = 0;
+            if (!lookAlloc(pack, true, seedIndex, kKindInk, &id)) return;
+            for (int i : pix) {
+                const int py = i / w, px = i - py * w;
+                const int yy = py - cy0, xx = px - x0;
+                if (yy < 0 || xx < 0 || yy >= inkBin.rows || xx >= inkBin.cols) continue;
+                if (!inkBin.ptr<uint8_t>(yy)[xx]) continue;
+                look->ptr<uint8_t>(py)[px] = id;
             }
         }
     }
@@ -3548,7 +3691,7 @@ static void seg7One(
     int band0 = std::max(nt, st - 4 * sPx);
     int band1 = std::min(nb, sb + 4 * sPx);
     recoverStrokeNearInk(
-        &lookBin, sPx, band0, band1, objPack, seedIndex, lookL, nt, lookR, nb);
+        src, &lookBin, sPx, band0, band1, objPack, seedIndex, lookL, nt, lookR, nb);
     auto ensureBand = [&](int y) {
         if (y < nt || y >= nb) return;
         if (y >= band0 && y < band1) return;
@@ -3562,7 +3705,7 @@ static void seg7One(
             n1 = std::min(nb, y + 1);
         }
         recoverStrokeNearInk(
-            &lookBin, sPx, n0, n1, objPack, seedIndex, lookL, nt, lookR, nb);
+            src, &lookBin, sPx, n0, n1, objPack, seedIndex, lookL, nt, lookR, nb);
         if (n0 < band0) band0 = n0;
         if (n1 > band1) band1 = n1;
     };
@@ -3700,7 +3843,7 @@ static void seg7One(
         int wt = *ot, wb = *ob;
         if (wb < wt) std::swap(wt, wb);
         recoverStrokeNearInk(
-            &lookBin, sPx, std::max(nt, wt), std::min(nb, wb),
+            src, &lookBin, sPx, std::max(nt, wt), std::min(nb, wb),
             objPack, seedIndex, lookL, nt, lookR, nb);
     }
     veRssLog("walk_paint", nullptr);
@@ -4416,11 +4559,11 @@ static int seedCombine255(
                     take = inBandNow && acceptedSpx;
                     stop = take;
                 } else if (retryWhyWant == 2) {
-                    take = inBandNow;
-                    stop = inBandNow;
+                    take = inBandNow && acceptedSpx;
+                    stop = take;
                 } else {
                     take = inBandNow || emptyToInk;
-                    stop = inBandNow;
+                    stop = inBandNow && acceptedSpx;
                 }
                 if (take) {
                     haveCommit = true;
@@ -4514,7 +4657,7 @@ static int seedCombine255(
                     inBand = noteAttempt(2);
                 }
             }
-            if (!inBand && extras < 3) {
+            if (!inBand) {
                 const int usedKeep = static_cast<int>(std::lround(cleanThr));
                 std::vector<int> cands;
                 cands.reserve(static_cast<size_t>(nValley));
@@ -4542,7 +4685,7 @@ static int seedCombine255(
                     return a < b;
                 });
                 for (int thr : cands) {
-                    if (extras >= 3) break;
+                    if (fillGate.nAttempts >= kSeg7AttemptMax) break;
                     applyThrKeepPoison0(
                         seedY, poison, static_cast<double>(thr), cleanDark, &bin);
                     if (!virtSp) fillSaltPepper(&bin);
@@ -4602,9 +4745,6 @@ static int seedCombine255(
     countSeedFillGate(
         bin, poison, src, xSeed0, ySeed0,
         srcIsBin, inverted, cleanDark, cleanThr, &fillGate);
-    orRecoveredIntoBin(
-        &bin, poison, src, xSeed0, ySeed0,
-        srcIsBin, inverted, cleanDark, cleanThr);
     cv::Mat combined;
     bin.copyTo(combined);
     hhC = horizPeakSW(combined, seedH, seedW, virtSp);
@@ -6494,7 +6634,7 @@ static void seg7OrientedOne(
     int band0 = std::max(lookT, st - 4 * sPx);
     int band1 = std::min(lookB, sb + 4 * sPx);
     recoverStrokeNearInk(
-        &lookBin, sPx, band0, band1, objPack, seedIndex, lookL, lookT, lookR, lookB);
+        src, &lookBin, sPx, band0, band1, objPack, seedIndex, lookL, lookT, lookR, lookB);
     auto ensureBand = [&](int y) {
         if (y < lookT || y >= lookB) return;
         if (y >= band0 && y < band1) return;
@@ -6508,7 +6648,7 @@ static void seg7OrientedOne(
             n1 = std::min(lookB, y + 1);
         }
         recoverStrokeNearInk(
-            &lookBin, sPx, n0, n1, objPack, seedIndex, lookL, lookT, lookR, lookB);
+            src, &lookBin, sPx, n0, n1, objPack, seedIndex, lookL, lookT, lookR, lookB);
         if (n0 < band0) band0 = n0;
         if (n1 > band1) band1 = n1;
     };
@@ -6651,7 +6791,7 @@ static void seg7OrientedOne(
         int r0 = lookRowOfV(seed.v0), r1 = lookRowOfV(seed.v1);
         if (r1 < r0) std::swap(r0, r1);
         recoverStrokeNearInk(
-            &lookBin, sPx, std::max(lookT, r0), std::min(lookB, r1 + 1),
+            src, &lookBin, sPx, std::max(lookT, r0), std::min(lookB, r1 + 1),
             objPack, seedIndex, lookL, lookT, lookR, lookB);
     }
     if (tele) {
