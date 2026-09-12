@@ -4775,7 +4775,7 @@ enum : int {
 };
 
 struct SeedDispClass {
-    int kind = kDispUnknown;
+    int kind = kDisp7seg;
     int hMul = 7;
     int vMul = 16;
     float gapDriftP90S = 0.f;
@@ -4790,10 +4790,10 @@ struct SeedGapSpan {
 
 struct SeedGapChain {
     int y0 = 0, y1 = 0;
-    float sumDg = 0.f;
-    bool hadJump = false;
-    std::vector<int> dgs;
-    int nRows() const { return y1 - y0 + 1; }
+    int minW = 0, maxW = 0;
+    std::vector<int> widths;
+    int nRows() const { return static_cast<int>(widths.size()); }
+    int span() const { return maxW - minW; }
 };
 
 static void collectSeedRowGaps(const uint8_t* p, int n, std::vector<SeedGapSpan>* out) {
@@ -4819,159 +4819,202 @@ static void collectSeedRowGaps(const uint8_t* p, int n, std::vector<SeedGapSpan>
     }
 }
 
+static int longestInkRun(const uint8_t* p, int n) {
+    if (!p || n < 1) return 0;
+    int longest = 0, run = 0;
+    for (int i = 0; i < n; ++i) {
+        if (p[i] != 0) {
+            ++run;
+            if (run > longest) longest = run;
+        } else {
+            run = 0;
+        }
+    }
+    return longest;
+}
+
 static SeedDispClass classifySeedGapDisp(const cv::Mat& combined, int sPx) {
     SeedDispClass out;
+    out.kind = kDisp7seg;
+    out.hMul = 7;
+    out.vMul = 16;
     if (sPx < 8 || combined.empty() || combined.type() != CV_8UC1) return out;
     const int h = combined.rows, w = combined.cols;
     if (h < 1 || w < 1) return out;
     const float Sf = static_cast<float>(sPx);
-    const float stableMax = std::max(1.f, Sf / 4.f);
-    const float jumpMin = Sf / 2.f;
-    const float twoS = 2.f * Sf;
-    std::vector<SeedGapChain> chains;
-    std::vector<SeedGapSpan> prev;
-    std::vector<SeedGapSpan> cur;
-    int nGaps = 0;
-    std::vector<int> bucketN;
-    std::vector<int> bucketK;
-    auto addBucket = [&](int k) {
-        for (size_t i = 0; i < bucketK.size(); ++i) {
-            if (bucketK[i] == k) {
-                bucketN[i] += 1;
-                return;
-            }
-        }
-        bucketK.push_back(k);
-        bucketN.push_back(1);
-    };
-    const float halfS = 0.5f * Sf;
+    const float twoSf = 2.f * Sf;
+    const int twoS = sPx + sPx;
+    const int minBarH = std::max(2, sPx / 4);
+    const int edgeM = sPx / 4;
+    std::vector<char> isBarRow(static_cast<size_t>(h), 0);
     for (int y = 0; y < h; ++y) {
-        collectSeedRowGaps(combined.ptr<uint8_t>(y), w, &cur);
-        nGaps += static_cast<int>(cur.size());
-        for (const SeedGapSpan& g : cur) {
-            addBucket(static_cast<int>(std::lround(static_cast<float>(g.len()) / halfS)));
+        if (longestInkRun(combined.ptr<uint8_t>(y), w) >= twoS) {
+            isBarRow[static_cast<size_t>(y)] = 1;
         }
-        std::vector<char> usedP(prev.size(), 0);
-        std::vector<char> usedC(cur.size(), 0);
-        struct Cand { int pi; int ci; float ddx; };
-        std::vector<Cand> cands;
-        for (int ci = 0; ci < static_cast<int>(cur.size()); ++ci) {
-            const float ccx = cur[static_cast<size_t>(ci)].cx();
-            for (int pi = 0; pi < static_cast<int>(prev.size()); ++pi) {
-                const SeedGapSpan& pg = prev[static_cast<size_t>(pi)];
-                const SeedGapSpan& cg = cur[static_cast<size_t>(ci)];
-                if (cg.x0 >= pg.x1 || pg.x0 >= cg.x1) continue;
-                const float ddx = std::fabs(ccx - pg.cx());
-                if (ddx > twoS) continue;
-                Cand c;
-                c.pi = pi;
-                c.ci = ci;
-                c.ddx = ddx;
-                cands.push_back(c);
-            }
-        }
-        std::sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) {
-            if (a.ddx != b.ddx) return a.ddx < b.ddx;
-            if (a.pi != b.pi) return a.pi < b.pi;
-            return a.ci < b.ci;
-        });
-        for (const Cand& c : cands) {
-            if (usedP[static_cast<size_t>(c.pi)] || usedC[static_cast<size_t>(c.ci)]) continue;
-            usedP[static_cast<size_t>(c.pi)] = 1;
-            usedC[static_cast<size_t>(c.ci)] = 1;
-            SeedGapSpan& pg = prev[static_cast<size_t>(c.pi)];
-            SeedGapSpan& cg = cur[static_cast<size_t>(c.ci)];
-            if (pg.chain < 0 || pg.chain >= static_cast<int>(chains.size())) continue;
-            SeedGapChain& ch = chains[static_cast<size_t>(pg.chain)];
-            const int dg = cg.len() - pg.len();
-            ch.dgs.push_back(dg);
-            ch.sumDg += static_cast<float>(dg);
-            ch.y1 = y;
-            if (std::fabs(static_cast<float>(dg)) >= jumpMin) ch.hadJump = true;
-            cg.chain = pg.chain;
-        }
-        for (int ci = 0; ci < static_cast<int>(cur.size()); ++ci) {
-            if (usedC[static_cast<size_t>(ci)]) continue;
-            SeedGapSpan& cg = cur[static_cast<size_t>(ci)];
-            SeedGapChain ch;
-            ch.y0 = y;
-            ch.y1 = y;
-            cg.chain = static_cast<int>(chains.size());
-            chains.push_back(ch);
-        }
-        prev.swap(cur);
     }
-    int nStep = 0, nOther = 0;
-    bool anySlide = false;
-    std::vector<float> driftS;
-    for (const SeedGapChain& ch : chains) {
-        const int ns = static_cast<int>(ch.dgs.size());
-        if (ns > 0) {
-            driftS.push_back(std::fabs(ch.sumDg) / Sf);
+    struct Bar { int y0 = 0, y1 = 0; };
+    std::vector<Bar> bars;
+    int yb = 0;
+    while (yb < h) {
+        if (!isBarRow[static_cast<size_t>(yb)]) {
+            ++yb;
+            continue;
         }
-        if (!ch.hadJump && std::fabs(ch.sumDg) > twoS && ch.nRows() >= sPx) {
-            anySlide = true;
+        const int y0 = yb;
+        while (yb < h && isBarRow[static_cast<size_t>(yb)]) ++yb;
+        if (yb - y0 >= minBarH) {
+            Bar b;
+            b.y0 = y0;
+            b.y1 = yb;
+            bars.push_back(b);
         }
-        std::vector<char> isRamp(static_cast<size_t>(ns), 0);
-        int i = 0;
-        while (i < ns) {
-            if (std::abs(ch.dgs[static_cast<size_t>(i)]) > 2) {
-                ++i;
+    }
+    struct Band { int y0 = 0, y1 = 0; };
+    std::vector<Band> bands;
+    auto addBand = [&](int y0, int y1) {
+        if (y0 < 0) y0 = 0;
+        if (y1 > h) y1 = h;
+        if (y1 > y0) {
+            Band b;
+            b.y0 = y0;
+            b.y1 = y1;
+            bands.push_back(b);
+        }
+    };
+    const int nBar = static_cast<int>(bars.size());
+    if (nBar == 0) {
+        addBand(sPx, h - sPx);
+    } else if (nBar == 1) {
+        addBand(sPx, bars[0].y0);
+        addBand(bars[0].y1, h - sPx);
+    } else if (nBar == 2) {
+        addBand(bars[0].y1, bars[1].y0);
+        const int above0 = sPx;
+        const int above1 = bars[0].y0;
+        const int below0 = bars[1].y1;
+        const int below1 = h - sPx;
+        const int aboveN = std::max(0, above1 - above0);
+        const int belowN = std::max(0, below1 - below0);
+        if (belowN >= aboveN) addBand(below0, below1);
+        else addBand(above0, above1);
+    } else {
+        for (int i = 0; i + 1 < nBar; ++i) {
+            addBand(bars[static_cast<size_t>(i)].y1, bars[static_cast<size_t>(i + 1)].y0);
+        }
+    }
+    bool anyNot = false;
+    float maxSpanS = 0.f;
+    for (const Band& band : bands) {
+        const int by0 = band.y0, by1 = band.y1;
+        const int bh = by1 - by0;
+        std::vector<int> nGaps(static_cast<size_t>(bh), 0);
+        std::vector<SeedGapChain> chains;
+        std::vector<SeedGapSpan> prev;
+        std::vector<SeedGapSpan> cur;
+        for (int y = by0; y < by1; ++y) {
+            if (isBarRow[static_cast<size_t>(y)]) {
+                prev.clear();
                 continue;
             }
-            int j = i;
-            int sum = 0;
-            while (j < ns && std::abs(ch.dgs[static_cast<size_t>(j)]) <= 2) {
-                sum += ch.dgs[static_cast<size_t>(j)];
-                ++j;
+            collectSeedRowGaps(combined.ptr<uint8_t>(y), w, &cur);
+            nGaps[static_cast<size_t>(y - by0)] = static_cast<int>(cur.size());
+            std::vector<char> usedP(prev.size(), 0);
+            std::vector<char> usedC(cur.size(), 0);
+            struct Cand { int pi; int ci; float ddx; };
+            std::vector<Cand> cands;
+            for (int ci = 0; ci < static_cast<int>(cur.size()); ++ci) {
+                const float ccx = cur[static_cast<size_t>(ci)].cx();
+                for (int pi = 0; pi < static_cast<int>(prev.size()); ++pi) {
+                    const SeedGapSpan& pg = prev[static_cast<size_t>(pi)];
+                    const SeedGapSpan& cg = cur[static_cast<size_t>(ci)];
+                    if (cg.x0 >= pg.x1 || pg.x0 >= cg.x1) continue;
+                    const float ddx = std::fabs(ccx - pg.cx());
+                    if (ddx > twoSf) continue;
+                    Cand c;
+                    c.pi = pi;
+                    c.ci = ci;
+                    c.ddx = ddx;
+                    cands.push_back(c);
+                }
             }
-            const int nRun = j - i;
-            if (nRun <= sPx && std::abs(sum) <= sPx + sPx / 2) {
-                for (int k = i; k < j; ++k) isRamp[static_cast<size_t>(k)] = 1;
+            std::sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) {
+                if (a.ddx != b.ddx) return a.ddx < b.ddx;
+                if (a.pi != b.pi) return a.pi < b.pi;
+                return a.ci < b.ci;
+            });
+            for (const Cand& c : cands) {
+                if (usedP[static_cast<size_t>(c.pi)] || usedC[static_cast<size_t>(c.ci)]) continue;
+                usedP[static_cast<size_t>(c.pi)] = 1;
+                usedC[static_cast<size_t>(c.ci)] = 1;
+                SeedGapSpan& pg = prev[static_cast<size_t>(c.pi)];
+                SeedGapSpan& cg = cur[static_cast<size_t>(c.ci)];
+                if (pg.chain < 0 || pg.chain >= static_cast<int>(chains.size())) continue;
+                SeedGapChain& ch = chains[static_cast<size_t>(pg.chain)];
+                const int gw = cg.len();
+                ch.widths.push_back(gw);
+                if (gw < ch.minW) ch.minW = gw;
+                if (gw > ch.maxW) ch.maxW = gw;
+                ch.y1 = y;
+                cg.chain = pg.chain;
             }
-            i = j;
+            for (int ci = 0; ci < static_cast<int>(cur.size()); ++ci) {
+                if (usedC[static_cast<size_t>(ci)]) continue;
+                SeedGapSpan& cg = cur[static_cast<size_t>(ci)];
+                SeedGapChain ch;
+                ch.y0 = y;
+                ch.y1 = y;
+                ch.minW = cg.len();
+                ch.maxW = ch.minW;
+                ch.widths.push_back(ch.minW);
+                cg.chain = static_cast<int>(chains.size());
+                chains.push_back(ch);
+            }
+            prev.swap(cur);
         }
-        for (int k = 0; k < ns; ++k) {
-            ++nStep;
-            const float ad = std::fabs(static_cast<float>(ch.dgs[static_cast<size_t>(k)]));
-            const bool jump = ad >= jumpMin;
-            const bool stable = ad <= stableMax;
-            const bool ramp = isRamp[static_cast<size_t>(k)] != 0;
-            if (!jump && !stable && !ramp) ++nOther;
+        for (const SeedGapChain& ch : chains) {
+            const int sp = ch.span();
+            const float spS = static_cast<float>(sp) / Sf;
+            if (spS > maxSpanS) maxSpanS = spS;
+            if (sp <= sPx) continue;
+            const int n = ch.nRows();
+            if (n >= sPx) {
+                anyNot = true;
+                continue;
+            }
+            bool interiorPeak = false;
+            for (int i = 0; i < n; ++i) {
+                if (i < edgeM || i >= n - edgeM) continue;
+                if (ch.widths[static_cast<size_t>(i)] >= ch.maxW) {
+                    interiorPeak = true;
+                    break;
+                }
+            }
+            if (interiorPeak) anyNot = true;
         }
-    }
-    if (!driftS.empty()) {
-        std::sort(driftS.begin(), driftS.end());
-        const int n = static_cast<int>(driftS.size());
-        int idx = static_cast<int>(std::ceil(0.9 * static_cast<double>(n))) - 1;
-        if (idx < 0) idx = 0;
-        if (idx >= n) idx = n - 1;
-        out.gapDriftP90S = driftS[static_cast<size_t>(idx)];
-    }
-    const bool fracOther = nStep > 0 && nOther * 4 >= nStep;
-    const bool isNot = anySlide || fracOther;
-    bool conc = false;
-    if (nGaps > 0 && !bucketN.empty()) {
-        std::vector<int> freq = bucketN;
-        std::sort(freq.begin(), freq.end(), [](int a, int b) { return a > b; });
-        int cov = 0, nb = 0;
-        for (int f : freq) {
-            if (nb >= 8) break;
-            cov += f;
-            ++nb;
+        int gMin = 0, gMax = 0;
+        bool haveG = false;
+        for (int y = by0; y < by1; ++y) {
+            if (isBarRow[static_cast<size_t>(y)]) continue;
+            if (y - by0 < edgeM || (by1 - 1) - y < edgeM) continue;
+            const int ng = nGaps[static_cast<size_t>(y - by0)];
+            if (!haveG) {
+                gMin = ng;
+                gMax = ng;
+                haveG = true;
+            } else {
+                if (ng < gMin) gMin = ng;
+                if (ng > gMax) gMax = ng;
+            }
         }
-        conc = cov * 10 >= nGaps * 7;
+        if (haveG && gMax - gMin >= 2) anyNot = true;
     }
-    if (isNot) {
+    out.gapDriftP90S = maxSpanS;
+    if (anyNot) {
         out.kind = kDispNot;
         out.hMul = 10;
         out.vMul = 20;
-    } else if (nGaps >= 1 && conc) {
-        out.kind = kDisp7seg;
-        out.hMul = 7;
-        out.vMul = 16;
     } else {
-        out.kind = kDispUnknown;
+        out.kind = kDisp7seg;
         out.hMul = 7;
         out.vMul = 16;
     }
