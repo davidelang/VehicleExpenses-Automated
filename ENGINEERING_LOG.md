@@ -722,3 +722,9 @@ Policy: permission denials → report human / script residual; no creative worka
 - Plan Status: APPROVED → implementing
 - Scope: require @file (one Shell segment) for append-to-engineering-log and non-trivial build_app messages; no quoted multi-line argv
 - No update-rules / deploy-orchestration sweep
+
+## 2026-09-13 - Start execution: validate-plans-skill-20260913-0048-plan.md
+
+- Plan Status: APPROVED → implementing
+- Scope: project skill /validate-plans; Host+Worktree+Aim stamps; per-worktree ignore; coder/master refuse
+- No update-rules / deploy-orchestration sweep
