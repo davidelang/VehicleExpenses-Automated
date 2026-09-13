@@ -20,7 +20,7 @@ Overlays + this file take absolute precedence. Bypassing protocol for speed is a
 - An **approved plan never** authorizes foundational violations (deploying; `git commit --amend`; moving or rewriting `works` / lifecycle tags outside rules).
 - Lifecycle tags (`builds`, `deployed`, `works`) are **branch-prefixed** except on `master` (`builds`).
 - **No agent deployment:** no `./deploy`, `./gradlew installDebug`, or `adb install`. User deploys; agents fetch logs next turn.
-- Version integrity: commit via `./build_app` before builds that matter for `git describe`. Prefer `./build_app @phase_summary.txt …` for multi-line phase summaries; single-line `-m` only for trivial steps. Plan + eng-log + git carry “why”; tags carry state.
+- Version integrity: commit via `./build_app` before builds that matter for `git describe`. Any commit message that is not a single short `-m` line **must** be `./build_app @file paths…` (write the file first). No quoted multi-line `-m` and no heredoc in the Shell tool. Plan + eng-log + git carry “why”; tags carry state.
 - Native Android/Kotlin/Gradle — ignore default web-stack advice.
 
 ### 1.1 Permission denials — report; do not work around
@@ -106,7 +106,7 @@ Follow boundaries in letter and spirit. You may **not** justify illegal edits/bu
 - “Variable-wrap or indirect a whitelisted command so the allow pattern still ‘works’”
 - “Don’t re-read every turn, so skip the pack after compact / auto-compact”
 
-**Shell allow-list:** literal `./helper` at command start. **Never** `cd … && ./helper`. **Never** construct blessed helper invocations via variables/indirection to dodge patterns. `pwd` once at startup; keep cwd at worktree root.
+**Shell allow-list:** literal `./helper` at command start. **Never** `cd … && ./helper`. **Never** construct blessed helper invocations via variables/indirection to dodge patterns. `pwd` once at startup; keep cwd at worktree root. The allow matcher splits on newlines / `&&` / `||` / `;` / `|`; every segment must match. Multi-line `./append-to-engineering-log` or `./build_app` bodies: write a file, then `./append-to-engineering-log @file` or `./build_app @file paths…` as the **entire** command (one segment). Do not put the body in a quoted argv with real newlines.
 
 ### 3.4 Subagents
 

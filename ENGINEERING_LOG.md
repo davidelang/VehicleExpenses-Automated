@@ -716,3 +716,9 @@ Policy: permission denials → report human / script residual; no creative worka
 - Plan Status: APPROVED → implementing
 - Scope: AGENT_MANDATES §7 + planner/coder/execute prompts: refuse work for a different git host; do not guess the intended session
 - No update-rules / deploy-orchestration sweep
+
+## 2026-09-12 - Start execution: helper-at-file-not-multiline-quotes-20260912-2246-plan.md
+
+- Plan Status: APPROVED → implementing
+- Scope: require @file (one Shell segment) for append-to-engineering-log and non-trivial build_app messages; no quoted multi-line argv
+- No update-rules / deploy-orchestration sweep
