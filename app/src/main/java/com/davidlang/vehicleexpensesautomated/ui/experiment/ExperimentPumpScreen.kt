@@ -4234,8 +4234,13 @@ suspend fun runPumpExperiment(
                         if (q.shortAxisBh() < 2f || q.longAxisBw() < 2f) {
                             return OcrOne("?" to "", "?" to "", "", 0, 0)
                         }
-                        val nativeH = q.shortAxisBh().roundToInt().coerceAtLeast(1)
-                        val nativeW = q.longAxisBw().roundToInt().coerceAtLeast(1)
+                        val contentH = RecBufferFeed.DEFAULT_REC_H - 2 * RecBufferFeed.DEFAULT_BORDER_PX
+                        val pad = ceil(
+                            RecBufferFeed.DEFAULT_BORDER_PX.toDouble() * q.shortAxisBh() / contentH.toDouble(),
+                        ).toInt()
+                        val qPad = q.padUv(pad)
+                        val nativeH = qPad.shortAxisBh().roundToInt().coerceAtLeast(1)
+                        val nativeW = qPad.longAxisBw().roundToInt().coerceAtLeast(1)
                             .coerceAtMost(NativePaddleEngine.REC_CANVAS_W)
                         val ap = NativePaddleEngine.bufferSetA
                         val nativeId = ap.s.createCrop(0, 0, nativeW, nativeH)
@@ -4243,7 +4248,7 @@ suspend fun runPumpExperiment(
                         dest.clear()
                         val nativeMat = dest.mat
                         val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
-                            gray, q, nativeMat, targetH = 0,
+                            gray, qPad, nativeMat, targetH = 0,
                         )
                         if (!ok || nativeMat.empty()) {
                             ap.c[nativeId].release()
