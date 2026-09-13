@@ -138,8 +138,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeVeRss
 static constexpr int kRunHistBins = 300;
 static constexpr int kRunHistLog2Bins = 32;
 static constexpr int kEnergyHistBins = 64;
-static constexpr int kSeg7AttemptMax = 4;
-static constexpr int kSeg7AttemptF = 12;
+static constexpr int kSeg7AttemptMax = 10;
+static constexpr int kSeg7AttemptF = 15;
 static constexpr int kSeg7TeleN =
     26 + kEnergyHistBins * 2 + 6 + 1 + kSeg7AttemptMax * kSeg7AttemptF + 11;
 
@@ -359,6 +359,9 @@ struct SeedFillAttempt {
     int nValley = 0;
     int nPoison = 0;
     int sPx = 0;
+    int acceptedSpx = 0;
+    int inBand = 0;
+    int kept = 0;
 };
 
 struct SeedFillGate {
@@ -410,6 +413,9 @@ static void packFillAttempts(const SeedFillGate& g, Seg7Tele* t) {
         t->attempts[i][9] = static_cast<float>(a.nValley);
         t->attempts[i][10] = static_cast<float>(a.nPoison);
         t->attempts[i][11] = static_cast<float>(a.sPx);
+        t->attempts[i][12] = static_cast<float>(a.acceptedSpx);
+        t->attempts[i][13] = static_cast<float>(a.inBand);
+        t->attempts[i][14] = static_cast<float>(a.kept);
     }
 }
 
@@ -3421,18 +3427,14 @@ static bool retryPoisonChunkInk(
         fill = nInk / static_cast<float>(area);
         acceptedSpx = vNow > 4 && !strokeNeedFb(hh, vNow, bw, fill);
         const bool inBandNow = fill >= fillLo && fill <= fillHi;
-        const bool emptyToInk = nInk0 == 0 && nInk > 0;
         bool take = false;
         bool stop = false;
         if (retryWhyWant == 0) {
             take = inBandNow && acceptedSpx;
             stop = true;
-        } else if (retryWhyWant == 2 || retryWhyWant == 3) {
+        } else {
             take = inBandNow && acceptedSpx;
             stop = take;
-        } else {
-            take = inBandNow || emptyToInk;
-            stop = inBandNow && acceptedSpx;
         }
         if (take) {
             bin.copyTo(commitBin);
@@ -4603,6 +4605,13 @@ static int seedCombine255(
         a.nPoison = nPoison;
         const HorizSW hhA = horizPeakSW(bin, seedH, seedW, virtSp);
         a.sPx = hhA.peak;
+        const float fracA = srcIsBin
+            ? (cv::countNonZero(bin) /
+                static_cast<float>(std::max(1, seedH * seedW)))
+            : cleanInkFrac;
+        a.acceptedSpx = (hhA.peak > 4 && !strokeNeedFb(hhA, hhA.peak, seedW, fracA)) ? 1 : 0;
+        a.inBand = (fillGate.fill >= fillLo && fillGate.fill <= fillHi) ? 1 : 0;
+        a.kept = 0;
         ++fillGate.nAttempts;
         fillGate.nKeep = nKeep;
         fillGate.nPoison = nPoison;
@@ -4650,17 +4659,6 @@ static int seedCombine255(
             const int nLookBin0 = fillGate.nLookBin;
             std::vector<int> tried;
             tried.push_back(static_cast<int>(std::lround(cleanThr)));
-            cv::Mat attempt0Bin;
-            cv::Mat attempt0Poison;
-            bin.copyTo(attempt0Bin);
-            poison.copyTo(attempt0Poison);
-            const double attempt0Thr = cleanThr;
-            const bool attempt0Dark = cleanDark;
-            const bool attempt0Have = haveClean;
-            const float attempt0Frac = cleanInkFrac;
-            const double attempt0FirstThr = poisonFirstThr;
-            SeedFillGate attempt0Gate;
-            copyFillGateChosen(fillGate, &attempt0Gate);
             cv::Mat commitBin;
             cv::Mat commitPoison;
             double commitThr = cleanThr;
@@ -4686,8 +4684,6 @@ static int seedCombine255(
                     : cleanInkFrac;
                 const bool acceptedSpx =
                     vNow > 4 && !strokeNeedFb(hhNow, vNow, seedW, fracNow);
-                const bool emptyToInk =
-                    nLookBin0 == 0 && fillGate.nLookBin > 0;
                 bool take = false;
                 bool stop = false;
                 if (retryWhyWant == 3) {
@@ -4697,8 +4693,8 @@ static int seedCombine255(
                     take = inBandNow && acceptedSpx;
                     stop = take;
                 } else {
-                    take = inBandNow || emptyToInk;
-                    stop = inBandNow && acceptedSpx;
+                    take = inBandNow && acceptedSpx;
+                    stop = take;
                 }
                 if (take) {
                     haveCommit = true;
@@ -4710,6 +4706,10 @@ static int seedCombine255(
                     commitFrac = cleanInkFrac;
                     commitFirstThr = poisonFirstThr;
                     copyFillGateChosen(fillGate, &commitGate);
+                    for (int i = 0; i < fillGate.nAttempts; ++i)
+                        fillGate.attempts[i].kept = 0;
+                    if (fillGate.nAttempts > 0)
+                        fillGate.attempts[fillGate.nAttempts - 1].kept = 1;
                     if (stop) return true;
                 }
                 return false;
@@ -4846,24 +4846,18 @@ static int seedCombine255(
                     cleanInkFrac = commitFrac;
                     poisonFirstThr = commitFirstThr;
                     copyFillGateChosen(commitGate, &fillGate);
-                } else {
-                    attempt0Bin.copyTo(bin);
-                    attempt0Poison.copyTo(poison);
-                    cleanThr = attempt0Thr;
-                    cleanDark = attempt0Dark;
-                    haveClean = attempt0Have;
-                    cleanInkFrac = attempt0Frac;
-                    poisonFirstThr = attempt0FirstThr;
-                    copyFillGateChosen(attempt0Gate, &fillGate);
                 }
                 fillGate.nRetry = extras;
                 fillGate.retryWhy = retryWhyWant;
                 fillGate.nValley = nValley;
             }
+        } else if (fillGate.nAttempts > 0) {
+            fillGate.attempts[0].kept = 1;
         }
     } else {
         countPoisonKeep();
         recordAttempt(0);
+        if (fillGate.nAttempts > 0) fillGate.attempts[0].kept = 1;
     }
     if (fillGate.nRetry > 0 || fillGate.fill < fillLo || fillGate.fill > fillHi) {
         for (int i = 0; i < fillGate.nAttempts; ++i) {

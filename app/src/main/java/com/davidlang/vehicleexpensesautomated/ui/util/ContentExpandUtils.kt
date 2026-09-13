@@ -1188,6 +1188,9 @@ object ContentExpandUtils {
         val nValley: Float = 0f,
         val nPoison: Float = 0f,
         val sPx: Float = 0f,
+        val acceptedSpx: Float = 0f,
+        val inBand: Float = 0f,
+        val kept: Float = 0f,
     )
 
     fun boundFlagName(v: Float): String = when (kotlin.math.round(v).toInt()) {
@@ -1294,6 +1297,9 @@ object ContentExpandUtils {
                     nValley = a[b + 9],
                     nPoison = a[b + 10],
                     sPx = a[b + 11],
+                    acceptedSpx = a[b + 12],
+                    inBand = a[b + 13],
+                    kept = a[b + 14],
                 )
             }
             val chosen = atts.firstOrNull {

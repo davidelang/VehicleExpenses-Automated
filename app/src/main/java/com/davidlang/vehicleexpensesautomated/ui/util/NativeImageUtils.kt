@@ -574,8 +574,8 @@ object NativeImageUtils {
 
     const val SEG7_HIST_BINS: Int = 300
     const val SEG7_ENERGY_HIST_BINS: Int = 64
-    const val SEG7_ATTEMPT_MAX: Int = 4
-    const val SEG7_ATTEMPT_F: Int = 12
+    const val SEG7_ATTEMPT_MAX: Int = 10
+    const val SEG7_ATTEMPT_F: Int = 15
     const val SEG7_TELE_N: Int =
         26 + SEG7_ENERGY_HIST_BINS * 2 + 6 + 1 + SEG7_ATTEMPT_MAX * SEG7_ATTEMPT_F + 11
 

@@ -7998,7 +7998,10 @@ private fun putLookInkFillAttempts(j: org.json.JSONObject, tele: ContentExpandUt
                 .put("nKeep", a.nKeep.roundToInt())
                 .put("nValley", a.nValley.roundToInt())
                 .put("nPoison", a.nPoison.roundToInt())
-                .put("sPx", a.sPx.roundToInt()),
+                .put("sPx", a.sPx.roundToInt())
+                .put("acceptedSpx", a.acceptedSpx.roundToInt())
+                .put("inBand", a.inBand.roundToInt())
+                .put("kept", a.kept.roundToInt()),
         )
     }
     j.put("attempts", arr)
