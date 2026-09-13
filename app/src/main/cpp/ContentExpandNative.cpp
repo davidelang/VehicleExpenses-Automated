@@ -1170,6 +1170,12 @@ enum : uint8_t {
     kKindPepper = 5
 };
 
+enum : int {
+    kDisp7seg = 0,
+    kDispNot = 1,
+    kDispUnknown = 2
+};
+
 struct ObjPack {
     uint8_t nextInk = 255;
     uint8_t nextNon = 1;
@@ -1456,7 +1462,8 @@ static int maxInkRunCol(
 
 static void recoverStrokeNearInk(
     const cv::Mat& src, cv::Mat* look, int sPx, int y0, int y1, ObjPack* pack, int seedIndex,
-    int lookL, int lookT, int lookR, int lookB);
+    int lookL, int lookT, int lookR, int lookB,
+    int dispKind = 0, int hMul = 7, int vMul = 16);
 
 static void jumpRetractH(
     const cv::Mat& eng, int* l, int t, int* r, int b,
@@ -3263,7 +3270,8 @@ static void flood255LookIds(
     cv::Mat* look, int sPx, ObjPack* pack, int seedIndex,
     int lookL = 0, int lookT = 0, int lookR = -1, int lookB = -1,
     PoisonStats* stats = nullptr,
-    int hMul = 7, int vMul = 16
+    int hMul = 7, int vMul = 16,
+    int dispKind = 0
 ) {
     if (!look || look->empty() || look->type() != CV_8UC1 || sPx < 1) return;
     const int h = look->rows, w = look->cols;
@@ -3315,7 +3323,10 @@ static void flood255LookIds(
             }
             const int maxHrun = maxBlobRunH(pix, w);
             const int maxVrun = maxBlobRunV(pix, w);
-            const bool poison = maxHrun > runH || maxVrun > runV;
+            const bool solidPlate = dispKind == kDispNot &&
+                bw > 3 * sPx && bh > 3 * sPx &&
+                static_cast<int>(pix.size()) >= bw * bh;
+            const bool poison = maxHrun > runH || maxVrun > runV || solidPlate;
             if (!poison) continue;
             if (stats && stats->ccs.size() < 16) {
                 PoisonCcPack cc;
@@ -3486,7 +3497,8 @@ static bool retryPoisonChunkInk(
 
 static void recoverStrokeNearInk(
     const cv::Mat& src, cv::Mat* look, int sPx, int y0, int y1, ObjPack* pack, int seedIndex,
-    int lookL = 0, int lookT = 0, int lookR = -1, int lookB = -1
+    int lookL, int lookT, int lookR, int lookB,
+    int dispKind, int hMul, int vMul
 ) {
     if (!look || look->empty() || sPx < 1 || !pack) return;
     if (src.empty() || src.type() != CV_8UC1) return;
@@ -3498,8 +3510,21 @@ static void recoverStrokeNearInk(
     if (y0 < lookT) y0 = lookT;
     if (y1 > lookB) y1 = lookB;
     if (y1 <= y0 || lookR <= lookL) return;
+    if (hMul < 1) hMul = 7;
+    if (vMul < 1) vMul = 16;
     auto isPoison = [&](uint8_t v) {
         return v >= 1 && v < pack->lookNextNon;
+    };
+    auto solidPlate = [&](int n, int cw, int ch) {
+        return dispKind == kDispNot && cw > 3 * sPx && ch > 3 * sPx && n >= cw * ch;
+    };
+    auto edgePoison = [&](std::vector<int>& p) {
+        if (p.empty()) return false;
+        const int maxHrun = maxBlobRunH(p, w);
+        const int maxVrun = maxBlobRunV(p, w);
+        if (maxHrun > 3 * sPx && maxVrun > 3 * sPx) return true;
+        if (maxHrun > hMul * sPx || maxVrun > vMul * sPx) return true;
+        return false;
     };
     const int bandW = lookR - lookL;
     std::vector<uint8_t> vis(static_cast<size_t>(bandW * (y1 - y0)), 0);
@@ -3540,7 +3565,83 @@ static void recoverStrokeNearInk(
                     }
                 }
             }
+            bool tL = false, tR = false, tT = false, tB = false;
+            for (int i : pix) {
+                const int cy = i / w, cx = i - cy * w;
+                if (cx == lookL) tL = true;
+                if (cx == lookR - 1) tR = true;
+                if (cy == y0) tT = true;
+                if (cy == y1 - 1) tB = true;
+            }
+            if (lookL <= 0) tL = false;
+            if (lookR >= w) tR = false;
+            if (y0 <= 0) tT = false;
+            if (y1 >= h) tB = false;
+            if (tL || tR || tT || tB) {
+                const int growCap = 3 * sPx;
+                bool reject = false;
+                std::vector<int> grown = pix;
+                int gx0 = x0, gx1 = x1, gy0 = cy0, gy1 = cy1;
+                for (int extra = sPx; extra <= growCap; extra += sPx) {
+                    const int gL = tL ? std::max(0, lookL - extra) : lookL;
+                    const int gR = tR ? std::min(w, lookR + extra) : lookR;
+                    const int gT = tT ? std::max(0, y0 - extra) : y0;
+                    const int gB = tB ? std::min(h, y1 + extra) : y1;
+                    const int gw = gR - gL, gh = gB - gT;
+                    if (gw < 1 || gh < 1) break;
+                    std::vector<uint8_t> gvis(static_cast<size_t>(gw * gh), 0);
+                    std::vector<int> gst;
+                    gst.reserve(grown.size());
+                    grown.clear();
+                    auto gpush = [&](int nx, int ny) {
+                        if (ny < gT || nx < gL || ny >= gB || nx >= gR) return;
+                        if (!isPoison(look->ptr<uint8_t>(ny)[nx])) return;
+                        const int nvi = (ny - gT) * gw + (nx - gL);
+                        if (gvis[static_cast<size_t>(nvi)]) return;
+                        gvis[static_cast<size_t>(nvi)] = 1;
+                        gst.push_back(ny * w + nx);
+                    };
+                    for (int i : pix) gpush(i - (i / w) * w, i / w);
+                    gx0 = w; gx1 = 0; gy0 = h; gy1 = 0;
+                    while (!gst.empty()) {
+                        const int i = gst.back();
+                        gst.pop_back();
+                        grown.push_back(i);
+                        const int cy = i / w, cx = i - cy * w;
+                        if (cx < gx0) gx0 = cx;
+                        if (cx + 1 > gx1) gx1 = cx + 1;
+                        if (cy < gy0) gy0 = cy;
+                        if (cy + 1 > gy1) gy1 = cy + 1;
+                        for (int dy = -1; dy <= 1; ++dy) {
+                            for (int dx = -1; dx <= 1; ++dx) {
+                                if (!dx && !dy) continue;
+                                gpush(cx + dx, cy + dy);
+                            }
+                        }
+                    }
+                    if (gx1 <= gx0) { gx0 = x0; gx1 = x1; gy0 = cy0; gy1 = cy1; }
+                    const int gcw = gx1 - gx0, gch = gy1 - gy0;
+                    const bool added = static_cast<int>(grown.size()) >
+                            static_cast<int>(pix.size()) ||
+                        gx0 < x0 || gx1 > x1 || gy0 < cy0 || gy1 > cy1;
+                    if (added) {
+                        std::vector<int> probe = grown;
+                        if (edgePoison(probe) || solidPlate(
+                                static_cast<int>(grown.size()), gcw, gch)) {
+                            reject = true;
+                            break;
+                        }
+                    }
+                }
+                if (reject) continue;
+                pix.swap(grown);
+                x0 = gx0;
+                x1 = gx1;
+                cy0 = gy0;
+                cy1 = gy1;
+            }
             const int cw = x1 - x0, ch = cy1 - cy0;
+            if (solidPlate(static_cast<int>(pix.size()), cw, ch)) continue;
             cv::Mat inkBin;
             if (!retryPoisonChunkInk(src, pix, w, x0, cy0, cw, ch, sPx, &inkBin)) {
                 continue;
@@ -3702,12 +3803,18 @@ static void seg7One(
     const int minRun = usedMinRun(
         sPx, maxInSeedRunRows(lookBin, st, sb, sl, sr, objPack));
     auto hasBarRaw = [&](int y) {
-        return rowHasStrokeBar(lookBin, y, minRun, glareW, objPack, lookL, lookR);
+        return rowHasStrokeBar(lookBin, y, minRun, glareW, objPack, sl, sr);
     };
+    const int recDisp = tele ? static_cast<int>(std::lround(tele->dispKind)) : kDisp7seg;
+    const int recHm = (tele && tele->poisonHMul > 0.f)
+        ? static_cast<int>(std::lround(tele->poisonHMul)) : 7;
+    const int recVm = (tele && tele->poisonVMul > 0.f)
+        ? static_cast<int>(std::lround(tele->poisonVMul)) : 16;
     int band0 = std::max(nt, st - 4 * sPx);
     int band1 = std::min(nb, sb + 4 * sPx);
     recoverStrokeNearInk(
-        src, &lookBin, sPx, band0, band1, objPack, seedIndex, sl, nt, sr, nb);
+        src, &lookBin, sPx, band0, band1, objPack, seedIndex, sl, nt, sr, nb,
+        recDisp, recHm, recVm);
     auto ensureBand = [&](int y) {
         if (y < nt || y >= nb) return;
         if (y >= band0 && y < band1) return;
@@ -3721,7 +3828,8 @@ static void seg7One(
             n1 = std::min(nb, y + 1);
         }
         recoverStrokeNearInk(
-            src, &lookBin, sPx, n0, n1, objPack, seedIndex, sl, nt, sr, nb);
+            src, &lookBin, sPx, n0, n1, objPack, seedIndex, sl, nt, sr, nb,
+            recDisp, recHm, recVm);
         if (n0 < band0) band0 = n0;
         if (n1 > band1) band1 = n1;
     };
@@ -3860,7 +3968,8 @@ static void seg7One(
         if (wb < wt) std::swap(wt, wb);
         recoverStrokeNearInk(
             src, &lookBin, sPx, std::max(nt, wt), std::min(nb, wb),
-            objPack, seedIndex, lookL, nt, lookR, nb);
+            objPack, seedIndex, lookL, nt, lookR, nb,
+            recDisp, recHm, recVm);
     }
     veRssLog("walk_paint", nullptr);
     if (*ol < 0) *ol = 0;
@@ -5059,12 +5168,6 @@ static void paintLookOverlay(
     }
 }
 
-enum : int {
-    kDisp7seg = 0,
-    kDispNot = 1,
-    kDispUnknown = 2
-};
-
 struct SeedDispClass {
     int kind = kDisp7seg;
     int hMul = 7;
@@ -5519,7 +5622,7 @@ static int fillPoisonLookRaster(
         if (sPx >= 1) {
             flood255LookIds(
                 lookBin, sPx, objPack, seedIndex, lookL, lookT, lookR, lookB, statsOut,
-                disp.hMul, disp.vMul);
+                disp.hMul, disp.vMul, disp.kind);
         }
     }
     if (lookPoisonOut) {
