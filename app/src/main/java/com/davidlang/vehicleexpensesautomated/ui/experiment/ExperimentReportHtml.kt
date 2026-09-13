@@ -102,6 +102,7 @@ body { font-family: sans-serif; margin: 0; }
 }
 #report th { background: #eee; position: sticky; z-index: 5; }
 #report img { max-width: 100% !important; height: auto; border: 1px solid #eee; margin-bottom: 2px; }
+#report .look-ink-crops img { max-width: none !important; height: auto; image-rendering: pixelated; }
 .res-table { width: 100%; border: none; font-size: 16px; }
 .res-table th { background: #f0f0f0; }
 body.hide-orig-details .orig-details { display: none; }

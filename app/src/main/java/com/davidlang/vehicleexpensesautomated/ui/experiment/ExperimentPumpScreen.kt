@@ -7550,8 +7550,11 @@ private fun pumpEncodeSnapshot(
     fh = (fh + 1) / 2 * 2
     val maxW = scratchYuv.s.width
     val maxH = scratchYuv.s.height
-    if (fw > maxW) fw = (maxW / 2) * 2
-    if (fh > maxH) fh = (maxH / 2) * 2
+    if (fw > maxW || fh > maxH) {
+        val fit = min(maxW.toDouble() / fw, maxH.toDouble() / fh)
+        fw = ((fw * fit).toInt() / 2) * 2
+        fh = ((fh * fit).toInt() / 2) * 2
+    }
     fw = fw.coerceAtLeast(2)
     fh = fh.coerceAtLeast(2)
     val cropId = scratchYuv.s.createCrop(0, 0, fw, fh)
@@ -7585,14 +7588,13 @@ private fun pumpEncodeSnapshot(
             dest.mat.convertTo(dest.mat, CvType.CV_8UC1, visGain.toDouble())
         }
         if (anns.isNotEmpty()) {
-            val sx = fw.toFloat() / roi.width()
-            val sy = fh.toFloat() / roi.height()
+            val s = min(fw.toFloat() / roi.width(), fh.toFloat() / roi.height())
             val scaled = anns.map { ann ->
                 ann.copy(
-                    x1 = ((ann.x1 - roi.left) * sx).toInt(),
-                    y1 = ((ann.y1 - roi.top) * sy).toInt(),
-                    x2 = ((ann.x2 - roi.left) * sx).toInt(),
-                    y2 = ((ann.y2 - roi.top) * sy).toInt(),
+                    x1 = ((ann.x1 - roi.left) * s).toInt(),
+                    y1 = ((ann.y1 - roi.top) * s).toInt(),
+                    x2 = ((ann.x2 - roi.left) * s).toInt(),
+                    y2 = ((ann.y2 - roi.top) * s).toInt(),
                 )
             }
             NativeImageUtils.drawYuvAnnotations(dest.mat, dest.uvMat, scaled)
@@ -7703,10 +7705,17 @@ private suspend fun snapshotLookInk(
         val seedH = max(1, seed.height())
         val stripH = max(1, strip.height())
         val stripW = max(1, strip.width())
-        val rawH = ceil(stripH * 96.0 / seedH).toInt()
-        val destH0 = ((rawH + 1) / 2) * 2
-        val rawW = ceil(stripW.toDouble() * destH0 / stripH).toInt()
-        val destW0 = ((rawW + 1) / 2) * 2
+        fun even2(v: Int) = ((v + 1) / 2 * 2).coerceAtLeast(2)
+        val scale0 = 96.0 / seedH
+        var destH0 = even2(ceil(stripH * scale0).toInt())
+        var destW0 = even2(ceil(stripW * scale0).toInt())
+        val maxW = scratchYuv.s.width
+        val maxH = scratchYuv.s.height
+        if (destW0 > maxW || destH0 > maxH) {
+            val fit = min(maxW.toDouble() / destW0, maxH.toDouble() / destH0)
+            destW0 = even2((destW0 * fit).toInt())
+            destH0 = even2((destH0 * fit).toInt())
+        }
         val jpeg = pumpEncodeSnapshot(
             source, strip, destW0, destH0, anns, scratchYuv,
             visGain = if (energyLook) 8 else 1,
@@ -8404,12 +8413,8 @@ private fun pLookInkBoxHtml(br: PumpBranch, k: Int, imgRel: String): String {
         if (lab != "box$k" && lab != "box${k}") continue
         val file = c.optString("lookInkFile")
         if (file.isNullOrEmpty()) return ""
-        val recW = c.optInt("recW", 0)
-        val recH = c.optInt("recH", 0)
-        val wCss = if (recW > 0) "width:${recW}px;" else "width:auto;"
-        val hCss = if (recH > 0) "height:${recH}px;" else "height:auto;"
         val cap = "$lab ${lookInkCountCap(c)}"
-        return pumpImgTag("$imgRel/$file", "$hCss$wCss", cap)
+        return pumpImgTag("$imgRel/$file", "height:auto;", cap)
     }
     return ""
 }
