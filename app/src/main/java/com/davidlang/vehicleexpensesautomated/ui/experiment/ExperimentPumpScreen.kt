@@ -3797,14 +3797,26 @@ suspend fun runPumpExperiment(
                         aPd, null, workspace,
                     ).first
                 }
-                val procInkColorTight: suspend (
-                    BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
-                ) -> Unit = { ws, br, det, w, h ->
-                    val workspace = ws
-                    val branch = br
-                    val discoveryDetails = det
-                    val imgW = w
-                    val imgH = h
+                suspend fun runAabb7segColumn(
+                    workspace: BufferSet,
+                    branch: PumpBranch,
+                    discoveryDetails: MutableMap<String, MutableMap<Int, List<PumpHunk>>>,
+                    imgW: Int,
+                    imgH: Int,
+                    growCells: Int,
+                    boundNote: String,
+                    inkExpandFn: (
+                        org.opencv.core.Mat,
+                        org.opencv.core.Mat?,
+                        List<android.graphics.Rect>,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        IntArray?,
+                    ) -> List<ContentExpandUtils.Seg7Expand>,
+                    note: String,
+                ) {
                     pdHunksDetectedTotal.clear()
                     pdHunksRawTotal.clear()
                     pdHunksExpTotal.clear()
@@ -3816,7 +3828,7 @@ suspend fun runPumpExperiment(
                     branch.metadata["t_deskew_ms"] =
                         (System.currentTimeMillis() - tDeskewStart).toString()
                     branch.metadata["heatmap_box_mode"] = "aabb"
-                    branch.metadata["heatmap_grow_cells"] = "0"
+                    branch.metadata["heatmap_grow_cells"] = growCells.toString()
                     branch.metadata["hm_thresh"] = HEAT_THR_U8_GE1.toString()
                     branch.metadata["hm_thresh_note"] = "u8>=1"
                     branch.metadata["mask_dilate_passes"] = "0"
@@ -3825,7 +3837,7 @@ suspend fun runPumpExperiment(
                     branch.metadata["product_path"] = NativePaddleEngine.activeProductPathId
                     branch.metadata["product_dir"] = NativePaddleEngine.activeProductDir
                     branch.metadata["det_model"] = "product_det"
-                    branch.metadata["content_expand_bound"] = "tight"
+                    branch.metadata["content_expand_bound"] = boundNote
                     branch.metadata["content_expand_chroma"] = "color_adaptive"
                     prodDetScales.forEach { scale ->
                         val prepared = PumpCostVolUtils.prepareScale(workspace, scale)
@@ -3846,7 +3858,7 @@ suspend fun runPumpExperiment(
                             boxMode = NativeImageUtils.HEATMAP_BOX_AABB,
                             hmThresh = HEAT_THR_U8_GE1,
                             maskDilatePasses = 0,
-                            growCells = 0,
+                            growCells = growCells,
                             heatToPhoto = heatToPhoto,
                             photoW = fullW,
                             photoH = fullH,
@@ -3927,7 +3939,7 @@ suspend fun runPumpExperiment(
                             poisonBuf[1] = nextNon
                             poisonBuf[2] = inkLo
                         }
-                        val one = ContentExpandUtils.expandColorAabbTight(
+                        val one = inkExpandFn(
                             NativePaddleEngine.bufferSetA.p.mat,
                             NativePaddleEngine.bufferSetA.p.uvMat,
                             listOf(seed),
@@ -4163,13 +4175,13 @@ suspend fun runPumpExperiment(
                             "k" to listOf(0, 1, 2, 3, 4),
                             "kOfficial" to 0,
                             "heatmapBoxMode" to "aabb",
-                            "heatmapGrowCells" to 0,
+                            "heatmapGrowCells" to growCells,
                             "hmThresh" to HEAT_THR_U8_GE1,
                             "hmThreshNote" to "u8>=1",
                             "sPx" to strokes.map { it.sPx },
                             "jumpFrac" to 0.60f,
                             "chroma" to "color_adaptive",
-                            "note" to "ink-color-tight: AABB grow 0; tint A.s; look B.s; overlay B.p; k=0..4",
+                            "note" to note,
                             "inkTelemetry" to JSONArray(branch.metadata["seg7_tele"] ?: "[]"),
                         ),
                         oranges = emptyList(),
@@ -4185,6 +4197,15 @@ suspend fun runPumpExperiment(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
                     ).first
+                }
+                val procInkColorTight: suspend (
+                    BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
+                ) -> Unit = { ws, br, det, w, h ->
+                    runAabb7segColumn(
+                        ws, br, det, w, h, 0, "tight",
+                        ContentExpandUtils::expandColorAabbTight,
+                        "ink-color-tight: AABB grow 0; tint A.s; look B.s; overlay B.p; k=0..4",
+                    )
                 }
                 val procInkColorRetract: suspend (
                     BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
@@ -5450,20 +5471,24 @@ suspend fun runPumpExperiment(
                         "rot-color-retract: master.p u/v; grow 1; tint A.s; overlay look-ink rec-pad; k=0..4",
                     )
                 }
-                val procInkColorTightVsp = makeInkAabbProc(
-                    "ink-color-tight-vsp: AABB grow 0; tint A.s; virtual S&P; overlay look-ink rec-pad; k=0..4",
-                    ContentExpandUtils::expandColorAabbTightVsp,
-                    chromaNote = "color_adaptive",
-                    boundNote = "tight",
-                    boxMode = NativeImageUtils.HEATMAP_BOX_AABB,
-                )
-                val procInkColorRetractVsp = makeInkAabbProc(
-                    "ink-color-retract-vsp: AABB grow 1; tint A.s; virtual S&P; overlay look-ink rec-pad; k=0..4",
-                    ContentExpandUtils::expandColorAabbRetractVsp,
-                    chromaNote = "color_adaptive",
-                    boundNote = "edge-retract",
-                    boxMode = NativeImageUtils.HEATMAP_BOX_AABB,
-                )
+                val procInkColorTightVsp: suspend (
+                    BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
+                ) -> Unit = { ws, br, det, w, h ->
+                    runAabb7segColumn(
+                        ws, br, det, w, h, 0, "tight",
+                        ContentExpandUtils::expandColorAabbTightVsp,
+                        "ink-color-tight-vsp: AABB grow 0; tint A.s; virtual S&P; overlay look-ink rec-pad; k=0..4",
+                    )
+                }
+                val procInkColorRetractVsp: suspend (
+                    BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
+                ) -> Unit = { ws, br, det, w, h ->
+                    runAabb7segColumn(
+                        ws, br, det, w, h, 1, "edge-retract",
+                        ContentExpandUtils::expandColorAabbRetractVsp,
+                        "ink-color-retract-vsp: AABB grow 1; tint A.s; virtual S&P; overlay look-ink rec-pad; k=0..4",
+                    )
+                }
                 val procRotColorTightVsp: suspend (
                     BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
                 ) -> Unit = { ws, br, det, w, h ->
