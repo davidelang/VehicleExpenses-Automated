@@ -7147,6 +7147,7 @@ private fun generateHistogramB64(mat: org.opencv.core.Mat, floorPercentile: Floa
 
 private const val PUMP_PD_TARGET_W = 340
 private const val PUMP_PD_TARGET_H = 255
+private const val PUMP_LOOKINK_MAX_W = 500
 private const val PUMP_CROP_TARGET_W = 150
 private const val PUMP_CROP_TARGET_H = 75
 private const val PUMP_C_VISUAL_TARGET_W = 340
@@ -7352,16 +7353,13 @@ private suspend fun snapshotLookInk(
         val stripH = max(1, strip.height())
         val stripW = max(1, strip.width())
         fun even2(v: Int) = ((v + 1) / 2 * 2).coerceAtLeast(2)
-        val scale0 = 96.0 / seedH
-        var destH0 = even2(ceil(stripH * scale0).toInt())
-        var destW0 = even2(ceil(stripW * scale0).toInt())
-        val maxW = scratchYuv.s.width
-        val maxH = scratchYuv.s.height
-        if (destW0 > maxW || destH0 > maxH) {
-            val fit = min(maxW.toDouble() / destW0, maxH.toDouble() / destH0)
-            destW0 = even2((destW0 * fit).toInt())
-            destH0 = even2((destH0 * fit).toInt())
-        }
+        val scale = minOf(
+            96.0 / seedH,
+            PUMP_LOOKINK_MAX_W.toDouble() / stripW,
+            scratchYuv.s.height.toDouble() / stripH,
+        )
+        val destH0 = even2(ceil(stripH * scale).toInt())
+        val destW0 = even2(ceil(stripW * scale).toInt())
         val jpeg = pumpEncodeSnapshot(
             source, strip, destW0, destH0, anns, scratchYuv,
             visGain = if (energyLook) 8 else 1,
@@ -7749,15 +7747,14 @@ private suspend fun snapshotLookInkOriented(
         (cropOrder[7] - cropOrder[1]).toDouble(),
     ).coerceAtLeast(1.0)
     fun even2(v: Int) = ((v + 1) / 2 * 2).coerceAtLeast(2)
-    var destH = even2(ceil(hUnion * 96.0 / hSeed).toInt())
-    var destW = even2(ceil(wUnion * 96.0 / hSeed).toInt())
     val destSlice = NativePaddleEngine.bufferSetB.s
-    val scale = min(
-        1.0,
-        min(destSlice.width.toDouble() / destW, destSlice.height.toDouble() / destH),
+    val scale = minOf(
+        96.0 / hSeed,
+        PUMP_LOOKINK_MAX_W.toDouble() / wUnion,
+        destSlice.height.toDouble() / hUnion,
     )
-    destW = even2((destW * scale).toInt())
-    destH = even2((destH * scale).toInt())
+    var destH = even2(ceil(hUnion * scale).toInt())
+    var destW = even2(ceil(wUnion * scale).toInt())
     var cropId = destSlice.createCrop(0, 0, destW, destH)
     var dest = NativePaddleEngine.bufferSetB.c[cropId]
     if (dest.mat.cols() < destW || dest.width < destW) {
