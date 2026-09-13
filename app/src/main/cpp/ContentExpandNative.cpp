@@ -1454,13 +1454,18 @@ static int maxInkRunCol(
     const cv::Mat& bin, int x, int y0, int y1, const ObjPack* pack = nullptr,
     bool virtSp = false);
 
+static void recoverStrokeNearInk(
+    const cv::Mat& src, cv::Mat* look, int sPx, int y0, int y1, ObjPack* pack, int seedIndex,
+    int lookL, int lookT, int lookR, int lookB);
+
 static void jumpRetractH(
     const cv::Mat& eng, int* l, int t, int* r, int b,
     int imgW, int imgH, double thr, int capPx, float jumpFrac, float retractClearFrac,
     int seedH = 0,
     int* farL = nullptr, int* farR = nullptr,
-    const cv::Mat* lookBin = nullptr, int seedT = 0, int seedB = 0, int minRun = 0,
-    int lookOx = 0, int lookOy = 0, const ObjPack* lookPack = nullptr
+    cv::Mat* lookBin = nullptr, int seedT = 0, int seedB = 0, int minRun = 0,
+    int lookOx = 0, int lookOy = 0, ObjPack* lookPack = nullptr,
+    const cv::Mat* recSrc = nullptr, int recSPx = 0, int recSeedIndex = 0
 ) {
     (void)capPx;
     (void)retractClearFrac;
@@ -1490,6 +1495,15 @@ static void jumpRetractH(
         }
         return meanRectF(eng, x, coreT, x + 1, coreB, imgW, imgH) >= thr;
     };
+    auto recoverHop = [&](int x0, int x1) {
+        if (!useInk || !recSrc || recSPx < 1 || !lookPack) return;
+        const int xl = std::min(x0, x1) - lookOx;
+        const int xr = std::max(x0, x1) - lookOx;
+        const int yt = t - lookOy;
+        const int yb = b - lookOy;
+        recoverStrokeNearInk(
+            *recSrc, lookBin, recSPx, yt, yb, lookPack, recSeedIndex, xl, yt, xr, yb);
+    };
     int probeL = *l;
     int probeR = *r;
     int jumpsL = 0;
@@ -1497,6 +1511,7 @@ static void jumpRetractH(
         const int nextL = std::max(0, *l - jx);
         if (nextL >= *l) break;
         probeL = nextL;
+        recoverHop(nextL, *l);
         if (colHas(nextL)) {
             *l = nextL;
             ++jumpsL;
@@ -1524,6 +1539,7 @@ static void jumpRetractH(
         const int nextR = std::min(imgW, *r + jx);
         if (nextR <= *r) break;
         probeR = nextR;
+        recoverHop(*r, nextR);
         if (colHas(nextR - 1)) {
             *r = nextR;
             ++jumpsR;
@@ -3008,7 +3024,7 @@ static void aabbJumpOnLook(
     cv::Mat* look, int* l, int t, int* r, int b,
     int imgW, int imgH, int seedT, int seedB, int seedL, int seedR, int sPx,
     int lookOx = 0, int lookOy = 0, int* farL = nullptr, int* farR = nullptr,
-    const ObjPack* pack = nullptr);
+    ObjPack* pack = nullptr, const cv::Mat* src = nullptr, int seedIndex = 0);
 static void paintLookOverlay(
     const cv::Mat& lookBin, const cv::Mat& lookPoison,
     cv::Mat* overlayY, cv::Mat* overlayUv,
@@ -3691,7 +3707,7 @@ static void seg7One(
     int band0 = std::max(nt, st - 4 * sPx);
     int band1 = std::min(nb, sb + 4 * sPx);
     recoverStrokeNearInk(
-        src, &lookBin, sPx, band0, band1, objPack, seedIndex, lookL, nt, lookR, nb);
+        src, &lookBin, sPx, band0, band1, objPack, seedIndex, sl, nt, sr, nb);
     auto ensureBand = [&](int y) {
         if (y < nt || y >= nb) return;
         if (y >= band0 && y < band1) return;
@@ -3705,7 +3721,7 @@ static void seg7One(
             n1 = std::min(nb, y + 1);
         }
         recoverStrokeNearInk(
-            src, &lookBin, sPx, n0, n1, objPack, seedIndex, lookL, nt, lookR, nb);
+            src, &lookBin, sPx, n0, n1, objPack, seedIndex, sl, nt, sr, nb);
         if (n0 < band0) band0 = n0;
         if (n1 > band1) band1 = n1;
     };
@@ -3814,7 +3830,7 @@ static void seg7One(
     int farL = *ol, farR = *oright;
     aabbJumpOnLook(
         &lookBin, ol, *ot, oright, *ob, imgW, imgH,
-        st, sb, sl, sr, sPx, 0, 0, &farL, &farR, objPack);
+        st, sb, sl, sr, sPx, 0, 0, &farL, &farR, objPack, &src, seedIndex);
     if (virtSp && poisonStats) {
         const bool skipT = rowHasStrokeBar(
             lookBin, st, minRun, glareW, objPack, lookL, lookR, true);
@@ -3875,8 +3891,13 @@ static void seg7One(
         tele->dRight = static_cast<float>(*oright - sr);
         tele->fTop = static_cast<float>(fTop);
         tele->fBot = static_cast<float>(fBot);
-        tele->fLeft = static_cast<float>(kFlagUnchanged);
-        tele->fRight = static_cast<float>(kFlagUnchanged);
+        int fLeft = kFlagUnchanged, fRight = kFlagUnchanged;
+        if (*ol < sl) fLeft = kFlagNormalExpand;
+        else if (farL < *ol) fLeft = kFlagNormalRetract;
+        if (*oright > sr) fRight = kFlagNormalExpand;
+        else if (farR > *oright) fRight = kFlagNormalRetract;
+        tele->fLeft = static_cast<float>(fLeft);
+        tele->fRight = static_cast<float>(fRight);
         tele->gapJumpTop = gapJumpTop ? 1.f : 0.f;
         tele->gapJumpBot = gapJumpBot ? 1.f : 0.f;
         tele->landTop = landTop >= 0 ? static_cast<float>(landTop) : 0.f;
@@ -5800,7 +5821,8 @@ static double medianU8Rect(const cv::Mat& m, int l, int t, int r, int b) {
 static void aabbJumpOnLook(
     cv::Mat* look, int* l, int t, int* r, int b,
     int imgW, int imgH, int seedT, int seedB, int seedL, int seedR, int sPx,
-    int lookOx, int lookOy, int* farL, int* farR, const ObjPack* pack
+    int lookOx, int lookOy, int* farL, int* farR, ObjPack* pack,
+    const cv::Mat* src, int seedIndex
 ) {
     if (!look || look->empty() || look->type() != CV_8UC1 || sPx < 1) return;
     const int maxIn = maxInSeedRunRows(
@@ -5809,7 +5831,8 @@ static void aabbJumpOnLook(
     if (minRun < 1) return;
     jumpRetractH(
         *look, l, t, r, b, imgW, imgH, 0.0, 1, 0.60f, 0.30f,
-        std::max(1, seedB - seedT), farL, farR, look, seedT, seedB, minRun, lookOx, lookOy, pack);
+        std::max(1, seedB - seedT), farL, farR, look, seedT, seedB, minRun, lookOx, lookOy, pack,
+        src, sPx, seedIndex);
 }
 
 }  // namespace
@@ -6489,10 +6512,11 @@ static void fillOrientedLookSweep(
 static void jumpOrientedOne(
     const cv::Mat& mag, OriBox* box, int imgW, int imgH,
     float maxFrac, float energyRatio, float jumpFrac, float retractClearFrac,
-    float seedBh, const cv::Mat* lookBin, float seedV0, float seedV1, int minRun,
+    float seedBh, cv::Mat* lookBin, float seedV0, float seedV1, int minRun,
     float lookV0 = 0.f, float* farU0 = nullptr, float* farU1 = nullptr,
     float lookU0 = 0.f, float lookU1 = 0.f,
-    int lookOx = 0, int lookOy = 0, const ObjPack* pack = nullptr);
+    int lookOx = 0, int lookOy = 0, ObjPack* pack = nullptr,
+    int sPx = 0, int seedIndex = 0);
 
 static void seg7OrientedOne(
     const cv::Mat& src, OriBox seed, int imgW, int imgH,
@@ -6633,8 +6657,28 @@ static void seg7OrientedOne(
     };
     int band0 = std::max(lookT, st - 4 * sPx);
     int band1 = std::min(lookB, sb + 4 * sPx);
+    auto seedLookX = [&](int y0, int y1, int* xl, int* xr) {
+        const float um = 0.5f * (seed.u0 + seed.u1);
+        auto xAt = [&](float u, int y) {
+            const float v = seed.vy != 0.f
+                ? (static_cast<float>(y) - seed.cy - um * seed.uy) / seed.vy
+                : 0.5f * (seed.v0 + seed.v1);
+            return static_cast<int>(std::lround(seed.cx + u * seed.ux + v * seed.vx));
+        };
+        const int yb = y1 > y0 ? y1 - 1 : y0;
+        const int a = xAt(seed.u0, y0), b = xAt(seed.u0, yb);
+        const int c = xAt(seed.u1, y0), d = xAt(seed.u1, yb);
+        int lo = std::min(std::min(a, b), std::min(c, d));
+        int hi = std::max(std::max(a, b), std::max(c, d)) + 1;
+        if (lo < lookL) lo = lookL;
+        if (hi > lookR) hi = lookR;
+        *xl = lo;
+        *xr = hi;
+    };
+    int suL = lookL, suR = lookR;
+    seedLookX(band0, band1, &suL, &suR);
     recoverStrokeNearInk(
-        src, &lookBin, sPx, band0, band1, objPack, seedIndex, lookL, lookT, lookR, lookB);
+        src, &lookBin, sPx, band0, band1, objPack, seedIndex, suL, lookT, suR, lookB);
     auto ensureBand = [&](int y) {
         if (y < lookT || y >= lookB) return;
         if (y >= band0 && y < band1) return;
@@ -6647,8 +6691,10 @@ static void seg7OrientedOne(
             n0 = std::max(lookT, band1 - ov);
             n1 = std::min(lookB, y + 1);
         }
+        int xl = lookL, xr = lookR;
+        seedLookX(n0, n1, &xl, &xr);
         recoverStrokeNearInk(
-            src, &lookBin, sPx, n0, n1, objPack, seedIndex, lookL, lookT, lookR, lookB);
+            src, &lookBin, sPx, n0, n1, objPack, seedIndex, xl, lookT, xr, lookB);
         if (n0 < band0) band0 = n0;
         if (n1 > band1) band1 = n1;
     };
@@ -6785,7 +6831,7 @@ static void seg7OrientedOne(
         jumpOrientedOne(
             src, &seed, imgW, imgH, 0.4f, 0.65f, 0.60f, 0.30f, seedBh,
             &lookBin, seed.v0, seed.v1, minRun, lookV0,
-            &farU0, &farU1, lookU0, lookU1, 0, 0, objPack);
+            &farU0, &farU1, lookU0, lookU1, 0, 0, objPack, sPx, seedIndex);
     }
     {
         int r0 = lookRowOfV(seed.v0), r1 = lookRowOfV(seed.v1);
@@ -6803,8 +6849,13 @@ static void seg7OrientedOne(
         tele->dRight = seed.u1 - seedU1;
         tele->fTop = static_cast<float>(fTop);
         tele->fBot = static_cast<float>(fBot);
-        tele->fLeft = static_cast<float>(kFlagUnchanged);
-        tele->fRight = static_cast<float>(kFlagUnchanged);
+        int fLeft = kFlagUnchanged, fRight = kFlagUnchanged;
+        if (seed.u0 < seedU0) fLeft = kFlagNormalExpand;
+        else if (farU0 < seed.u0) fLeft = kFlagNormalRetract;
+        if (seed.u1 > seedU1) fRight = kFlagNormalExpand;
+        else if (farU1 > seed.u1) fRight = kFlagNormalRetract;
+        tele->fLeft = static_cast<float>(fLeft);
+        tele->fRight = static_cast<float>(fRight);
         tele->gapJumpTop = gapJumpTop ? 1.f : 0.f;
         tele->gapJumpBot = gapJumpBot ? 1.f : 0.f;
         tele->landTop = gapJumpTop ? landTop : 0.f;
@@ -6891,10 +6942,11 @@ static void jumpOrientedOne(
     const cv::Mat& mag, OriBox* box, int imgW, int imgH,
     float maxFrac, float energyRatio, float jumpFrac, float retractClearFrac,
     float seedBh,
-    const cv::Mat* lookBin, float seedV0, float seedV1, int minRun,
+    cv::Mat* lookBin, float seedV0, float seedV1, int minRun,
     float lookV0, float* farU0, float* farU1,
     float lookU0, float lookU1,
-    int lookOx, int lookOy, const ObjPack* pack
+    int lookOx, int lookOy, ObjPack* pack,
+    int sPx, int seedIndex
 ) {
     (void)maxFrac;
     (void)retractClearFrac;
@@ -6969,6 +7021,29 @@ static void jumpOrientedOne(
     auto hit = [&](float u) -> bool {
         return useInk ? faceHas(u) : face(u) >= thr;
     };
+    auto recoverHop = [&](float ua, float ub) {
+        if (!useInk || sPx < 1 || !pack) return;
+        const float ulo = std::min(ua, ub);
+        const float uhi = std::max(ua, ub);
+        const float vv0 = box->v0, vv1 = box->v1;
+        auto px = [&](float u, float v) {
+            return static_cast<int>(std::lround(box->cx + u * box->ux + v * box->vx));
+        };
+        auto py = [&](float u, float v) {
+            return static_cast<int>(std::lround(box->cy + u * box->uy + v * box->vy));
+        };
+        const int x0 = std::min(std::min(px(ulo, vv0), px(ulo, vv1)),
+                                std::min(px(uhi, vv0), px(uhi, vv1)));
+        const int x1 = std::max(std::max(px(ulo, vv0), px(ulo, vv1)),
+                                std::max(px(uhi, vv0), px(uhi, vv1))) + 1;
+        const int y0 = std::min(std::min(py(ulo, vv0), py(ulo, vv1)),
+                                std::min(py(uhi, vv0), py(uhi, vv1)));
+        const int y1 = std::max(std::max(py(ulo, vv0), py(ulo, vv1)),
+                                std::max(py(uhi, vv0), py(uhi, vv1))) + 1;
+        recoverStrokeNearInk(
+            mag, lookBin, sPx, y0 - lookOy, y1 - lookOy, pack, seedIndex,
+            x0 - lookOx, y0 - lookOy, x1 - lookOx, y1 - lookOy);
+    };
     const float jx = static_cast<float>(
         std::max(1, static_cast<int>(std::lround(jumpFrac * vSpan))));
     float u0 = box->u0;
@@ -6979,6 +7054,7 @@ static void jumpOrientedOne(
     while (jumps0 < kJumpMax) {
         const float next0 = u0 - jx;
         probe0 = next0;
+        recoverHop(next0, u0);
         if (hit(next0)) {
             u0 = next0;
             ++jumps0;
@@ -7004,6 +7080,7 @@ static void jumpOrientedOne(
     while (jumps1 < kJumpMax) {
         const float next1 = u1 + jx;
         probe1 = next1;
+        recoverHop(u1, next1);
         if (hit(next1)) {
             u1 = next1;
             ++jumps1;
