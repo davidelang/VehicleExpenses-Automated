@@ -6827,6 +6827,7 @@ suspend fun runPumpExperiment(
                         cellsDir = cellsDir,
                         slotNames = slotNames,
                         nSlots = nSlots,
+                        imgW = imgW,
                     )
                 }
                 branch.metadata["t_discovery_wrapper_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()
@@ -8444,10 +8445,12 @@ private fun storeSeg7Tele(branch: PumpBranch, teles: List<ContentExpandUtils.Seg
     if (arr.length() > 0) branch.metadata["seg7_tele"] = arr.toString()
 }
 
-private fun histBinLabel(b: Int, method: String = ""): String {
+private fun histBinLabel(b: Int, method: String = "", imgW: Int = 0): String {
     if (method == "gray" || method == "color_adaptive") {
-        val lo = 4 + 4 * b
-        val hi = 12 + 4 * b
+        val step = if (imgW < 2000) 2 else 8
+        val c0 = if (imgW < 2000) 6 else 20
+        val lo = c0 - step + step * b
+        val hi = c0 + step + step * b
         return if (b >= NativeImageUtils.SEG7_HIST_BINS - 1) "$lo+" else "$lo-$hi"
     }
     if (b <= 0) return "1-2"
@@ -8578,7 +8581,7 @@ private fun pInkSweepHtml(br: PumpBranch): String {
     return sb.toString()
 }
 
-private fun pSeg7TeleHtml(br: PumpBranch): String {
+private fun pSeg7TeleHtml(br: PumpBranch, imgW: Int): String {
     val raw = br.metadata["seg7_tele"]
     val arr = if (raw.isNullOrBlank()) JSONArray() else try {
         JSONArray(raw)
@@ -8640,7 +8643,7 @@ private fun pSeg7TeleHtml(br: PumpBranch): String {
             if (show.isNotEmpty()) {
                 sb.append("<table style='border-collapse:collapse;font-size:8px;margin:2px 0 6px;text-align:center;'>")
                 sb.append("<tr><th style='$th'>bin</th>")
-                for (b in show) sb.append("<th style='$cell'>${histBinLabel(b, o.optString("method"))}</th>")
+                for (b in show) sb.append("<th style='$cell'>${histBinLabel(b, o.optString("method"), imgW)}</th>")
                 sb.append("</tr><tr><th style='$th'>H</th>")
                 for (b in show) sb.append("<td style='$cell'>${hh?.optInt(b) ?: 0}</td>")
                 sb.append("</tr><tr><th style='$th'>V</th>")
@@ -8754,6 +8757,7 @@ private fun pPublishFlowColumn(
     cellsDir: File,
     slotNames: List<String>,
     nSlots: Int,
+    imgW: Int,
 ) {
     val nKeep = maxRedBoxes.coerceIn(PumpOcrSettings.MIN_MAX_RED_BOXES, PumpOcrSettings.MAX_MAX_RED_BOXES)
     val skipLook = name.contains("G--")
@@ -8764,7 +8768,7 @@ private fun pPublishFlowColumn(
     } else {
         ""
     }
-    val teleHtml = pSeg7TeleHtml(br)
+    val teleHtml = pSeg7TeleHtml(br, imgW)
     val dumpFinal = br.metadata["object_dump_final"].orEmpty()
     val redOnly = pumpPersistJpeg(
         imgDir, "r${rowIndex}_c${colIdx}_pd_red.jpg", br.images["PD_red_only"] ?: "",
