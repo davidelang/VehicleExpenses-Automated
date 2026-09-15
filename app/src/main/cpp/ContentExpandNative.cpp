@@ -139,7 +139,9 @@ static constexpr int kRunHistBins = 300;
 static constexpr int kRunHistLog2Bins = 32;
 static constexpr int kEnergyHistBins = 64;
 static constexpr int kSeg7AttemptMax = 10;
-static constexpr int kSeg7AttemptF = 15;
+static constexpr int kHistRawN = 256;
+static constexpr int kValleyPackN = 64;
+static constexpr int kSeg7AttemptF = 30 + kHistRawN + kValleyPackN + kValleyPackN;
 static constexpr int kSeg7TeleN =
     26 + kEnergyHistBins * 2 + 6 + 1 + kSeg7AttemptMax * kSeg7AttemptF + 11;
 
@@ -362,6 +364,24 @@ struct SeedFillAttempt {
     int acceptedSpx = 0;
     int inBand = 0;
     int kept = 0;
+    float inkFracDark = 0.f;
+    int inverted = 0;
+    int cleanDark = 0;
+    float cleanInkFrac = 0.f;
+    int vSW = 0;
+    float strokeShare = 0.f;
+    float maxRunOverW = 0.f;
+    int needVsw = 0;
+    int needInkFrac = 0;
+    int needShare = 0;
+    int needMaxRun = 0;
+    int histRaw[kHistRawN]{};
+    int histRawTail = 0;
+    int nValleysPack = 0;
+    int valleys[kValleyPackN]{};
+    int nSkippedPack = 0;
+    int skipped[kValleyPackN]{};
+    int stop = 0;
 };
 
 struct SeedFillGate {
@@ -416,6 +436,29 @@ static void packFillAttempts(const SeedFillGate& g, Seg7Tele* t) {
         t->attempts[i][12] = static_cast<float>(a.acceptedSpx);
         t->attempts[i][13] = static_cast<float>(a.inBand);
         t->attempts[i][14] = static_cast<float>(a.kept);
+        t->attempts[i][15] = a.inkFracDark;
+        t->attempts[i][16] = static_cast<float>(a.inverted);
+        t->attempts[i][17] = static_cast<float>(a.cleanDark);
+        t->attempts[i][18] = a.cleanInkFrac;
+        t->attempts[i][19] = static_cast<float>(a.vSW);
+        t->attempts[i][20] = a.strokeShare;
+        t->attempts[i][21] = a.maxRunOverW;
+        t->attempts[i][22] = static_cast<float>(a.needVsw);
+        t->attempts[i][23] = static_cast<float>(a.needInkFrac);
+        t->attempts[i][24] = static_cast<float>(a.needShare);
+        t->attempts[i][25] = static_cast<float>(a.needMaxRun);
+        t->attempts[i][26] = static_cast<float>(a.histRawTail);
+        t->attempts[i][27] = static_cast<float>(a.stop);
+        t->attempts[i][28] = static_cast<float>(a.nValleysPack);
+        t->attempts[i][29] = static_cast<float>(a.nSkippedPack);
+        for (int h = 0; h < kHistRawN; ++h)
+            t->attempts[i][30 + h] = static_cast<float>(a.histRaw[h]);
+        for (int v = 0; v < kValleyPackN; ++v)
+            t->attempts[i][30 + kHistRawN + v] = static_cast<float>(a.valleys[v]);
+        for (int s = 0; s < kValleyPackN; ++s) {
+            t->attempts[i][30 + kHistRawN + kValleyPackN + s] =
+                static_cast<float>(a.skipped[s]);
+        }
     }
 }
 
@@ -2803,40 +2846,46 @@ static int saltPepperGapMax(int imgW) {
 }
 
 static int overlapMinK(int imgW) {
-    return imgW < 2000 ? 4 : 12;
+    return imgW < 2000 ? 4 : 14;
 }
 
 static int overlapStep(int imgW) {
-    return imgW < 2000 ? 2 : 8;
+    return imgW < 2000 ? 2 : 4;
 }
 
 static int overlapCenter0(int imgW) {
-    return imgW < 2000 ? 6 : 20;
+    return imgW < 2000 ? 6 : 16;
+}
+
+static int overlapHalf(int imgW) {
+    return imgW < 2000 ? 2 : 3;
+}
+
+static void overlapBinRange(int i, int imgW, int* lo, int* hi) {
+    const int step = overlapStep(imgW);
+    const int c0 = overlapCenter0(imgW);
+    const int half = overlapHalf(imgW);
+    if (lo) *lo = c0 - half + step * i;
+    if (hi) *hi = (i == kRunHistBins - 1) ? 1000000 : (c0 + half + step * i);
 }
 
 static void addOverlapVotes(int k, int n, int* bins, int imgW) {
     const int minK = overlapMinK(imgW);
-    const int step = overlapStep(imgW);
-    const int c0 = overlapCenter0(imgW);
     if (k < minK || n <= 0 || !bins) return;
     for (int i = 0; i < kRunHistBins; ++i) {
-        const int lo = c0 - step + step * i;
-        const int hi = c0 + step + step * i;
-        const bool hit = (i == kRunHistBins - 1) ? (k >= lo) : (k >= lo && k <= hi);
-        if (hit) bins[i] += n;
+        int lo = 0, hi = 0;
+        overlapBinRange(i, imgW, &lo, &hi);
+        if (k >= lo && k <= hi) bins[i] += n;
     }
 }
 
 static void addOverlapVotesU16(int k, int n, uint16_t* bins, int imgW) {
     const int minK = overlapMinK(imgW);
-    const int step = overlapStep(imgW);
-    const int c0 = overlapCenter0(imgW);
     if (k < minK || n <= 0 || !bins) return;
     for (int i = 0; i < kRunHistBins; ++i) {
-        const int lo = c0 - step + step * i;
-        const int hi = c0 + step + step * i;
-        const bool hit = (i == kRunHistBins - 1) ? (k >= lo) : (k >= lo && k <= hi);
-        if (hit) {
+        int lo = 0, hi = 0;
+        overlapBinRange(i, imgW, &lo, &hi);
+        if (k >= lo && k <= hi) {
             const int a = static_cast<int>(bins[i]);
             bins[i] = static_cast<uint16_t>(a + n > 65535 ? 65535 : a + n);
         }
@@ -2903,8 +2952,8 @@ static int peakFromOverlapBins(const int* bins, int minK, int maxK, int imgW) {
     const int c0 = overlapCenter0(imgW);
     int bestI = -1, bestV = 0;
     for (int i = 0; i < kRunHistBins; ++i) {
-        const int lo = c0 - step + step * i;
-        const int hi = (i == kRunHistBins - 1) ? 1000000 : (c0 + step + step * i);
+        int lo = 0, hi = 0;
+        overlapBinRange(i, imgW, &lo, &hi);
         if (hi < minK || lo > maxK) continue;
         if (bins[i] > bestV) {
             bestV = bins[i];
@@ -3261,6 +3310,55 @@ static void fillSaltPepper(cv::Mat* bin, int imgW) {
     }
 }
 
+static void dropTiny255CCs(cv::Mat* bin, int minWh) {
+    if (!bin || bin->empty() || bin->type() != CV_8UC1 || minWh < 1) return;
+    const int h = bin->rows, w = bin->cols;
+    if (h < 1 || w < 1) return;
+    std::vector<int> st;
+    st.reserve(256);
+    std::vector<int> pix;
+    pix.reserve(256);
+    for (int y = 0; y < h; ++y) {
+        uint8_t* row = bin->ptr<uint8_t>(y);
+        for (int x = 0; x < w; ++x) {
+            if (row[x] != 255) continue;
+            st.clear();
+            pix.clear();
+            st.push_back(y * w + x);
+            row[x] = 254;
+            int x0 = x, x1 = x + 1, y0 = y, y1 = y + 1;
+            while (!st.empty()) {
+                const int i = st.back();
+                st.pop_back();
+                const int cy = i / w, cx = i - cy * w;
+                pix.push_back(i);
+                if (cx < x0) x0 = cx;
+                if (cx + 1 > x1) x1 = cx + 1;
+                if (cy < y0) y0 = cy;
+                if (cy + 1 > y1) y1 = cy + 1;
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        if (!dx && !dy) continue;
+                        const int ny = cy + dy, nx = cx + dx;
+                        if (ny < 0 || nx < 0 || ny >= h || nx >= w) continue;
+                        if (bin->ptr<uint8_t>(ny)[nx] != 255) continue;
+                        bin->ptr<uint8_t>(ny)[nx] = 254;
+                        st.push_back(ny * w + nx);
+                    }
+                }
+            }
+            const int bw = x1 - x0, bh = y1 - y0;
+            const uint8_t put = (bw < minWh && bh < minWh) ? 0 : 255;
+            for (int i : pix) bin->ptr<uint8_t>(i / w)[i % w] = put;
+        }
+    }
+}
+
+static void fillSaltPepperSeed(cv::Mat* bin, int imgW) {
+    fillSaltPepper(bin, imgW);
+    if (imgW >= 2000) dropTiny255CCs(bin, 6);
+}
+
 static void fillSaltPepperRect(
     cv::Mat* bin, int y0, int y1, int x0, int x1, int imgW
 ) {
@@ -3315,7 +3413,8 @@ static void flood255LookIds(
     int lookL = 0, int lookT = 0, int lookR = -1, int lookB = -1,
     PoisonStats* stats = nullptr,
     int hMul = 7, int vMul = 16,
-    int dispKind = 0
+    int dispKind = 0,
+    int imgW = 0
 ) {
     if (!look || look->empty() || look->type() != CV_8UC1 || sPx < 1) return;
     const int h = look->rows, w = look->cols;
@@ -3324,7 +3423,7 @@ static void flood255LookIds(
     if (lookL < 0) lookL = 0;
     if (lookT < 0) lookT = 0;
     if (lookR <= lookL || lookB <= lookT) return;
-    const int minWh = std::max(1, sPx / 2);
+    const int minWh = imgW >= 2000 ? 6 : std::max(1, sPx / 2);
     const int runH = hMul * sPx;
     const int runV = vMul * sPx;
     std::vector<int> st;
@@ -4111,16 +4210,28 @@ static void uvAt(const cv::Mat& uv, int imgW, int x, int y, int* u, int* v) {
     *v = p[1];
 }
 
-static bool strokeNeedFb(const HorizSW& hh, int vSW, int seedW, float inkFrac) {
+static void strokeFbMetrics(
+    const HorizSW& hh, int vSW, int seedW,
+    float* shareOut, float* maxRunOverWOut
+) {
     const int lo = std::max(1, static_cast<int>(std::lround(0.7f * static_cast<float>(vSW))));
     const int hi = std::max(lo, static_cast<int>(std::lround(1.3f * static_cast<float>(vSW))));
     int band = 0;
     const int hiClamp = std::min(hi, static_cast<int>(hh.hist.size()) - 1);
     for (int k = lo; k <= hiClamp; ++k) band += hh.hist[k];
-    const float strokeShare = hh.nNonSpan > 0
-        ? band / static_cast<float>(hh.nNonSpan) : 0.f;
-    const float maxRunOverW = hh.maxRun / static_cast<float>(std::max(1, seedW));
-    return vSW <= 4 || inkFrac >= 0.45f || strokeShare < 0.30f || maxRunOverW >= 0.50f;
+    if (shareOut) {
+        *shareOut = hh.nNonSpan > 0
+            ? band / static_cast<float>(hh.nNonSpan) : 0.f;
+    }
+    if (maxRunOverWOut) {
+        *maxRunOverWOut = hh.maxRun / static_cast<float>(std::max(1, seedW));
+    }
+}
+
+static bool strokeNeedFb(const HorizSW& hh, int vSW, int seedW, float inkFrac) {
+    (void)hh;
+    (void)seedW;
+    return vSW <= 4 || inkFrac >= 0.45f;
 }
 
 static bool strokesAgree(int a, int b) {
@@ -4436,6 +4547,7 @@ static int seedCombine255(
     double otsu = 0.0;
     bool inverted = false;
     float inkFrac = 0.f;
+    float inkFracDark = 0.f;
     const int bh = std::min(seedY.rows, bin.rows);
     const int bw = std::min(seedY.cols, bin.cols);
     if (srcIsBin) {
@@ -4450,6 +4562,7 @@ static int seedCombine255(
             }
         }
         inkFrac = nz / static_cast<float>(nPix);
+        inkFracDark = inkFrac;
         if (inkFrac >= 0.45f) {
             inverted = true;
             nz = 0;
@@ -4478,6 +4591,7 @@ static int seedCombine255(
         int nz = 0;
         for (int i = 0; i <= ti && i < 256; ++i) nz += hist[i];
         inkFrac = nz / static_cast<float>(nPix);
+        inkFracDark = inkFrac;
         bool dark = true;
         if (inkFrac >= 0.45f) {
             inverted = true;
@@ -4496,7 +4610,7 @@ static int seedCombine255(
             }
         }
     }
-    if (!virtSp) fillSaltPepper(&bin, imgW);
+    if (!virtSp) fillSaltPepperSeed(&bin, imgW);
     HorizSW hh0 = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
     const int v0 = hh0.peak;
     const bool needFb0 = strokeNeedFb(hh0, v0, seedW, inkFrac);
@@ -4526,7 +4640,7 @@ static int seedCombine255(
         haveClean = otsuKeepPoison0(seedY, poison, &cleanThr, &cleanDark, &cleanInkFrac);
         if (haveClean) {
             applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
-            if (!virtSp) fillSaltPepper(&bin, imgW);
+            if (!virtSp) fillSaltPepperSeed(&bin, imgW);
         } else {
             bin.setTo(0);
         }
@@ -4545,7 +4659,7 @@ static int seedCombine255(
             float frac2 = 0.f;
             if (otsuKeepPoison0(seedY, poison, &thr2, &dark2, &frac2, cleanThr)) {
                 applyThrKeepPoison0(seedY, poison, thr2, dark2, &bin, cleanThr);
-                if (!virtSp) fillSaltPepper(&bin, imgW);
+                if (!virtSp) fillSaltPepperSeed(&bin, imgW);
                 if (dark2 && frac2 >= 0.05f && frac2 <= 0.42f) {
                     cleanThr = thr2;
                     cleanDark = dark2;
@@ -4556,7 +4670,7 @@ static int seedCombine255(
                     sPx = (v0Clean > 4 && !needFbClean) ? v0Clean : fallback;
                 } else {
                     applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
-                    if (!virtSp) fillSaltPepper(&bin, imgW);
+                    if (!virtSp) fillSaltPepperSeed(&bin, imgW);
                 }
             }
         }
@@ -4593,7 +4707,7 @@ static int seedCombine255(
         flipped = true;
         cleanDark = !cleanDark;
         applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
-        if (!virtSp) fillSaltPepper(&bin, imgW);
+        if (!virtSp) fillSaltPepperSeed(&bin, imgW);
         hhC = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
         v0Clean = hhC.peak;
         needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, cleanInkFrac);
@@ -4615,6 +4729,19 @@ static int seedCombine255(
     int nKeep = 0;
     int nPoison = 0;
     int nValley = 0;
+    int huntValleys[kValleyPackN] = {};
+    int nHuntValleys = 0;
+    int huntSkipped[kValleyPackN] = {};
+    int nHuntSkipped = 0;
+    auto packHuntValleys = [&](const int* mids, int nMids) {
+        nHuntValleys = 0;
+        if (!mids) return;
+        for (int v = 0; v < nMids && nHuntValleys < kValleyPackN; ++v) {
+            const int thr = mids[v] * 4 + 2;
+            if (thr < 0 || thr > 255) continue;
+            huntValleys[nHuntValleys++] = thr;
+        }
+    };
     auto countPoisonKeep = [&]() {
         nKeep = 0;
         nPoison = 0;
@@ -4649,6 +4776,31 @@ static int seedCombine255(
         a.acceptedSpx = (hhA.peak > 4 && !strokeNeedFb(hhA, hhA.peak, seedW, fracA)) ? 1 : 0;
         a.inBand = (fillGate.fill >= fillLo && fillGate.fill <= fillHi) ? 1 : 0;
         a.kept = 0;
+        a.inkFracDark = inkFracDark;
+        a.inverted = inverted ? 1 : 0;
+        a.cleanDark = cleanDark ? 1 : 0;
+        a.cleanInkFrac = fracA;
+        a.vSW = hhA.peak;
+        strokeFbMetrics(hhA, hhA.peak, seedW, &a.strokeShare, &a.maxRunOverW);
+        a.needVsw = hhA.peak <= 4 ? 1 : 0;
+        a.needInkFrac = fracA >= 0.45f ? 1 : 0;
+        a.needShare = 0;
+        a.needMaxRun = 0;
+        for (int k = 0; k < kHistRawN; ++k) {
+            const int run = k + 1;
+            a.histRaw[k] = (run < static_cast<int>(hhA.hist.size())) ? hhA.hist[run] : 0;
+        }
+        int tail = 0;
+        for (int k = kHistRawN + 1; k < static_cast<int>(hhA.hist.size()); ++k)
+            tail += hhA.hist[k];
+        a.histRawTail = tail;
+        a.nValleysPack = nHuntValleys;
+        for (int v = 0; v < kValleyPackN; ++v)
+            a.valleys[v] = (v < nHuntValleys) ? huntValleys[v] : 0;
+        a.nSkippedPack = nHuntSkipped;
+        for (int s = 0; s < kValleyPackN; ++s)
+            a.skipped[s] = (s < nHuntSkipped) ? huntSkipped[s] : 0;
+        a.stop = 0;
         ++fillGate.nAttempts;
         fillGate.nKeep = nKeep;
         fillGate.nPoison = nPoison;
@@ -4685,6 +4837,7 @@ static int seedCombine255(
         int valleys[64];
         fillKeepHist(hist64, &nKeep, &nValley, valleys);
         fillGate.nValley = nValley;
+        packHuntValleys(valleys, nValley);
         recordAttempt(0);
         const bool highFill = fillGate.fill > fillHi;
         const bool lowFill = fillGate.fill < fillLo || fillGate.nLookBin == 0;
@@ -4745,8 +4898,10 @@ static int seedCombine255(
                     copyFillGateChosen(fillGate, &commitGate);
                     for (int i = 0; i < fillGate.nAttempts; ++i)
                         fillGate.attempts[i].kept = 0;
-                    if (fillGate.nAttempts > 0)
+                    if (fillGate.nAttempts > 0) {
                         fillGate.attempts[fillGate.nAttempts - 1].kept = 1;
+                        fillGate.attempts[fillGate.nAttempts - 1].stop = 1;
+                    }
                     if (stop) return true;
                 }
                 return false;
@@ -4785,6 +4940,7 @@ static int seedCombine255(
                         }
                     }
                     float frac = nz / static_cast<float>(std::max(1, nPix));
+                    inkFracDark = frac;
                     bool dark = true;
                     inverted = false;
                     if (frac >= 0.45f) {
@@ -4803,7 +4959,7 @@ static int seedCombine255(
                             op[xx] = ink ? 255 : 0;
                         }
                     }
-                    if (!virtSp) fillSaltPepper(&bin, imgW);
+                    if (!virtSp) fillSaltPepperSeed(&bin, imgW);
                     HorizSW hhR = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
                     const int v0R = hhR.peak;
                     const bool needFbR = strokeNeedFb(hhR, v0R, seedW, inkFrac);
@@ -4815,7 +4971,7 @@ static int seedCombine255(
                     if (haveClean) {
                         applyThrKeepPoison0(
                             seedY, poison, cleanThr, cleanDark, &bin);
-                        if (!virtSp) fillSaltPepper(&bin, imgW);
+                        if (!virtSp) fillSaltPepperSeed(&bin, imgW);
                     } else {
                         bin.setTo(0);
                     }
@@ -4826,6 +4982,7 @@ static int seedCombine255(
                         bin, poison, src, xSeed0, ySeed0,
                         srcIsBin, inverted, cleanDark, cleanThr, &fillGate);
                     fillKeepHist(hist64, &nKeep, &nValley, valleys);
+                    packHuntValleys(valleys, nValley);
                     inBand = noteAttempt(2);
                 }
             }
@@ -4844,9 +5001,17 @@ static int seedCombine255(
                     const bool moreInk = cleanDark ? (thr > usedKeep) : (thr < usedKeep);
                     const bool lessInk = cleanDark ? (thr < usedKeep) : (thr > usedKeep);
                     if (retryWhyWant == 1) {
-                        if (nLookBin0 != 0 && !moreInk) continue;
+                        if (nLookBin0 != 0 && !moreInk) {
+                            if (nHuntSkipped < kValleyPackN)
+                                huntSkipped[nHuntSkipped++] = thr;
+                            continue;
+                        }
                     } else if (retryWhyWant == 2) {
-                        if (!lessInk) continue;
+                        if (!lessInk) {
+                            if (nHuntSkipped < kValleyPackN)
+                                huntSkipped[nHuntSkipped++] = thr;
+                            continue;
+                        }
                     }
                     cands.push_back(thr);
                 }
@@ -4860,7 +5025,7 @@ static int seedCombine255(
                     if (fillGate.nAttempts >= kSeg7AttemptMax) break;
                     applyThrKeepPoison0(
                         seedY, poison, static_cast<double>(thr), cleanDark, &bin);
-                    if (!virtSp) fillSaltPepper(&bin, imgW);
+                    if (!virtSp) fillSaltPepperSeed(&bin, imgW);
                     ++extras;
                     tried.push_back(thr);
                     cleanThr = static_cast<double>(thr);
@@ -4871,6 +5036,14 @@ static int seedCombine255(
                         inBand = true;
                         break;
                     }
+                }
+                int huntStop = 0;
+                if (inBand) huntStop = 1;
+                else if (fillGate.nAttempts >= kSeg7AttemptMax) huntStop = 3;
+                else huntStop = 2;
+                if (fillGate.nAttempts > 0 &&
+                    fillGate.attempts[fillGate.nAttempts - 1].stop == 0) {
+                    fillGate.attempts[fillGate.nAttempts - 1].stop = huntStop;
                 }
             }
             if (!inBand) {
@@ -4890,11 +5063,15 @@ static int seedCombine255(
             }
         } else if (fillGate.nAttempts > 0) {
             fillGate.attempts[0].kept = 1;
+            fillGate.attempts[0].stop = 1;
         }
     } else {
         countPoisonKeep();
         recordAttempt(0);
-        if (fillGate.nAttempts > 0) fillGate.attempts[0].kept = 1;
+        if (fillGate.nAttempts > 0) {
+            fillGate.attempts[0].kept = 1;
+            fillGate.attempts[0].stop = 1;
+        }
     }
     if (fillGate.nRetry > 0 || fillGate.fill < fillLo || fillGate.fill > fillHi) {
         for (int i = 0; i < fillGate.nAttempts; ++i) {
@@ -5052,7 +5229,7 @@ static void stampPoisonFlood(
 ) {
     if (!pack || pois.empty()) return;
     const int h = pois.rows, w = pois.cols;
-    const int minWh = std::max(1, sPx / 2);
+    const int minWh = lw >= 2000 ? 6 : std::max(1, sPx / 2);
     uint8_t pepperId = 0;
     bool havePepper = false;
     std::vector<int> st;
@@ -5663,7 +5840,7 @@ static int fillPoisonLookRaster(
         if (sPx >= 1) {
             flood255LookIds(
                 lookBin, sPx, objPack, seedIndex, lookL, lookT, lookR, lookB, statsOut,
-                disp.hMul, disp.vMul, disp.kind);
+                disp.hMul, disp.vMul, disp.kind, imgW);
         }
     }
     if (lookPoisonOut) {
