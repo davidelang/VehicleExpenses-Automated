@@ -3314,49 +3314,61 @@ static void dropTiny255CCs(cv::Mat* bin, int minWh) {
     if (!bin || bin->empty() || bin->type() != CV_8UC1 || minWh < 1) return;
     const int h = bin->rows, w = bin->cols;
     if (h < 1 || w < 1) return;
-    std::vector<int> st;
+    std::vector<uint32_t> st;
     st.reserve(256);
-    std::vector<int> pix;
+    std::vector<uint32_t> pix;
     pix.reserve(256);
+    auto packXY = [](int x, int y) -> uint32_t {
+        return (static_cast<uint32_t>(static_cast<uint16_t>(y)) << 16) |
+            static_cast<uint32_t>(static_cast<uint16_t>(x));
+    };
     for (int y = 0; y < h; ++y) {
         uint8_t* row = bin->ptr<uint8_t>(y);
         for (int x = 0; x < w; ++x) {
             if (row[x] != 255) continue;
             st.clear();
             pix.clear();
-            st.push_back(y * w + x);
+            st.push_back(packXY(x, y));
             row[x] = 254;
             int x0 = x, x1 = x + 1, y0 = y, y1 = y + 1;
             while (!st.empty()) {
-                const int i = st.back();
+                const uint32_t i = st.back();
                 st.pop_back();
-                const int cy = i / w, cx = i - cy * w;
+                const uint16_t cy = static_cast<uint16_t>(i >> 16);
+                const uint16_t cx = static_cast<uint16_t>(i & 0xffffu);
                 pix.push_back(i);
                 if (cx < x0) x0 = cx;
-                if (cx + 1 > x1) x1 = cx + 1;
+                if (static_cast<int>(cx) + 1 > x1) x1 = static_cast<int>(cx) + 1;
                 if (cy < y0) y0 = cy;
-                if (cy + 1 > y1) y1 = cy + 1;
+                if (static_cast<int>(cy) + 1 > y1) y1 = static_cast<int>(cy) + 1;
                 for (int dy = -1; dy <= 1; ++dy) {
                     for (int dx = -1; dx <= 1; ++dx) {
                         if (!dx && !dy) continue;
-                        const int ny = cy + dy, nx = cx + dx;
+                        const int ny = static_cast<int>(cy) + dy;
+                        const int nx = static_cast<int>(cx) + dx;
                         if (ny < 0 || nx < 0 || ny >= h || nx >= w) continue;
                         if (bin->ptr<uint8_t>(ny)[nx] != 255) continue;
                         bin->ptr<uint8_t>(ny)[nx] = 254;
-                        st.push_back(ny * w + nx);
+                        st.push_back(packXY(nx, ny));
                     }
                 }
             }
-            const int bw = x1 - x0, bh = y1 - y0;
-            const uint8_t put = (bw < minWh && bh < minWh) ? 0 : 255;
-            for (int i : pix) bin->ptr<uint8_t>(i / w)[i % w] = put;
+            const uint16_t bw = static_cast<uint16_t>(x1 - x0);
+            const uint16_t bh = static_cast<uint16_t>(y1 - y0);
+            if (bw < minWh && bh < minWh) {
+                for (uint32_t i : pix) {
+                    const uint16_t cy = static_cast<uint16_t>(i >> 16);
+                    const uint16_t cx = static_cast<uint16_t>(i & 0xffffu);
+                    bin->ptr<uint8_t>(cy)[cx] = 0;
+                }
+            }
         }
     }
 }
 
-static void fillSaltPepperSeed(cv::Mat* bin, int imgW) {
+static void fillSaltPepperSeed(cv::Mat* bin, int imgW, int sPx = 0) {
     fillSaltPepper(bin, imgW);
-    if (imgW >= 2000) dropTiny255CCs(bin, 6);
+    if (imgW >= 2000 && sPx > 4) dropTiny255CCs(bin, std::max(1, sPx / 2));
 }
 
 static void fillSaltPepperRect(
@@ -3417,60 +3429,152 @@ static void flood255LookIds(
     int imgW = 0
 ) {
     if (!look || look->empty() || look->type() != CV_8UC1 || sPx < 1) return;
+    (void)imgW;
     const int h = look->rows, w = look->cols;
     if (lookR < 0 || lookR > w) lookR = w;
     if (lookB < 0 || lookB > h) lookB = h;
     if (lookL < 0) lookL = 0;
     if (lookT < 0) lookT = 0;
     if (lookR <= lookL || lookB <= lookT) return;
-    const int minWh = imgW >= 2000 ? 6 : std::max(1, sPx / 2);
+    const int minWh = std::max(1, sPx / 2);
     const int runH = hMul * sPx;
     const int runV = vMul * sPx;
-    std::vector<int> st;
+    const int solidSide = 3 * sPx;
+    constexpr uint8_t kScan = 253;
+    std::vector<uint32_t> st;
     st.reserve(256);
-    std::vector<int> pix;
+    std::vector<uint32_t> pix;
     pix.reserve(256);
+    auto packXY = [](int x, int y) -> uint32_t {
+        return (static_cast<uint32_t>(static_cast<uint16_t>(y)) << 16) |
+            static_cast<uint32_t>(static_cast<uint16_t>(x));
+    };
+    auto writePix = [&](uint8_t v) {
+        for (uint32_t i : pix) {
+            const uint16_t cy = static_cast<uint16_t>(i >> 16);
+            const uint16_t cx = static_cast<uint16_t>(i & 0xffffu);
+            look->ptr<uint8_t>(cy)[cx] = v;
+        }
+    };
     for (int y = lookT; y < lookB; ++y) {
         uint8_t* row = look->ptr<uint8_t>(y);
         for (int x = lookL; x < lookR; ++x) {
             if (row[x] != 255) continue;
             st.clear();
             pix.clear();
-            st.push_back(y * w + x);
-            row[x] = 254;
+            st.push_back(packXY(x, y));
+            row[x] = kScan;
             int x0 = x, x1 = x + 1, y0 = y, y1 = y + 1;
             while (!st.empty()) {
-                const int i = st.back();
+                const uint32_t i = st.back();
                 st.pop_back();
-                const int cy = i / w, cx = i - cy * w;
+                const uint16_t cy = static_cast<uint16_t>(i >> 16);
+                const uint16_t cx = static_cast<uint16_t>(i & 0xffffu);
                 pix.push_back(i);
                 if (cx < x0) x0 = cx;
-                if (cx + 1 > x1) x1 = cx + 1;
+                if (static_cast<int>(cx) + 1 > x1) x1 = static_cast<int>(cx) + 1;
                 if (cy < y0) y0 = cy;
-                if (cy + 1 > y1) y1 = cy + 1;
+                if (static_cast<int>(cy) + 1 > y1) y1 = static_cast<int>(cy) + 1;
                 for (int dy = -1; dy <= 1; ++dy) {
                     for (int dx = -1; dx <= 1; ++dx) {
                         if (!dx && !dy) continue;
-                        const int ny = cy + dy, nx = cx + dx;
+                        const int ny = static_cast<int>(cy) + dy;
+                        const int nx = static_cast<int>(cx) + dx;
                         if (ny < lookT || nx < lookL || ny >= lookB || nx >= lookR) continue;
                         if (look->ptr<uint8_t>(ny)[nx] != 255) continue;
-                        look->ptr<uint8_t>(ny)[nx] = 254;
-                        st.push_back(ny * w + nx);
+                        look->ptr<uint8_t>(ny)[nx] = kScan;
+                        st.push_back(packXY(nx, ny));
                     }
                 }
             }
-            const int bw = x1 - x0, bh = y1 - y0;
+            const uint16_t bw = static_cast<uint16_t>(x1 - x0);
+            const uint16_t bh = static_cast<uint16_t>(y1 - y0);
             if (bw < minWh && bh < minWh) {
-                for (int i : pix) look->ptr<uint8_t>(i / w)[i % w] = 0;
+                writePix(0);
                 continue;
             }
-            const int maxHrun = maxBlobRunH(pix, w);
-            const int maxVrun = maxBlobRunV(pix, w);
-            const bool solidPlate = dispKind == kDispNot &&
-                bw > 3 * sPx && bh > 3 * sPx &&
-                static_cast<int>(pix.size()) >= bw * bh;
-            const bool poison = maxHrun > runH || maxVrun > runV || solidPlate;
-            if (!poison) continue;
+            bool poison = false;
+            uint16_t trigH = 0, trigV = 0;
+            for (int yy = y0; yy < y1 && !poison; ++yy) {
+                const uint8_t* rp = look->ptr<uint8_t>(yy);
+                int xx = x0;
+                while (xx < x1) {
+                    if (rp[xx] != kScan) {
+                        ++xx;
+                        continue;
+                    }
+                    int run = 0;
+                    while (xx < x1 && rp[xx] == kScan) {
+                        ++run;
+                        ++xx;
+                    }
+                    if (run > runH) {
+                        trigH = static_cast<uint16_t>(std::min(run, 65535));
+                        poison = true;
+                        break;
+                    }
+                }
+            }
+            for (int xx = x0; xx < x1 && !poison; ++xx) {
+                int yy = y0;
+                while (yy < y1) {
+                    if (look->ptr<uint8_t>(yy)[xx] != kScan) {
+                        ++yy;
+                        continue;
+                    }
+                    int run = 0;
+                    while (yy < y1 && look->ptr<uint8_t>(yy)[xx] == kScan) {
+                        ++run;
+                        ++yy;
+                    }
+                    if (run > runV) {
+                        trigV = static_cast<uint16_t>(std::min(run, 65535));
+                        poison = true;
+                        break;
+                    }
+                }
+            }
+            if (!poison && dispKind == kDisp7seg &&
+                bw > solidSide && bh > solidSide) {
+                poison = true;
+            }
+            if (!poison && dispKind == kDispNot &&
+                bw > solidSide && bh > solidSide) {
+                const int need = solidSide + 1;
+                if (static_cast<int>(pix.size()) >= need * need) {
+                    const int iiW = static_cast<int>(bw) + 1;
+                    std::vector<int> ii(static_cast<size_t>(
+                        (static_cast<int>(bh) + 1) * iiW), 0);
+                    for (int iy = 0; iy < static_cast<int>(bh); ++iy) {
+                        const uint8_t* rp = look->ptr<uint8_t>(y0 + iy);
+                        for (int ix = 0; ix < static_cast<int>(bw); ++ix) {
+                            const int add = (rp[x0 + ix] == kScan) ? 1 : 0;
+                            ii[static_cast<size_t>((iy + 1) * iiW + (ix + 1))] =
+                                ii[static_cast<size_t>(iy * iiW + (ix + 1))] +
+                                ii[static_cast<size_t>((iy + 1) * iiW + ix)] -
+                                ii[static_cast<size_t>(iy * iiW + ix)] + add;
+                        }
+                    }
+                    const int area = need * need;
+                    for (int iy = 0; iy + need <= static_cast<int>(bh) && !poison; ++iy) {
+                        for (int ix = 0; ix + need <= static_cast<int>(bw); ++ix) {
+                            const int sum =
+                                ii[static_cast<size_t>((iy + need) * iiW + (ix + need))] -
+                                ii[static_cast<size_t>(iy * iiW + (ix + need))] -
+                                ii[static_cast<size_t>((iy + need) * iiW + ix)] +
+                                ii[static_cast<size_t>(iy * iiW + ix)];
+                            if (sum >= area) {
+                                poison = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if (!poison) {
+                writePix(254);
+                continue;
+            }
             if (stats && stats->ccs.size() < 16) {
                 PoisonCcPack cc;
                 cc.x = x0;
@@ -3478,16 +3582,16 @@ static void flood255LookIds(
                 cc.w = x1 - x0;
                 cc.h = y1 - y0;
                 cc.noPeak = 0;
-                cc.thr = maxHrun;
-                cc.nInk = maxVrun;
+                cc.thr = trigH;
+                cc.nInk = trigV;
                 stats->ccs.push_back(cc);
             }
             uint8_t id = 0;
             if (!lookAlloc(pack, false, seedIndex, kKindPoisonFat, &id)) {
-                for (int i : pix) look->ptr<uint8_t>(i / w)[i % w] = 255;
+                writePix(255);
                 return;
             }
-            for (int i : pix) look->ptr<uint8_t>(i / w)[i % w] = id;
+            writePix(id);
         }
     }
 }
@@ -4612,9 +4716,16 @@ static int seedCombine255(
     }
     if (!virtSp) fillSaltPepperSeed(&bin, imgW);
     HorizSW hh0 = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
-    const int v0 = hh0.peak;
-    const bool needFb0 = strokeNeedFb(hh0, v0, seedW, inkFrac);
-    const int sPx0 = (v0 > 4 && !needFb0) ? v0 : fallback;
+    int v0 = hh0.peak;
+    bool needFb0 = strokeNeedFb(hh0, v0, seedW, inkFrac);
+    int sPx0 = (v0 > 4 && !needFb0) ? v0 : fallback;
+    if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPx0);
+    if (!virtSp && imgW >= 2000 && sPx0 > 4) {
+        hh0 = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
+        v0 = hh0.peak;
+        needFb0 = strokeNeedFb(hh0, v0, seedW, inkFrac);
+        sPx0 = (v0 > 4 && !needFb0) ? v0 : fallback;
+    }
     cv::Mat poison(seedH, seedW, CV_8UC1);
     poison.setTo(0);
     fillPoisonMask(bin, v0, needFb0, seedW, glareMult, &poison);
@@ -4640,7 +4751,7 @@ static int seedCombine255(
         haveClean = otsuKeepPoison0(seedY, poison, &cleanThr, &cleanDark, &cleanInkFrac);
         if (haveClean) {
             applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
-            if (!virtSp) fillSaltPepperSeed(&bin, imgW);
+            if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPx0);
         } else {
             bin.setTo(0);
         }
@@ -4659,7 +4770,7 @@ static int seedCombine255(
             float frac2 = 0.f;
             if (otsuKeepPoison0(seedY, poison, &thr2, &dark2, &frac2, cleanThr)) {
                 applyThrKeepPoison0(seedY, poison, thr2, dark2, &bin, cleanThr);
-                if (!virtSp) fillSaltPepperSeed(&bin, imgW);
+                if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPx);
                 if (dark2 && frac2 >= 0.05f && frac2 <= 0.42f) {
                     cleanThr = thr2;
                     cleanDark = dark2;
@@ -4670,7 +4781,7 @@ static int seedCombine255(
                     sPx = (v0Clean > 4 && !needFbClean) ? v0Clean : fallback;
                 } else {
                     applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
-                    if (!virtSp) fillSaltPepperSeed(&bin, imgW);
+                    if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPx);
                 }
             }
         }
@@ -4707,7 +4818,7 @@ static int seedCombine255(
         flipped = true;
         cleanDark = !cleanDark;
         applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
-        if (!virtSp) fillSaltPepperSeed(&bin, imgW);
+        if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPx);
         hhC = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
         v0Clean = hhC.peak;
         needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, cleanInkFrac);
@@ -4961,9 +5072,16 @@ static int seedCombine255(
                     }
                     if (!virtSp) fillSaltPepperSeed(&bin, imgW);
                     HorizSW hhR = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
-                    const int v0R = hhR.peak;
-                    const bool needFbR = strokeNeedFb(hhR, v0R, seedW, inkFrac);
-                    const int sPxR = (v0R > 4 && !needFbR) ? v0R : fallback;
+                    int v0R = hhR.peak;
+                    bool needFbR = strokeNeedFb(hhR, v0R, seedW, inkFrac);
+                    int sPxR = (v0R > 4 && !needFbR) ? v0R : fallback;
+                    if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPxR);
+                    if (!virtSp && imgW >= 2000 && sPxR > 4) {
+                        hhR = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
+                        v0R = hhR.peak;
+                        needFbR = strokeNeedFb(hhR, v0R, seedW, inkFrac);
+                        sPxR = (v0R > 4 && !needFbR) ? v0R : fallback;
+                    }
                     fillPoisonMask(bin, v0R, needFbR, seedW, glareMult, &poison);
                     orBrightBands(seedY, bin, sPxR, &poison, &bandTop, &bandBot, &bandH);
                     haveClean = otsuKeepPoison0(
@@ -4971,7 +5089,7 @@ static int seedCombine255(
                     if (haveClean) {
                         applyThrKeepPoison0(
                             seedY, poison, cleanThr, cleanDark, &bin);
-                        if (!virtSp) fillSaltPepperSeed(&bin, imgW);
+                        if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPxR);
                     } else {
                         bin.setTo(0);
                     }
@@ -5025,7 +5143,7 @@ static int seedCombine255(
                     if (fillGate.nAttempts >= kSeg7AttemptMax) break;
                     applyThrKeepPoison0(
                         seedY, poison, static_cast<double>(thr), cleanDark, &bin);
-                    if (!virtSp) fillSaltPepperSeed(&bin, imgW);
+                    if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPx);
                     ++extras;
                     tried.push_back(thr);
                     cleanThr = static_cast<double>(thr);
@@ -5229,7 +5347,7 @@ static void stampPoisonFlood(
 ) {
     if (!pack || pois.empty()) return;
     const int h = pois.rows, w = pois.cols;
-    const int minWh = lw >= 2000 ? 6 : std::max(1, sPx / 2);
+    const int minWh = std::max(1, sPx / 2);
     uint8_t pepperId = 0;
     bool havePepper = false;
     std::vector<int> st;
