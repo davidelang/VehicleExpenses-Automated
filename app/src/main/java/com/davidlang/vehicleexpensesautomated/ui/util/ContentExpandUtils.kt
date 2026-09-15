@@ -789,6 +789,12 @@ object ContentExpandUtils {
     const val SEG7_INK_FLIP_FRAC = 0.45f
     const val SEG7_GLARE_WIDTH_MULT = 11
     const val SEG7_MIN_STROKE = 4
+    const val SEG7_HIST_RAW_N = 256
+    const val SEG7_VALLEY_PACK_N = 64
+    const val SEG7_ATTEMPT_F_PACK = 30 + SEG7_HIST_RAW_N + SEG7_VALLEY_PACK_N + SEG7_VALLEY_PACK_N
+    const val SEG7_TELE_N_PACK =
+        26 + NativeImageUtils.SEG7_ENERGY_HIST_BINS * 2 + 6 + 1 +
+            NativeImageUtils.SEG7_ATTEMPT_MAX * SEG7_ATTEMPT_F_PACK + 11
     const val SEG7_FALLBACK_H_FRAC = 0.08f
     /** Official ink pad (k=0: 0 pad). Walk itself does not pad; [padVertByStrokes] applies k=0 official / k>0 extra. */
     const val SEG7_K = 0f
@@ -915,9 +921,7 @@ object ContentExpandUtils {
             val strokeShare = if (nNonSpan > 0) band.toFloat() / nNonSpan else 0f
             val maxRunOverW = maxRun.toFloat() / seedW
             val needFallback = vSW <= SEG7_MIN_STROKE ||
-                inkFrac >= SEG7_INK_FLIP_FRAC ||
-                strokeShare < 0.30f ||
-                maxRunOverW >= 0.50f
+                inkFrac >= SEG7_INK_FLIP_FRAC
             val sPx = if (needFallback) fallback else vSW
             val vhAgree = vSW > SEG7_MIN_STROKE &&
                 hSW > SEG7_MIN_STROKE &&
@@ -1191,6 +1195,22 @@ object ContentExpandUtils {
         val acceptedSpx: Float = 0f,
         val inBand: Float = 0f,
         val kept: Float = 0f,
+        val inkFracDark: Float = 0f,
+        val inverted: Float = 0f,
+        val cleanDark: Float = 0f,
+        val cleanInkFrac: Float = 0f,
+        val vSW: Float = 0f,
+        val strokeShare: Float = 0f,
+        val maxRunOverW: Float = 0f,
+        val needVsw: Float = 0f,
+        val needInkFrac: Float = 0f,
+        val needShare: Float = 0f,
+        val needMaxRun: Float = 0f,
+        val histRaw: IntArray = IntArray(0),
+        val histRawTail: Float = 0f,
+        val valleys: IntArray = IntArray(0),
+        val skipped: IntArray = IntArray(0),
+        val stop: Float = 0f,
     )
 
     fun boundFlagName(v: Float): String = when (kotlin.math.round(v).toInt()) {
@@ -1214,7 +1234,7 @@ object ContentExpandUtils {
     }
 
     fun parseSeg7Tele(a: FloatArray, i: Int, overlap: ShortArray? = null): Seg7Telemetry? {
-        val n = NativeImageUtils.SEG7_TELE_N
+        val n = SEG7_TELE_N_PACK
         val energyBins = NativeImageUtils.SEG7_ENERGY_HIST_BINS
         val bins = NativeImageUtils.SEG7_HIST_BINS
         val o = i * n
@@ -1281,9 +1301,14 @@ object ContentExpandUtils {
         ).let { raw ->
             val histEnd = 26 + 2 * energyBins
             val nAtt = raw.nAttempts.roundToInt().coerceIn(0, NativeImageUtils.SEG7_ATTEMPT_MAX)
-            val f = NativeImageUtils.SEG7_ATTEMPT_F
+            val f = SEG7_ATTEMPT_F_PACK
             val atts = List(nAtt) { ai ->
                 val b = o + histEnd + 7 + ai * f
+                val nVal = a[b + 28].roundToInt().coerceIn(0, SEG7_VALLEY_PACK_N)
+                val nSkip = a[b + 29].roundToInt().coerceIn(0, SEG7_VALLEY_PACK_N)
+                val histOff = b + 30
+                val valOff = histOff + SEG7_HIST_RAW_N
+                val skipOff = valOff + SEG7_VALLEY_PACK_N
                 Seg7FillAttempt(
                     kind = a[b],
                     firstThr = a[b + 1],
@@ -1300,6 +1325,22 @@ object ContentExpandUtils {
                     acceptedSpx = a[b + 12],
                     inBand = a[b + 13],
                     kept = a[b + 14],
+                    inkFracDark = a[b + 15],
+                    inverted = a[b + 16],
+                    cleanDark = a[b + 17],
+                    cleanInkFrac = a[b + 18],
+                    vSW = a[b + 19],
+                    strokeShare = a[b + 20],
+                    maxRunOverW = a[b + 21],
+                    needVsw = a[b + 22],
+                    needInkFrac = a[b + 23],
+                    needShare = a[b + 24],
+                    needMaxRun = a[b + 25],
+                    histRaw = IntArray(SEG7_HIST_RAW_N) { h -> a[histOff + h].roundToInt() },
+                    histRawTail = a[b + 26],
+                    valleys = IntArray(nVal) { v -> a[valOff + v].roundToInt() },
+                    skipped = IntArray(nSkip) { s -> a[skipOff + s].roundToInt() },
+                    stop = a[b + 27],
                 )
             }
             val chosen = atts.firstOrNull {
@@ -1433,7 +1474,7 @@ object ContentExpandUtils {
             packed[i * 4 + 2] = s.right
             packed[i * 4 + 3] = s.bottom
         }
-        val tele = FloatArray(seeds.size * NativeImageUtils.SEG7_TELE_N)
+        val tele = FloatArray(seeds.size * SEG7_TELE_N_PACK)
         val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
         val overlap = ShortArray(seeds.size * NativeImageUtils.SEG7_HIST_BINS * 4)
         val r = try {
@@ -1592,7 +1633,7 @@ object ContentExpandUtils {
             val o = i * 8
             for (k in 0 until 8) packed[o + k] = p[k]
         }
-        val tele = FloatArray(seeds.size * NativeImageUtils.SEG7_TELE_N)
+        val tele = FloatArray(seeds.size * SEG7_TELE_N_PACK)
         val imgW = gray.cols()
         val imgH = gray.rows()
         val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
@@ -2128,7 +2169,7 @@ object ContentExpandUtils {
             packed[i * 4 + 2] = c.right
             packed[i * 4 + 3] = c.bottom
         }
-        val tele = FloatArray(seeds.size * NativeImageUtils.SEG7_TELE_N)
+        val tele = FloatArray(seeds.size * SEG7_TELE_N_PACK)
         val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
         val r = try {
             native(

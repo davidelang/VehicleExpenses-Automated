@@ -7990,6 +7990,12 @@ private fun putLookInkFillAttempts(j: org.json.JSONObject, tele: ContentExpandUt
     j.put("firstThr", tele.firstThr.roundToInt())
     val arr = org.json.JSONArray()
     tele.attempts.forEachIndexed { i, a ->
+        val histRaw = org.json.JSONArray()
+        a.histRaw.forEach { histRaw.put(it) }
+        val valleys = org.json.JSONArray()
+        a.valleys.forEach { valleys.put(it) }
+        val skipped = org.json.JSONArray()
+        a.skipped.forEach { skipped.put(it) }
         arr.put(
             org.json.JSONObject()
                 .put("i", i)
@@ -8007,7 +8013,28 @@ private fun putLookInkFillAttempts(j: org.json.JSONObject, tele: ContentExpandUt
                 .put("sPx", a.sPx.roundToInt())
                 .put("acceptedSpx", a.acceptedSpx.roundToInt())
                 .put("inBand", a.inBand.roundToInt())
-                .put("kept", a.kept.roundToInt()),
+                .put("kept", a.kept.roundToInt())
+                .put("inkFracDark", a.inkFracDark.toDouble())
+                .put("inverted", a.inverted.roundToInt())
+                .put("cleanDark", a.cleanDark.roundToInt())
+                .put("cleanInkFrac", a.cleanInkFrac.toDouble())
+                .put("vSW", a.vSW.roundToInt())
+                .put("strokeShare", a.strokeShare.toDouble())
+                .put("maxRunOverW", a.maxRunOverW.toDouble())
+                .put("needVsw", a.needVsw.roundToInt())
+                .put("needInkFrac", a.needInkFrac.roundToInt())
+                .put("needShare", a.needShare.roundToInt())
+                .put("needMaxRun", a.needMaxRun.roundToInt())
+                .put("hist_raw", histRaw)
+                .put("hist_raw_tail", a.histRawTail.roundToInt())
+                .put("valleys", valleys)
+                .put("skipped", skipped)
+                .put("stop", when (a.stop.roundToInt()) {
+                    1 -> "take"
+                    2 -> "noCand"
+                    3 -> "maxAttempts"
+                    else -> "none"
+                }),
         )
     }
     j.put("attempts", arr)
@@ -8022,10 +8049,40 @@ private fun lookInkCountCap(c: org.json.JSONObject): String {
         val a = att.optJSONObject(i) ?: continue
         val fill = a.optDouble("fill", 0.0)
         parts.add(
-            "$i:${a.optInt("kind")},${a.optInt("thr")},${String.format(java.util.Locale.US, "%.3f", fill)},${a.optInt("nKeep")},${a.optInt("nPoison")}",
+            "$i:${a.optInt("kind")},${a.optInt("thr")},${String.format(java.util.Locale.US, "%.3f", fill)}," +
+                "inv=${a.optInt("inverted")},needVsw=${a.optInt("needVsw")}," +
+                "needInk=${a.optInt("needInkFrac")},needShare=${a.optInt("needShare")}," +
+                "needMaxRun=${a.optInt("needMaxRun")},vSW=${a.optInt("vSW")}," +
+                "stop=${a.optString("stop")}",
         )
     }
     return if (parts.isEmpty()) base else "$base ${parts.joinToString(" ")}"
+}
+
+private fun histRawBarsHtml(att: org.json.JSONArray?): String {
+    if (att == null || att.length() < 1) return ""
+    val cell = "padding:1px 3px;border:1px solid #ddd;"
+    val sb = StringBuilder()
+    for (i in 0 until att.length()) {
+        val a = att.optJSONObject(i) ?: continue
+        val hr = a.optJSONArray("hist_raw") ?: continue
+        val show = ArrayList<Int>()
+        for (k in 0 until hr.length()) {
+            if (hr.optInt(k) > 0) show.add(k)
+        }
+        if (show.isEmpty() && a.optInt("hist_raw_tail", 0) <= 0) continue
+        sb.append("<table style='border-collapse:collapse;font-size:8px;margin:2px 0;text-align:center;'>")
+        sb.append("<tr><th style='$cell'>att$i k</th>")
+        for (k in show) sb.append("<th style='$cell'>${k + 1}</th>")
+        if (a.optInt("hist_raw_tail", 0) > 0) sb.append("<th style='$cell'>257+</th>")
+        sb.append("</tr><tr><th style='$cell'>n</th>")
+        for (k in show) sb.append("<td style='$cell'>${hr.optInt(k)}</td>")
+        if (a.optInt("hist_raw_tail", 0) > 0) {
+            sb.append("<td style='$cell'>${a.optInt("hist_raw_tail")}</td>")
+        }
+        sb.append("</tr></table>")
+    }
+    return sb.toString()
 }
 
 private fun countU8Gt0(source: Any, rect: android.graphics.Rect): Int {
@@ -8237,7 +8294,7 @@ private fun pLookInkHtml(br: PumpBranch): String {
             "<div style='flex:0 0 auto;font-size:9px;'>" +
                 "<img src='data:image/jpeg;base64,$b64' " +
                 "style='$hCss$wCss max-width:none;image-rendering:pixelated;'>" +
-                "<br>$lab $meta</div>",
+                "<br>$lab $meta${histRawBarsHtml(c.optJSONArray("attempts"))}</div>",
         )
     }
     sb.append("</div></div>")
@@ -8452,10 +8509,11 @@ private fun storeSeg7Tele(branch: PumpBranch, teles: List<ContentExpandUtils.Seg
 
 private fun histBinLabel(b: Int, method: String = "", imgW: Int = 0): String {
     if (method == "gray" || method == "color_adaptive") {
-        val step = if (imgW < 2000) 2 else 8
-        val c0 = if (imgW < 2000) 6 else 20
-        val lo = c0 - step + step * b
-        val hi = c0 + step + step * b
+        val step = if (imgW < 2000) 2 else 4
+        val half = if (imgW < 2000) 2 else 3
+        val c0 = if (imgW < 2000) 6 else 16
+        val lo = c0 - half + step * b
+        val hi = c0 + half + step * b
         return if (b >= NativeImageUtils.SEG7_HIST_BINS - 1) "$lo+" else "$lo-$hi"
     }
     if (b <= 0) return "1-2"
