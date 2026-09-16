@@ -572,6 +572,55 @@ object NativeImageUtils {
 
     private external fun nativeFillEnergyLookU8(grayPtr: Long, destPtr: Long): Boolean
 
+    private external fun nativeProbeSeedInk(
+        grayPtr: Long,
+        uvPtr: Long,
+        l: Int,
+        t: Int,
+        r: Int,
+        b: Int,
+        rotPts: FloatArray?,
+        imgW: Int,
+        wantColor: Boolean,
+    ): Array<Any>?
+
+    fun probeSeedInk(
+        grayPtr: Long,
+        uvPtr: Long,
+        l: Int,
+        t: Int,
+        r: Int,
+        b: Int,
+        rotPts: FloatArray?,
+        imgW: Int,
+        wantColor: Boolean,
+    ): Array<Any>? = nativeProbeSeedInk(
+        grayPtr, uvPtr, l, t, r, b, rotPts, imgW, wantColor,
+    )
+
+    private external fun nativePaintSeedInkLook(
+        white: ByteArray,
+        stroke: ByteArray,
+        srcW: Int,
+        srcH: Int,
+        destYPtr: Long,
+        destUvPtr: Long,
+    ): Boolean
+
+    fun paintSeedInkLook(
+        white: ByteArray,
+        stroke: ByteArray,
+        srcW: Int,
+        srcH: Int,
+        destY: Mat,
+        destUv: Mat?,
+    ): Boolean {
+        if (destY.empty()) return false
+        return nativePaintSeedInkLook(
+            white, stroke, srcW, srcH, destY.nativeObj, destUv?.nativeObj ?: 0L,
+        )
+    }
+
     const val SEG7_HIST_BINS: Int = 300
     const val SEG7_ENERGY_HIST_BINS: Int = 64
     const val SEG7_ATTEMPT_MAX: Int = 10

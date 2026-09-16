@@ -2673,66 +2673,50 @@ object ContentExpandUtils {
         val thrs: List<SeedInkThr>,
     )
 
-    private class SeedInkView(
-        val gray: Mat,
-        val uv: Mat?,
-        val pixels: ByteArray,
-        val w: Int,
-        val h: Int,
-        val imgW: Int,
-        val imgH: Int,
-        val ox: Int,
-        val oy: Int,
-        val rot: OrientedBox?,
-        val iu0: Int,
-        val iv0: Int,
-    ) {
-        private val yTmp = ByteArray(1)
-        private val uvTmp = ByteArray(2)
-        private val uvOk = uv != null && !uv.empty() && uv.type() == CvType.CV_8UC2
-        private val uvHalf = uvOk && uv!!.cols() * 2 <= imgW + 1
+    private val seedInkKindNames = arrayOf("gt", "band", "union", "cband", "cunion")
 
-        fun mapPhoto(sx: Int, sy: Int): Pair<Int, Int>? {
-            val x: Int
-            val y: Int
-            if (rot == null) {
-                x = ox + sx
-                y = oy + sy
-            } else {
-                val u = (iu0 + sx).toFloat()
-                val v = (iv0 + sy).toFloat()
-                x = (rot.cx + u * rot.ux + v * rot.vx).roundToInt()
-                y = (rot.cy + u * rot.uy + v * rot.vy).roundToInt()
-            }
-            if (x < 0 || y < 0 || x >= imgW || y >= imgH) return null
-            if (x >= gray.cols() || y >= gray.rows()) return null
-            return x to y
+    private fun unpackSeedInkProbe(
+        raw: Array<Any>?,
+        fallbackW: Int,
+        fallbackH: Int,
+    ): SeedInkProbe {
+        val fw = fallbackW.coerceAtLeast(1)
+        val fh = fallbackH.coerceAtLeast(1)
+        if (raw == null || raw.size < 3) return SeedInkProbe(0, fw, fh, emptyList())
+        val thrs = ArrayList<SeedInkThr>()
+        var nThr = 0
+        var w = fw
+        var h = fh
+        var i = 0
+        while (i + 2 < raw.size) {
+            val meta = raw[i] as? IntArray
+            val white = raw[i + 1] as? ByteArray
+            val stroke = raw[i + 2] as? ByteArray
+            i += 3
+            if (meta == null || meta.size < 11 || white == null || stroke == null) continue
+            val ki = meta[0]
+            val kind = if (ki in seedInkKindNames.indices) seedInkKindNames[ki] else "gt"
+            if (kind == "gt") nThr++
+            w = meta[9].coerceAtLeast(1)
+            h = meta[10].coerceAtLeast(1)
+            thrs.add(
+                SeedInkThr(
+                    t = meta[1],
+                    sPx = meta[4],
+                    white = white,
+                    stroke = stroke,
+                    kind = kind,
+                    tLo = meta[2],
+                    tHi = meta[3],
+                    seedW = meta[5],
+                    seedH = meta[6],
+                    skipTint = meta[7] != 0,
+                    nBand = meta[8],
+                ),
+            )
         }
-
-        fun inPhoto(sx: Int, sy: Int): Boolean = mapPhoto(sx, sy) != null
-
-        fun yAt(sx: Int, sy: Int): Int? {
-            if (sx in 0 until w && sy in 0 until h) {
-                return pixels[sy * w + sx].toInt() and 0xFF
-            }
-            val p = mapPhoto(sx, sy) ?: return null
-            gray.get(p.second, p.first, yTmp)
-            return yTmp[0].toInt() and 0xFF
-        }
-
-        fun uvAt(sx: Int, sy: Int): Pair<Int, Int> {
-            if (!uvOk) return 128 to 128
-            val p = mapPhoto(sx, sy) ?: return 128 to 128
-            val um = uv!!
-            var uy = if (uvHalf) p.second / 2 else p.second and 1.inv()
-            var ux = if (uvHalf) p.first / 2 else p.first and 1.inv()
-            if (uy < 0) uy = 0
-            if (uy >= um.rows()) uy = um.rows() - 1
-            if (ux < 0) ux = 0
-            if (ux >= um.cols()) ux = um.cols() - 1
-            um.get(uy, ux, uvTmp)
-            return (uvTmp[0].toInt() and 0xFF) to (uvTmp[1].toInt() and 0xFF)
-        }
+        if (thrs.isEmpty()) return SeedInkProbe(0, fw, fh, emptyList())
+        return SeedInkProbe(nThr = nThr, w = w, h = h, thrs = thrs)
     }
 
     /**
@@ -2754,21 +2738,13 @@ object ContentExpandUtils {
         val w = x1 - x0
         val h = y1 - y0
         if (w < 1 || h < 1) return empty(1, 1)
-        val pixels = ByteArray(w * h)
-        val sub = gray.submat(y0, y1, x0, x1)
-        try {
-            val row = ByteArray(w)
-            for (y in 0 until h) {
-                sub.get(y, 0, row)
-                row.copyInto(pixels, y * w)
-            }
-        } finally {
-            sub.release()
-        }
-        val view = SeedInkView(
-            gray, uv, pixels, w, h, gray.cols(), gray.rows(), x0, y0, null, 0, 0,
+        return unpackSeedInkProbe(
+            NativeImageUtils.probeSeedInk(
+                gray.nativeObj, uv?.nativeObj ?: 0L, x0, y0, x1, y1, null, imgW, uv != null,
+            ),
+            w,
+            h,
         )
-        return probeSeedInkView(view, imgW, w, h, uv)
     }
 
     /** u/v raster on [gray] / [uv]; peek continues in photo u/v. No warp. */
@@ -2779,525 +2755,14 @@ object ContentExpandUtils {
             return SeedInkProbe(0, w, h, emptyList())
         }
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return empty(1, 1)
-        val box = OrientedBox.fromQuad(quad) ?: return empty(1, 1)
-        val iu0 = box.u0.roundToInt()
-        val iu1 = box.u1.roundToInt()
-        val iv0 = box.v0.roundToInt()
-        val iv1 = box.v1.roundToInt()
-        val w = iu1 - iu0
-        val h = iv1 - iv0
-        if (w < 1 || h < 1) return empty(1, 1)
-        val pixels = ByteArray(w * h)
-        val yTmp = ByteArray(1)
-        for (sy in 0 until h) {
-            val rowOff = sy * w
-            for (sx in 0 until w) {
-                val u = (iu0 + sx).toFloat()
-                val v = (iv0 + sy).toFloat()
-                val x = (box.cx + u * box.ux + v * box.vx).roundToInt()
-                val y = (box.cy + u * box.uy + v * box.vy).roundToInt()
-                val yv = if (x < 0 || y < 0 || x >= gray.cols() || y >= gray.rows()) {
-                    255
-                } else {
-                    gray.get(y, x, yTmp)
-                    yTmp[0].toInt() and 0xFF
-                }
-                pixels[rowOff + sx] = yv.toByte()
-            }
-        }
-        val seedW = box.uSpan().roundToInt().coerceAtLeast(1)
-        val seedH = box.vSpan().roundToInt().coerceAtLeast(1)
-        val view = SeedInkView(
-            gray, uv, pixels, w, h, gray.cols(), gray.rows(), 0, 0, box, iu0, iv0,
+        if (quad.pts.size < 8) return empty(1, 1)
+        return unpackSeedInkProbe(
+            NativeImageUtils.probeSeedInk(
+                gray.nativeObj, uv?.nativeObj ?: 0L, 0, 0, 0, 0, quad.pts, imgW, uv != null,
+            ),
+            1,
+            1,
         )
-        return probeSeedInkView(view, imgW, seedW, seedH, uv)
-    }
-
-    private fun probeSeedInkView(
-        view: SeedInkView,
-        imgW: Int,
-        seedW: Int,
-        seedH: Int,
-        uv: Mat?,
-    ): SeedInkProbe {
-        val w = view.w
-        val h = view.h
-        val pixels = view.pixels
-        fun empty(): SeedInkProbe = SeedInkProbe(0, w.coerceAtLeast(1), h.coerceAtLeast(1), emptyList())
-        val hist256 = IntArray(256)
-        for (p in pixels) hist256[p.toInt() and 0xFF]++
-        val hist64 = FloatArray(64)
-        for (i in 0 until 256) hist64[i / 4] += hist256[i].toFloat()
-        val cands = ArrayList<Int>(12)
-        fun addThr(t: Int) {
-            val v = t.coerceIn(0, 255)
-            if (v !in cands && cands.size < 12) cands.add(v)
-        }
-        addThr(otsuFromHist256(hist256))
-        val valleyTs = ArrayList<Int>()
-        for (mid in findValleyMidpoints64(hist64)) {
-            val t = (mid * 4 + 2).coerceIn(0, 255)
-            if (t !in valleyTs) valleyTs.add(t)
-            addThr(t)
-        }
-        val nThr = cands.size
-        if (nThr < 1) return empty()
-        val loSw = if (imgW >= 2000) 16 else 4
-        val hiSw = max(35, h / 2)
-        val kTintDotThr = 0.50f
-        val kTintChromaEps = 8.0f
-        fun argmaxRun(hist: IntArray, lo: Int, hi: Int): Int {
-            var bestL = 0
-            var bestC = 0
-            val last = min(hi, hist.lastIndex)
-            if (last < lo) return 0
-            for (len in lo..last) {
-                val c = hist[len]
-                if (c > bestC) {
-                    bestC = c
-                    bestL = len
-                }
-            }
-            return if (bestC > 0) bestL else 0
-        }
-        fun forEachHRuns(pol: (Int, Int) -> Boolean, body: (y: Int, x0: Int, len: Int) -> Unit) {
-            for (y in 0 until h) {
-                var run = 0
-                var x0r = 0
-                for (x in 0 until w) {
-                    if (pol(x, y)) {
-                        if (run == 0) x0r = x
-                        run++
-                    } else {
-                        if (run > 0) body(y, x0r, run)
-                        run = 0
-                    }
-                }
-                if (run > 0) body(y, x0r, run)
-            }
-        }
-        fun forEachVRuns(pol: (Int, Int) -> Boolean, body: (x: Int, y0: Int, len: Int) -> Unit) {
-            for (x in 0 until w) {
-                var run = 0
-                var y0r = 0
-                for (y in 0 until h) {
-                    if (pol(x, y)) {
-                        if (run == 0) y0r = y
-                        run++
-                    } else {
-                        if (run > 0) body(x, y0r, run)
-                        run = 0
-                    }
-                }
-                if (run > 0) body(x, y0r, run)
-            }
-        }
-        fun peekH(y: Int, x0: Int, len: Int, pol: (Int, Int) -> Boolean, sPx: Int): Pair<Int, Boolean> {
-            val maxLen = ceil(1.3f * sPx).toInt().coerceAtLeast(1)
-            var a = x0
-            var b = x0 + len
-            var blocked = false
-            if (x0 == 0) {
-                if (!view.inPhoto(-1, y)) blocked = true
-                else {
-                    var x = -1
-                    while (true) {
-                        if (!view.inPhoto(x, y) || !pol(x, y)) break
-                        a = x
-                        x--
-                        if (b - a > maxLen) break
-                    }
-                }
-            }
-            if (x0 + len == w) {
-                if (!view.inPhoto(w, y)) blocked = true
-                else {
-                    var x = w
-                    while (true) {
-                        if (!view.inPhoto(x, y) || !pol(x, y)) break
-                        b = x + 1
-                        x++
-                        if (b - a > maxLen) break
-                    }
-                }
-            }
-            return (b - a) to blocked
-        }
-        fun peekV(x: Int, y0: Int, len: Int, pol: (Int, Int) -> Boolean, sPx: Int): Pair<Int, Boolean> {
-            val maxLen = ceil(1.3f * sPx).toInt().coerceAtLeast(1)
-            var a = y0
-            var b = y0 + len
-            var blocked = false
-            if (y0 == 0) {
-                if (!view.inPhoto(x, -1)) blocked = true
-                else {
-                    var y = -1
-                    while (true) {
-                        if (!view.inPhoto(x, y) || !pol(x, y)) break
-                        a = y
-                        y--
-                        if (b - a > maxLen) break
-                    }
-                }
-            }
-            if (y0 + len == h) {
-                if (!view.inPhoto(x, h)) blocked = true
-                else {
-                    var y = h
-                    while (true) {
-                        if (!view.inPhoto(x, y) || !pol(x, y)) break
-                        b = y + 1
-                        y++
-                        if (b - a > maxLen) break
-                    }
-                }
-            }
-            return (b - a) to blocked
-        }
-        fun markSheet(sheet: ByteArray, pol: (Int, Int) -> Boolean) {
-            forEachHRuns(pol) { y, x0r, len ->
-                if (len != w) return@forEachHRuns
-                val off = y * w
-                for (x in x0r until x0r + len) sheet[off + x] = 1
-            }
-            forEachVRuns(pol) { x, y0r, len ->
-                if (len != h) return@forEachVRuns
-                for (y in y0r until y0r + len) sheet[y * w + x] = 1
-            }
-        }
-        fun paintCores(
-            pol: (Int, Int) -> Boolean,
-            sPx: Int,
-            dest: ByteArray,
-            sheet: ByteArray,
-            doH: Boolean,
-            doV: Boolean,
-        ) {
-            if (sPx < 1) return
-            val plo = 0.7f * sPx
-            val phi = 1.3f * sPx
-            if (doH) {
-                forEachHRuns(pol) { y, x0r, len ->
-                    if (len == w) return@forEachHRuns
-                    val (fullLen, blocked) = peekH(y, x0r, len, pol, sPx)
-                    if (blocked) return@forEachHRuns
-                    if (fullLen.toFloat() < plo || fullLen.toFloat() > phi) return@forEachHRuns
-                    val off = y * w
-                    for (x in x0r until x0r + len) {
-                        if (sheet[off + x].toInt() == 0) dest[off + x] = -1
-                    }
-                }
-            }
-            if (doV) {
-                forEachVRuns(pol) { x, y0r, len ->
-                    if (len == h) return@forEachVRuns
-                    val (fullLen, blocked) = peekV(x, y0r, len, pol, sPx)
-                    if (blocked) return@forEachVRuns
-                    if (fullLen.toFloat() < plo || fullLen.toFloat() > phi) return@forEachVRuns
-                    for (y in y0r until y0r + len) {
-                        val i = y * w + x
-                        if (sheet[i].toInt() == 0) dest[i] = -1
-                    }
-                }
-            }
-        }
-        fun sPxFromPol(pol: (Int, Int) -> Boolean, lo: Int, hi: Int): Int {
-            val bothH = IntArray(w + 1)
-            forEachHRuns(pol) { _, _, len ->
-                if (len != w && len in bothH.indices) bothH[len]++
-            }
-            val notPol = { sx: Int, sy: Int -> !pol(sx, sy) }
-            forEachHRuns(notPol) { _, _, len ->
-                if (len != w && len in bothH.indices) bothH[len]++
-            }
-            return argmaxRun(bothH, lo, hi)
-        }
-        fun greyMask(pol: (Int, Int) -> Boolean): ByteArray {
-            val white = ByteArray(w * h)
-            for (sy in 0 until h) {
-                val off = sy * w
-                for (sx in 0 until w) {
-                    if (pol(sx, sy)) white[off + sx] = -1
-                }
-            }
-            return white
-        }
-        fun evalGrey(
-            kind: String,
-            t: Int,
-            tLo: Int,
-            tHi: Int,
-            whitePol: (Int, Int) -> Boolean,
-            doV: Boolean,
-        ): SeedInkThr {
-            val on = whitePol
-            val off = { sx: Int, sy: Int -> !whitePol(sx, sy) }
-            val sheet = ByteArray(w * h)
-            markSheet(sheet, on)
-            markSheet(sheet, off)
-            val sPx = sPxFromPol(on, loSw, hiSw)
-            val white = greyMask(on)
-            val stroke = ByteArray(w * h)
-            paintCores(on, sPx, stroke, sheet, true, doV)
-            paintCores(off, sPx, stroke, sheet, true, doV)
-            return SeedInkThr(t, sPx, white, stroke, kind, tLo, tHi, seedW, seedH)
-        }
-        val thrs = ArrayList<SeedInkThr>()
-        for (t in cands) {
-            val light = { sx: Int, sy: Int -> (view.yAt(sx, sy) ?: 0) > t }
-            thrs.add(evalGrey("gt", t, t, t, light, false))
-        }
-        val bandThrs = ArrayList<SeedInkThr>()
-        for (i in 0 until valleyTs.size - 1) {
-            val tLo = valleyTs[i]
-            val tHi = valleyTs[i + 1]
-            if (tHi <= tLo) continue
-            val inBand = { sx: Int, sy: Int ->
-                val yv = view.yAt(sx, sy) ?: 0
-                yv > tLo && yv <= tHi
-            }
-            val b = evalGrey("band", tHi, tLo, tHi, inBand, true)
-            bandThrs.add(b)
-            thrs.add(b)
-        }
-        fun unionOf(bands: List<SeedInkThr>, kind: String): SeedInkThr {
-            val counts = HashMap<Int, Int>()
-            for (b in bands) {
-                if (b.sPx > 0) counts[b.sPx] = (counts[b.sPx] ?: 0) + 1
-            }
-            var modal = 0
-            var modalC = 0
-            for ((sp, c) in counts) {
-                if (c > modalC || (c == modalC && sp > modal)) {
-                    modalC = c
-                    modal = sp
-                }
-            }
-            val stroke = ByteArray(w * h)
-            var nBand = 0
-            var skipTint = false
-            if (modal > 0) {
-                val plo = 0.7f * modal
-                val phi = 1.3f * modal
-                for (b in bands) {
-                    if (b.sPx < 1) continue
-                    val sp = b.sPx.toFloat()
-                    if (sp < plo || sp > phi) continue
-                    nBand++
-                    if (b.skipTint) skipTint = true
-                    for (i in stroke.indices) {
-                        if (b.stroke[i].toInt() != 0) stroke[i] = -1
-                    }
-                }
-            }
-            return SeedInkThr(
-                modal, modal, ByteArray(w * h), stroke, kind, 0, 0, seedW, seedH,
-                skipTint, nBand,
-            )
-        }
-        thrs.add(unionOf(bandThrs, "union"))
-        val wantColor = uv != null
-        val uvOk = uv != null && !uv.empty() && uv.type() == CvType.CV_8UC2
-        if (wantColor && !uvOk) {
-            val cBands = ArrayList<SeedInkThr>()
-            for (gb in bandThrs) {
-                cBands.add(
-                    SeedInkThr(
-                        gb.t, gb.sPx, gb.white, gb.stroke, "cband",
-                        gb.tLo, gb.tHi, seedW, seedH, true, 0,
-                    ),
-                )
-            }
-            for (cb in cBands) thrs.add(cb)
-            thrs.add(unionOf(cBands, "cunion"))
-        } else if (uvOk) {
-            val cBands = ArrayList<SeedInkThr>()
-            for (gb in bandThrs) {
-                val nPix = w * h
-                var su = 0f
-                var sv = 0f
-                var yInkSum = 0f
-                var chromaInkSum = 0f
-                var nInk = 0
-                for (sy in 0 until h) {
-                    val off = sy * w
-                    for (sx in 0 until w) {
-                        if (gb.stroke[off + sx].toInt() == 0) continue
-                        val yv = view.yAt(sx, sy) ?: continue
-                        val (u, v) = view.uvAt(sx, sy)
-                        val du = u - 128f
-                        val dv = v - 128f
-                        val n2 = du * du + dv * dv
-                        if (n2 >= 1f) {
-                            val inv = 1f / sqrt(n2)
-                            su += du * inv
-                            sv += dv * inv
-                            chromaInkSum += sqrt(n2)
-                        }
-                        yInkSum += yv
-                        nInk++
-                    }
-                }
-                val dOff = gb.sPx.coerceAtLeast(1)
-                var yBgSum = 0.0
-                var suBg = 0f
-                var svBg = 0f
-                var chromaBgSum = 0f
-                var nBg = 0
-                fun tryBg(sx: Int, sy: Int) {
-                    if (sx in 0 until w && sy in 0 until h) {
-                        if (gb.stroke[sy * w + sx].toInt() != 0) return
-                    } else if (!view.inPhoto(sx, sy)) {
-                        return
-                    }
-                    val yv = view.yAt(sx, sy) ?: return
-                    yBgSum += yv
-                    val (u, v) = view.uvAt(sx, sy)
-                    val du = u - 128f
-                    val dv = v - 128f
-                    val n2 = du * du + dv * dv
-                    if (n2 >= 1f) {
-                        val inv = 1f / sqrt(n2)
-                        suBg += du * inv
-                        svBg += dv * inv
-                        chromaBgSum += sqrt(n2)
-                    }
-                    nBg++
-                }
-                if (nInk > 0 && gb.sPx > 0) {
-                    for (sy in 0 until h) {
-                        val off = sy * w
-                        for (sx in 0 until w) {
-                            if (gb.stroke[off + sx].toInt() == 0) continue
-                            tryBg(sx - dOff, sy)
-                            tryBg(sx + dOff, sy)
-                            tryBg(sx, sy - dOff)
-                            tryBg(sx, sy + dOff)
-                        }
-                    }
-                }
-                val skipTint = nInk <= 0 || run {
-                    val meanChromaInk = chromaInkSum / nInk.toFloat()
-                    var uInkX = su / nInk.toFloat()
-                    var uInkY = sv / nInk.toFloat()
-                    val nrm2 = uInkX * uInkX + uInkY * uInkY
-                    if (nrm2 > 1e-12f) {
-                        val inv = 1f / sqrt(nrm2)
-                        uInkX *= inv
-                        uInkY *= inv
-                    }
-                    val yInk = yInkSum / nInk.toFloat()
-                    val yBg = if (nBg > 0) (yBgSum / nBg).toFloat() else if (yInk < 128f) 200f else 40f
-                    var uBgX = 0f
-                    var uBgY = 0f
-                    var meanChromaBg = 0f
-                    var nrmBg2 = 0f
-                    if (nBg > 0) {
-                        uBgX = suBg / nBg.toFloat()
-                        uBgY = svBg / nBg.toFloat()
-                        nrmBg2 = uBgX * uBgX + uBgY * uBgY
-                        if (nrmBg2 > 1e-12f) {
-                            val inv = 1f / sqrt(nrmBg2)
-                            uBgX *= inv
-                            uBgY *= inv
-                        }
-                        meanChromaBg = chromaBgSum / nBg.toFloat()
-                    }
-                    val inkHasChroma = meanChromaInk >= kTintChromaEps && nrm2 > 1e-12f
-                    val bgHasChroma = meanChromaBg >= kTintChromaEps && nrmBg2 > 1e-12f
-                    val inkBgDot = if (inkHasChroma && bgHasChroma) uInkX * uBgX + uInkY * uBgY else 0f
-                    meanChromaInk < 12f || inkBgDot >= kTintDotThr
-                }
-                if (skipTint) {
-                    cBands.add(
-                        SeedInkThr(
-                            gb.t, gb.sPx, gb.white, gb.stroke, "cband",
-                            gb.tLo, gb.tHi, seedW, seedH, true, 0,
-                        ),
-                    )
-                    continue
-                }
-                var uInkX = su / nInk.toFloat()
-                var uInkY = sv / nInk.toFloat()
-                val nrm2 = uInkX * uInkX + uInkY * uInkY
-                if (nrm2 > 1e-12f) {
-                    val inv = 1f / sqrt(nrm2)
-                    uInkX *= inv
-                    uInkY *= inv
-                }
-                val yInk = yInkSum / nInk.toFloat()
-                val yBg = if (nBg > 0) (yBgSum / nBg).toFloat() else if (yInk < 128f) 200f else 40f
-                var uBgX = 0f
-                var uBgY = 0f
-                var meanChromaBg = 0f
-                var nrmBg2 = 0f
-                if (nBg > 0) {
-                    uBgX = suBg / nBg.toFloat()
-                    uBgY = svBg / nBg.toFloat()
-                    nrmBg2 = uBgX * uBgX + uBgY * uBgY
-                    if (nrmBg2 > 1e-12f) {
-                        val inv = 1f / sqrt(nrmBg2)
-                        uBgX *= inv
-                        uBgY *= inv
-                    }
-                    meanChromaBg = chromaBgSum / nBg.toFloat()
-                }
-                val dInk = yInk - yBg
-                val eps2 = kTintChromaEps * kTintChromaEps
-                val dotThr2 = kTintDotThr * kTintDotThr
-                val bgHasChroma = meanChromaBg >= kTintChromaEps && nrmBg2 > 1e-12f
-                fun inkHueAt(sx: Int, sy: Int): Boolean {
-                    val (u, v) = view.uvAt(sx, sy)
-                    val du = u - 128f
-                    val dv = v - 128f
-                    val c2 = du * du + dv * dv
-                    val leftInk = du * uInkX + dv * uInkY
-                    return c2 >= eps2 && leftInk > 0f && leftInk * leftInk >= dotThr2 * c2
-                }
-                fun bgHueAt(sx: Int, sy: Int): Boolean {
-                    if (!bgHasChroma) return false
-                    val (u, v) = view.uvAt(sx, sy)
-                    val du = u - 128f
-                    val dv = v - 128f
-                    val c2 = du * du + dv * dv
-                    val leftBg = du * uBgX + dv * uBgY
-                    return c2 >= eps2 && leftBg > 0f && leftBg * leftBg >= dotThr2 * c2
-                }
-                fun colorInk(sx: Int, sy: Int): Boolean {
-                    val Y = (view.yAt(sx, sy) ?: return false).toFloat()
-                    val polOk = dInk * (Y - yBg) >= 0f
-                    val nearY = abs(Y - yInk) <= abs(Y - yBg)
-                    return polOk && !bgHueAt(sx, sy) && (nearY || inkHueAt(sx, sy))
-                }
-                val white = ByteArray(nPix)
-                for (sy in 0 until h) {
-                    val off = sy * w
-                    for (sx in 0 until w) {
-                        val greyW = gb.white[off + sx].toInt() != 0
-                        if ((greyW || inkHueAt(sx, sy)) && !bgHueAt(sx, sy)) {
-                            white[off + sx] = -1
-                        }
-                    }
-                }
-                val sheet = ByteArray(nPix)
-                val on = { sx: Int, sy: Int -> colorInk(sx, sy) }
-                val off = { sx: Int, sy: Int -> !colorInk(sx, sy) }
-                markSheet(sheet, on)
-                markSheet(sheet, off)
-                val sPx = sPxFromPol(on, loSw, hiSw)
-                val stroke = ByteArray(nPix)
-                paintCores(on, sPx, stroke, sheet, true, true)
-                paintCores(off, sPx, stroke, sheet, true, true)
-                val cb = SeedInkThr(
-                    gb.t, sPx, white, stroke, "cband",
-                    gb.tLo, gb.tHi, seedW, seedH, false, 0,
-                )
-                cBands.add(cb)
-            }
-            for (cb in cBands) thrs.add(cb)
-            thrs.add(unionOf(cBands, "cunion"))
-        }
-        return SeedInkProbe(nThr = nThr, w = w, h = h, thrs = thrs)
     }
 
     /** 64-bin local-min midpoints; 3-bin smooth; rise both sides. Port of native findValleyMidpoints64. */

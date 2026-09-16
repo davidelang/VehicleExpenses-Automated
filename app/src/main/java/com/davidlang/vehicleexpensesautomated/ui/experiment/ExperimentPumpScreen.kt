@@ -7629,46 +7629,14 @@ private fun snapshotSeedInkProbe(
     val cropId = scratchYuv.s.createCrop(0, 0, destW0, destH0)
     val jpeg = try {
         val dest = scratchYuv.c[cropId]
-        dest.mat.setTo(Scalar(0.0))
-        dest.uvMat.setTo(Scalar(128.0, 128.0))
-        val dw = dest.mat.cols()
-        val dh = dest.mat.rows()
-        val yRow = ByteArray(dw)
-        for (dy in 0 until dh) {
-            val sy = ((dy.toLong() * srcH) / dh).toInt().coerceAtMost(srcH - 1)
-            val off = sy * srcW
-            for (dx in 0 until dw) {
-                val sx = ((dx.toLong() * srcW) / dw).toInt().coerceAtMost(srcW - 1)
-                val i = off + sx
-                yRow[dx] = when {
-                    thr.stroke[i].toInt() != 0 -> 150.toByte()
-                    thr.white[i].toInt() != 0 -> -1
-                    else -> 0
-                }
-            }
-            dest.mat.put(dy, 0, yRow)
+        if (!NativeImageUtils.paintSeedInkLook(
+                thr.white, thr.stroke, srcW, srcH, dest.mat, dest.uvMat,
+            )
+        ) {
+            ByteArray(0)
+        } else {
+            NativeImageUtils.encodeYuvMatJpeg(dest.mat, dest.uvMat, 80)
         }
-        val uvW = dw / 2
-        val uvH = dh / 2
-        if (uvW > 0 && uvH > 0 && !dest.uvMat.empty()) {
-            val uvRow = ByteArray(uvW * 2)
-            for (uy in 0 until uvH) {
-                dest.mat.get(uy * 2, 0, yRow)
-                var o = 0
-                for (ux in 0 until uvW) {
-                    val yv = yRow[ux * 2].toInt() and 0xFF
-                    if (yv == 150) {
-                        uvRow[o++] = 44
-                        uvRow[o++] = 21
-                    } else {
-                        uvRow[o++] = 128.toByte()
-                        uvRow[o++] = 128.toByte()
-                    }
-                }
-                dest.uvMat.put(uy, 0, uvRow)
-            }
-        }
-        NativeImageUtils.encodeYuvMatJpeg(dest.mat, dest.uvMat, 80)
     } finally {
         scratchYuv.c[cropId].release()
     }
