@@ -12,6 +12,7 @@ import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
@@ -2891,7 +2892,8 @@ object ContentExpandUtils {
                 if (run > 0) body(x, y0r, run)
             }
         }
-        fun peekH(y: Int, x0: Int, len: Int, pol: (Int, Int) -> Boolean): Pair<Int, Boolean> {
+        fun peekH(y: Int, x0: Int, len: Int, pol: (Int, Int) -> Boolean, sPx: Int): Pair<Int, Boolean> {
+            val maxLen = ceil(1.3f * sPx).toInt().coerceAtLeast(1)
             var a = x0
             var b = x0 + len
             var blocked = false
@@ -2903,6 +2905,7 @@ object ContentExpandUtils {
                         if (!view.inPhoto(x, y) || !pol(x, y)) break
                         a = x
                         x--
+                        if (b - a > maxLen) break
                     }
                 }
             }
@@ -2914,12 +2917,14 @@ object ContentExpandUtils {
                         if (!view.inPhoto(x, y) || !pol(x, y)) break
                         b = x + 1
                         x++
+                        if (b - a > maxLen) break
                     }
                 }
             }
             return (b - a) to blocked
         }
-        fun peekV(x: Int, y0: Int, len: Int, pol: (Int, Int) -> Boolean): Pair<Int, Boolean> {
+        fun peekV(x: Int, y0: Int, len: Int, pol: (Int, Int) -> Boolean, sPx: Int): Pair<Int, Boolean> {
+            val maxLen = ceil(1.3f * sPx).toInt().coerceAtLeast(1)
             var a = y0
             var b = y0 + len
             var blocked = false
@@ -2931,6 +2936,7 @@ object ContentExpandUtils {
                         if (!view.inPhoto(x, y) || !pol(x, y)) break
                         a = y
                         y--
+                        if (b - a > maxLen) break
                     }
                 }
             }
@@ -2942,77 +2948,11 @@ object ContentExpandUtils {
                         if (!view.inPhoto(x, y) || !pol(x, y)) break
                         b = y + 1
                         y++
+                        if (b - a > maxLen) break
                     }
                 }
             }
             return (b - a) to blocked
-        }
-        fun isFat(
-            sx: Int, sy: Int, len: Int, horizontal: Boolean,
-            pol: (Int, Int) -> Boolean, sPx: Int,
-        ): Boolean {
-            val grow = 3 * sPx
-            if (grow < 1) return false
-            val xMin = -grow
-            val xMax = w + grow
-            val yMin = -grow
-            val yMax = h + grow
-            val vis = HashSet<Long>()
-            val q = ArrayDeque<Pair<Int, Int>>()
-            fun key(x: Int, y: Int) = (y.toLong() shl 32) xor (x.toLong() and 0xffffffffL)
-            fun push(x: Int, y: Int) {
-                if (x < xMin || x >= xMax || y < yMin || y >= yMax) return
-                if (!view.inPhoto(x, y)) return
-                val k = key(x, y)
-                if (!vis.add(k)) return
-                if (!pol(x, y)) {
-                    vis.remove(k)
-                    return
-                }
-                q.add(x to y)
-            }
-            if (horizontal) {
-                for (x in sx until sx + len) push(x, sy)
-            } else {
-                for (y in sy until sy + len) push(sx, y)
-            }
-            val pix = ArrayList<Pair<Int, Int>>()
-            while (q.isNotEmpty()) {
-                val (x, y) = q.removeFirst()
-                pix.add(x to y)
-                for (dy in -1..1) {
-                    for (dx in -1..1) {
-                        if (dx == 0 && dy == 0) continue
-                        push(x + dx, y + dy)
-                    }
-                }
-            }
-            val byRow = HashMap<Int, ArrayList<Int>>()
-            val byCol = HashMap<Int, ArrayList<Int>>()
-            for ((x, y) in pix) {
-                byRow.getOrPut(y) { ArrayList() }.add(x)
-                byCol.getOrPut(x) { ArrayList() }.add(y)
-            }
-            fun maxRun(vals: ArrayList<Int>): Int {
-                if (vals.isEmpty()) return 0
-                vals.sort()
-                var best = 1
-                var cur = 1
-                for (i in 1 until vals.size) {
-                    if (vals[i] == vals[i - 1] + 1) {
-                        cur++
-                        if (cur > best) best = cur
-                    } else {
-                        cur = 1
-                    }
-                }
-                return best
-            }
-            var maxH = 0
-            var maxV = 0
-            for (xs in byRow.values) maxH = max(maxH, maxRun(xs))
-            for (ys in byCol.values) maxV = max(maxV, maxRun(ys))
-            return maxH > 3 * sPx && maxV > 3 * sPx
         }
         fun markSheet(sheet: ByteArray, pol: (Int, Int) -> Boolean) {
             forEachHRuns(pol) { y, x0r, len ->
@@ -3039,11 +2979,9 @@ object ContentExpandUtils {
             if (doH) {
                 forEachHRuns(pol) { y, x0r, len ->
                     if (len == w) return@forEachHRuns
-                    val (fullLen, blocked) = peekH(y, x0r, len, pol)
+                    val (fullLen, blocked) = peekH(y, x0r, len, pol, sPx)
                     if (blocked) return@forEachHRuns
                     if (fullLen.toFloat() < plo || fullLen.toFloat() > phi) return@forEachHRuns
-                    val hitEdge = x0r == 0 || x0r + len == w
-                    if (hitEdge && isFat(x0r, y, len, true, pol, sPx)) return@forEachHRuns
                     val off = y * w
                     for (x in x0r until x0r + len) {
                         if (sheet[off + x].toInt() == 0) dest[off + x] = -1
@@ -3053,11 +2991,9 @@ object ContentExpandUtils {
             if (doV) {
                 forEachVRuns(pol) { x, y0r, len ->
                     if (len == h) return@forEachVRuns
-                    val (fullLen, blocked) = peekV(x, y0r, len, pol)
+                    val (fullLen, blocked) = peekV(x, y0r, len, pol, sPx)
                     if (blocked) return@forEachVRuns
                     if (fullLen.toFloat() < plo || fullLen.toFloat() > phi) return@forEachVRuns
-                    val hitEdge = y0r == 0 || y0r + len == h
-                    if (hitEdge && isFat(x, y0r, len, false, pol, sPx)) return@forEachVRuns
                     for (y in y0r until y0r + len) {
                         val i = y * w + x
                         if (sheet[i].toInt() == 0) dest[i] = -1
