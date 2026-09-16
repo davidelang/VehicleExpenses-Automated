@@ -1806,7 +1806,7 @@ static void packHeatmapBoxes(
     int gc = growCells;
     if (gc < 0) gc = 0;
     if (gc > 1) gc = 1;
-    const int cell = gc;
+    const int cell = gc * 4;
     int count = 0;
     for (size_t bi = 0; bi < blobs.size(); ++bi) {
         if (count >= boxCap) break;
@@ -1869,7 +1869,7 @@ static void packHeatmapBoxes(
             if (nPts < 1) continue;
             cv::Mat pointsHdr(nPts, 1, CV_32SC2, pts);
             cv::RotatedRect rect = cv::minAreaRect(pointsHdr);
-            // Grow along the quad axes (not AABB) so tilted reds get the same 1 heat px.
+            // Grow along the quad axes (not AABB) so tilted reds get the same stride-4 cell.
             rect.size.width += 2.f * (float)cell;
             rect.size.height += 2.f * (float)cell;
             rect.points(vertices);

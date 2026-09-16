@@ -372,10 +372,10 @@ object NativeImageUtils {
     }
 
     /**
-     * One grow cell is 1 pixel on the output heat array (`packHeatmapBoxes` `cell = gc`).
-     * Metadata `heatmap_cell_px` matches that native grow.
+     * One grow cell is 4 pixels on the output heat array (`packHeatmapBoxes` `cell = gc * 4`).
+     * That is one stride-4 det cell. Metadata `heatmap_cell_px` matches that native grow.
      */
-    const val PADDLE_DET_HEAT_CELL_PX: Int = 1
+    const val PADDLE_DET_HEAT_CELL_PX: Int = 4
 
     /** Production: rotated min-area rect on supra-threshold heat pixels. */
     const val HEATMAP_BOX_MIN_AREA_RECT: Int = 0
