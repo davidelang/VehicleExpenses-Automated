@@ -5289,14 +5289,18 @@ suspend fun runPumpExperiment(
                     )
                     branch.metadata.remove("look_ink")
                     val grayOk = !workspace.p.mat.empty() && workspace.p.mat.type() == CvType.CV_8UC1
+                    val keep = SeedInkProbeKeep.keepBoxes(file.name, branch.name)
                     if (grayOk) {
-                        seeds.forEach { seed ->
-                            val probe = ContentExpandUtils.probeSeedInk(workspace.p.mat, seed)
-                            snapshotSeedInkProbe(
-                                workspace.p.mat, seed, probe, true, branch,
-                                reportDir, timestamp, fullRow, branch.name,
-                            )
-                            probe.mask.release()
+                        seeds.forEachIndexed { i, seed ->
+                            val boxN = i + 1
+                            if (boxN !in keep) return@forEachIndexed
+                            val probe = ContentExpandUtils.probeSeedInk(workspace.p.mat, seed, imgW)
+                            for (thr in probe.thrs) {
+                                snapshotSeedInkProbe(
+                                    thr, probe.w, probe.h, true, boxN, branch,
+                                    reportDir, timestamp, fullRow, branch.name,
+                                )
+                            }
                         }
                     }
                     val aPd = getAnns(pdHunksRawTotal, AnnYuv.RED, 2)
@@ -5344,20 +5348,24 @@ suspend fun runPumpExperiment(
                     )
                     branch.metadata.remove("look_ink")
                     val grayOk = !workspace.p.mat.empty() && workspace.p.mat.type() == CvType.CV_8UC1
+                    val keep = SeedInkProbeKeep.keepBoxes(file.name, branch.name)
                     if (grayOk) {
-                        seedQuads.forEach { q ->
+                        seedQuads.forEachIndexed { i, q ->
+                            val boxN = i + 1
+                            if (boxN !in keep) return@forEachIndexed
                             val strip = Mat()
                             val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
                                 workspace.p.mat, q, strip,
                             )
                             if (ok && !strip.empty()) {
                                 val roi = android.graphics.Rect(0, 0, strip.cols(), strip.rows())
-                                val probe = ContentExpandUtils.probeSeedInk(strip, roi)
-                                snapshotSeedInkProbe(
-                                    strip, roi, probe, false, branch,
-                                    reportDir, timestamp, fullRow, branch.name,
-                                )
-                                probe.mask.release()
+                                val probe = ContentExpandUtils.probeSeedInk(strip, roi, imgW)
+                                for (thr in probe.thrs) {
+                                    snapshotSeedInkProbe(
+                                        thr, probe.w, probe.h, false, boxN, branch,
+                                        reportDir, timestamp, fullRow, branch.name,
+                                    )
+                                }
                             }
                             strip.release()
                         }
@@ -7545,12 +7553,13 @@ private suspend fun snapshotOverlayFull(
     }
 }
 
-/** Per-seed probe JPEG: gray crop with white mask, scaled so height (AABB) or short-axis (rot) is 96. */
+/** Per-threshold probe JPEG: black + white(Y>t) + green SW runs; height/short-axis 96. */
 private fun snapshotSeedInkProbe(
-    gray: Mat,
-    roi: android.graphics.Rect,
-    probe: ContentExpandUtils.SeedInkProbe,
+    thr: ContentExpandUtils.SeedInkThr,
+    srcW: Int,
+    srcH: Int,
     scaleByHeight: Boolean,
+    boxN: Int,
     branch: PumpBranch,
     reportDir: File,
     timestamp: String,
@@ -7558,27 +7567,8 @@ private fun snapshotSeedInkProbe(
     flowName: String,
     scratchYuv: BufferSet = NativePaddleEngine.bufferSetB,
 ) {
-    if (gray.empty() || gray.type() != CvType.CV_8UC1) return
-    val x0 = roi.left.coerceAtLeast(0)
-    val y0 = roi.top.coerceAtLeast(0)
-    val x1 = roi.right.coerceAtMost(gray.cols())
-    val y1 = roi.bottom.coerceAtMost(gray.rows())
-    val srcW = x1 - x0
-    val srcH = y1 - y0
     if (srcW < 1 || srcH < 1) return
-    val src = gray.submat(y0, y1, x0, x1)
-    val painted = Mat()
-    try {
-        src.copyTo(painted)
-    } finally {
-        src.release()
-    }
-    if (!probe.mask.empty() &&
-        probe.mask.rows() == painted.rows() &&
-        probe.mask.cols() == painted.cols()
-    ) {
-        painted.setTo(Scalar(255.0), probe.mask)
-    }
+    if (thr.white.size != srcW * srcH || thr.stroke.size != srcW * srcH) return
     fun even2(v: Int) = ((v + 1) / 2 * 2).coerceAtLeast(2)
     val axis = if (scaleByHeight) srcH else min(srcW, srcH)
     val scale = minOf(
@@ -7587,15 +7577,60 @@ private fun snapshotSeedInkProbe(
         scratchYuv.s.height.toDouble() / srcH,
         scratchYuv.s.width.toDouble() / srcW,
     )
-    val destH0 = even2(ceil(srcH * scale).toInt())
-    val destW0 = even2(ceil(srcW * scale).toInt())
+    var destH0 = even2(ceil(srcH * scale).toInt())
+    var destW0 = even2(ceil(srcW * scale).toInt())
+    val maxW = scratchYuv.s.width
+    val maxH = scratchYuv.s.height
+    if (destW0 > maxW || destH0 > maxH) {
+        val fit = min(maxW.toDouble() / destW0, maxH.toDouble() / destH0)
+        destW0 = even2((destW0 * fit).toInt())
+        destH0 = even2((destH0 * fit).toInt())
+    }
+    val cropId = scratchYuv.s.createCrop(0, 0, destW0, destH0)
     val jpeg = try {
-        pumpEncodeSnapshot(
-            painted, android.graphics.Rect(0, 0, painted.cols(), painted.rows()),
-            destW0, destH0, emptyList(), scratchYuv,
-        )
+        val dest = scratchYuv.c[cropId]
+        dest.mat.setTo(Scalar(0.0))
+        dest.uvMat.setTo(Scalar(128.0, 128.0))
+        val dw = dest.mat.cols()
+        val dh = dest.mat.rows()
+        val yRow = ByteArray(dw)
+        for (dy in 0 until dh) {
+            val sy = ((dy.toLong() * srcH) / dh).toInt().coerceAtMost(srcH - 1)
+            val off = sy * srcW
+            for (dx in 0 until dw) {
+                val sx = ((dx.toLong() * srcW) / dw).toInt().coerceAtMost(srcW - 1)
+                val i = off + sx
+                yRow[dx] = when {
+                    thr.stroke[i].toInt() != 0 -> 150.toByte()
+                    thr.white[i].toInt() != 0 -> -1
+                    else -> 0
+                }
+            }
+            dest.mat.put(dy, 0, yRow)
+        }
+        val uvW = dw / 2
+        val uvH = dh / 2
+        if (uvW > 0 && uvH > 0 && !dest.uvMat.empty()) {
+            val uvRow = ByteArray(uvW * 2)
+            for (uy in 0 until uvH) {
+                dest.mat.get(uy * 2, 0, yRow)
+                var o = 0
+                for (ux in 0 until uvW) {
+                    val yv = yRow[ux * 2].toInt() and 0xFF
+                    if (yv == 150) {
+                        uvRow[o++] = 44
+                        uvRow[o++] = 21
+                    } else {
+                        uvRow[o++] = 128.toByte()
+                        uvRow[o++] = 128.toByte()
+                    }
+                }
+                dest.uvMat.put(uy, 0, uvRow)
+            }
+        }
+        NativeImageUtils.encodeYuvMatJpeg(dest.mat, dest.uvMat, 80)
     } finally {
-        painted.release()
+        scratchYuv.c[cropId].release()
     }
     if (jpeg.isEmpty()) return
     val arr = try {
@@ -7603,13 +7638,13 @@ private fun snapshotSeedInkProbe(
     } catch (_: Exception) {
         org.json.JSONArray()
     }
-    val boxN = arr.length() + 1
     val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, opts)
     val recW = opts.outWidth.coerceAtLeast(0)
     val recH = opts.outHeight.coerceAtLeast(0)
     val imgDir = File(reportDir, "pump_imgs_$timestamp").also { it.mkdirs() }
-    val fname = "r${fullRow}_${flowName.filter { it.isLetterOrDigit() || it == '-' }.take(24)}_look_box$boxN.jpg"
+    val flowSlug = flowName.filter { it.isLetterOrDigit() || it == '-' }.take(24)
+    val fname = "r${fullRow}_${flowSlug}_look_box${boxN}_t${thr.t}.jpg"
     File(imgDir, fname).writeBytes(jpeg)
     arr.put(
         org.json.JSONObject()
@@ -7621,12 +7656,8 @@ private fun snapshotSeedInkProbe(
             .put("flow", flowName)
             .put("recW", recW)
             .put("recH", recH)
-            .put("sPx", probe.sPx)
-            .put("tBest", probe.tBest)
-            .put("mix", probe.mix.toDouble())
-            .put("nInk", probe.nInk)
-            .put("nSheet", probe.nSheet)
-            .put("nThr", probe.nThr),
+            .put("t", thr.t)
+            .put("sPx", thr.sPx),
     )
     branch.metadata["look_ink"] = arr.toString()
 }
@@ -8390,10 +8421,7 @@ private fun putLookInkFillAttempts(j: org.json.JSONObject, tele: ContentExpandUt
 
 private fun lookInkCountCap(c: org.json.JSONObject): String {
     if (c.optString("lookKind") == "seed-probe") {
-        val mix = c.optDouble("mix", 0.0)
-        return "sPx=${c.optInt("sPx", 0)} tBest=${c.optInt("tBest", 0)} " +
-            "mix=${String.format(java.util.Locale.US, "%.3f", mix)} " +
-            "nInk=${c.optInt("nInk", 0)} nSheet=${c.optInt("nSheet", 0)} nThr=${c.optInt("nThr", 0)}"
+        return "t=${c.optInt("t", 0)} sPx=${c.optInt("sPx", 0)}"
     }
     val base = "inkSeed=${c.optInt("inkSeed", 0)} inkBlue=${c.optInt("inkBlue", 0)} inkYellow=${c.optInt("inkYellow", 0)}"
     val att = c.optJSONArray("attempts") ?: return base
@@ -8470,16 +8498,18 @@ private fun pLookInkArr(br: PumpBranch): org.json.JSONArray {
 
 private fun pLookInkBoxHtml(br: PumpBranch, k: Int, imgRel: String): String {
     val arr = pLookInkArr(br)
+    val sb = StringBuilder()
     for (j in 0 until arr.length()) {
         val c = arr.optJSONObject(j) ?: continue
         val lab = c.optString("label")
         if (lab != "box$k" && lab != "box${k}") continue
         val file = c.optString("lookInkFile")
-        if (file.isNullOrEmpty()) return ""
+        if (file.isNullOrEmpty()) continue
         val cap = "$lab ${lookInkCountCap(c)}"
-        return pumpImgTag("$imgRel/$file", "height:auto;", cap)
+        sb.append(pumpImgTag("$imgRel/$file", "height:auto;", cap))
     }
-    return ""
+    if (sb.isEmpty()) return ""
+    return "<div style='display:flex;flex-wrap:wrap;gap:3px;'>$sb</div>"
 }
 
 private fun pOfficialRecBoxHtml(

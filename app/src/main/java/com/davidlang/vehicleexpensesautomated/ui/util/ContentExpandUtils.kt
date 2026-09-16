@@ -2650,25 +2650,29 @@ object ContentExpandUtils {
         }
     }
 
-    data class SeedInkProbe(
+    data class SeedInkThr(
+        val t: Int,
         val sPx: Int,
-        val tBest: Int,
-        val mix: Float,
-        val nInk: Int,
-        val nSheet: Int,
+        val white: ByteArray,
+        val stroke: ByteArray,
+    )
+
+    data class SeedInkProbe(
         val nThr: Int,
-        val mask: Mat,
+        val w: Int,
+        val h: Int,
+        val thrs: List<SeedInkThr>,
     )
 
     /**
-     * Multi-threshold stroke/gap ink probe on a gray ROI. Exact-span H/V runs
-     * (`run==W` / `run==H`) are sheet only — counted, never painted.
+     * Per-threshold stroke/gap ink probe on a gray ROI. Exact-span H/V runs
+     * (`run==W` / `run==H`) are sheet only — counted, never green.
      */
-    fun probeSeedInk(gray: Mat, roi: Rect): SeedInkProbe {
+    fun probeSeedInk(gray: Mat, roi: Rect, imgW: Int): SeedInkProbe {
         fun empty(mw: Int, mh: Int): SeedInkProbe {
             val w = mw.coerceAtLeast(1)
             val h = mh.coerceAtLeast(1)
-            return SeedInkProbe(0, 0, 0f, 0, 0, 0, Mat.zeros(h, w, CvType.CV_8UC1))
+            return SeedInkProbe(0, w, h, emptyList())
         }
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return empty(1, 1)
         val x0 = roi.left.coerceAtLeast(0)
@@ -2702,14 +2706,8 @@ object ContentExpandUtils {
         for (mid in findValleyMidpoints64(hist64)) addThr(mid * 4 + 2)
         val nThr = cands.size
         if (nThr < 1) return empty(w, h)
-        val sheet = ByteArray(w * h)
-        class ThrEval(
-            val t: Int,
-            val mix: Float,
-            val spanFrac: Float,
-            val strokeLike: Boolean,
-            val hHist: IntArray,
-        )
+        val loSw = if (imgW >= 2000) 16 else 4
+        val hiSw = max(35, h / 2)
         fun argmaxRun(hist: IntArray, lo: Int, hi: Int): Int {
             var bestL = 0
             var bestC = 0
@@ -2724,43 +2722,57 @@ object ContentExpandUtils {
             }
             return if (bestC > 0) bestL else 0
         }
-        fun evalThr(t: Int, paintLo: Float, paintHi: Float, paint: ByteArray?): ThrEval {
-            val darkH = IntArray(w + 1)
-            val lightH = IntArray(w + 1)
+        fun forEachHRun(t: Int, body: (y: Int, x0: Int, len: Int) -> Unit) {
+            for (y in 0 until h) {
+                val rowOff = y * w
+                var darkRun = 0
+                var lightRun = 0
+                fun flush(len: Int, xEnd: Int) {
+                    if (len > 0) body(y, xEnd - len, len)
+                }
+                for (x in 0 until w) {
+                    val dark = (pixels[rowOff + x].toInt() and 0xFF) <= t
+                    if (dark) {
+                        if (lightRun > 0) {
+                            flush(lightRun, x)
+                            lightRun = 0
+                        }
+                        darkRun++
+                    } else {
+                        if (darkRun > 0) {
+                            flush(darkRun, x)
+                            darkRun = 0
+                        }
+                        lightRun++
+                    }
+                }
+                flush(darkRun, w)
+                flush(lightRun, w)
+            }
+        }
+        fun evalThr(t: Int): SeedInkThr {
             val bothH = IntArray(w + 1)
-            var mixRows = 0
-            var spanRows = 0
-            var spanCols = 0
+            val sheet = ByteArray(w * h)
             val darkCol = IntArray(w)
             val lightCol = IntArray(w)
             for (y in 0 until h) {
                 val rowOff = y * w
                 var darkRun = 0
                 var lightRun = 0
-                var darkGe2 = false
-                var lightGe2 = false
-                fun flushH(len: Int, dark: Boolean, xEnd: Int) {
+                fun flushH(len: Int, xEnd: Int) {
                     if (len < 1) return
                     if (len == w) {
                         val x0r = xEnd - len
                         for (x in x0r until xEnd) sheet[rowOff + x] = 1
                     } else {
-                        if (dark) darkH[len]++ else lightH[len]++
                         bothH[len]++
-                        if (paint != null && len.toFloat() >= paintLo && len.toFloat() <= paintHi) {
-                            val x0r = xEnd - len
-                            for (x in x0r until xEnd) paint[rowOff + x] = -1
-                        }
-                    }
-                    if (len >= 2) {
-                        if (dark) darkGe2 = true else lightGe2 = true
                     }
                 }
                 for (x in 0 until w) {
                     val dark = (pixels[rowOff + x].toInt() and 0xFF) <= t
                     if (dark) {
                         if (lightRun > 0) {
-                            flushH(lightRun, false, x)
+                            flushH(lightRun, x)
                             lightRun = 0
                         }
                         darkRun++
@@ -2768,7 +2780,7 @@ object ContentExpandUtils {
                         darkCol[x]++
                     } else {
                         if (darkRun > 0) {
-                            flushH(darkRun, true, x)
+                            flushH(darkRun, x)
                             darkRun = 0
                         }
                         lightRun++
@@ -2776,14 +2788,11 @@ object ContentExpandUtils {
                         lightCol[x]++
                     }
                 }
-                flushH(darkRun, true, w)
-                flushH(lightRun, false, w)
-                if (darkRun == w || lightRun == w) spanRows++
-                if (darkGe2 && lightGe2) mixRows++
+                flushH(darkRun, w)
+                flushH(lightRun, w)
             }
             for (x in 0 until w) {
                 if (darkCol[x] == h || lightCol[x] == h) {
-                    spanCols++
                     var i = x
                     val n = w * h
                     while (i < n) {
@@ -2792,57 +2801,29 @@ object ContentExpandUtils {
                     }
                 }
             }
-            val mix = if (h > 0) mixRows.toFloat() / h.toFloat() else 0f
-            val denom = (h + w).coerceAtLeast(1)
-            val spanFrac = (spanRows + spanCols).toFloat() / denom.toFloat()
-            val loSw = 4
-            val hiSw = h / 4
-            val strokeLike = argmaxRun(darkH, loSw, hiSw) > 0 || argmaxRun(lightH, loSw, hiSw) > 0
-            return ThrEval(t, mix, spanFrac, strokeLike, bothH)
-        }
-        val evals = ArrayList<ThrEval>(cands.size)
-        for (t in cands) evals.add(evalThr(t, 0f, -1f, null))
-        val usable = evals.filter { e ->
-            e.mix >= 0.45f && e.spanFrac <= 0.35f && e.strokeLike
-        }
-        val loSw = 4
-        val hiSw = h / 4
-        val pooled = IntArray(w + 1)
-        for (e in usable) {
-            val n = min(pooled.size, e.hHist.size)
-            for (i in 0 until n) pooled[i] += e.hHist[i]
-        }
-        val sPx = argmaxRun(pooled, loSw, hiSw)
-        val tBestEval = usable.maxByOrNull { it.mix } ?: evals.first()
-        val paint = ByteArray(w * h)
-        if (sPx > 0 && usable.isNotEmpty()) {
-            val plo = 0.7f * sPx
-            val phi = 1.3f * sPx
-            for (e in usable) evalThr(e.t, plo, phi, paint)
-        }
-        var nInk = 0
-        var nSheet = 0
-        val mask = Mat.zeros(h, w, CvType.CV_8UC1)
-        val maskRow = ByteArray(w)
-        for (y in 0 until h) {
-            val off = y * w
-            for (x in 0 until w) {
-                if (sheet[off + x].toInt() != 0) nSheet++
-                val ink = paint[off + x].toInt() != 0
-                maskRow[x] = if (ink) -1 else 0
-                if (ink) nInk++
+            val sPx = argmaxRun(bothH, loSw, hiSw)
+            val white = ByteArray(w * h)
+            for (i in pixels.indices) {
+                if ((pixels[i].toInt() and 0xFF) > t) white[i] = -1
             }
-            mask.put(y, 0, maskRow)
+            val stroke = ByteArray(w * h)
+            if (sPx > 0) {
+                val plo = 0.7f * sPx
+                val phi = 1.3f * sPx
+                forEachHRun(t) { y, x0r, len ->
+                    if (len == w) return@forEachHRun
+                    if (len.toFloat() < plo || len.toFloat() > phi) return@forEachHRun
+                    val rowOff = y * w
+                    for (x in x0r until x0r + len) {
+                        if (sheet[rowOff + x].toInt() == 0) stroke[rowOff + x] = -1
+                    }
+                }
+            }
+            return SeedInkThr(t, sPx, white, stroke)
         }
-        return SeedInkProbe(
-            sPx = sPx,
-            tBest = tBestEval.t,
-            mix = tBestEval.mix,
-            nInk = nInk,
-            nSheet = nSheet,
-            nThr = nThr,
-            mask = mask,
-        )
+        val thrs = ArrayList<SeedInkThr>(cands.size)
+        for (t in cands) thrs.add(evalThr(t))
+        return SeedInkProbe(nThr = nThr, w = w, h = h, thrs = thrs)
     }
 
     /** 64-bin local-min midpoints; 3-bin smooth; rise both sides. Port of native findValleyMidpoints64. */
