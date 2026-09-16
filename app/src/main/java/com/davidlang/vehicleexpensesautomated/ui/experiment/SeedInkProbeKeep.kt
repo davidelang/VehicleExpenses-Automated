@@ -165,7 +165,8 @@ fuel_1783829858019.jpg|aabb-tight:1,2|aabb-large:1,2|rot-tight:1,2|rot-large:1,2
 
     fun keepBoxes(file: String, flow: String): Set<Int> {
         val key = file.substringAfterLast('/')
-        val flowKey = flow.removePrefix("Set ").trim()
+        var flowKey = flow.removePrefix("Set ").trim()
+        if (flowKey.endsWith("-color")) flowKey = flowKey.removeSuffix("-color")
         return KEEP[key]?.get(flowKey) ?: emptySet()
     }
 

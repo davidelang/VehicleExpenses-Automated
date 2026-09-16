@@ -77,6 +77,10 @@ private val SEED_INK_PROBE_FLOWS = listOf(
     "Set aabb-large",
     "Set rot-tight",
     "Set rot-large",
+    "Set aabb-tight-color",
+    "Set aabb-large-color",
+    "Set rot-tight-color",
+    "Set rot-large-color",
 )
 
 /**
@@ -5261,6 +5265,7 @@ suspend fun runPumpExperiment(
                     imgH: Int,
                     growCells: Int,
                     boundNote: String,
+                    color: Boolean = false,
                 ) {
                     if (imgW < 1 || imgH < 1) return
                     pdHunksDetectedTotal.clear()
@@ -5291,11 +5296,20 @@ suspend fun runPumpExperiment(
                     val grayOk = !workspace.p.mat.empty() && workspace.p.mat.type() == CvType.CV_8UC1
                     val keep = SeedInkProbeKeep.keepBoxes(file.name, branch.name)
                     if (grayOk) {
+                        val uv = if (color) workspace.p.uvMat else null
                         seeds.forEachIndexed { i, seed ->
                             val boxN = i + 1
                             if (boxN !in keep) return@forEachIndexed
-                            val probe = ContentExpandUtils.probeSeedInk(workspace.p.mat, seed, imgW)
+                            val probe = ContentExpandUtils.probeSeedInk(
+                                workspace.p.mat, seed, imgW, uv,
+                            )
                             for (thr in probe.thrs) {
+                                val okKind = if (color) {
+                                    thr.kind == "cband" || thr.kind == "cunion"
+                                } else {
+                                    thr.kind == "gt" || thr.kind == "band" || thr.kind == "union"
+                                }
+                                if (!okKind) continue
                                 snapshotSeedInkProbe(
                                     thr, probe.w, probe.h, true, boxN, branch,
                                     reportDir, timestamp, fullRow, branch.name,
@@ -5320,6 +5334,7 @@ suspend fun runPumpExperiment(
                     imgH: Int,
                     growCells: Int,
                     boundNote: String,
+                    color: Boolean = false,
                 ) {
                     if (imgW < 1 || imgH < 1) return
                     pdHunksDetectedTotal.clear()
@@ -5350,24 +5365,25 @@ suspend fun runPumpExperiment(
                     val grayOk = !workspace.p.mat.empty() && workspace.p.mat.type() == CvType.CV_8UC1
                     val keep = SeedInkProbeKeep.keepBoxes(file.name, branch.name)
                     if (grayOk) {
+                        val uv = if (color) workspace.p.uvMat else null
                         seedQuads.forEachIndexed { i, q ->
                             val boxN = i + 1
                             if (boxN !in keep) return@forEachIndexed
-                            val strip = Mat()
-                            val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
-                                workspace.p.mat, q, strip,
+                            val probe = ContentExpandUtils.probeSeedInkUv(
+                                workspace.p.mat, uv, q, imgW,
                             )
-                            if (ok && !strip.empty()) {
-                                val roi = android.graphics.Rect(0, 0, strip.cols(), strip.rows())
-                                val probe = ContentExpandUtils.probeSeedInk(strip, roi, imgW)
-                                for (thr in probe.thrs) {
-                                    snapshotSeedInkProbe(
-                                        thr, probe.w, probe.h, false, boxN, branch,
-                                        reportDir, timestamp, fullRow, branch.name,
-                                    )
+                            for (thr in probe.thrs) {
+                                val okKind = if (color) {
+                                    thr.kind == "cband" || thr.kind == "cunion"
+                                } else {
+                                    thr.kind == "gt" || thr.kind == "band" || thr.kind == "union"
                                 }
+                                if (!okKind) continue
+                                snapshotSeedInkProbe(
+                                    thr, probe.w, probe.h, false, boxN, branch,
+                                    reportDir, timestamp, fullRow, branch.name,
+                                )
                             }
-                            strip.release()
                         }
                     }
                     val aPd = seedQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.RED, 2) }
@@ -5398,6 +5414,26 @@ suspend fun runPumpExperiment(
                     BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
                 ) -> Unit = { ws, br, det, w, h ->
                     runSeedInkRotColumn(ws, br, det, w, h, 1, "large")
+                }
+                val procAabbTightSeedInkColor: suspend (
+                    BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
+                ) -> Unit = { ws, br, det, w, h ->
+                    runSeedInkAabbColumn(ws, br, det, w, h, 0, "tight", color = true)
+                }
+                val procAabbLargeSeedInkColor: suspend (
+                    BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
+                ) -> Unit = { ws, br, det, w, h ->
+                    runSeedInkAabbColumn(ws, br, det, w, h, 1, "large", color = true)
+                }
+                val procRotTightSeedInkColor: suspend (
+                    BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
+                ) -> Unit = { ws, br, det, w, h ->
+                    runSeedInkRotColumn(ws, br, det, w, h, 0, "tight", color = true)
+                }
+                val procRotLargeSeedInkColor: suspend (
+                    BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
+                ) -> Unit = { ws, br, det, w, h ->
+                    runSeedInkRotColumn(ws, br, det, w, h, 1, "large", color = true)
                 }
                 val procProdInk = makeInkAabbProc(
                     "ink-prod: product det + seed-ROI s; walk once; OCR k=0..4; official k=0; gap/peek 0.5s; cap 2.5×seedH safety; jump-retract (no G-list)",
@@ -7055,6 +7091,10 @@ suspend fun runPumpExperiment(
                     add("Set aabb-large" to procAabbLargeSeedInk)
                     add("Set rot-tight" to procRotTightSeedInk)
                     add("Set rot-large" to procRotLargeSeedInk)
+                    add("Set aabb-tight-color" to procAabbTightSeedInkColor)
+                    add("Set aabb-large-color" to procAabbLargeSeedInkColor)
+                    add("Set rot-tight-color" to procRotTightSeedInkColor)
+                    add("Set rot-large-color" to procRotLargeSeedInkColor)
                 }
                 // Parked (compiled, not scheduled): gray 7seg, prior ink-prod/color/walk2/jump, P*, L/M, G-dense/K, *-base.
                 @Suppress("UNUSED_VARIABLE")
@@ -7644,7 +7684,7 @@ private fun snapshotSeedInkProbe(
     val recH = opts.outHeight.coerceAtLeast(0)
     val imgDir = File(reportDir, "pump_imgs_$timestamp").also { it.mkdirs() }
     val flowSlug = flowName.filter { it.isLetterOrDigit() || it == '-' }.take(24)
-    val fname = "r${fullRow}_${flowSlug}_look_box${boxN}_t${thr.t}.jpg"
+    val fname = "r${fullRow}_${flowSlug}_look_box${boxN}_${thr.kind}_t${thr.t}_lo${thr.tLo}_hi${thr.tHi}.jpg"
     File(imgDir, fname).writeBytes(jpeg)
     arr.put(
         org.json.JSONObject()
@@ -7657,7 +7697,16 @@ private fun snapshotSeedInkProbe(
             .put("recW", recW)
             .put("recH", recH)
             .put("t", thr.t)
-            .put("sPx", thr.sPx),
+            .put("tLo", thr.tLo)
+            .put("tHi", thr.tHi)
+            .put("sPx", thr.sPx)
+            .put("kind", thr.kind)
+            .put("probeMode", thr.kind)
+            .put("seedW", thr.seedW)
+            .put("seedH", thr.seedH)
+            .put("seed", "${thr.seedW}x${thr.seedH}")
+            .put("skipTint", thr.skipTint)
+            .put("nBand", thr.nBand),
     )
     branch.metadata["look_ink"] = arr.toString()
 }
@@ -8421,7 +8470,18 @@ private fun putLookInkFillAttempts(j: org.json.JSONObject, tele: ContentExpandUt
 
 private fun lookInkCountCap(c: org.json.JSONObject): String {
     if (c.optString("lookKind") == "seed-probe") {
-        return "t=${c.optInt("t", 0)} sPx=${c.optInt("sPx", 0)}"
+        val kind = c.optString("kind", c.optString("probeMode", "gt"))
+        val sPx = c.optInt("sPx", 0)
+        val seed = "seed=${c.optInt("seedW", 0)}x${c.optInt("seedH", 0)}"
+        val skip = if (c.optBoolean("skipTint", false)) " skipTint" else ""
+        return when (kind) {
+            "gt" -> "gt t=${c.optInt("t", 0)} sPx=$sPx $seed"
+            "band" -> "band ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed"
+            "union" -> "union sPx=$sPx nBand=${c.optInt("nBand", 0)} $seed"
+            "cband" -> "cband ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed$skip"
+            "cunion" -> "cunion sPx=$sPx nBand=${c.optInt("nBand", 0)} $seed$skip"
+            else -> "$kind t=${c.optInt("t", 0)} sPx=$sPx $seed"
+        }
     }
     val base = "inkSeed=${c.optInt("inkSeed", 0)} inkBlue=${c.optInt("inkBlue", 0)} inkYellow=${c.optInt("inkYellow", 0)}"
     val att = c.optJSONArray("attempts") ?: return base
