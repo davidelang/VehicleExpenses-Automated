@@ -72,6 +72,13 @@ import kotlin.math.roundToInt
 
 private const val TAG = "ExperimentPump"
 
+private val SEED_INK_PROBE_FLOWS = listOf(
+    "Set aabb-tight",
+    "Set aabb-large",
+    "Set rot-tight",
+    "Set rot-large",
+)
+
 /**
  * Pump experiment precision pack for phone vs emulator A/B:
  * - Emulator (x86 / ranchu / sdk fingerprint): [prod_u8fp32_u8] true fp32 mid-graph
@@ -369,7 +376,7 @@ fun ExperimentPumpScreen(
 
     if (!reportDir.exists()) reportDir.mkdirs()
 
-    fun startPumpJob(subsetNames: List<String>?, label: String) {
+    fun startPumpJob(subsetNames: List<String>?, label: String, flowList: List<String>? = null) {
         val n = if (subsetNames != null) {
             subsetNames.size
         } else {
@@ -387,6 +394,7 @@ fun ExperimentPumpScreen(
                 context.applicationContext,
                 log,
                 subsetNames,
+                flowList,
             ) { res, p ->
                 val done = (p * n.toFloat()).toInt().coerceIn(1, n.coerceAtLeast(1))
                 progressCb(done, n.coerceAtLeast(1), res.photoName)
@@ -654,6 +662,8 @@ fun ExperimentPumpScreen(
         val zipLabel = "Extract Downloaded ZIP"
         val runTestLabel = "Run Test"
         val first10Label = "First 10"
+        val seedInkLabel = "Seed ink probe"
+        val seedInk10Label = "Seed ink first 10"
         val selectedLabel = "Selected sample (${SelectedSamplePhotos.PUMP.size} pump)"
         val horizLabel = "Horiz-affected (${HORIZ_REACH_AFFECTED_FILENAMES.size})"
         val prodInkLabel = "Prod-ink fail (${PROD_INK_FAIL_FILENAMES.size})"
@@ -661,7 +671,7 @@ fun ExperimentPumpScreen(
         val detDumpLabel = "Det dump (prod × deskew/rot)"
         val l1Label = "L1 SO debug dump (buffers + heatmaps)"
         val gridLabels = listOf(
-            zipLabel, runTestLabel, first10Label, selectedLabel,
+            zipLabel, runTestLabel, first10Label, seedInkLabel, seedInk10Label, selectedLabel,
             horizLabel, prodInkLabel, mixedFailLabel, detDumpLabel, l1Label,
         )
         val textMeasurer = rememberTextMeasurer()
@@ -688,6 +698,21 @@ fun ExperimentPumpScreen(
                 startPumpJob(null, "Run Test (${allFiles.size})…")
             },
             GridBtn(first10Label, jobsEnabled, onClick = runFirst10),
+            GridBtn(seedInkLabel, jobsEnabled) {
+                val allFiles = experimentDir.listFiles { f ->
+                    f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
+                } ?: emptyArray()
+                Log.d(TAG, "Seed ink probe listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
+                startPumpJob(null, "Seed ink probe (${allFiles.size})…", SEED_INK_PROBE_FLOWS)
+            },
+            GridBtn(seedInk10Label, jobsEnabled) {
+                val allFiles = experimentDir.listFiles { f ->
+                    f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
+                } ?: emptyArray()
+                val first10Names = allFiles.sortedBy { it.name }.take(10).map { it.name }
+                Log.d(TAG, "Seed ink first 10 listFiles: dir=${experimentDir.absolutePath} count=${first10Names.size}")
+                startPumpJob(first10Names, "Seed ink first 10 (${first10Names.size})…", SEED_INK_PROBE_FLOWS)
+            },
             GridBtn(selectedLabel, jobsEnabled, bold = true, onClick = runSelectedSample),
             GridBtn(horizLabel, jobsEnabled, onClick = runHorizAffected),
             GridBtn(prodInkLabel, jobsEnabled, onClick = runProdInkFail),
@@ -775,6 +800,7 @@ suspend fun runPumpExperiment(
     context: Context,
     onLog: (String) -> Unit,
     subsetNames: List<String>?,
+    flowList: List<String>? = null,
     onProgress: (PumpPhotoResultSummary, Float) -> Unit
 ): File? = withContext(Dispatchers.IO) {
     logHeapState(context, "runPumpExperiment:start")
@@ -817,7 +843,7 @@ suspend fun runPumpExperiment(
     val experimentRecSet = NativePaddleEngine.recBufferSet
     val masterBuffer = BufferSet(4096, 4096)
 
-    val flows = listOf(
+    val flows = flowList ?: listOf(
         "Set G-- (4 pass, none, calculated)",
         "Set ink-energy-tight",
         "Set ink-energy-retract",
@@ -4298,6 +4324,100 @@ suspend fun runPumpExperiment(
                     )
                 }
 
+                fun harvestAabbSeeds(
+                    workspace: BufferSet,
+                    branch: PumpBranch,
+                    discoveryDetails: MutableMap<String, MutableMap<Int, List<PumpHunk>>>,
+                    growCells: Int,
+                    imgW: Int,
+                    imgH: Int,
+                ): List<android.graphics.Rect> {
+                    prodDetScales.forEach { scale ->
+                        val prepared = PumpCostVolUtils.prepareScale(workspace, scale)
+                        val contentW = prepared.first
+                        val contentH = prepared.second
+                        if (contentW < 1 || contentH < 1) return@forEach
+                        val dest = NativePaddleEngine.deskewSetFor(scale)
+                        val S = dest.width
+                        val fullW = workspace.p.width
+                        val fullH = workspace.p.height
+                        val heatToPhoto =
+                            max(fullW, fullH).toFloat() / max(contentW, contentH).coerceAtLeast(1).toFloat()
+                        val detRes = paddleEngine.detect(
+                            dest,
+                            targetW = S,
+                            targetH = S,
+                            copyHeatmap = false,
+                            boxMode = NativeImageUtils.HEATMAP_BOX_AABB,
+                            hmThresh = HEAT_THR_U8_GE1,
+                            maskDilatePasses = 0,
+                            growCells = growCells,
+                            heatToPhoto = heatToPhoto,
+                            photoW = fullW,
+                            photoH = fullH,
+                        )
+                        branch.metadata["t_pd_inference_$scale"] =
+                            detRes?.metadata?.get("t_inference_ms") ?: "0"
+                        branch.metadata["t_pd_native_post_$scale"] =
+                            detRes?.metadata?.get("t_native_post_ms") ?: "0"
+                        branch.metadata["heatmap_post_path_$scale"] =
+                            detRes?.metadata?.get("heatmap_post_path") ?: "unknown"
+                        branch.metadata["heatmap_box_mode_$scale"] =
+                            detRes?.metadata?.get("box_mode") ?: "aabb"
+                        val hist = detRes?.heatmapHist ?: IntArray(0)
+                        if (hist.isNotEmpty()) {
+                            branch.metadata["heatmap_hist_$scale"] =
+                                JSONArray(hist.toList()).toString()
+                        }
+                        val scaleHunks = mutableListOf<PumpHunk>()
+                        detRes?.nativeBoxes?.forEach { box ->
+                            val p = box.points
+                            if (p.size < 8) return@forEach
+                            val minX = minOf(p[0], p[2], p[4], p[6]).toInt()
+                            val minY = minOf(p[1], p[3], p[5], p[7]).toInt()
+                            val maxX = maxOf(p[0], p[2], p[4], p[6]).toInt()
+                            val maxY = maxOf(p[1], p[3], p[5], p[7]).toInt()
+                            val fl = minX.toFloat()
+                            val ft = minY.toFloat()
+                            val fr = maxX.toFloat()
+                            val fb = maxY.toFloat()
+                            scaleHunks.add(PumpHunk("", RectF(fl, ft, fr, fb)))
+                        }
+                        pdHunksRawTotal.addAll(scaleHunks)
+                        pdHunksDetectedTotal.addAll(scaleHunks)
+                        discoveryDetails["Paddle Raw"]!![scale] = scaleHunks
+                        discoveryDetails["Paddle Expanded"]!![scale] = emptyList()
+                        discoveryDetails["Paddle Max Extent"]!![scale] = emptyList()
+                        discoveryDetails["Paddle Native"]!![scale] = emptyList()
+                    }
+                    branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
+                    doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                    branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
+                    val redPixelList = pdHunksRawTotal.map { hunk ->
+                        android.graphics.Rect(
+                            hunk.rect.left.toInt(), hunk.rect.top.toInt(),
+                            hunk.rect.right.toInt(), hunk.rect.bottom.toInt(),
+                        )
+                    }.toMutableList()
+                    doCrossScaleRedboxFilterPixel(redPixelList)
+                    pruneRedPixelsTopN(redPixelList, context, imgH)
+                    pdHunksRawTotal.clear()
+                    pdHunksRawTotal.addAll(redPixelList.map { r ->
+                        PumpHunk(
+                            "",
+                            RectF(
+                                r.left.toFloat(), r.top.toFloat(),
+                                r.right.toFloat(), r.bottom.toFloat(),
+                            ),
+                        )
+                    })
+                    branch.metadata["n_reds_after_prune"] = pdHunksRawTotal.size.toString()
+                    if (CAPTURE_REDBOX_DATA) {
+                        captureRedboxData(pdHunksRawTotal, workspace, branch)
+                    }
+                    return redPixelList
+                }
+
                 fun collectRotOrientedQuads(
                     workspace: BufferSet,
                     branch: PumpBranch,
@@ -5132,6 +5252,144 @@ suspend fun runPumpExperiment(
                         ContentExpandUtils::expandColorOrientRetractVsp,
                         "rot-color-retract-vsp: master.p u/v; grow 1; tint A.s; virtual S&P; overlay look-ink rec-pad; k=0..4",
                     )
+                }
+                suspend fun runSeedInkAabbColumn(
+                    workspace: BufferSet,
+                    branch: PumpBranch,
+                    discoveryDetails: MutableMap<String, MutableMap<Int, List<PumpHunk>>>,
+                    imgW: Int,
+                    imgH: Int,
+                    growCells: Int,
+                    boundNote: String,
+                ) {
+                    if (imgW < 1 || imgH < 1) return
+                    pdHunksDetectedTotal.clear()
+                    pdHunksRawTotal.clear()
+                    pdHunksExpTotal.clear()
+                    pdHunksMaxTotal.clear()
+                    pdHunksNativeTotal.clear()
+                    val tDeskewStart = System.currentTimeMillis()
+                    val tilt = photoTilt
+                    branch.metadata["tilt"] = "%.2f".format(tilt)
+                    branch.metadata["t_deskew_ms"] =
+                        (System.currentTimeMillis() - tDeskewStart).toString()
+                    branch.metadata["heatmap_box_mode"] = "aabb"
+                    branch.metadata["heatmap_grow_cells"] = growCells.toString()
+                    branch.metadata["hm_thresh"] = HEAT_THR_U8_GE1.toString()
+                    branch.metadata["hm_thresh_note"] = "u8>=1"
+                    branch.metadata["mask_dilate_passes"] = "0"
+                    branch.metadata["heatmap_cell_px"] =
+                        NativeImageUtils.PADDLE_DET_HEAT_CELL_PX.toString()
+                    branch.metadata["product_path"] = NativePaddleEngine.activeProductPathId
+                    branch.metadata["product_dir"] = NativePaddleEngine.activeProductDir
+                    branch.metadata["det_model"] = "product_det"
+                    branch.metadata["content_expand_bound"] = boundNote
+                    val seeds = harvestAabbSeeds(
+                        workspace, branch, discoveryDetails, growCells, imgW, imgH,
+                    )
+                    branch.metadata.remove("look_ink")
+                    val grayOk = !workspace.p.mat.empty() && workspace.p.mat.type() == CvType.CV_8UC1
+                    if (grayOk) {
+                        seeds.forEach { seed ->
+                            val probe = ContentExpandUtils.probeSeedInk(workspace.p.mat, seed)
+                            snapshotSeedInkProbe(
+                                workspace.p.mat, seed, probe, true, branch,
+                                reportDir, timestamp, fullRow, branch.name,
+                            )
+                            probe.mask.release()
+                        }
+                    }
+                    val aPd = getAnns(pdHunksRawTotal, AnnYuv.RED, 2)
+                    val pd = OcrUtils.takeSnapshot(
+                        workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+                        aPd, null, NativePaddleEngine.bufferSetB,
+                    ).first
+                    branch.images["PD"] = pd
+                    branch.images["overlay"] = pd
+                    branch.pathResults["Paddle"] = PathResult("N/A", "N/A", "", "")
+                }
+                suspend fun runSeedInkRotColumn(
+                    workspace: BufferSet,
+                    branch: PumpBranch,
+                    discoveryDetails: MutableMap<String, MutableMap<Int, List<PumpHunk>>>,
+                    imgW: Int,
+                    imgH: Int,
+                    growCells: Int,
+                    boundNote: String,
+                ) {
+                    if (imgW < 1 || imgH < 1) return
+                    pdHunksDetectedTotal.clear()
+                    pdHunksRawTotal.clear()
+                    pdHunksExpTotal.clear()
+                    pdHunksMaxTotal.clear()
+                    pdHunksNativeTotal.clear()
+                    val tDeskewStart = System.currentTimeMillis()
+                    branch.metadata["tilt"] = "0"
+                    branch.metadata["deskew"] = "skipped"
+                    branch.metadata["t_deskew_ms"] =
+                        (System.currentTimeMillis() - tDeskewStart).toString()
+                    branch.metadata["heatmap_box_mode"] = "minAreaRect"
+                    branch.metadata["heatmap_grow_cells"] = growCells.toString()
+                    branch.metadata["hm_thresh"] = HEAT_THR_U8_GE1.toString()
+                    branch.metadata["hm_thresh_note"] = "u8>=1"
+                    branch.metadata["mask_dilate_passes"] = "0"
+                    branch.metadata["heatmap_cell_px"] =
+                        NativeImageUtils.PADDLE_DET_HEAT_CELL_PX.toString()
+                    branch.metadata["product_path"] = NativePaddleEngine.activeProductPathId
+                    branch.metadata["product_dir"] = NativePaddleEngine.activeProductDir
+                    branch.metadata["det_model"] = "product_det"
+                    branch.metadata["content_expand_bound"] = boundNote
+                    val seedQuads = collectRotOrientedQuads(
+                        workspace, branch, discoveryDetails, growCells, imgH,
+                    )
+                    branch.metadata.remove("look_ink")
+                    val grayOk = !workspace.p.mat.empty() && workspace.p.mat.type() == CvType.CV_8UC1
+                    if (grayOk) {
+                        seedQuads.forEach { q ->
+                            val strip = Mat()
+                            val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
+                                workspace.p.mat, q, strip,
+                            )
+                            if (ok && !strip.empty()) {
+                                val roi = android.graphics.Rect(0, 0, strip.cols(), strip.rows())
+                                val probe = ContentExpandUtils.probeSeedInk(strip, roi)
+                                snapshotSeedInkProbe(
+                                    strip, roi, probe, false, branch,
+                                    reportDir, timestamp, fullRow, branch.name,
+                                )
+                                probe.mask.release()
+                            }
+                            strip.release()
+                        }
+                    }
+                    val aPd = seedQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.RED, 2) }
+                    val pd = OcrUtils.takeSnapshot(
+                        workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+                        aPd, null, NativePaddleEngine.bufferSetB,
+                    ).first
+                    branch.images["PD"] = pd
+                    branch.images["overlay"] = pd
+                    branch.pathResults["Paddle"] = PathResult("N/A", "N/A", "", "")
+                }
+                val procAabbTightSeedInk: suspend (
+                    BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
+                ) -> Unit = { ws, br, det, w, h ->
+                    runSeedInkAabbColumn(ws, br, det, w, h, 0, "tight")
+                }
+                val procAabbLargeSeedInk: suspend (
+                    BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
+                ) -> Unit = { ws, br, det, w, h ->
+                    runSeedInkAabbColumn(ws, br, det, w, h, 1, "large")
+                }
+                val procRotTightSeedInk: suspend (
+                    BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
+                ) -> Unit = { ws, br, det, w, h ->
+                    runSeedInkRotColumn(ws, br, det, w, h, 0, "tight")
+                }
+                val procRotLargeSeedInk: suspend (
+                    BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
+                ) -> Unit = { ws, br, det, w, h ->
+                    runSeedInkRotColumn(ws, br, det, w, h, 1, "large")
                 }
                 val procProdInk = makeInkAabbProc(
                     "ink-prod: product det + seed-ROI s; walk once; OCR k=0..4; official k=0; gap/peek 0.5s; cap 2.5×seedH safety; jump-retract (no G-list)",
@@ -6785,6 +7043,10 @@ suspend fun runPumpExperiment(
                     add("Set ink-color-retract-vsp" to procInkColorRetractVsp)
                     add("Set rot-color-tight-vsp" to procRotColorTightVsp)
                     add("Set rot-color-retract-vsp" to procRotColorRetractVsp)
+                    add("Set aabb-tight" to procAabbTightSeedInk)
+                    add("Set aabb-large" to procAabbLargeSeedInk)
+                    add("Set rot-tight" to procRotTightSeedInk)
+                    add("Set rot-large" to procRotLargeSeedInk)
                 }
                 // Parked (compiled, not scheduled): gray 7seg, prior ink-prod/color/walk2/jump, P*, L/M, G-dense/K, *-base.
                 @Suppress("UNUSED_VARIABLE")
@@ -7281,6 +7543,92 @@ private suspend fun snapshotOverlayFull(
             emptyList(), null, scratchYuv,
         ).first
     }
+}
+
+/** Per-seed probe JPEG: gray crop with white mask, scaled so height (AABB) or short-axis (rot) is 96. */
+private fun snapshotSeedInkProbe(
+    gray: Mat,
+    roi: android.graphics.Rect,
+    probe: ContentExpandUtils.SeedInkProbe,
+    scaleByHeight: Boolean,
+    branch: PumpBranch,
+    reportDir: File,
+    timestamp: String,
+    fullRow: Int,
+    flowName: String,
+    scratchYuv: BufferSet = NativePaddleEngine.bufferSetB,
+) {
+    if (gray.empty() || gray.type() != CvType.CV_8UC1) return
+    val x0 = roi.left.coerceAtLeast(0)
+    val y0 = roi.top.coerceAtLeast(0)
+    val x1 = roi.right.coerceAtMost(gray.cols())
+    val y1 = roi.bottom.coerceAtMost(gray.rows())
+    val srcW = x1 - x0
+    val srcH = y1 - y0
+    if (srcW < 1 || srcH < 1) return
+    val src = gray.submat(y0, y1, x0, x1)
+    val painted = Mat()
+    try {
+        src.copyTo(painted)
+    } finally {
+        src.release()
+    }
+    if (!probe.mask.empty() &&
+        probe.mask.rows() == painted.rows() &&
+        probe.mask.cols() == painted.cols()
+    ) {
+        painted.setTo(Scalar(255.0), probe.mask)
+    }
+    fun even2(v: Int) = ((v + 1) / 2 * 2).coerceAtLeast(2)
+    val axis = if (scaleByHeight) srcH else min(srcW, srcH)
+    val scale = minOf(
+        96.0 / axis.coerceAtLeast(1),
+        PUMP_LOOKINK_MAX_W.toDouble() / srcW,
+        scratchYuv.s.height.toDouble() / srcH,
+        scratchYuv.s.width.toDouble() / srcW,
+    )
+    val destH0 = even2(ceil(srcH * scale).toInt())
+    val destW0 = even2(ceil(srcW * scale).toInt())
+    val jpeg = try {
+        pumpEncodeSnapshot(
+            painted, android.graphics.Rect(0, 0, painted.cols(), painted.rows()),
+            destW0, destH0, emptyList(), scratchYuv,
+        )
+    } finally {
+        painted.release()
+    }
+    if (jpeg.isEmpty()) return
+    val arr = try {
+        org.json.JSONArray(branch.metadata["look_ink"] ?: "[]")
+    } catch (_: Exception) {
+        org.json.JSONArray()
+    }
+    val boxN = arr.length() + 1
+    val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, opts)
+    val recW = opts.outWidth.coerceAtLeast(0)
+    val recH = opts.outHeight.coerceAtLeast(0)
+    val imgDir = File(reportDir, "pump_imgs_$timestamp").also { it.mkdirs() }
+    val fname = "r${fullRow}_${flowName.filter { it.isLetterOrDigit() || it == '-' }.take(24)}_look_box$boxN.jpg"
+    File(imgDir, fname).writeBytes(jpeg)
+    arr.put(
+        org.json.JSONObject()
+            .put("label", "box$boxN")
+            .put("lookInkFile", fname)
+            .put("lookInkMime", "image/jpeg")
+            .put("lookKind", "seed-probe")
+            .put("row", fullRow)
+            .put("flow", flowName)
+            .put("recW", recW)
+            .put("recH", recH)
+            .put("sPx", probe.sPx)
+            .put("tBest", probe.tBest)
+            .put("mix", probe.mix.toDouble())
+            .put("nInk", probe.nInk)
+            .put("nSheet", probe.nSheet)
+            .put("nThr", probe.nThr),
+    )
+    branch.metadata["look_ink"] = arr.toString()
 }
 
 /** Per-seed look-ink JPEG; spliced into HTML as data URI (no look_ink/ folder). */
@@ -8041,6 +8389,12 @@ private fun putLookInkFillAttempts(j: org.json.JSONObject, tele: ContentExpandUt
 }
 
 private fun lookInkCountCap(c: org.json.JSONObject): String {
+    if (c.optString("lookKind") == "seed-probe") {
+        val mix = c.optDouble("mix", 0.0)
+        return "sPx=${c.optInt("sPx", 0)} tBest=${c.optInt("tBest", 0)} " +
+            "mix=${String.format(java.util.Locale.US, "%.3f", mix)} " +
+            "nInk=${c.optInt("nInk", 0)} nSheet=${c.optInt("nSheet", 0)} nThr=${c.optInt("nThr", 0)}"
+    }
     val base = "inkSeed=${c.optInt("inkSeed", 0)} inkBlue=${c.optInt("inkBlue", 0)} inkYellow=${c.optInt("inkYellow", 0)}"
     val att = c.optJSONArray("attempts") ?: return base
     if (att.length() < 1) return base
@@ -8264,7 +8618,10 @@ private fun pLookInkHtml(br: PumpBranch): String {
         val wCss = if (recW > 0) "width:${recW}px;" else "width:auto;"
         val hCss = if (recH > 0) "height:${recH}px;" else "height:auto;"
         val energy = c.optString("lookKind") == "energy"
-        val meta = if (energy) {
+        val seedProbe = c.optString("lookKind") == "seed-probe"
+        val meta = if (seedProbe) {
+            lookInkCountCap(c)
+        } else if (energy) {
             "${lookInkCountCap(c)} energy U8"
         } else {
             val bandTop = c.optBoolean("bandTop", false)
