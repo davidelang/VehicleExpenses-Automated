@@ -7917,6 +7917,7 @@ struct SeedPolCtx {
     float uInkX = 0.f, uInkY = 0.f, uBgX = 0.f, uBgY = 0.f;
     float eps2 = 0.f, dotThr2 = 0.f;
     bool bgHasChroma = false;
+    bool tint = false;
 };
 
 static bool seedHueAt(const SeedPolCtx& c, int sx, int sy, float hx, float hy) {
@@ -7949,6 +7950,14 @@ static bool seedPolAt(const SeedPolCtx& c, int sx, int sy) {
         if (!seedYAt(*c.samp, sx, sy, &yv)) yv = 0;
         if (c.kind == SeedPol::Light) on = yv > c.t;
         else on = yv > c.tLo && yv <= c.tHi;
+        if (c.tint) {
+            const float Y = static_cast<float>(yv);
+            const bool polOk = c.dInk * (Y - c.yBg) >= 0.f;
+            const bool panelHue = c.bgHasChroma &&
+                seedHueAt(c, sx, sy, c.uBgX, c.uBgY);
+            const bool inkHue = seedHueAt(c, sx, sy, c.uInkX, c.uInkY);
+            on = on || (inkHue && !panelHue && polOk);
+        }
     }
     return c.invert ? !on : on;
 }
@@ -8785,28 +8794,41 @@ static bool seedIsValleyT(const int* ts, int n, int t) {
 }
 
 static void seedEvalColorFromGrey(
-    const SeedInkSamp& s, const SeedInkThrNat& gb, bool uvOk,
-    int seedW, int seedH, int loSw, int hiSw, SeedInkThrNat* out,
-    const SeedInkPlanes& p, SeedPolCtx* outCtx
+    const SeedInkSamp& s, const SeedInkThrNat& gb, const SeedPolCtx& greyCtx,
+    bool uvOk, int seedW, int seedH, int loSw, int hiSw, bool doV,
+    SeedInkThrNat* out, const SeedInkPlanes& p, SeedPolCtx* outCtx
 ) {
     *out = gb;
-    out->kind = 3;
-    out->skipTint = 1;
-    out->nBand = 0;
     out->jpeg.clear();
-    *outCtx = SeedPolCtx{};
-    outCtx->kind = SeedPol::Band;
-    outCtx->tLo = gb.tLo;
-    outCtx->tHi = gb.tHi;
+    *outCtx = greyCtx;
     outCtx->samp = &s;
+    outCtx->tint = false;
+    out->skipTint = 1;
     if (!uvOk) return;
     bool skipTint = true;
-    SeedPolCtx colorCtx{};
-    seedHueFromStroke(s, p.stroke, p.strokeStride, gb.sPx, &colorCtx, &skipTint);
-    if (skipTint) return;
-    seedEvalColorBand(s, gb, colorCtx, seedW, seedH, loSw, hiSw, out, p);
-    *outCtx = colorCtx;
-    outCtx->samp = &s;
+    SeedPolCtx hue{};
+    seedHueFromStroke(s, p.stroke, p.strokeStride, gb.sPx, &hue, &skipTint);
+    if (!skipTint) {
+        SeedPolCtx fused = greyCtx;
+        fused.samp = &s;
+        fused.invert = false;
+        fused.tint = true;
+        fused.yInk = hue.yInk;
+        fused.yBg = hue.yBg;
+        fused.dInk = hue.dInk;
+        fused.uInkX = hue.uInkX;
+        fused.uInkY = hue.uInkY;
+        fused.uBgX = hue.uBgX;
+        fused.uBgY = hue.uBgY;
+        fused.eps2 = hue.eps2;
+        fused.dotThr2 = hue.dotThr2;
+        fused.bgHasChroma = hue.bgHasChroma;
+        seedEvalGrey(
+            s, fused, gb.t, gb.tLo, gb.tHi, gb.kind, seedW, seedH, loSw, hiSw, doV,
+            out, p);
+        out->skipTint = 0;
+        *outCtx = fused;
+    }
 }
 
 static void seedMaterializePick(
@@ -8820,25 +8842,14 @@ static void seedMaterializePick(
         seedCopyPackedToStrided(pickS, p.stroke, p.strokeStride, w, h);
         return;
     }
+    (void)color;
+    (void)uvOk;
     SeedPolCtx ctx = best.ctx;
     ctx.samp = &s;
     SeedInkThrNat tmp{};
-    if (best.light || !color || best.skipTint || ctx.kind != SeedPol::Color) {
-        seedEvalGrey(
-            s, ctx, best.t, best.tLo, best.tHi, 0, seedW, seedH,
-            loSw, hiSw, true, &tmp, p);
-        return;
-    }
-    SeedPolCtx band{};
-    band.kind = SeedPol::Band;
-    band.tLo = best.tLo;
-    band.tHi = best.tHi;
-    band.samp = &s;
-    SeedInkThrNat gb{};
     seedEvalGrey(
-        s, band, best.t, best.tLo, best.tHi, 1, seedW, seedH,
-        loSw, hiSw, true, &gb, p);
-    seedEvalColorBand(s, gb, ctx, seedW, seedH, loSw, hiSw, &tmp, p);
+        s, ctx, best.t, best.tLo, best.tHi, 0, seedW, seedH,
+        loSw, hiSw, true, &tmp, p);
 }
 
 static void seedEmitPickFlood(
@@ -9034,7 +9045,7 @@ static void seedOrUnionBands(
             SeedInkThrNat cb{};
             SeedPolCtx cctx{};
             seedEvalColorFromGrey(
-                s, gb, uvOk, seedW, seedH, loSw, hiSw, &cb, p, &cctx);
+                s, gb, ctx, uvOk, seedW, seedH, loSw, hiSw, true, &cb, p, &cctx);
         }
         seedOrStridedIntoPacked(p.stroke, p.strokeStride, w, h, unionAcc);
     }
@@ -9214,6 +9225,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
         SeedInkThrNat one{};
         seedEvalGrey(samp, ctx, cands[i], cands[i], cands[i], 0, seedW, seedH,
             loSw, hiSw, false, &one, p);
+        if (wantColor) {
+            SeedPolCtx cctx{};
+            seedEvalColorFromGrey(
+                samp, one, ctx, uvOk, seedW, seedH, loSw, hiSw, false, &one, p,
+                &cctx);
+            ctx = cctx;
+        }
         seedEncodeThr(p, w, h, &one);
         thrs.push_back(one);
         if (canPickFlood && seedIsValleyT(valleyTs, nValleyTs, cands[i])) {
@@ -9228,7 +9246,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
                 samp, off, one.sPx, p.stroke, p.strokeStride, p.sheet, p.sheetStride,
                 false, true);
             seedConsiderSlices(
-                &best, true, one.t, one.tLo, one.tHi, one.sPx, 0, 0, ctx, p,
+                &best, true, one.t, one.tLo, one.tHi, one.sPx, one.skipTint, 0, ctx, p,
                 w, h, seedH, nPix, pickW, pickS);
         }
     }
@@ -9245,6 +9263,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
         SeedInkThrNat one{};
         seedEvalGrey(samp, ctx, tHi, tLo, tHi, 1, seedW, seedH,
             loSw, hiSw, true, &one, p);
+        if (wantColor) {
+            SeedPolCtx cctx{};
+            seedEvalColorFromGrey(
+                samp, one, ctx, uvOk, seedW, seedH, loSw, hiSw, true, &one, p,
+                &cctx);
+            ctx = cctx;
+        }
         seedEncodeThr(p, w, h, &one);
         if (canPickFlood) {
             seedConsiderSlices(
@@ -9258,7 +9283,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
     seedUnionMeta(bandThrs, 2, seedW, seedH, w, h, &uni);
     if (unionAcc) {
         seedOrUnionBands(
-            samp, bandThrs, uni, false, uvOk, seedW, seedH, loSw, hiSw, p, unionAcc);
+            samp, bandThrs, uni, wantColor, uvOk, seedW, seedH, loSw, hiSw, p, unionAcc);
     } else {
         seedZeroPlane(p.white, p.whiteStride, w, h);
         seedZeroPlane(p.stroke, p.strokeStride, w, h);
@@ -9266,49 +9291,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
     seedEncodeThr(p, w, h, &uni);
     thrs.push_back(std::move(uni));
     seedEmitPickFlood(
-        samp, best, false, uvOk, canPickFlood, 5, 6, seedW, seedH, loSw, hiSw,
+        samp, best, wantColor, uvOk, canPickFlood, 5, 6, seedW, seedH, loSw, hiSw,
         p, pickW, pickS, hRun, vRun, &thrs);
-    if (wantColor) {
-        std::vector<SeedInkThrNat> cBands;
-        SeedPickBest cbest{};
-        for (const auto& gb : bandThrs) {
-            SeedPolCtx ctx{};
-            ctx.kind = SeedPol::Band;
-            ctx.tLo = gb.tLo;
-            ctx.tHi = gb.tHi;
-            ctx.samp = &samp;
-            SeedInkThrNat grey{};
-            seedEvalGrey(
-                samp, ctx, gb.t, gb.tLo, gb.tHi, 1, seedW, seedH,
-                loSw, hiSw, true, &grey, p);
-            SeedInkThrNat cb{};
-            SeedPolCtx cctx{};
-            seedEvalColorFromGrey(
-                samp, grey, uvOk, seedW, seedH, loSw, hiSw, &cb, p, &cctx);
-            seedEncodeThr(p, w, h, &cb);
-            if (canPickFlood) {
-                seedConsiderSlices(
-                    &cbest, false, cb.t, cb.tLo, cb.tHi, cb.sPx, cb.skipTint, 1,
-                    cctx, p, w, h, seedH, nPix, pickW, pickS);
-            }
-            cBands.push_back(cb);
-            thrs.push_back(std::move(cb));
-        }
-        SeedInkThrNat cuni{};
-        seedUnionMeta(cBands, 4, seedW, seedH, w, h, &cuni);
-        if (unionAcc) {
-            seedOrUnionBands(
-                samp, cBands, cuni, true, uvOk, seedW, seedH, loSw, hiSw, p, unionAcc);
-        } else {
-            seedZeroPlane(p.white, p.whiteStride, w, h);
-            seedZeroPlane(p.stroke, p.strokeStride, w, h);
-        }
-        seedEncodeThr(p, w, h, &cuni);
-        thrs.push_back(std::move(cuni));
-        seedEmitPickFlood(
-            samp, cbest, true, uvOk, canPickFlood, 7, 8, seedW, seedH, loSw, hiSw,
-            p, pickW, pickS, hRun, vRun, &thrs);
-    }
     if (!wantColor) {
         if (nPix >= 1 && nPix <= p.deskewCap && p.deskew) {
             int r = std::max(16, seedH / 4);

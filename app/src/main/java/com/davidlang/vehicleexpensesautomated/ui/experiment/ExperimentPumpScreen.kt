@@ -5320,8 +5320,9 @@ suspend fun runPumpExperiment(
                                 )
                                 for (thr in probe.thrs) {
                                     val okKind = if (color) {
-                                        thr.kind == "cband" || thr.kind == "cunion" ||
-                                            thr.kind == "cpick" || thr.kind == "cflood"
+                                        thr.kind == "gt" || thr.kind == "band" ||
+                                            thr.kind == "union" ||
+                                            thr.kind == "pick" || thr.kind == "flood"
                                     } else {
                                         thr.kind == "gt" || thr.kind == "band" ||
                                             thr.kind == "union" ||
@@ -5413,8 +5414,9 @@ suspend fun runPumpExperiment(
                                 )
                                 for (thr in probe.thrs) {
                                     val okKind = if (color) {
-                                        thr.kind == "cband" || thr.kind == "cunion" ||
-                                            thr.kind == "cpick" || thr.kind == "cflood"
+                                        thr.kind == "gt" || thr.kind == "band" ||
+                                            thr.kind == "union" ||
+                                            thr.kind == "pick" || thr.kind == "flood"
                                     } else {
                                         thr.kind == "gt" || thr.kind == "band" ||
                                             thr.kind == "union" ||
@@ -8484,20 +8486,20 @@ private fun lookInkCountCap(c: org.json.JSONObject): String {
         val seed = "seed=${c.optInt("seedW", 0)}x${c.optInt("seedH", 0)}"
         val skip = if (c.optBoolean("skipTint", false)) " skipTint" else ""
         val body = when (kind) {
-            "gt" -> "gt t=${c.optInt("t", 0)} sPx=$sPx $seed"
-            "band" -> "band ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed"
-            "union" -> "union sPx=$sPx nBand=${c.optInt("nBand", 0)} $seed"
+            "gt" -> "gt t=${c.optInt("t", 0)} sPx=$sPx $seed$skip"
+            "band" -> "band ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed$skip"
+            "union" -> "union sPx=$sPx nBand=${c.optInt("nBand", 0)} $seed$skip"
             "cband" -> "cband ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed$skip"
             "cunion" -> "cunion sPx=$sPx nBand=${c.optInt("nBand", 0)} $seed$skip"
             "pick" -> if (c.optInt("nBand", 0) == 1) {
-                "pick Band ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed"
+                "pick Band ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed$skip"
             } else {
-                "pick Light t=${c.optInt("t", 0)} sPx=$sPx $seed"
+                "pick Light t=${c.optInt("t", 0)} sPx=$sPx $seed$skip"
             }
             "flood" -> if (c.optInt("nBand", 0) == 1) {
-                "flood Band ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed"
+                "flood Band ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed$skip"
             } else {
-                "flood Light t=${c.optInt("t", 0)} sPx=$sPx $seed"
+                "flood Light t=${c.optInt("t", 0)} sPx=$sPx $seed$skip"
             }
             "cpick" -> "cpick Band ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed$skip"
             "cflood" -> "cflood Band ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed$skip"
