@@ -7714,7 +7714,8 @@ private fun snapshotSeedInkProbe(
             .put("seedH", thr.seedH)
             .put("seed", "${thr.seedW}x${thr.seedH}")
             .put("skipTint", thr.skipTint)
-            .put("nBand", thr.nBand),
+            .put("nBand", thr.nBand)
+            .put("score", thr.score),
     )
     branch.metadata["look_ink"] = arr.toString()
 }
@@ -8482,7 +8483,7 @@ private fun lookInkCountCap(c: org.json.JSONObject): String {
         val sPx = c.optInt("sPx", 0)
         val seed = "seed=${c.optInt("seedW", 0)}x${c.optInt("seedH", 0)}"
         val skip = if (c.optBoolean("skipTint", false)) " skipTint" else ""
-        return when (kind) {
+        val body = when (kind) {
             "gt" -> "gt t=${c.optInt("t", 0)} sPx=$sPx $seed"
             "band" -> "band ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed"
             "union" -> "union sPx=$sPx nBand=${c.optInt("nBand", 0)} $seed"
@@ -8525,6 +8526,7 @@ private fun lookInkCountCap(c: org.json.JSONObject): String {
             "tflood" -> "tflood sPx=$sPx nBand=${c.optInt("nBand", 0)} $seed"
             else -> "$kind t=${c.optInt("t", 0)} sPx=$sPx $seed"
         }
+        return "$body sc=${c.optInt("score", 0)}"
     }
     val base = "inkSeed=${c.optInt("inkSeed", 0)} inkBlue=${c.optInt("inkBlue", 0)} inkYellow=${c.optInt("inkYellow", 0)}"
     val att = c.optJSONArray("attempts") ?: return base

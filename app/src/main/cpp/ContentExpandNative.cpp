@@ -8256,7 +8256,7 @@ static bool seedPaintLook(
 
 struct SeedInkThrNat {
     int kind = 0, t = 0, tLo = 0, tHi = 0, sPx = 0, seedW = 0, seedH = 0;
-    int skipTint = 0, nBand = 0, w = 0, h = 0;
+    int skipTint = 0, nBand = 0, w = 0, h = 0, score = 0;
     std::vector<uint8_t> jpeg;
 };
 
@@ -8271,6 +8271,7 @@ struct SeedInkPlanes {
     int deskewCap = 0;
     cv::Mat* destY = nullptr;
     cv::Mat* destUv = nullptr;
+    int grayW = 0;
 };
 
 static void seedFillMeta(
@@ -8290,7 +8291,58 @@ static void seedFillMeta(
     out->h = h;
 }
 
+static int seedScore(const SeedInkPlanes& p, int w, int h, const SeedInkThrNat& t) {
+    if (t.sPx < 1) return 0;
+    const int nPix = w * h;
+    const int nWhite = seedCountNzStrided(p.white, p.whiteStride, w, h);
+    const int nStroke = seedCountNzStrided(p.stroke, p.strokeStride, w, h);
+    const int loSw = p.grayW >= 2000 ? 16 : 4;
+    const int hiSw = std::max(35, h / 2);
+    const double seedHd = static_cast<double>(t.seedH);
+    const double ratio = seedHd < 1.0 ? 1e9 : static_cast<double>(t.sPx) / seedHd;
+    int sc = 100;
+    if (ratio < 0.10) sc -= 40;
+    else if (ratio < 0.12) sc -= 10;
+    if (ratio > 0.50) sc -= 40;
+    else if (ratio > 0.40) sc -= 10;
+    const int tgt = static_cast<int>(std::lround(0.22 * seedHd));
+    const double dist = seedHd < 1.0 ? 1e9
+        : std::abs(static_cast<double>(t.sPx) - static_cast<double>(tgt)) / seedHd;
+    sc -= std::min(40, static_cast<int>(std::lround(40.0 * dist)));
+    if (nStroke == 0) sc -= 50;
+    if (nStroke > nPix / 4) sc -= 50;
+    if (static_cast<double>(nWhite) > 0.85 * static_cast<double>(nPix)) sc -= 40;
+    bool hasH = false, hasV = false;
+    auto pol = [&](int sx, int sy) { return p.stroke[sy * p.strokeStride + sx] != 0; };
+    seedForEachHRuns(w, h, pol, [&](int, int, int len) {
+        if (len != w) hasH = true;
+    });
+    seedForEachVRuns(w, h, pol, [&](int, int, int len) {
+        if (len != h) hasV = true;
+    });
+    if (!hasH) sc -= 15;
+    if (!hasV) sc -= 15;
+    if (t.sPx == loSw) sc -= 30;
+    if (static_cast<double>(t.sPx) >= 0.9 * static_cast<double>(hiSw)) sc -= 30;
+    const bool lightKind = (t.kind == 0 || t.kind == 5 || t.kind == 10 ||
+        t.kind == 12 || t.kind == 14) && t.nBand == 0;
+    if (lightKind && ratio >= 0.10 && ratio <= 0.50) sc += 10;
+    const bool floodKind = t.kind == 6 || t.kind == 8 || t.kind == 11 ||
+        t.kind == 13 || t.kind == 15;
+    if (floodKind) {
+        if (nStroke >= 1) {
+            const double wr = static_cast<double>(nWhite) / static_cast<double>(nStroke);
+            if (wr >= 2.0 && wr <= 6.0) sc += 20;
+        }
+        if (nWhite >= nPix / 4) sc -= 25;
+    }
+    if (sc < 0) sc = 0;
+    if (sc > 100) sc = 100;
+    return sc;
+}
+
 static void seedEncodeThr(const SeedInkPlanes& p, int w, int h, SeedInkThrNat* out) {
+    out->score = seedScore(p, w, h, *out);
     out->jpeg.clear();
     if (!seedPaintLook(
             p.white, p.whiteStride, p.stroke, p.strokeStride, w, h, p.destY, p.destUv)) {
@@ -8705,13 +8757,13 @@ static jobjectArray packSeedInkThrs(JNIEnv* env, const std::vector<SeedInkThrNat
     if (!arr) return nullptr;
     for (int i = 0; i < n; ++i) {
         const SeedInkThrNat& t = thrs[static_cast<size_t>(i)];
-        jint meta[11] = {
+        jint meta[12] = {
             t.kind, t.t, t.tLo, t.tHi, t.sPx, t.seedW, t.seedH,
-            t.skipTint, t.nBand, t.w, t.h
+            t.skipTint, t.nBand, t.w, t.h, t.score
         };
-        jintArray metaArr = env->NewIntArray(11);
+        jintArray metaArr = env->NewIntArray(12);
         if (!metaArr) return nullptr;
-        env->SetIntArrayRegion(metaArr, 0, 11, meta);
+        env->SetIntArrayRegion(metaArr, 0, 12, meta);
         const int nJpg = static_cast<int>(t.jpeg.size());
         jbyteArray jpegArr = env->NewByteArray(nJpg);
         if (!jpegArr) return nullptr;
@@ -9113,6 +9165,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
     p.deskewCap = deskewP->rows * deskewP->cols;
     p.destY = destY;
     p.destUv = destUv;
+    p.grayW = samp.grayW;
     float hist64[64] = {};
     for (int i = 0; i < 256; ++i) hist64[i / 4] += static_cast<float>(hist256[i]);
     int cands[12];

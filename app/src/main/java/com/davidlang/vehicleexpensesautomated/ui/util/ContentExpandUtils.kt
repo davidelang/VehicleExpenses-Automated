@@ -2678,6 +2678,7 @@ object ContentExpandUtils {
         val seedH: Int,
         val skipTint: Boolean = false,
         val nBand: Int = 0,
+        val score: Int = 0,
     )
 
     data class SeedInkProbe(
@@ -2709,7 +2710,7 @@ object ContentExpandUtils {
             val meta = raw[i] as? IntArray
             val jpeg = raw[i + 1] as? ByteArray
             i += 2
-            if (meta == null || meta.size < 11 || jpeg == null) continue
+            if (meta == null || meta.size < 12 || jpeg == null) continue
             val ki = meta[0]
             val kind = if (ki in seedInkKindNames.indices) seedInkKindNames[ki] else "gt"
             if (kind == "gt") nThr++
@@ -2727,6 +2728,7 @@ object ContentExpandUtils {
                     seedH = meta[6],
                     skipTint = meta[7] != 0,
                     nBand = meta[8],
+                    score = meta[11],
                 ),
             )
         }
