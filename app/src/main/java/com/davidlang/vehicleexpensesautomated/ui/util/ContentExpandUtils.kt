@@ -2673,7 +2673,9 @@ object ContentExpandUtils {
         val thrs: List<SeedInkThr>,
     )
 
-    private val seedInkKindNames = arrayOf("gt", "band", "union", "cband", "cunion")
+    private val seedInkKindNames = arrayOf(
+        "gt", "band", "union", "cband", "cunion", "pick", "flood", "cpick", "cflood",
+    )
 
     private fun unpackSeedInkProbe(
         raw: Array<Any>?,

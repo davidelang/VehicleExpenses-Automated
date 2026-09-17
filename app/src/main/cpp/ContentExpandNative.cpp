@@ -8394,6 +8394,327 @@ static void seedEvalColorBand(
     out->h = s.h;
 }
 
+static int seedCountNz(const uint8_t* p, int n) {
+    int c = 0;
+    for (int i = 0; i < n; ++i) if (p[i]) ++c;
+    return c;
+}
+
+static void seedDigitSPxRange(int seedH, int* lo, int* hi) {
+    *lo = static_cast<int>(std::lround(0.12 * static_cast<double>(seedH)));
+    *hi = static_cast<int>(std::lround(0.40 * static_cast<double>(seedH)));
+}
+
+static bool seedSPxInDigitScale(int sPx, int seedH) {
+    int lo = 0, hi = 0;
+    seedDigitSPxRange(seedH, &lo, &hi);
+    return sPx >= 1 && sPx >= lo && sPx <= hi;
+}
+
+static SeedInkThrNat seedEmptyThr(int kind, int seedW, int seedH, int w, int h) {
+    SeedInkThrNat o{};
+    o.kind = kind;
+    o.seedW = seedW;
+    o.seedH = seedH;
+    o.w = w;
+    o.h = h;
+    const int nPix = w * h;
+    if (nPix > 0) {
+        o.white.assign(static_cast<size_t>(nPix), 0);
+        o.stroke.assign(static_cast<size_t>(nPix), 0);
+    }
+    return o;
+}
+
+template <typename Pol>
+static void seedFillRunLens(int w, int h, Pol pol, int* hRun, int* vRun) {
+    seedForEachHRuns(w, h, pol, [&](int y, int x0, int len) {
+        int* row = hRun + y * w;
+        for (int x = x0; x < x0 + len; ++x) row[x] = len;
+    });
+    seedForEachVRuns(w, h, pol, [&](int x, int y0, int len) {
+        for (int y = y0; y < y0 + len; ++y) vRun[y * w + x] = len;
+    });
+}
+
+struct SeedPickBest {
+    bool have = false;
+    bool light = false;
+    int nStroke = -1;
+    int sPx = 0;
+    int t = 0;
+    SeedInkThrNat thr;
+    SeedPolCtx ctx;
+};
+
+static bool seedPickWins(
+    const SeedPickBest& b, bool light, int nStroke, int sPx, int t, int seedH
+) {
+    if (!b.have) return true;
+    if (light != b.light) return light;
+    if (nStroke != b.nStroke) return nStroke > b.nStroke;
+    const int tgt = static_cast<int>(std::lround(0.22 * static_cast<double>(seedH)));
+    const int da = std::abs(sPx - tgt);
+    const int db = std::abs(b.sPx - tgt);
+    if (da != db) return da < db;
+    return t < b.t;
+}
+
+static SeedPolCtx seedBandOrColorCtx(
+    const SeedInkSamp& s,
+    const SeedInkThrNat& b,
+    bool color,
+    const std::vector<SeedInkThrNat>* hueBands
+) {
+    SeedPolCtx ctx{};
+    ctx.samp = &s;
+    if (color && b.skipTint == 0) {
+        const SeedInkThrNat* gb = &b;
+        if (hueBands) {
+            for (const auto& g : *hueBands) {
+                if (g.tLo == b.tLo && g.tHi == b.tHi) {
+                    gb = &g;
+                    break;
+                }
+            }
+        }
+        bool skip = true;
+        if (gb->sPx > 0 && !gb->stroke.empty()) {
+            seedHueFromStroke(s, gb->stroke.data(), gb->sPx, &ctx, &skip);
+        }
+        if (!skip) return ctx;
+    }
+    ctx = SeedPolCtx{};
+    ctx.kind = SeedPol::Band;
+    ctx.tLo = b.tLo;
+    ctx.tHi = b.tHi;
+    ctx.samp = &s;
+    return ctx;
+}
+
+static void seedPickBest(
+    const SeedInkSamp& s,
+    const int* valleyTs, int nValleyTs,
+    const std::vector<SeedInkThrNat>& bands,
+    const std::vector<SeedInkThrNat>* hueBands,
+    int seedW, int seedH, int kindPick, bool color,
+    SeedInkThrNat* out, SeedPolCtx* outCtx
+) {
+    const int w = s.w, h = s.h;
+    const int nPix = w * h;
+    *out = seedEmptyThr(kindPick, seedW, seedH, w, h);
+    *outCtx = SeedPolCtx{};
+    outCtx->samp = &s;
+    if (nPix < 1) return;
+    const int strokeCap = nPix / 4;
+    int dLo = 0, dHi = 0;
+    seedDigitSPxRange(seedH, &dLo, &dHi);
+    const int spLo = std::max(1, dLo);
+    std::vector<uint8_t> sheet(static_cast<size_t>(nPix), 0);
+    std::vector<uint8_t> hCore(static_cast<size_t>(nPix), 0);
+    std::vector<uint8_t> vCore(static_cast<size_t>(nPix), 0);
+    std::vector<uint8_t> white(static_cast<size_t>(nPix), 0);
+    std::vector<uint8_t> stroke(static_cast<size_t>(nPix), 0);
+    SeedPickBest best{};
+
+    auto consider = [&](
+        bool light, int t, int tLo, int tHi, int sPx, int skipTint,
+        const SeedPolCtx& ctx, const uint8_t* whiteSrc, const uint8_t* strokeSrc,
+        int nStroke
+    ) {
+        if (!seedPickWins(best, light, nStroke, sPx, t, seedH)) return;
+        best.have = true;
+        best.light = light;
+        best.nStroke = nStroke;
+        best.sPx = sPx;
+        best.t = t;
+        best.ctx = ctx;
+        best.thr = seedEmptyThr(kindPick, seedW, seedH, w, h);
+        best.thr.t = t;
+        best.thr.tLo = tLo;
+        best.thr.tHi = tHi;
+        best.thr.sPx = sPx;
+        best.thr.skipTint = skipTint;
+        best.thr.nBand = light ? 0 : 1;
+        if (whiteSrc) {
+            std::memcpy(best.thr.white.data(), whiteSrc, static_cast<size_t>(nPix));
+        }
+        if (strokeSrc) {
+            std::memcpy(best.thr.stroke.data(), strokeSrc, static_cast<size_t>(nPix));
+        }
+    };
+
+    if (!color && valleyTs && nValleyTs > 0) {
+        for (int vi = 0; vi < nValleyTs; ++vi) {
+            const int t = valleyTs[vi];
+            SeedPolCtx onCtx{};
+            onCtx.kind = SeedPol::Light;
+            onCtx.t = t;
+            onCtx.samp = &s;
+            SeedPolCtx offCtx = onCtx;
+            offCtx.invert = true;
+            auto on = [&](int sx, int sy) { return seedPolAt(onCtx, sx, sy); };
+            auto off = [&](int sx, int sy) { return seedPolAt(offCtx, sx, sy); };
+            std::fill(sheet.begin(), sheet.end(), 0);
+            seedMarkSheet(s, on, sheet.data());
+            seedMarkSheet(s, off, sheet.data());
+            const int sPx = (dHi >= spLo) ? seedSPxFromPol(s, on, spLo, dHi) : 0;
+            if (!seedSPxInDigitScale(sPx, seedH)) continue;
+            std::fill(hCore.begin(), hCore.end(), 0);
+            std::fill(vCore.begin(), vCore.end(), 0);
+            seedPaintCores(s, on, sPx, hCore.data(), sheet.data(), true, false);
+            seedPaintCores(s, off, sPx, hCore.data(), sheet.data(), true, false);
+            seedPaintCores(s, on, sPx, vCore.data(), sheet.data(), false, true);
+            seedPaintCores(s, off, sPx, vCore.data(), sheet.data(), false, true);
+            const int nH = seedCountNz(hCore.data(), nPix);
+            const int nV = seedCountNz(vCore.data(), nPix);
+            if (nH < 1 || nV < 1) continue;
+            std::fill(stroke.begin(), stroke.end(), 0);
+            for (int i = 0; i < nPix; ++i) {
+                if (hCore[static_cast<size_t>(i)] || vCore[static_cast<size_t>(i)]) {
+                    stroke[static_cast<size_t>(i)] = 255;
+                }
+            }
+            const int nStroke = seedCountNz(stroke.data(), nPix);
+            if (nStroke < 1 || nStroke > strokeCap) continue;
+            std::fill(white.begin(), white.end(), 0);
+            seedGreyMask(s, on, white.data());
+            const int nWhite = seedCountNz(white.data(), nPix);
+            if (static_cast<double>(nWhite) > 0.85 * static_cast<double>(nPix)) continue;
+            consider(true, t, t, t, sPx, 0, onCtx, white.data(), stroke.data(), nStroke);
+        }
+    }
+
+    for (const auto& b : bands) {
+        if (!seedSPxInDigitScale(b.sPx, seedH)) continue;
+        if (b.white.size() < static_cast<size_t>(nPix) ||
+            b.stroke.size() < static_cast<size_t>(nPix)) {
+            continue;
+        }
+        SeedPolCtx ctx = seedBandOrColorCtx(s, b, color, hueBands);
+        SeedPolCtx offCtx = ctx;
+        offCtx.invert = true;
+        auto on = [&](int sx, int sy) { return seedPolAt(ctx, sx, sy); };
+        auto off = [&](int sx, int sy) { return seedPolAt(offCtx, sx, sy); };
+        std::fill(sheet.begin(), sheet.end(), 0);
+        seedMarkSheet(s, on, sheet.data());
+        seedMarkSheet(s, off, sheet.data());
+        std::fill(hCore.begin(), hCore.end(), 0);
+        std::fill(vCore.begin(), vCore.end(), 0);
+        seedPaintCores(s, on, b.sPx, hCore.data(), sheet.data(), true, false);
+        seedPaintCores(s, off, b.sPx, hCore.data(), sheet.data(), true, false);
+        seedPaintCores(s, on, b.sPx, vCore.data(), sheet.data(), false, true);
+        seedPaintCores(s, off, b.sPx, vCore.data(), sheet.data(), false, true);
+        if (seedCountNz(hCore.data(), nPix) < 1 || seedCountNz(vCore.data(), nPix) < 1) {
+            continue;
+        }
+        const int nStroke = seedCountNz(b.stroke.data(), nPix);
+        if (nStroke < 1 || nStroke > strokeCap) continue;
+        consider(
+            false, b.t, b.tLo, b.tHi, b.sPx, b.skipTint, ctx,
+            b.white.data(), b.stroke.data(), nStroke);
+    }
+
+    if (best.have) {
+        *out = std::move(best.thr);
+        *outCtx = best.ctx;
+        outCtx->samp = &s;
+    }
+}
+
+static void seedFloodFromCores(
+    const SeedInkSamp& s,
+    const SeedInkThrNat& pick,
+    SeedPolCtx ctx,
+    int kindFlood,
+    SeedInkThrNat* out
+) {
+    const int w = s.w, h = s.h;
+    const int nPix = w * h;
+    *out = seedEmptyThr(kindFlood, pick.seedW, pick.seedH, w, h);
+    out->t = pick.t;
+    out->tLo = pick.tLo;
+    out->tHi = pick.tHi;
+    out->sPx = pick.sPx;
+    out->skipTint = pick.skipTint;
+    out->nBand = pick.nBand;
+    ctx.samp = &s;
+    ctx.invert = false;
+    if (nPix < 1 || pick.sPx < 1 || w > 65535 || h > 65535) return;
+    if (pick.stroke.size() < static_cast<size_t>(nPix)) return;
+    out->stroke = pick.stroke;
+    SeedPolCtx offCtx = ctx;
+    offCtx.invert = true;
+    auto on = [&](int sx, int sy) { return seedPolAt(ctx, sx, sy); };
+    auto off = [&](int sx, int sy) { return seedPolAt(offCtx, sx, sy); };
+    std::vector<uint8_t> sheet(static_cast<size_t>(nPix), 0);
+    seedMarkSheet(s, on, sheet.data());
+    seedMarkSheet(s, off, sheet.data());
+    std::vector<int> hOn(static_cast<size_t>(nPix), 0);
+    std::vector<int> vOn(static_cast<size_t>(nPix), 0);
+    std::vector<int> hOff(static_cast<size_t>(nPix), 0);
+    std::vector<int> vOff(static_cast<size_t>(nPix), 0);
+    seedFillRunLens(w, h, on, hOn.data(), vOn.data());
+    seedFillRunLens(w, h, off, hOff.data(), vOff.data());
+    const int plate = 3 * pick.sPx;
+    const int cap = nPix / 4;
+    std::vector<uint8_t> visited(static_cast<size_t>(nPix), 0);
+    std::vector<uint32_t> q;
+    q.reserve(static_cast<size_t>(std::max(1, cap)));
+    int nFlood = 0;
+    auto floodPol = [&](bool wantOn, const int* hRun, const int* vRun) {
+        auto pol = [&](int sx, int sy) {
+            return wantOn ? on(sx, sy) : off(sx, sy);
+        };
+        q.clear();
+        size_t qh = 0;
+        for (int i = 0; i < nPix; ++i) {
+            if (nFlood >= cap) return;
+            if (!pick.stroke[static_cast<size_t>(i)]) continue;
+            const int sx = i % w;
+            const int sy = i / w;
+            if (visited[static_cast<size_t>(i)] || sheet[static_cast<size_t>(i)]) continue;
+            if (!pol(sx, sy)) continue;
+            if (hRun[i] > plate && vRun[i] > plate) continue;
+            visited[static_cast<size_t>(i)] = 1;
+            out->white[static_cast<size_t>(i)] = 255;
+            ++nFlood;
+            q.push_back(
+                (static_cast<uint32_t>(sy) << 16) | static_cast<uint32_t>(sx));
+        }
+        while (qh < q.size()) {
+            if (nFlood >= cap) return;
+            const uint32_t p = q[qh++];
+            const int sx = static_cast<int>(p & 0xffffu);
+            const int sy = static_cast<int>(p >> 16);
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    if (dx == 0 && dy == 0) continue;
+                    const int nx = sx + dx;
+                    const int ny = sy + dy;
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                    const int ni = ny * w + nx;
+                    if (visited[static_cast<size_t>(ni)] ||
+                        sheet[static_cast<size_t>(ni)]) {
+                        continue;
+                    }
+                    if (!pol(nx, ny)) continue;
+                    if (hRun[ni] > plate && vRun[ni] > plate) continue;
+                    if (nFlood >= cap) return;
+                    visited[static_cast<size_t>(ni)] = 1;
+                    out->white[static_cast<size_t>(ni)] = 255;
+                    ++nFlood;
+                    q.push_back(
+                        (static_cast<uint32_t>(ny) << 16) |
+                        static_cast<uint32_t>(nx));
+                }
+            }
+        }
+    };
+    floodPol(true, hOn.data(), vOn.data());
+    floodPol(false, hOff.data(), vOff.data());
+}
+
 static jobjectArray packSeedInkThrs(JNIEnv* env, const std::vector<SeedInkThrNat>& thrs) {
     jclass objClass = env->FindClass("java/lang/Object");
     if (!objClass) return nullptr;
@@ -8548,7 +8869,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
     const int loSw = imgW >= 2000 ? 16 : 4;
     const int hiSw = std::max(35, h / 2);
     std::vector<SeedInkThrNat> thrs;
-    thrs.reserve(static_cast<size_t>(nCands) * 2 + 4);
+    thrs.reserve(static_cast<size_t>(nCands) * 2 + 8);
     for (int i = 0; i < nCands; ++i) {
         SeedPolCtx ctx{};
         ctx.kind = SeedPol::Light;
@@ -8576,6 +8897,17 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
         thrs.push_back(std::move(one));
     }
     thrs.push_back(seedUnionOf(bandThrs, 2, seedW, seedH, w, h));
+    {
+        SeedInkThrNat pick{};
+        SeedPolCtx pickCtx{};
+        seedPickBest(
+            samp, valleyTs, nValleyTs, bandThrs, nullptr,
+            seedW, seedH, 5, false, &pick, &pickCtx);
+        SeedInkThrNat flood{};
+        seedFloodFromCores(samp, pick, pickCtx, 6, &flood);
+        thrs.push_back(std::move(pick));
+        thrs.push_back(std::move(flood));
+    }
     if (wantColor) {
         std::vector<SeedInkThrNat> cBands;
         if (!uvOk) {
@@ -8606,6 +8938,15 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
         }
         for (auto& cb : cBands) thrs.push_back(cb);
         thrs.push_back(seedUnionOf(cBands, 4, seedW, seedH, w, h));
+        SeedInkThrNat cpick{};
+        SeedPolCtx cpickCtx{};
+        seedPickBest(
+            samp, nullptr, 0, cBands, &bandThrs,
+            seedW, seedH, 7, true, &cpick, &cpickCtx);
+        SeedInkThrNat cflood{};
+        seedFloodFromCores(samp, cpick, cpickCtx, 8, &cflood);
+        thrs.push_back(std::move(cpick));
+        thrs.push_back(std::move(cflood));
     }
     return packSeedInkThrs(env, thrs);
 }
