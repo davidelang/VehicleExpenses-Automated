@@ -5297,25 +5297,44 @@ suspend fun runPumpExperiment(
                     val keep = SeedInkProbeKeep.keepBoxes(file.name, branch.name)
                     if (grayOk) {
                         val uv = if (color) workspace.p.uvMat else null
+                        val whiteY = NativePaddleEngine.bufferSetB.p.mat
+                        val strokeY = NativePaddleEngine.bufferSetB.s.mat
+                        val deskewP = NativePaddleEngine.deskewBufferSetLarge.p.mat
+                        val destSet = NativePaddleEngine.deskewBufferSetLarge
                         seeds.forEachIndexed { i, seed ->
                             val boxN = i + 1
                             if (boxN !in keep) return@forEachIndexed
-                            val probe = ContentExpandUtils.probeSeedInk(
-                                workspace.p.mat, seed, imgW, uv,
+                            val srcW = seed.width().coerceAtLeast(1)
+                            val srcH = seed.height().coerceAtLeast(1)
+                            val (destW0, destH0) = seedInkLookDestSize(
+                                srcW, srcH, true, destSet.s,
                             )
-                            for (thr in probe.thrs) {
-                                val okKind = if (color) {
-                                    thr.kind == "cband" || thr.kind == "cunion" ||
-                                        thr.kind == "cpick" || thr.kind == "cflood"
-                                } else {
-                                    thr.kind == "gt" || thr.kind == "band" || thr.kind == "union" ||
-                                        thr.kind == "pick" || thr.kind == "flood"
-                                }
-                                if (!okKind) continue
-                                snapshotSeedInkProbe(
-                                    thr, probe.w, probe.h, true, boxN, branch,
-                                    reportDir, timestamp, fullRow, branch.name,
+                            if (destW0 < 2 || destH0 < 2) return@forEachIndexed
+                            val cropId = destSet.s.createCrop(0, 0, destW0, destH0)
+                            try {
+                                val dest = destSet.c[cropId]
+                                val probe = ContentExpandUtils.probeSeedInk(
+                                    workspace.p.mat, seed, imgW, uv,
+                                    workspace.s.mat, whiteY, strokeY, deskewP,
+                                    dest.mat, dest.uvMat, destW0, destH0,
                                 )
+                                for (thr in probe.thrs) {
+                                    val okKind = if (color) {
+                                        thr.kind == "cband" || thr.kind == "cunion" ||
+                                            thr.kind == "cpick" || thr.kind == "cflood"
+                                    } else {
+                                        thr.kind == "gt" || thr.kind == "band" ||
+                                            thr.kind == "union" ||
+                                            thr.kind == "pick" || thr.kind == "flood"
+                                    }
+                                    if (!okKind) continue
+                                    snapshotSeedInkProbe(
+                                        thr, boxN, branch,
+                                        reportDir, timestamp, fullRow, branch.name,
+                                    )
+                                }
+                            } finally {
+                                destSet.c[cropId].release()
                             }
                         }
                     }
@@ -5368,25 +5387,43 @@ suspend fun runPumpExperiment(
                     val keep = SeedInkProbeKeep.keepBoxes(file.name, branch.name)
                     if (grayOk) {
                         val uv = if (color) workspace.p.uvMat else null
+                        val whiteY = NativePaddleEngine.bufferSetB.p.mat
+                        val strokeY = NativePaddleEngine.bufferSetB.s.mat
+                        val deskewP = NativePaddleEngine.deskewBufferSetLarge.p.mat
+                        val destSet = NativePaddleEngine.deskewBufferSetLarge
                         seedQuads.forEachIndexed { i, q ->
                             val boxN = i + 1
                             if (boxN !in keep) return@forEachIndexed
-                            val probe = ContentExpandUtils.probeSeedInkUv(
-                                workspace.p.mat, uv, q, imgW,
+                            val (srcW, srcH) = seedInkRotSrcSize(q)
+                            val (destW0, destH0) = seedInkLookDestSize(
+                                srcW, srcH, false, destSet.s,
                             )
-                            for (thr in probe.thrs) {
-                                val okKind = if (color) {
-                                    thr.kind == "cband" || thr.kind == "cunion" ||
-                                        thr.kind == "cpick" || thr.kind == "cflood"
-                                } else {
-                                    thr.kind == "gt" || thr.kind == "band" || thr.kind == "union" ||
-                                        thr.kind == "pick" || thr.kind == "flood"
-                                }
-                                if (!okKind) continue
-                                snapshotSeedInkProbe(
-                                    thr, probe.w, probe.h, false, boxN, branch,
-                                    reportDir, timestamp, fullRow, branch.name,
+                            if (destW0 < 2 || destH0 < 2) return@forEachIndexed
+                            val cropId = destSet.s.createCrop(0, 0, destW0, destH0)
+                            try {
+                                val dest = destSet.c[cropId]
+                                val probe = ContentExpandUtils.probeSeedInkUv(
+                                    workspace.p.mat, uv, q, imgW,
+                                    workspace.s.mat, whiteY, strokeY, deskewP,
+                                    dest.mat, dest.uvMat, destW0, destH0,
                                 )
+                                for (thr in probe.thrs) {
+                                    val okKind = if (color) {
+                                        thr.kind == "cband" || thr.kind == "cunion" ||
+                                            thr.kind == "cpick" || thr.kind == "cflood"
+                                    } else {
+                                        thr.kind == "gt" || thr.kind == "band" ||
+                                            thr.kind == "union" ||
+                                            thr.kind == "pick" || thr.kind == "flood"
+                                    }
+                                    if (!okKind) continue
+                                    snapshotSeedInkProbe(
+                                        thr, boxN, branch,
+                                        reportDir, timestamp, fullRow, branch.name,
+                                    )
+                                }
+                            } finally {
+                                destSet.c[cropId].release()
                             }
                         }
                     }
@@ -7597,53 +7634,51 @@ private suspend fun snapshotOverlayFull(
     }
 }
 
-/** Per-threshold probe JPEG: black + white(Y>t) + green SW runs; height/short-axis 96. */
-private fun snapshotSeedInkProbe(
-    thr: ContentExpandUtils.SeedInkThr,
+private fun seedInkRotSrcSize(q: ContentExpandUtils.OrientedQuad): Pair<Int, Int> {
+    val box = ContentExpandUtils.OrientedBox.fromQuad(q) ?: return 1 to 1
+    val w = (kotlin.math.round(box.u1) - kotlin.math.round(box.u0)).toInt()
+    val h = (kotlin.math.round(box.v1) - kotlin.math.round(box.v0)).toInt()
+    return w.coerceAtLeast(1) to h.coerceAtLeast(1)
+}
+
+private fun seedInkLookDestSize(
     srcW: Int,
     srcH: Int,
     scaleByHeight: Boolean,
+    destSlice: BufferSet.Slice,
+): Pair<Int, Int> {
+    if (srcW < 1 || srcH < 1) return 0 to 0
+    fun even2(v: Int) = ((v + 1) / 2 * 2).coerceAtLeast(2)
+    val axis = if (scaleByHeight) srcH else min(srcW, srcH)
+    val scale = minOf(
+        96.0 / axis.coerceAtLeast(1),
+        PUMP_LOOKINK_MAX_W.toDouble() / srcW,
+        destSlice.height.toDouble() / srcH,
+        destSlice.width.toDouble() / srcW,
+    )
+    var destH0 = even2(ceil(srcH * scale).toInt())
+    var destW0 = even2(ceil(srcW * scale).toInt())
+    val maxW = destSlice.width
+    val maxH = destSlice.height
+    if (destW0 > maxW || destH0 > maxH) {
+        val fit = min(maxW.toDouble() / destW0, maxH.toDouble() / destH0)
+        destW0 = even2((destW0 * fit).toInt())
+        destH0 = even2((destH0 * fit).toInt())
+    }
+    return destW0 to destH0
+}
+
+/** Per-threshold probe JPEG already encoded in native; height/short-axis 96. */
+private fun snapshotSeedInkProbe(
+    thr: ContentExpandUtils.SeedInkThr,
     boxN: Int,
     branch: PumpBranch,
     reportDir: File,
     timestamp: String,
     fullRow: Int,
     flowName: String,
-    scratchYuv: BufferSet = NativePaddleEngine.bufferSetB,
 ) {
-    if (srcW < 1 || srcH < 1) return
-    if (thr.white.size != srcW * srcH || thr.stroke.size != srcW * srcH) return
-    fun even2(v: Int) = ((v + 1) / 2 * 2).coerceAtLeast(2)
-    val axis = if (scaleByHeight) srcH else min(srcW, srcH)
-    val scale = minOf(
-        96.0 / axis.coerceAtLeast(1),
-        PUMP_LOOKINK_MAX_W.toDouble() / srcW,
-        scratchYuv.s.height.toDouble() / srcH,
-        scratchYuv.s.width.toDouble() / srcW,
-    )
-    var destH0 = even2(ceil(srcH * scale).toInt())
-    var destW0 = even2(ceil(srcW * scale).toInt())
-    val maxW = scratchYuv.s.width
-    val maxH = scratchYuv.s.height
-    if (destW0 > maxW || destH0 > maxH) {
-        val fit = min(maxW.toDouble() / destW0, maxH.toDouble() / destH0)
-        destW0 = even2((destW0 * fit).toInt())
-        destH0 = even2((destH0 * fit).toInt())
-    }
-    val cropId = scratchYuv.s.createCrop(0, 0, destW0, destH0)
-    val jpeg = try {
-        val dest = scratchYuv.c[cropId]
-        if (!NativeImageUtils.paintSeedInkLook(
-                thr.white, thr.stroke, srcW, srcH, dest.mat, dest.uvMat,
-            )
-        ) {
-            ByteArray(0)
-        } else {
-            NativeImageUtils.encodeYuvMatJpeg(dest.mat, dest.uvMat, 80)
-        }
-    } finally {
-        scratchYuv.c[cropId].release()
-    }
+    val jpeg = thr.jpeg
     if (jpeg.isEmpty()) return
     val arr = try {
         org.json.JSONArray(branch.metadata["look_ink"] ?: "[]")

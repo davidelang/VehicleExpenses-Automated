@@ -646,6 +646,10 @@ bool veEncodeGrayJpegU8(const cv::Mat& u8, std::vector<uint8_t>* out) {
     return cv::imencode(".jpg", bgr, *out, params);
 }
 
+extern "C" bool veEncodeYuvMatJpeg(const cv::Mat& y, const cv::Mat& uv, std::vector<uint8_t>* out) {
+    return encodeYuvMatJpeg(y, uv, 80, out);
+}
+
 static bool encodeYuvPlanesJpeg(
     const uint8_t* yData, const uint8_t* uData, const uint8_t* vData,
     int w, int h, int stride, int quality, std::vector<uint8_t>* out

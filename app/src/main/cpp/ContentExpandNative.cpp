@@ -939,6 +939,7 @@ static cv::Mat packJpegScratch(int w, int h) {
 }
 
 extern "C" bool veEncodeGrayJpegU8(const cv::Mat& u8, std::vector<uint8_t>* out);
+extern "C" bool veEncodeYuvMatJpeg(const cv::Mat& y, const cv::Mat& uv, std::vector<uint8_t>* out);
 
 static void packSeedBinJpeg(const cv::Mat& bin, InkSweepPack* out) {
     if (!out || bin.empty() || bin.type() != CV_8UC1) return;
@@ -7870,11 +7871,7 @@ static bool seedInPhoto(const SeedInkSamp& s, int sx, int sy) {
 
 static bool seedYAt(const SeedInkSamp& s, int sx, int sy, int* out) {
     if (!s.gray || !out) return false;
-    if (sx >= 0 && sy >= 0 && sx < s.w && sy < s.h) {
-        if (s.raster) {
-            *out = s.raster[sy * s.w + sx];
-            return true;
-        }
+    if (!s.hasRot && sx >= 0 && sy >= 0 && sx < s.w && sy < s.h) {
         *out = s.gray->ptr<uint8_t>(s.oy + sy)[s.ox + sx];
         return true;
     }
@@ -8047,23 +8044,23 @@ static void seedPeekV(
 }
 
 template <typename Pol>
-static void seedMarkSheet(const SeedInkSamp& s, Pol pol, uint8_t* sheet) {
+static void seedMarkSheet(const SeedInkSamp& s, Pol pol, uint8_t* sheet, int stride) {
     const int w = s.w, h = s.h;
     seedForEachHRuns(w, h, pol, [&](int y, int x0, int len) {
         if (len != w) return;
-        uint8_t* row = sheet + y * w;
+        uint8_t* row = sheet + y * stride;
         for (int x = x0; x < x0 + len; ++x) row[x] = 1;
     });
     seedForEachVRuns(w, h, pol, [&](int x, int y0, int len) {
         if (len != h) return;
-        for (int y = y0; y < y0 + len; ++y) sheet[y * w + x] = 1;
+        for (int y = y0; y < y0 + len; ++y) sheet[y * stride + x] = 1;
     });
 }
 
 template <typename Pol>
 static void seedPaintCores(
-    const SeedInkSamp& s, Pol pol, int sPx, uint8_t* dest, const uint8_t* sheet,
-    bool doH, bool doV
+    const SeedInkSamp& s, Pol pol, int sPx, uint8_t* dest, int destStride,
+    const uint8_t* sheet, int sheetStride, bool doH, bool doV
 ) {
     if (sPx < 1) return;
     const int w = s.w, h = s.h;
@@ -8078,8 +8075,8 @@ static void seedPaintCores(
             if (blocked) return;
             const float fl = static_cast<float>(fullLen);
             if (fl < plo || fl > phi) return;
-            const uint8_t* sh = sheet + y * w;
-            uint8_t* d = dest + y * w;
+            const uint8_t* sh = sheet + y * sheetStride;
+            uint8_t* d = dest + y * destStride;
             for (int x = x0; x < x0 + len; ++x) {
                 if (sh[x] == 0) d[x] = 255;
             }
@@ -8095,8 +8092,7 @@ static void seedPaintCores(
             const float fl = static_cast<float>(fullLen);
             if (fl < plo || fl > phi) return;
             for (int y = y0; y < y0 + len; ++y) {
-                const int i = y * w + x;
-                if (sheet[i] == 0) dest[i] = 255;
+                if (sheet[y * sheetStride + x] == 0) dest[y * destStride + x] = 255;
             }
         });
     }
@@ -8130,35 +8126,141 @@ static int seedSPxFromPol(const SeedInkSamp& s, Pol pol, int lo, int hi) {
 }
 
 template <typename Pol>
-static void seedGreyMask(const SeedInkSamp& s, Pol pol, uint8_t* white) {
+static void seedGreyMask(const SeedInkSamp& s, Pol pol, uint8_t* white, int stride) {
     for (int sy = 0; sy < s.h; ++sy) {
-        uint8_t* row = white + sy * s.w;
+        uint8_t* row = white + sy * stride;
         for (int sx = 0; sx < s.w; ++sx) {
             row[sx] = pol(sx, sy) ? 255 : 0;
         }
     }
 }
 
+static void seedZeroPlane(uint8_t* p, int stride, int w, int h) {
+    if (!p || w < 1 || h < 1) return;
+    for (int y = 0; y < h; ++y) {
+        std::memset(p + static_cast<size_t>(y) * static_cast<size_t>(stride), 0,
+            static_cast<size_t>(w));
+    }
+}
+
+static void seedCopyStridedToPacked(
+    const uint8_t* src, int stride, int w, int h, uint8_t* dst
+) {
+    for (int y = 0; y < h; ++y) {
+        std::memcpy(dst + static_cast<size_t>(y) * static_cast<size_t>(w),
+            src + static_cast<size_t>(y) * static_cast<size_t>(stride),
+            static_cast<size_t>(w));
+    }
+}
+
+static void seedCopyPackedToStrided(
+    const uint8_t* src, uint8_t* dst, int stride, int w, int h
+) {
+    for (int y = 0; y < h; ++y) {
+        std::memcpy(dst + static_cast<size_t>(y) * static_cast<size_t>(stride),
+            src + static_cast<size_t>(y) * static_cast<size_t>(w),
+            static_cast<size_t>(w));
+    }
+}
+
+static void seedOrStridedIntoPacked(
+    const uint8_t* src, int stride, int w, int h, uint8_t* acc
+) {
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* srow = src + static_cast<size_t>(y) * static_cast<size_t>(stride);
+        uint8_t* drow = acc + static_cast<size_t>(y) * static_cast<size_t>(w);
+        for (int x = 0; x < w; ++x) if (srow[x]) drow[x] = 255;
+    }
+}
+
+static int seedCountNzStrided(const uint8_t* p, int stride, int w, int h) {
+    int c = 0;
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* row = p + static_cast<size_t>(y) * static_cast<size_t>(stride);
+        for (int x = 0; x < w; ++x) if (row[x]) ++c;
+    }
+    return c;
+}
+
+static bool seedStrokeHasHV(const uint8_t* stroke, int stride, int w, int h) {
+    bool hasH = false, hasV = false;
+    auto pol = [&](int sx, int sy) { return stroke[sy * stride + sx] != 0; };
+    seedForEachHRuns(w, h, pol, [&](int, int, int len) {
+        if (len != w) hasH = true;
+    });
+    if (!hasH) return false;
+    seedForEachVRuns(w, h, pol, [&](int, int, int len) {
+        if (len != h) hasV = true;
+    });
+    return hasV;
+}
+
+static bool seedPaintLook(
+    const uint8_t* white, int wstride,
+    const uint8_t* stroke, int sstride,
+    int srcW, int srcH,
+    cv::Mat* y, cv::Mat* uv
+) {
+    if (!white || !stroke || srcW < 1 || srcH < 1 || !y) return false;
+    if (y->empty() || y->type() != CV_8UC1) return false;
+    const int dw = y->cols, dh = y->rows;
+    if (dw < 1 || dh < 1) return false;
+    y->setTo(0);
+    for (int dy = 0; dy < dh; ++dy) {
+        int sy = static_cast<int>((static_cast<int64_t>(dy) * srcH) / dh);
+        if (sy >= srcH) sy = srcH - 1;
+        uint8_t* row = y->ptr<uint8_t>(dy);
+        const uint8_t* wrow = white + sy * wstride;
+        const uint8_t* srow = stroke + sy * sstride;
+        for (int dx = 0; dx < dw; ++dx) {
+            int sx = static_cast<int>((static_cast<int64_t>(dx) * srcW) / dw);
+            if (sx >= srcW) sx = srcW - 1;
+            if (srow[sx] != 0) row[dx] = 150;
+            else if (wrow[sx] != 0) row[dx] = 255;
+            else row[dx] = 0;
+        }
+    }
+    if (uv && !uv->empty() && uv->type() == CV_8UC2) {
+        uv->setTo(cv::Scalar(128, 128));
+        const int uvW = dw / 2;
+        const int uvH = dh / 2;
+        const int writeW = std::min(uvW, uv->cols);
+        const int writeH = std::min(uvH, uv->rows);
+        for (int uy = 0; uy < writeH; ++uy) {
+            const uint8_t* yrow = y->ptr<uint8_t>(uy * 2);
+            cv::Vec2b* uvrow = uv->ptr<cv::Vec2b>(uy);
+            for (int ux = 0; ux < writeW; ++ux) {
+                if (yrow[ux * 2] == 150) uvrow[ux] = cv::Vec2b(44, 21);
+                else uvrow[ux] = cv::Vec2b(128, 128);
+            }
+        }
+    }
+    return true;
+}
+
 struct SeedInkThrNat {
     int kind = 0, t = 0, tLo = 0, tHi = 0, sPx = 0, seedW = 0, seedH = 0;
     int skipTint = 0, nBand = 0, w = 0, h = 0;
-    std::vector<uint8_t> white, stroke;
+    std::vector<uint8_t> jpeg;
 };
 
-static void seedEvalGrey(
-    const SeedInkSamp& s, SeedPolCtx onCtx, int t, int tLo, int tHi, int kind,
-    int seedW, int seedH, int loSw, int hiSw, bool doV, SeedInkThrNat* out
+struct SeedInkPlanes {
+    uint8_t* sheet = nullptr;
+    int sheetStride = 0;
+    uint8_t* white = nullptr;
+    int whiteStride = 0;
+    uint8_t* stroke = nullptr;
+    int strokeStride = 0;
+    uint8_t* deskew = nullptr;
+    int deskewCap = 0;
+    cv::Mat* destY = nullptr;
+    cv::Mat* destUv = nullptr;
+};
+
+static void seedFillMeta(
+    SeedInkThrNat* out, int kind, int t, int tLo, int tHi, int sPx,
+    int seedW, int seedH, int skipTint, int nBand, int w, int h
 ) {
-    onCtx.invert = false;
-    SeedPolCtx offCtx = onCtx;
-    offCtx.invert = true;
-    auto on = [&](int sx, int sy) { return seedPolAt(onCtx, sx, sy); };
-    auto off = [&](int sx, int sy) { return seedPolAt(offCtx, sx, sy); };
-    const int nPix = s.w * s.h;
-    std::vector<uint8_t> sheet(static_cast<size_t>(nPix), 0);
-    seedMarkSheet(s, on, sheet.data());
-    seedMarkSheet(s, off, sheet.data());
-    const int sPx = seedSPxFromPol(s, on, loSw, hiSw);
     out->kind = kind;
     out->t = t;
     out->tLo = tLo;
@@ -8166,19 +8268,48 @@ static void seedEvalGrey(
     out->sPx = sPx;
     out->seedW = seedW;
     out->seedH = seedH;
-    out->skipTint = 0;
-    out->nBand = 0;
-    out->w = s.w;
-    out->h = s.h;
-    out->white.assign(static_cast<size_t>(nPix), 0);
-    out->stroke.assign(static_cast<size_t>(nPix), 0);
-    seedGreyMask(s, on, out->white.data());
-    seedPaintCores(s, on, sPx, out->stroke.data(), sheet.data(), true, doV);
-    seedPaintCores(s, off, sPx, out->stroke.data(), sheet.data(), true, doV);
+    out->skipTint = skipTint;
+    out->nBand = nBand;
+    out->w = w;
+    out->h = h;
 }
 
-static SeedInkThrNat seedUnionOf(
-    const std::vector<SeedInkThrNat>& bands, int kind, int seedW, int seedH, int w, int h
+static void seedEncodeThr(const SeedInkPlanes& p, int w, int h, SeedInkThrNat* out) {
+    out->jpeg.clear();
+    if (!seedPaintLook(
+            p.white, p.whiteStride, p.stroke, p.strokeStride, w, h, p.destY, p.destUv)) {
+        return;
+    }
+    cv::Mat emptyUv;
+    const cv::Mat& uv = (p.destUv && !p.destUv->empty()) ? *p.destUv : emptyUv;
+    veEncodeYuvMatJpeg(*p.destY, uv, &out->jpeg);
+}
+
+static void seedEvalGrey(
+    const SeedInkSamp& s, SeedPolCtx onCtx, int t, int tLo, int tHi, int kind,
+    int seedW, int seedH, int loSw, int hiSw, bool doV, SeedInkThrNat* out,
+    const SeedInkPlanes& p
+) {
+    onCtx.invert = false;
+    SeedPolCtx offCtx = onCtx;
+    offCtx.invert = true;
+    auto on = [&](int sx, int sy) { return seedPolAt(onCtx, sx, sy); };
+    auto off = [&](int sx, int sy) { return seedPolAt(offCtx, sx, sy); };
+    seedZeroPlane(p.sheet, p.sheetStride, s.w, s.h);
+    seedZeroPlane(p.white, p.whiteStride, s.w, s.h);
+    seedZeroPlane(p.stroke, p.strokeStride, s.w, s.h);
+    seedMarkSheet(s, on, p.sheet, p.sheetStride);
+    seedMarkSheet(s, off, p.sheet, p.sheetStride);
+    const int sPx = seedSPxFromPol(s, on, loSw, hiSw);
+    seedFillMeta(out, kind, t, tLo, tHi, sPx, seedW, seedH, 0, 0, s.w, s.h);
+    seedGreyMask(s, on, p.white, p.whiteStride);
+    seedPaintCores(s, on, sPx, p.stroke, p.strokeStride, p.sheet, p.sheetStride, true, doV);
+    seedPaintCores(s, off, sPx, p.stroke, p.strokeStride, p.sheet, p.sheetStride, true, doV);
+}
+
+static void seedUnionMeta(
+    const std::vector<SeedInkThrNat>& bands, int kind, int seedW, int seedH, int w, int h,
+    SeedInkThrNat* out
 ) {
     std::vector<int> spx, cnt;
     for (const auto& b : bands) {
@@ -8203,17 +8334,7 @@ static SeedInkThrNat seedUnionOf(
             modal = spx[i];
         }
     }
-    SeedInkThrNat out{};
-    out.kind = kind;
-    out.t = modal;
-    out.sPx = modal;
-    out.seedW = seedW;
-    out.seedH = seedH;
-    out.w = w;
-    out.h = h;
-    const int nPix = w * h;
-    out.white.assign(static_cast<size_t>(nPix), 0);
-    out.stroke.assign(static_cast<size_t>(nPix), 0);
+    seedFillMeta(out, kind, modal, 0, 0, modal, seedW, seedH, 0, 0, w, h);
     if (modal > 0) {
         const float plo = 0.7f * static_cast<float>(modal);
         const float phi = 1.3f * static_cast<float>(modal);
@@ -8221,25 +8342,29 @@ static SeedInkThrNat seedUnionOf(
             if (b.sPx < 1) continue;
             const float sp = static_cast<float>(b.sPx);
             if (sp < plo || sp > phi) continue;
-            out.nBand++;
-            if (b.skipTint) out.skipTint = 1;
-            const size_t n = std::min(out.stroke.size(), b.stroke.size());
-            for (size_t i = 0; i < n; ++i) {
-                if (b.stroke[i]) out.stroke[i] = 255;
-            }
+            out->nBand++;
+            if (b.skipTint) out->skipTint = 1;
         }
     }
-    return out;
+}
+
+static bool seedUnionIncludes(const SeedInkThrNat& uni, const SeedInkThrNat& b) {
+    if (uni.sPx < 1 || b.sPx < 1) return false;
+    const float plo = 0.7f * static_cast<float>(uni.sPx);
+    const float phi = 1.3f * static_cast<float>(uni.sPx);
+    const float sp = static_cast<float>(b.sPx);
+    return sp >= plo && sp <= phi;
 }
 
 static void seedHueFromStroke(
-    const SeedInkSamp& s, const uint8_t* stroke, int sPx, SeedPolCtx* c, bool* skipTint
+    const SeedInkSamp& s, const uint8_t* stroke, int stride, int sPx,
+    SeedPolCtx* c, bool* skipTint
 ) {
     *skipTint = true;
     float su = 0.f, sv = 0.f, yInkSum = 0.f, chromaInkSum = 0.f;
     int nInk = 0;
     for (int sy = 0; sy < s.h; ++sy) {
-        const uint8_t* row = stroke + sy * s.w;
+        const uint8_t* row = stroke + sy * stride;
         for (int sx = 0; sx < s.w; ++sx) {
             if (!row[sx]) continue;
             int yv = 0;
@@ -8265,7 +8390,7 @@ static void seedHueFromStroke(
     int nBg = 0;
     auto tryBg = [&](int sx, int sy) {
         if (sx >= 0 && sy >= 0 && sx < s.w && sy < s.h) {
-            if (stroke[sy * s.w + sx]) return;
+            if (stroke[sy * stride + sx]) return;
         } else if (!seedInPhoto(s, sx, sy)) {
             return;
         }
@@ -8287,7 +8412,7 @@ static void seedHueFromStroke(
     };
     if (nInk > 0 && sPx > 0) {
         for (int sy = 0; sy < s.h; ++sy) {
-            const uint8_t* row = stroke + sy * s.w;
+            const uint8_t* row = stroke + sy * stride;
             for (int sx = 0; sx < s.w; ++sx) {
                 if (!row[sx]) continue;
                 tryBg(sx - dOff, sy);
@@ -8347,7 +8472,8 @@ static void seedHueFromStroke(
 
 static void seedEvalColorBand(
     const SeedInkSamp& s, const SeedInkThrNat& gb, const SeedPolCtx& colorCtx,
-    int seedW, int seedH, int loSw, int hiSw, SeedInkThrNat* out
+    int seedW, int seedH, int loSw, int hiSw, SeedInkThrNat* out,
+    const SeedInkPlanes& p
 ) {
     auto inkHue = [&](int sx, int sy) {
         return seedHueAt(colorCtx, sx, sy, colorCtx.uInkX, colorCtx.uInkY);
@@ -8356,15 +8482,11 @@ static void seedEvalColorBand(
         return colorCtx.bgHasChroma &&
             seedHueAt(colorCtx, sx, sy, colorCtx.uBgX, colorCtx.uBgY);
     };
-    const int nPix = s.w * s.h;
-    out->white.assign(static_cast<size_t>(nPix), 0);
     for (int sy = 0; sy < s.h; ++sy) {
+        uint8_t* wrow = p.white + sy * p.whiteStride;
         for (int sx = 0; sx < s.w; ++sx) {
-            const int i = sy * s.w + sx;
-            const bool greyW = gb.white[static_cast<size_t>(i)] != 0;
-            if ((greyW || inkHue(sx, sy)) && !bgHue(sx, sy)) {
-                out->white[static_cast<size_t>(i)] = 255;
-            }
+            const bool greyW = wrow[sx] != 0;
+            wrow[sx] = ((greyW || inkHue(sx, sy)) && !bgHue(sx, sy)) ? 255 : 0;
         }
     }
     SeedPolCtx onCtx = colorCtx;
@@ -8374,30 +8496,14 @@ static void seedEvalColorBand(
     offCtx.invert = true;
     auto on = [&](int sx, int sy) { return seedPolAt(onCtx, sx, sy); };
     auto off = [&](int sx, int sy) { return seedPolAt(offCtx, sx, sy); };
-    std::vector<uint8_t> sheet(static_cast<size_t>(nPix), 0);
-    seedMarkSheet(s, on, sheet.data());
-    seedMarkSheet(s, off, sheet.data());
+    seedZeroPlane(p.sheet, p.sheetStride, s.w, s.h);
+    seedZeroPlane(p.stroke, p.strokeStride, s.w, s.h);
+    seedMarkSheet(s, on, p.sheet, p.sheetStride);
+    seedMarkSheet(s, off, p.sheet, p.sheetStride);
     const int sPx = seedSPxFromPol(s, on, loSw, hiSw);
-    out->stroke.assign(static_cast<size_t>(nPix), 0);
-    seedPaintCores(s, on, sPx, out->stroke.data(), sheet.data(), true, true);
-    seedPaintCores(s, off, sPx, out->stroke.data(), sheet.data(), true, true);
-    out->kind = 3;
-    out->t = gb.t;
-    out->tLo = gb.tLo;
-    out->tHi = gb.tHi;
-    out->sPx = sPx;
-    out->seedW = seedW;
-    out->seedH = seedH;
-    out->skipTint = 0;
-    out->nBand = 0;
-    out->w = s.w;
-    out->h = s.h;
-}
-
-static int seedCountNz(const uint8_t* p, int n) {
-    int c = 0;
-    for (int i = 0; i < n; ++i) if (p[i]) ++c;
-    return c;
+    seedPaintCores(s, on, sPx, p.stroke, p.strokeStride, p.sheet, p.sheetStride, true, true);
+    seedPaintCores(s, off, sPx, p.stroke, p.strokeStride, p.sheet, p.sheetStride, true, true);
+    seedFillMeta(out, 3, gb.t, gb.tLo, gb.tHi, sPx, seedW, seedH, 0, 0, s.w, s.h);
 }
 
 static void seedDigitSPxRange(int seedH, int* lo, int* hi) {
@@ -8413,27 +8519,20 @@ static bool seedSPxInDigitScale(int sPx, int seedH) {
 
 static SeedInkThrNat seedEmptyThr(int kind, int seedW, int seedH, int w, int h) {
     SeedInkThrNat o{};
-    o.kind = kind;
-    o.seedW = seedW;
-    o.seedH = seedH;
-    o.w = w;
-    o.h = h;
-    const int nPix = w * h;
-    if (nPix > 0) {
-        o.white.assign(static_cast<size_t>(nPix), 0);
-        o.stroke.assign(static_cast<size_t>(nPix), 0);
-    }
+    seedFillMeta(&o, kind, 0, 0, 0, 0, seedW, seedH, 0, 0, w, h);
     return o;
 }
 
 template <typename Pol>
-static void seedFillRunLens(int w, int h, Pol pol, int* hRun, int* vRun) {
+static void seedFillRunLensU16(int w, int h, Pol pol, uint16_t* hRun, uint16_t* vRun) {
     seedForEachHRuns(w, h, pol, [&](int y, int x0, int len) {
-        int* row = hRun + y * w;
-        for (int x = x0; x < x0 + len; ++x) row[x] = len;
+        const uint16_t L = static_cast<uint16_t>(std::min(len, 65535));
+        uint16_t* row = hRun + y * w;
+        for (int x = x0; x < x0 + len; ++x) row[x] = L;
     });
     seedForEachVRuns(w, h, pol, [&](int x, int y0, int len) {
-        for (int y = y0; y < y0 + len; ++y) vRun[y * w + x] = len;
+        const uint16_t L = static_cast<uint16_t>(std::min(len, 65535));
+        for (int y = y0; y < y0 + len; ++y) vRun[y * w + x] = L;
     });
 }
 
@@ -8442,8 +8541,7 @@ struct SeedPickBest {
     bool light = false;
     int nStroke = -1;
     int sPx = 0;
-    int t = 0;
-    SeedInkThrNat thr;
+    int t = 0, tLo = 0, tHi = 0, skipTint = 0, nBand = 0;
     SeedPolCtx ctx;
 };
 
@@ -8460,166 +8558,33 @@ static bool seedPickWins(
     return t < b.t;
 }
 
-static SeedPolCtx seedBandOrColorCtx(
-    const SeedInkSamp& s,
-    const SeedInkThrNat& b,
-    bool color,
-    const std::vector<SeedInkThrNat>* hueBands
+static void seedConsiderSlices(
+    SeedPickBest* best, bool light, int t, int tLo, int tHi, int sPx, int skipTint,
+    int nBand, const SeedPolCtx& ctx, const SeedInkPlanes& p, int w, int h, int seedH,
+    int nPix, uint8_t* pickW, uint8_t* pickS
 ) {
-    SeedPolCtx ctx{};
-    ctx.samp = &s;
-    if (color && b.skipTint == 0) {
-        const SeedInkThrNat* gb = &b;
-        if (hueBands) {
-            for (const auto& g : *hueBands) {
-                if (g.tLo == b.tLo && g.tHi == b.tHi) {
-                    gb = &g;
-                    break;
-                }
-            }
-        }
-        bool skip = true;
-        if (gb->sPx > 0 && !gb->stroke.empty()) {
-            seedHueFromStroke(s, gb->stroke.data(), gb->sPx, &ctx, &skip);
-        }
-        if (!skip) return ctx;
-    }
-    ctx = SeedPolCtx{};
-    ctx.kind = SeedPol::Band;
-    ctx.tLo = b.tLo;
-    ctx.tHi = b.tHi;
-    ctx.samp = &s;
-    return ctx;
-}
-
-static void seedPickBest(
-    const SeedInkSamp& s,
-    const int* valleyTs, int nValleyTs,
-    const std::vector<SeedInkThrNat>& bands,
-    const std::vector<SeedInkThrNat>* hueBands,
-    int seedW, int seedH, int kindPick, bool color,
-    SeedInkThrNat* out, SeedPolCtx* outCtx
-) {
-    const int w = s.w, h = s.h;
-    const int nPix = w * h;
-    *out = seedEmptyThr(kindPick, seedW, seedH, w, h);
-    *outCtx = SeedPolCtx{};
-    outCtx->samp = &s;
-    if (nPix < 1) return;
+    if (!seedSPxInDigitScale(sPx, seedH)) return;
+    if (!seedStrokeHasHV(p.stroke, p.strokeStride, w, h)) return;
+    const int nStroke = seedCountNzStrided(p.stroke, p.strokeStride, w, h);
     const int strokeCap = nPix / 4;
-    int dLo = 0, dHi = 0;
-    seedDigitSPxRange(seedH, &dLo, &dHi);
-    const int spLo = std::max(1, dLo);
-    std::vector<uint8_t> sheet(static_cast<size_t>(nPix), 0);
-    std::vector<uint8_t> hCore(static_cast<size_t>(nPix), 0);
-    std::vector<uint8_t> vCore(static_cast<size_t>(nPix), 0);
-    std::vector<uint8_t> white(static_cast<size_t>(nPix), 0);
-    std::vector<uint8_t> stroke(static_cast<size_t>(nPix), 0);
-    SeedPickBest best{};
-
-    auto consider = [&](
-        bool light, int t, int tLo, int tHi, int sPx, int skipTint,
-        const SeedPolCtx& ctx, const uint8_t* whiteSrc, const uint8_t* strokeSrc,
-        int nStroke
-    ) {
-        if (!seedPickWins(best, light, nStroke, sPx, t, seedH)) return;
-        best.have = true;
-        best.light = light;
-        best.nStroke = nStroke;
-        best.sPx = sPx;
-        best.t = t;
-        best.ctx = ctx;
-        best.thr = seedEmptyThr(kindPick, seedW, seedH, w, h);
-        best.thr.t = t;
-        best.thr.tLo = tLo;
-        best.thr.tHi = tHi;
-        best.thr.sPx = sPx;
-        best.thr.skipTint = skipTint;
-        best.thr.nBand = light ? 0 : 1;
-        if (whiteSrc) {
-            std::memcpy(best.thr.white.data(), whiteSrc, static_cast<size_t>(nPix));
-        }
-        if (strokeSrc) {
-            std::memcpy(best.thr.stroke.data(), strokeSrc, static_cast<size_t>(nPix));
-        }
-    };
-
-    if (!color && valleyTs && nValleyTs > 0) {
-        for (int vi = 0; vi < nValleyTs; ++vi) {
-            const int t = valleyTs[vi];
-            SeedPolCtx onCtx{};
-            onCtx.kind = SeedPol::Light;
-            onCtx.t = t;
-            onCtx.samp = &s;
-            SeedPolCtx offCtx = onCtx;
-            offCtx.invert = true;
-            auto on = [&](int sx, int sy) { return seedPolAt(onCtx, sx, sy); };
-            auto off = [&](int sx, int sy) { return seedPolAt(offCtx, sx, sy); };
-            std::fill(sheet.begin(), sheet.end(), 0);
-            seedMarkSheet(s, on, sheet.data());
-            seedMarkSheet(s, off, sheet.data());
-            const int sPx = (dHi >= spLo) ? seedSPxFromPol(s, on, spLo, dHi) : 0;
-            if (!seedSPxInDigitScale(sPx, seedH)) continue;
-            std::fill(hCore.begin(), hCore.end(), 0);
-            std::fill(vCore.begin(), vCore.end(), 0);
-            seedPaintCores(s, on, sPx, hCore.data(), sheet.data(), true, false);
-            seedPaintCores(s, off, sPx, hCore.data(), sheet.data(), true, false);
-            seedPaintCores(s, on, sPx, vCore.data(), sheet.data(), false, true);
-            seedPaintCores(s, off, sPx, vCore.data(), sheet.data(), false, true);
-            const int nH = seedCountNz(hCore.data(), nPix);
-            const int nV = seedCountNz(vCore.data(), nPix);
-            if (nH < 1 || nV < 1) continue;
-            std::fill(stroke.begin(), stroke.end(), 0);
-            for (int i = 0; i < nPix; ++i) {
-                if (hCore[static_cast<size_t>(i)] || vCore[static_cast<size_t>(i)]) {
-                    stroke[static_cast<size_t>(i)] = 255;
-                }
-            }
-            const int nStroke = seedCountNz(stroke.data(), nPix);
-            if (nStroke < 1 || nStroke > strokeCap) continue;
-            std::fill(white.begin(), white.end(), 0);
-            seedGreyMask(s, on, white.data());
-            const int nWhite = seedCountNz(white.data(), nPix);
-            if (static_cast<double>(nWhite) > 0.85 * static_cast<double>(nPix)) continue;
-            consider(true, t, t, t, sPx, 0, onCtx, white.data(), stroke.data(), nStroke);
-        }
+    if (nStroke < 1 || nStroke > strokeCap) return;
+    if (light) {
+        const int nWhite = seedCountNzStrided(p.white, p.whiteStride, w, h);
+        if (static_cast<double>(nWhite) > 0.85 * static_cast<double>(nPix)) return;
     }
-
-    for (const auto& b : bands) {
-        if (!seedSPxInDigitScale(b.sPx, seedH)) continue;
-        if (b.white.size() < static_cast<size_t>(nPix) ||
-            b.stroke.size() < static_cast<size_t>(nPix)) {
-            continue;
-        }
-        SeedPolCtx ctx = seedBandOrColorCtx(s, b, color, hueBands);
-        SeedPolCtx offCtx = ctx;
-        offCtx.invert = true;
-        auto on = [&](int sx, int sy) { return seedPolAt(ctx, sx, sy); };
-        auto off = [&](int sx, int sy) { return seedPolAt(offCtx, sx, sy); };
-        std::fill(sheet.begin(), sheet.end(), 0);
-        seedMarkSheet(s, on, sheet.data());
-        seedMarkSheet(s, off, sheet.data());
-        std::fill(hCore.begin(), hCore.end(), 0);
-        std::fill(vCore.begin(), vCore.end(), 0);
-        seedPaintCores(s, on, b.sPx, hCore.data(), sheet.data(), true, false);
-        seedPaintCores(s, off, b.sPx, hCore.data(), sheet.data(), true, false);
-        seedPaintCores(s, on, b.sPx, vCore.data(), sheet.data(), false, true);
-        seedPaintCores(s, off, b.sPx, vCore.data(), sheet.data(), false, true);
-        if (seedCountNz(hCore.data(), nPix) < 1 || seedCountNz(vCore.data(), nPix) < 1) {
-            continue;
-        }
-        const int nStroke = seedCountNz(b.stroke.data(), nPix);
-        if (nStroke < 1 || nStroke > strokeCap) continue;
-        consider(
-            false, b.t, b.tLo, b.tHi, b.sPx, b.skipTint, ctx,
-            b.white.data(), b.stroke.data(), nStroke);
-    }
-
-    if (best.have) {
-        *out = std::move(best.thr);
-        *outCtx = best.ctx;
-        outCtx->samp = &s;
-    }
+    if (!seedPickWins(*best, light, nStroke, sPx, t, seedH)) return;
+    best->have = true;
+    best->light = light;
+    best->nStroke = nStroke;
+    best->sPx = sPx;
+    best->t = t;
+    best->tLo = tLo;
+    best->tHi = tHi;
+    best->skipTint = skipTint;
+    best->nBand = nBand;
+    best->ctx = ctx;
+    if (pickW) seedCopyStridedToPacked(p.white, p.whiteStride, w, h, pickW);
+    if (pickS) seedCopyStridedToPacked(p.stroke, p.strokeStride, w, h, pickS);
 }
 
 static void seedFloodFromCores(
@@ -8627,7 +8592,10 @@ static void seedFloodFromCores(
     const SeedInkThrNat& pick,
     SeedPolCtx ctx,
     int kindFlood,
-    SeedInkThrNat* out
+    SeedInkThrNat* out,
+    const SeedInkPlanes& p,
+    uint16_t* hRun,
+    uint16_t* vRun
 ) {
     const int w = s.w, h = s.h;
     const int nPix = w * h;
@@ -8641,52 +8609,51 @@ static void seedFloodFromCores(
     ctx.samp = &s;
     ctx.invert = false;
     if (nPix < 1 || pick.sPx < 1 || w > 65535 || h > 65535) return;
-    if (pick.stroke.size() < static_cast<size_t>(nPix)) return;
-    out->stroke = pick.stroke;
+    if (!hRun || !vRun || !p.white || !p.stroke || !p.sheet) return;
     SeedPolCtx offCtx = ctx;
     offCtx.invert = true;
     auto on = [&](int sx, int sy) { return seedPolAt(ctx, sx, sy); };
     auto off = [&](int sx, int sy) { return seedPolAt(offCtx, sx, sy); };
-    std::vector<uint8_t> sheet(static_cast<size_t>(nPix), 0);
-    seedMarkSheet(s, on, sheet.data());
-    seedMarkSheet(s, off, sheet.data());
-    std::vector<int> hOn(static_cast<size_t>(nPix), 0);
-    std::vector<int> vOn(static_cast<size_t>(nPix), 0);
-    std::vector<int> hOff(static_cast<size_t>(nPix), 0);
-    std::vector<int> vOff(static_cast<size_t>(nPix), 0);
-    seedFillRunLens(w, h, on, hOn.data(), vOn.data());
-    seedFillRunLens(w, h, off, hOff.data(), vOff.data());
+    seedZeroPlane(p.sheet, p.sheetStride, w, h);
+    seedMarkSheet(s, on, p.sheet, p.sheetStride);
+    seedMarkSheet(s, off, p.sheet, p.sheetStride);
+    seedZeroPlane(p.white, p.whiteStride, w, h);
     const int plate = 3 * pick.sPx;
     const int cap = nPix / 4;
-    std::vector<uint8_t> visited(static_cast<size_t>(nPix), 0);
     std::vector<uint32_t> q;
     q.reserve(static_cast<size_t>(std::max(1, cap)));
     int nFlood = 0;
-    auto floodPol = [&](bool wantOn, const int* hRun, const int* vRun) {
+    auto floodPol = [&](bool wantOn) {
         auto pol = [&](int sx, int sy) {
             return wantOn ? on(sx, sy) : off(sx, sy);
         };
+        std::memset(hRun, 0, static_cast<size_t>(nPix) * sizeof(uint16_t));
+        std::memset(vRun, 0, static_cast<size_t>(nPix) * sizeof(uint16_t));
+        seedFillRunLensU16(w, h, pol, hRun, vRun);
         q.clear();
         size_t qh = 0;
-        for (int i = 0; i < nPix; ++i) {
-            if (nFlood >= cap) return;
-            if (!pick.stroke[static_cast<size_t>(i)]) continue;
-            const int sx = i % w;
-            const int sy = i / w;
-            if (visited[static_cast<size_t>(i)] || sheet[static_cast<size_t>(i)]) continue;
-            if (!pol(sx, sy)) continue;
-            if (hRun[i] > plate && vRun[i] > plate) continue;
-            visited[static_cast<size_t>(i)] = 1;
-            out->white[static_cast<size_t>(i)] = 255;
-            ++nFlood;
-            q.push_back(
-                (static_cast<uint32_t>(sy) << 16) | static_cast<uint32_t>(sx));
+        for (int sy = 0; sy < h; ++sy) {
+            const uint8_t* srow = p.stroke + sy * p.strokeStride;
+            for (int sx = 0; sx < w; ++sx) {
+                if (nFlood >= cap) return;
+                if (!srow[sx]) continue;
+                const int pi = sy * w + sx;
+                if (p.white[sy * p.whiteStride + sx] || p.sheet[sy * p.sheetStride + sx]) {
+                    continue;
+                }
+                if (!pol(sx, sy)) continue;
+                if (hRun[pi] > plate && vRun[pi] > plate) continue;
+                p.white[sy * p.whiteStride + sx] = 255;
+                ++nFlood;
+                q.push_back(
+                    (static_cast<uint32_t>(sy) << 16) | static_cast<uint32_t>(sx));
+            }
         }
         while (qh < q.size()) {
             if (nFlood >= cap) return;
-            const uint32_t p = q[qh++];
-            const int sx = static_cast<int>(p & 0xffffu);
-            const int sy = static_cast<int>(p >> 16);
+            const uint32_t pt = q[qh++];
+            const int sx = static_cast<int>(pt & 0xffffu);
+            const int sy = static_cast<int>(pt >> 16);
             for (int dy = -1; dy <= 1; ++dy) {
                 for (int dx = -1; dx <= 1; ++dx) {
                     if (dx == 0 && dy == 0) continue;
@@ -8694,15 +8661,14 @@ static void seedFloodFromCores(
                     const int ny = sy + dy;
                     if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
                     const int ni = ny * w + nx;
-                    if (visited[static_cast<size_t>(ni)] ||
-                        sheet[static_cast<size_t>(ni)]) {
+                    if (p.white[ny * p.whiteStride + nx] ||
+                        p.sheet[ny * p.sheetStride + nx]) {
                         continue;
                     }
                     if (!pol(nx, ny)) continue;
                     if (hRun[ni] > plate && vRun[ni] > plate) continue;
                     if (nFlood >= cap) return;
-                    visited[static_cast<size_t>(ni)] = 1;
-                    out->white[static_cast<size_t>(ni)] = 255;
+                    p.white[ny * p.whiteStride + nx] = 255;
                     ++nFlood;
                     q.push_back(
                         (static_cast<uint32_t>(ny) << 16) |
@@ -8711,15 +8677,15 @@ static void seedFloodFromCores(
             }
         }
     };
-    floodPol(true, hOn.data(), vOn.data());
-    floodPol(false, hOff.data(), vOff.data());
+    floodPol(true);
+    floodPol(false);
 }
 
 static jobjectArray packSeedInkThrs(JNIEnv* env, const std::vector<SeedInkThrNat>& thrs) {
     jclass objClass = env->FindClass("java/lang/Object");
     if (!objClass) return nullptr;
     const int n = static_cast<int>(thrs.size());
-    jobjectArray arr = env->NewObjectArray(n * 3, objClass, nullptr);
+    jobjectArray arr = env->NewObjectArray(n * 2, objClass, nullptr);
     if (!arr) return nullptr;
     for (int i = 0; i < n; ++i) {
         const SeedInkThrNat& t = thrs[static_cast<size_t>(i)];
@@ -8730,26 +8696,145 @@ static jobjectArray packSeedInkThrs(JNIEnv* env, const std::vector<SeedInkThrNat
         jintArray metaArr = env->NewIntArray(11);
         if (!metaArr) return nullptr;
         env->SetIntArrayRegion(metaArr, 0, 11, meta);
-        const int nPix = t.w * t.h;
-        jbyteArray whiteArr = env->NewByteArray(nPix);
-        jbyteArray strokeArr = env->NewByteArray(nPix);
-        if (!whiteArr || !strokeArr) return nullptr;
-        if (nPix > 0 && t.white.size() >= static_cast<size_t>(nPix)) {
+        const int nJpg = static_cast<int>(t.jpeg.size());
+        jbyteArray jpegArr = env->NewByteArray(nJpg);
+        if (!jpegArr) return nullptr;
+        if (nJpg > 0) {
             env->SetByteArrayRegion(
-                whiteArr, 0, nPix, reinterpret_cast<const jbyte*>(t.white.data()));
+                jpegArr, 0, nJpg, reinterpret_cast<const jbyte*>(t.jpeg.data()));
         }
-        if (nPix > 0 && t.stroke.size() >= static_cast<size_t>(nPix)) {
-            env->SetByteArrayRegion(
-                strokeArr, 0, nPix, reinterpret_cast<const jbyte*>(t.stroke.data()));
-        }
-        env->SetObjectArrayElement(arr, i * 3, metaArr);
-        env->SetObjectArrayElement(arr, i * 3 + 1, whiteArr);
-        env->SetObjectArrayElement(arr, i * 3 + 2, strokeArr);
+        env->SetObjectArrayElement(arr, i * 2, metaArr);
+        env->SetObjectArrayElement(arr, i * 2 + 1, jpegArr);
         env->DeleteLocalRef(metaArr);
-        env->DeleteLocalRef(whiteArr);
-        env->DeleteLocalRef(strokeArr);
+        env->DeleteLocalRef(jpegArr);
     }
     return arr;
+}
+
+static bool seedIsValleyT(const int* ts, int n, int t) {
+    for (int i = 0; i < n; ++i) if (ts[i] == t) return true;
+    return false;
+}
+
+static void seedEvalColorFromGrey(
+    const SeedInkSamp& s, const SeedInkThrNat& gb, bool uvOk,
+    int seedW, int seedH, int loSw, int hiSw, SeedInkThrNat* out,
+    const SeedInkPlanes& p, SeedPolCtx* outCtx
+) {
+    *out = gb;
+    out->kind = 3;
+    out->skipTint = 1;
+    out->nBand = 0;
+    out->jpeg.clear();
+    *outCtx = SeedPolCtx{};
+    outCtx->kind = SeedPol::Band;
+    outCtx->tLo = gb.tLo;
+    outCtx->tHi = gb.tHi;
+    outCtx->samp = &s;
+    if (!uvOk) return;
+    bool skipTint = true;
+    SeedPolCtx colorCtx{};
+    seedHueFromStroke(s, p.stroke, p.strokeStride, gb.sPx, &colorCtx, &skipTint);
+    if (skipTint) return;
+    seedEvalColorBand(s, gb, colorCtx, seedW, seedH, loSw, hiSw, out, p);
+    *outCtx = colorCtx;
+    outCtx->samp = &s;
+}
+
+static void seedMaterializePick(
+    const SeedInkSamp& s, const SeedPickBest& best, bool color, bool uvOk,
+    int seedW, int seedH, int loSw, int hiSw,
+    const SeedInkPlanes& p, uint8_t* pickW, uint8_t* pickS
+) {
+    const int w = s.w, h = s.h;
+    if (pickW && pickS) {
+        seedCopyPackedToStrided(pickW, p.white, p.whiteStride, w, h);
+        seedCopyPackedToStrided(pickS, p.stroke, p.strokeStride, w, h);
+        return;
+    }
+    SeedPolCtx ctx = best.ctx;
+    ctx.samp = &s;
+    SeedInkThrNat tmp{};
+    if (best.light || !color || best.skipTint || ctx.kind != SeedPol::Color) {
+        seedEvalGrey(
+            s, ctx, best.t, best.tLo, best.tHi, 0, seedW, seedH,
+            loSw, hiSw, true, &tmp, p);
+        return;
+    }
+    SeedPolCtx band{};
+    band.kind = SeedPol::Band;
+    band.tLo = best.tLo;
+    band.tHi = best.tHi;
+    band.samp = &s;
+    SeedInkThrNat gb{};
+    seedEvalGrey(
+        s, band, best.t, best.tLo, best.tHi, 1, seedW, seedH,
+        loSw, hiSw, true, &gb, p);
+    seedEvalColorBand(s, gb, ctx, seedW, seedH, loSw, hiSw, &tmp, p);
+}
+
+static void seedEmitPickFlood(
+    const SeedInkSamp& s, const SeedPickBest& best, bool color, bool uvOk,
+    bool canPickFlood, int kindPick, int kindFlood,
+    int seedW, int seedH, int loSw, int hiSw,
+    const SeedInkPlanes& p, uint8_t* pickW, uint8_t* pickS,
+    uint16_t* hRun, uint16_t* vRun,
+    std::vector<SeedInkThrNat>* thrs
+) {
+    const int w = s.w, h = s.h;
+    SeedInkThrNat pick = seedEmptyThr(kindPick, seedW, seedH, w, h);
+    SeedInkThrNat flood = seedEmptyThr(kindFlood, seedW, seedH, w, h);
+    if (canPickFlood && best.have && hRun && vRun) {
+        seedFillMeta(
+            &pick, kindPick, best.t, best.tLo, best.tHi, best.sPx,
+            seedW, seedH, best.skipTint, best.nBand, w, h);
+        seedMaterializePick(
+            s, best, color, uvOk, seedW, seedH, loSw, hiSw, p, pickW, pickS);
+        seedEncodeThr(p, w, h, &pick);
+        SeedPolCtx ctx = best.ctx;
+        ctx.samp = &s;
+        seedFloodFromCores(s, pick, ctx, kindFlood, &flood, p, hRun, vRun);
+        seedEncodeThr(p, w, h, &flood);
+    } else {
+        seedZeroPlane(p.white, p.whiteStride, w, h);
+        seedZeroPlane(p.stroke, p.strokeStride, w, h);
+        seedEncodeThr(p, w, h, &pick);
+        flood.jpeg = pick.jpeg;
+    }
+    thrs->push_back(std::move(pick));
+    thrs->push_back(std::move(flood));
+}
+
+static void seedOrUnionBands(
+    const SeedInkSamp& s, const std::vector<SeedInkThrNat>& bands,
+    const SeedInkThrNat& uni, bool color, bool uvOk,
+    int seedW, int seedH, int loSw, int hiSw,
+    const SeedInkPlanes& p, uint8_t* unionAcc
+) {
+    const int w = s.w, h = s.h;
+    const int nPix = w * h;
+    if (!unionAcc || nPix < 1) return;
+    std::memset(unionAcc, 0, static_cast<size_t>(nPix));
+    for (const auto& b : bands) {
+        if (!seedUnionIncludes(uni, b)) continue;
+        SeedPolCtx ctx{};
+        ctx.kind = SeedPol::Band;
+        ctx.tLo = b.tLo;
+        ctx.tHi = b.tHi;
+        ctx.samp = &s;
+        SeedInkThrNat gb{};
+        seedEvalGrey(
+            s, ctx, b.t, b.tLo, b.tHi, 1, seedW, seedH, loSw, hiSw, true, &gb, p);
+        if (color) {
+            SeedInkThrNat cb{};
+            SeedPolCtx cctx{};
+            seedEvalColorFromGrey(
+                s, gb, uvOk, seedW, seedH, loSw, hiSw, &cb, p, &cctx);
+        }
+        seedOrStridedIntoPacked(p.stroke, p.strokeStride, w, h, unionAcc);
+    }
+    seedZeroPlane(p.white, p.whiteStride, w, h);
+    seedCopyPackedToStrided(unionAcc, p.stroke, p.strokeStride, w, h);
 }
 
 extern "C" JNIEXPORT jobjectArray JNICALL
@@ -8758,10 +8843,26 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
     jlong grayPtr, jlong uvPtr,
     jint l, jint t, jint r, jint b,
     jfloatArray rotPts,
-    jint imgW, jboolean wantColor
+    jint imgW, jboolean wantColor,
+    jlong sheetYPtr, jlong whiteYPtr, jlong strokeYPtr,
+    jlong deskewPYPtr, jlong destYPtr, jlong destUvPtr,
+    jint destW, jint destH
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1) return nullptr;
+    auto* sheetY = reinterpret_cast<cv::Mat*>(sheetYPtr);
+    auto* whiteY = reinterpret_cast<cv::Mat*>(whiteYPtr);
+    auto* strokeY = reinterpret_cast<cv::Mat*>(strokeYPtr);
+    auto* deskewP = reinterpret_cast<cv::Mat*>(deskewPYPtr);
+    auto* destY = reinterpret_cast<cv::Mat*>(destYPtr);
+    auto* destUv = destUvPtr ? reinterpret_cast<cv::Mat*>(destUvPtr) : nullptr;
+    if (!sheetY || sheetY->empty() || sheetY->type() != CV_8UC1) return nullptr;
+    if (!whiteY || whiteY->empty() || whiteY->type() != CV_8UC1) return nullptr;
+    if (!strokeY || strokeY->empty() || strokeY->type() != CV_8UC1) return nullptr;
+    if (!deskewP || deskewP->empty() || deskewP->type() != CV_8UC1) return nullptr;
+    if (!destY || destY->empty() || destY->type() != CV_8UC1) return nullptr;
+    (void)destW;
+    (void)destH;
     cv::Mat* uv = uvPtr ? reinterpret_cast<cv::Mat*>(uvPtr) : nullptr;
     const bool uvOk = uv && !uv->empty() && uv->type() == CV_8UC2;
     SeedInkSamp samp{};
@@ -8770,8 +8871,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
     samp.uvOk = uvOk;
     samp.grayW = gray->cols;
     samp.grayH = gray->rows;
-    std::vector<uint8_t> raster;
+    samp.raster = nullptr;
     int seedW = 1, seedH = 1;
+    int hist256[256] = {};
     if (rotPts) {
         const jint nPts = env->GetArrayLength(rotPts);
         if (nPts < 8) return nullptr;
@@ -8783,33 +8885,37 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
         const int iu1 = static_cast<int>(std::lround(box.u1));
         const int iv0 = static_cast<int>(std::lround(box.v0));
         const int iv1 = static_cast<int>(std::lround(box.v1));
-        const int w = iu1 - iu0;
-        const int h = iv1 - iv0;
-        if (w < 1 || h < 1) return nullptr;
-        raster.assign(static_cast<size_t>(w) * static_cast<size_t>(h), 255);
-        for (int sy = 0; sy < h; ++sy) {
-            uint8_t* row = raster.data() + sy * w;
-            for (int sx = 0; sx < w; ++sx) {
+        const int rw = iu1 - iu0;
+        const int rh = iv1 - iv0;
+        if (rw < 1 || rh < 1) return nullptr;
+        if (rw > sheetY->cols || rh > sheetY->rows) return nullptr;
+        uint8_t* sh = sheetY->ptr<uint8_t>(0);
+        const int st = sheetY->cols;
+        for (int sy = 0; sy < rh; ++sy) {
+            uint8_t* row = sh + sy * st;
+            for (int sx = 0; sx < rw; ++sx) {
                 const float u = static_cast<float>(iu0 + sx);
                 const float v = static_cast<float>(iv0 + sy);
                 const int x = static_cast<int>(std::lround(
                     box.cx + u * box.ux + v * box.vx));
                 const int y = static_cast<int>(std::lround(
                     box.cy + u * box.uy + v * box.vy));
-                if (x < 0 || y < 0 || x >= gray->cols || y >= gray->rows) {
-                    row[sx] = 255;
-                } else {
-                    row[sx] = gray->ptr<uint8_t>(y)[x];
+                uint8_t val = 255;
+                if (x >= 0 && y >= 0 && x < gray->cols && y < gray->rows) {
+                    val = gray->ptr<uint8_t>(y)[x];
                 }
+                row[sx] = val;
+                hist256[val]++;
             }
         }
-        samp.raster = raster.data();
-        samp.w = w;
-        samp.h = h;
+        samp.w = rw;
+        samp.h = rh;
         samp.hasRot = true;
         samp.rot = box;
         samp.iu0 = iu0;
         samp.iv0 = iv0;
+        samp.ox = 0;
+        samp.oy = 0;
         seedW = std::max(1, static_cast<int>(std::lround(box.u1 - box.u0)));
         seedH = std::max(1, static_cast<int>(std::lround(box.v1 - box.v0)));
     } else {
@@ -8817,29 +8923,43 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
         const int y0 = std::max(0, static_cast<int>(t));
         const int x1 = std::min(gray->cols, static_cast<int>(r));
         const int y1 = std::min(gray->rows, static_cast<int>(b));
-        const int w = x1 - x0;
-        const int h = y1 - y0;
-        if (w < 1 || h < 1) return nullptr;
-        samp.raster = nullptr;
-        samp.w = w;
-        samp.h = h;
+        const int aw = x1 - x0;
+        const int ah = y1 - y0;
+        if (aw < 1 || ah < 1) return nullptr;
+        if (x0 + aw > sheetY->cols || y0 + ah > sheetY->rows) return nullptr;
+        if (x0 + aw > whiteY->cols || y0 + ah > whiteY->rows) return nullptr;
+        if (x0 + aw > strokeY->cols || y0 + ah > strokeY->rows) return nullptr;
+        samp.w = aw;
+        samp.h = ah;
         samp.ox = x0;
         samp.oy = y0;
         samp.hasRot = false;
-        seedW = w;
-        seedH = h;
+        seedW = aw;
+        seedH = ah;
+        for (int y = 0; y < ah; ++y) {
+            const uint8_t* row = gray->ptr<uint8_t>(y0 + y) + x0;
+            for (int x = 0; x < aw; ++x) hist256[row[x]]++;
+        }
     }
     const int w = samp.w, h = samp.h;
     const int nPix = w * h;
-    int hist256[256] = {};
-    if (samp.raster) {
-        for (int i = 0; i < nPix; ++i) hist256[samp.raster[i]]++;
-    } else {
-        for (int y = 0; y < h; ++y) {
-            const uint8_t* p = gray->ptr<uint8_t>(samp.oy + y) + samp.ox;
-            for (int x = 0; x < w; ++x) hist256[p[x]]++;
-        }
+    if (samp.hasRot) {
+        if (w > whiteY->cols || h > whiteY->rows) return nullptr;
+        if (w > strokeY->cols || h > strokeY->rows) return nullptr;
     }
+    SeedInkPlanes p{};
+    const int planeOx = samp.hasRot ? 0 : samp.ox;
+    const int planeOy = samp.hasRot ? 0 : samp.oy;
+    p.sheet = sheetY->ptr<uint8_t>(planeOy) + planeOx;
+    p.sheetStride = sheetY->cols;
+    p.white = whiteY->ptr<uint8_t>(planeOy) + planeOx;
+    p.whiteStride = whiteY->cols;
+    p.stroke = strokeY->ptr<uint8_t>(planeOy) + planeOx;
+    p.strokeStride = strokeY->cols;
+    p.deskew = deskewP->ptr<uint8_t>(0);
+    p.deskewCap = deskewP->rows * deskewP->cols;
+    p.destY = destY;
+    p.destUv = destUv;
     float hist64[64] = {};
     for (int i = 0; i < 256; ++i) hist64[i / 4] += static_cast<float>(hist256[i]);
     int cands[12];
@@ -8868,8 +8988,18 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
     if (nCands < 1) return nullptr;
     const int loSw = imgW >= 2000 ? 16 : 4;
     const int hiSw = std::max(35, h / 2);
+    const bool canPickFlood = nPix <= p.deskewCap && nPix * 2 <= p.deskewCap;
+    const bool canPack3 = 3 * nPix <= p.deskewCap;
+    uint8_t* unionAcc = (nPix <= p.deskewCap) ? p.deskew : nullptr;
+    uint8_t* pickW = (canPack3 && unionAcc) ? unionAcc + nPix : nullptr;
+    uint8_t* pickS = (canPack3 && unionAcc) ? unionAcc + 2 * nPix : nullptr;
+    uint16_t* hRun = canPickFlood
+        ? reinterpret_cast<uint16_t*>(p.deskew) : nullptr;
+    uint16_t* vRun = canPickFlood
+        ? reinterpret_cast<uint16_t*>(destY->ptr()) : nullptr;
     std::vector<SeedInkThrNat> thrs;
     thrs.reserve(static_cast<size_t>(nCands) * 2 + 8);
+    SeedPickBest best{};
     for (int i = 0; i < nCands; ++i) {
         SeedPolCtx ctx{};
         ctx.kind = SeedPol::Light;
@@ -8877,8 +9007,24 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
         ctx.samp = &samp;
         SeedInkThrNat one{};
         seedEvalGrey(samp, ctx, cands[i], cands[i], cands[i], 0, seedW, seedH,
-            loSw, hiSw, false, &one);
-        thrs.push_back(std::move(one));
+            loSw, hiSw, false, &one, p);
+        seedEncodeThr(p, w, h, &one);
+        thrs.push_back(one);
+        if (canPickFlood && seedIsValleyT(valleyTs, nValleyTs, cands[i])) {
+            SeedPolCtx offCtx = ctx;
+            offCtx.invert = true;
+            auto on = [&](int sx, int sy) { return seedPolAt(ctx, sx, sy); };
+            auto off = [&](int sx, int sy) { return seedPolAt(offCtx, sx, sy); };
+            seedPaintCores(
+                samp, on, one.sPx, p.stroke, p.strokeStride, p.sheet, p.sheetStride,
+                false, true);
+            seedPaintCores(
+                samp, off, one.sPx, p.stroke, p.strokeStride, p.sheet, p.sheetStride,
+                false, true);
+            seedConsiderSlices(
+                &best, true, one.t, one.tLo, one.tHi, one.sPx, 0, 0, ctx, p,
+                w, h, seedH, nPix, pickW, pickS);
+        }
     }
     std::vector<SeedInkThrNat> bandThrs;
     for (int i = 0; i + 1 < nValleyTs; ++i) {
@@ -8892,121 +9038,71 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
         ctx.samp = &samp;
         SeedInkThrNat one{};
         seedEvalGrey(samp, ctx, tHi, tLo, tHi, 1, seedW, seedH,
-            loSw, hiSw, true, &one);
+            loSw, hiSw, true, &one, p);
+        seedEncodeThr(p, w, h, &one);
+        if (canPickFlood) {
+            seedConsiderSlices(
+                &best, false, one.t, one.tLo, one.tHi, one.sPx, one.skipTint, 1,
+                ctx, p, w, h, seedH, nPix, pickW, pickS);
+        }
         bandThrs.push_back(one);
         thrs.push_back(std::move(one));
     }
-    thrs.push_back(seedUnionOf(bandThrs, 2, seedW, seedH, w, h));
-    {
-        SeedInkThrNat pick{};
-        SeedPolCtx pickCtx{};
-        seedPickBest(
-            samp, valleyTs, nValleyTs, bandThrs, nullptr,
-            seedW, seedH, 5, false, &pick, &pickCtx);
-        SeedInkThrNat flood{};
-        seedFloodFromCores(samp, pick, pickCtx, 6, &flood);
-        thrs.push_back(std::move(pick));
-        thrs.push_back(std::move(flood));
+    SeedInkThrNat uni{};
+    seedUnionMeta(bandThrs, 2, seedW, seedH, w, h, &uni);
+    if (unionAcc) {
+        seedOrUnionBands(
+            samp, bandThrs, uni, false, uvOk, seedW, seedH, loSw, hiSw, p, unionAcc);
+    } else {
+        seedZeroPlane(p.white, p.whiteStride, w, h);
+        seedZeroPlane(p.stroke, p.strokeStride, w, h);
     }
+    seedEncodeThr(p, w, h, &uni);
+    thrs.push_back(std::move(uni));
+    seedEmitPickFlood(
+        samp, best, false, uvOk, canPickFlood, 5, 6, seedW, seedH, loSw, hiSw,
+        p, pickW, pickS, hRun, vRun, &thrs);
     if (wantColor) {
         std::vector<SeedInkThrNat> cBands;
-        if (!uvOk) {
-            for (const auto& gb : bandThrs) {
-                SeedInkThrNat cb = gb;
-                cb.kind = 3;
-                cb.skipTint = 1;
-                cb.nBand = 0;
-                cBands.push_back(std::move(cb));
+        SeedPickBest cbest{};
+        for (const auto& gb : bandThrs) {
+            SeedPolCtx ctx{};
+            ctx.kind = SeedPol::Band;
+            ctx.tLo = gb.tLo;
+            ctx.tHi = gb.tHi;
+            ctx.samp = &samp;
+            SeedInkThrNat grey{};
+            seedEvalGrey(
+                samp, ctx, gb.t, gb.tLo, gb.tHi, 1, seedW, seedH,
+                loSw, hiSw, true, &grey, p);
+            SeedInkThrNat cb{};
+            SeedPolCtx cctx{};
+            seedEvalColorFromGrey(
+                samp, grey, uvOk, seedW, seedH, loSw, hiSw, &cb, p, &cctx);
+            seedEncodeThr(p, w, h, &cb);
+            if (canPickFlood) {
+                seedConsiderSlices(
+                    &cbest, false, cb.t, cb.tLo, cb.tHi, cb.sPx, cb.skipTint, 1,
+                    cctx, p, w, h, seedH, nPix, pickW, pickS);
             }
-        } else {
-            for (const auto& gb : bandThrs) {
-                SeedPolCtx colorCtx{};
-                bool skipTint = true;
-                seedHueFromStroke(samp, gb.stroke.data(), gb.sPx, &colorCtx, &skipTint);
-                if (skipTint) {
-                    SeedInkThrNat cb = gb;
-                    cb.kind = 3;
-                    cb.skipTint = 1;
-                    cb.nBand = 0;
-                    cBands.push_back(std::move(cb));
-                    continue;
-                }
-                SeedInkThrNat cb{};
-                seedEvalColorBand(samp, gb, colorCtx, seedW, seedH, loSw, hiSw, &cb);
-                cBands.push_back(std::move(cb));
-            }
+            cBands.push_back(cb);
+            thrs.push_back(std::move(cb));
         }
-        for (auto& cb : cBands) thrs.push_back(cb);
-        thrs.push_back(seedUnionOf(cBands, 4, seedW, seedH, w, h));
-        SeedInkThrNat cpick{};
-        SeedPolCtx cpickCtx{};
-        seedPickBest(
-            samp, nullptr, 0, cBands, &bandThrs,
-            seedW, seedH, 7, true, &cpick, &cpickCtx);
-        SeedInkThrNat cflood{};
-        seedFloodFromCores(samp, cpick, cpickCtx, 8, &cflood);
-        thrs.push_back(std::move(cpick));
-        thrs.push_back(std::move(cflood));
+        SeedInkThrNat cuni{};
+        seedUnionMeta(cBands, 4, seedW, seedH, w, h, &cuni);
+        if (unionAcc) {
+            seedOrUnionBands(
+                samp, cBands, cuni, true, uvOk, seedW, seedH, loSw, hiSw, p, unionAcc);
+        } else {
+            seedZeroPlane(p.white, p.whiteStride, w, h);
+            seedZeroPlane(p.stroke, p.strokeStride, w, h);
+        }
+        seedEncodeThr(p, w, h, &cuni);
+        thrs.push_back(std::move(cuni));
+        seedEmitPickFlood(
+            samp, cbest, true, uvOk, canPickFlood, 7, 8, seedW, seedH, loSw, hiSw,
+            p, pickW, pickS, hRun, vRun, &thrs);
     }
     return packSeedInkThrs(env, thrs);
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativePaintSeedInkLook(
-    JNIEnv* env, jobject /*thiz*/,
-    jbyteArray whiteArr, jbyteArray strokeArr,
-    jint srcW, jint srcH,
-    jlong destYPtr, jlong destUvPtr
-) {
-    if (!whiteArr || !strokeArr || srcW < 1 || srcH < 1) return JNI_FALSE;
-    auto* y = reinterpret_cast<cv::Mat*>(destYPtr);
-    if (!y || y->empty() || y->type() != CV_8UC1) return JNI_FALSE;
-    const int dw = y->cols, dh = y->rows;
-    if (dw < 1 || dh < 1) return JNI_FALSE;
-    const int nPix = srcW * srcH;
-    if (env->GetArrayLength(whiteArr) < nPix || env->GetArrayLength(strokeArr) < nPix) {
-        return JNI_FALSE;
-    }
-    jbyte* white = env->GetByteArrayElements(whiteArr, nullptr);
-    jbyte* stroke = env->GetByteArrayElements(strokeArr, nullptr);
-    if (!white || !stroke) {
-        if (white) env->ReleaseByteArrayElements(whiteArr, white, JNI_ABORT);
-        if (stroke) env->ReleaseByteArrayElements(strokeArr, stroke, JNI_ABORT);
-        return JNI_FALSE;
-    }
-    y->setTo(0);
-    for (int dy = 0; dy < dh; ++dy) {
-        int sy = static_cast<int>((static_cast<int64_t>(dy) * srcH) / dh);
-        if (sy >= srcH) sy = srcH - 1;
-        uint8_t* row = y->ptr<uint8_t>(dy);
-        const int off = sy * srcW;
-        for (int dx = 0; dx < dw; ++dx) {
-            int sx = static_cast<int>((static_cast<int64_t>(dx) * srcW) / dw);
-            if (sx >= srcW) sx = srcW - 1;
-            const int i = off + sx;
-            if (stroke[i] != 0) row[dx] = 150;
-            else if (white[i] != 0) row[dx] = 255;
-            else row[dx] = 0;
-        }
-    }
-    auto* uv = destUvPtr ? reinterpret_cast<cv::Mat*>(destUvPtr) : nullptr;
-    if (uv && !uv->empty() && uv->type() == CV_8UC2) {
-        uv->setTo(cv::Scalar(128, 128));
-        const int uvW = dw / 2;
-        const int uvH = dh / 2;
-        const int writeW = std::min(uvW, uv->cols);
-        const int writeH = std::min(uvH, uv->rows);
-        for (int uy = 0; uy < writeH; ++uy) {
-            const uint8_t* yrow = y->ptr<uint8_t>(uy * 2);
-            cv::Vec2b* uvrow = uv->ptr<cv::Vec2b>(uy);
-            for (int ux = 0; ux < writeW; ++ux) {
-                if (yrow[ux * 2] == 150) uvrow[ux] = cv::Vec2b(44, 21);
-                else uvrow[ux] = cv::Vec2b(128, 128);
-            }
-        }
-    }
-    env->ReleaseByteArrayElements(whiteArr, white, JNI_ABORT);
-    env->ReleaseByteArrayElements(strokeArr, stroke, JNI_ABORT);
-    return JNI_TRUE;
 }
 

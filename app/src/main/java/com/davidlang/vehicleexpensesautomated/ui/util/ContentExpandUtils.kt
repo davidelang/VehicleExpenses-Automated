@@ -2655,8 +2655,7 @@ object ContentExpandUtils {
     data class SeedInkThr(
         val t: Int,
         val sPx: Int,
-        val white: ByteArray,
-        val stroke: ByteArray,
+        val jpeg: ByteArray,
         val kind: String,
         val tLo: Int,
         val tHi: Int,
@@ -2684,18 +2683,17 @@ object ContentExpandUtils {
     ): SeedInkProbe {
         val fw = fallbackW.coerceAtLeast(1)
         val fh = fallbackH.coerceAtLeast(1)
-        if (raw == null || raw.size < 3) return SeedInkProbe(0, fw, fh, emptyList())
+        if (raw == null || raw.size < 2) return SeedInkProbe(0, fw, fh, emptyList())
         val thrs = ArrayList<SeedInkThr>()
         var nThr = 0
         var w = fw
         var h = fh
         var i = 0
-        while (i + 2 < raw.size) {
+        while (i + 1 < raw.size) {
             val meta = raw[i] as? IntArray
-            val white = raw[i + 1] as? ByteArray
-            val stroke = raw[i + 2] as? ByteArray
-            i += 3
-            if (meta == null || meta.size < 11 || white == null || stroke == null) continue
+            val jpeg = raw[i + 1] as? ByteArray
+            i += 2
+            if (meta == null || meta.size < 11 || jpeg == null) continue
             val ki = meta[0]
             val kind = if (ki in seedInkKindNames.indices) seedInkKindNames[ki] else "gt"
             if (kind == "gt") nThr++
@@ -2705,8 +2703,7 @@ object ContentExpandUtils {
                 SeedInkThr(
                     t = meta[1],
                     sPx = meta[4],
-                    white = white,
-                    stroke = stroke,
+                    jpeg = jpeg,
                     kind = kind,
                     tLo = meta[2],
                     tHi = meta[3],
@@ -2726,7 +2723,20 @@ object ContentExpandUtils {
      * (`run==W` / `run==H`) are sheet only — counted, never green.
      * Peek classifies on the full photo run; look raster stays the seed.
      */
-    fun probeSeedInk(gray: Mat, roi: Rect, imgW: Int, uv: Mat? = null): SeedInkProbe {
+    fun probeSeedInk(
+        gray: Mat,
+        roi: Rect,
+        imgW: Int,
+        uv: Mat? = null,
+        sheetY: Mat,
+        whiteY: Mat,
+        strokeY: Mat,
+        deskewPY: Mat,
+        destY: Mat,
+        destUv: Mat?,
+        destW: Int,
+        destH: Int,
+    ): SeedInkProbe {
         fun empty(mw: Int, mh: Int): SeedInkProbe {
             val w = mw.coerceAtLeast(1)
             val h = mh.coerceAtLeast(1)
@@ -2743,6 +2753,8 @@ object ContentExpandUtils {
         return unpackSeedInkProbe(
             NativeImageUtils.probeSeedInk(
                 gray.nativeObj, uv?.nativeObj ?: 0L, x0, y0, x1, y1, null, imgW, uv != null,
+                sheetY.nativeObj, whiteY.nativeObj, strokeY.nativeObj, deskewPY.nativeObj,
+                destY.nativeObj, destUv?.nativeObj ?: 0L, destW, destH,
             ),
             w,
             h,
@@ -2750,7 +2762,20 @@ object ContentExpandUtils {
     }
 
     /** u/v raster on [gray] / [uv]; peek continues in photo u/v. No warp. */
-    fun probeSeedInkUv(gray: Mat, uv: Mat?, quad: OrientedQuad, imgW: Int): SeedInkProbe {
+    fun probeSeedInkUv(
+        gray: Mat,
+        uv: Mat?,
+        quad: OrientedQuad,
+        imgW: Int,
+        sheetY: Mat,
+        whiteY: Mat,
+        strokeY: Mat,
+        deskewPY: Mat,
+        destY: Mat,
+        destUv: Mat?,
+        destW: Int,
+        destH: Int,
+    ): SeedInkProbe {
         fun empty(mw: Int, mh: Int): SeedInkProbe {
             val w = mw.coerceAtLeast(1)
             val h = mh.coerceAtLeast(1)
@@ -2761,6 +2786,8 @@ object ContentExpandUtils {
         return unpackSeedInkProbe(
             NativeImageUtils.probeSeedInk(
                 gray.nativeObj, uv?.nativeObj ?: 0L, 0, 0, 0, 0, quad.pts, imgW, uv != null,
+                sheetY.nativeObj, whiteY.nativeObj, strokeY.nativeObj, deskewPY.nativeObj,
+                destY.nativeObj, destUv?.nativeObj ?: 0L, destW, destH,
             ),
             1,
             1,
