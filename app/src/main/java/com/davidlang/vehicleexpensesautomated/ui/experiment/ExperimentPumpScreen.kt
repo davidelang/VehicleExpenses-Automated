@@ -5394,7 +5394,7 @@ suspend fun runPumpExperiment(
                         seedQuads.forEachIndexed { i, q ->
                             val boxN = i + 1
                             if (boxN !in keep) return@forEachIndexed
-                            val (srcW, srcH) = seedInkRotSrcSize(q)
+                            val (srcW, srcH) = q.uvRasterSize()
                             val (destW0, destH0) = seedInkLookDestSize(
                                 srcW, srcH, false, destSet.s,
                             )
@@ -7632,13 +7632,6 @@ private suspend fun snapshotOverlayFull(
             emptyList(), null, scratchYuv,
         ).first
     }
-}
-
-private fun seedInkRotSrcSize(q: ContentExpandUtils.OrientedQuad): Pair<Int, Int> {
-    val box = ContentExpandUtils.OrientedBox.fromQuad(q) ?: return 1 to 1
-    val w = (kotlin.math.round(box.u1) - kotlin.math.round(box.u0)).toInt()
-    val h = (kotlin.math.round(box.v1) - kotlin.math.round(box.v0)).toInt()
-    return w.coerceAtLeast(1) to h.coerceAtLeast(1)
 }
 
 private fun seedInkLookDestSize(

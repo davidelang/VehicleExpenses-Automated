@@ -285,6 +285,13 @@ object ContentExpandUtils {
 
         fun copyPts(): FloatArray = pts.copyOf(8)
 
+        fun uvRasterSize(): Pair<Int, Int> {
+            val box = OrientedBox.fromQuad(this) ?: return 1 to 1
+            val w = kotlin.math.round(box.u1).toInt() - kotlin.math.round(box.u0).toInt()
+            val h = kotlin.math.round(box.v1).toInt() - kotlin.math.round(box.v0).toInt()
+            return w.coerceAtLeast(1) to h.coerceAtLeast(1)
+        }
+
         /**
          * Rec margin: expand u0/u1/v0/v1 by [padPx] source pixels. No per-corner
          * image clamp (warp uses BORDER_CONSTANT black).
