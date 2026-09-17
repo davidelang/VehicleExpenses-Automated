@@ -4631,6 +4631,182 @@ struct SeedCombine {
     OverlapHists overlap{};
 };
 
+static int combineArgmaxRun(const int* hist, int histN, int lo, int hi) {
+    int bestL = 0, bestC = 0;
+    const int last = std::min(hi, histN - 1);
+    if (!hist || last < lo) return 0;
+    for (int len = lo; len <= last; ++len) {
+        const int c = hist[len];
+        if (c > bestC) {
+            bestC = c;
+            bestL = len;
+        }
+    }
+    return bestC > 0 ? bestL : 0;
+}
+
+/** Modal non-span H-run of Y>t and Y<=t in [lo,hi]. */
+static int combineBothPolHRunSPx(const cv::Mat& y, int t, int lo, int hi) {
+    if (y.empty() || y.type() != CV_8UC1) return 0;
+    const int h = y.rows, w = y.cols;
+    if (h < 1 || w < 1) return 0;
+    std::vector<int> bothH(static_cast<size_t>(w) + 1, 0);
+    for (int pol = 0; pol < 2; ++pol) {
+        for (int yy = 0; yy < h; ++yy) {
+            const uint8_t* p = y.ptr<uint8_t>(yy);
+            int run = 0;
+            for (int xx = 0; xx <= w; ++xx) {
+                const bool light = xx < w && static_cast<int>(p[xx]) > t;
+                const bool on = pol == 0 ? light : (xx < w && !light);
+                if (on) ++run;
+                else if (run > 0) {
+                    if (run != w && run <= w) bothH[static_cast<size_t>(run)]++;
+                    run = 0;
+                }
+            }
+        }
+    }
+    return combineArgmaxRun(bothH.data(), static_cast<int>(bothH.size()), lo, hi);
+}
+
+struct CombineLightWin {
+    bool have = false;
+    int nStroke = -1;
+    int sPx = 0;
+    int t = 0;
+};
+
+static bool combineLightWins(
+    const CombineLightWin& b, int nStroke, int sPx, int t, int seedH
+) {
+    if (!b.have) return true;
+    if (nStroke != b.nStroke) return nStroke > b.nStroke;
+    const int tgt = static_cast<int>(std::lround(0.22 * static_cast<double>(seedH)));
+    const int da = std::abs(sPx - tgt);
+    const int db = std::abs(b.sPx - tgt);
+    if (da != db) return da < db;
+    return t < b.t;
+}
+
+static void combineMarkLightCores(
+    const cv::Mat& y, int t, int sPx, std::vector<uint8_t>* stroke,
+    bool* hasH, bool* hasV
+) {
+    if (!stroke || !hasH || !hasV) return;
+    const int h = y.rows, w = y.cols;
+    const float plo = 0.7f * static_cast<float>(sPx);
+    const float phi = 1.3f * static_cast<float>(sPx);
+    for (int pol = 0; pol < 2; ++pol) {
+        for (int yy = 0; yy < h; ++yy) {
+            const uint8_t* p = y.ptr<uint8_t>(yy);
+            int run = 0, x0 = 0;
+            for (int xx = 0; xx <= w; ++xx) {
+                const bool light = xx < w && static_cast<int>(p[xx]) > t;
+                const bool on = pol == 0 ? light : (xx < w && !light);
+                if (on) {
+                    if (run == 0) x0 = xx;
+                    ++run;
+                } else if (run > 0) {
+                    if (run != w) {
+                        const float fl = static_cast<float>(run);
+                        if (fl >= plo && fl <= phi) {
+                            *hasH = true;
+                            for (int x = x0; x < x0 + run; ++x)
+                                (*stroke)[static_cast<size_t>(yy * w + x)] = 1;
+                        }
+                    }
+                    run = 0;
+                }
+            }
+        }
+        for (int xx = 0; xx < w; ++xx) {
+            int run = 0, y0 = 0;
+            for (int yy = 0; yy <= h; ++yy) {
+                const bool light = yy < h &&
+                    static_cast<int>(y.ptr<uint8_t>(yy)[xx]) > t;
+                const bool on = pol == 0 ? light : (yy < h && !light);
+                if (on) {
+                    if (run == 0) y0 = yy;
+                    ++run;
+                } else if (run > 0) {
+                    if (run != h) {
+                        const float fl = static_cast<float>(run);
+                        if (fl >= plo && fl <= phi) {
+                            *hasV = true;
+                            for (int r = y0; r < y0 + run; ++r)
+                                (*stroke)[static_cast<size_t>(r * w + xx)] = 1;
+                        }
+                    }
+                    run = 0;
+                }
+            }
+        }
+    }
+}
+
+/** Valley Y>t Lights. Digit-scale + HV cores + nStroke + white-cap. Rank like seedPickWins. */
+static bool combinePickValleyLight(
+    const cv::Mat& y, int loSw, int hiSw, int* tOut, int* sPxOut
+) {
+    if (!tOut || !sPxOut || y.empty() || y.type() != CV_8UC1) return false;
+    const int h = y.rows, w = y.cols;
+    if (h < 1 || w < 1) return false;
+    const int nPix = h * w;
+    int hist[256] = {};
+    for (int yy = 0; yy < h; ++yy) {
+        const uint8_t* p = y.ptr<uint8_t>(yy);
+        for (int xx = 0; xx < w; ++xx) hist[p[xx]]++;
+    }
+    float hist64[64] = {};
+    for (int i = 0; i < 256; ++i) hist64[i / 4] += static_cast<float>(hist[i]);
+    int valleys[64];
+    int nValley = 0;
+    findValleyMidpoints64(hist64, valleys, &nValley);
+    const int dLo = static_cast<int>(std::lround(0.12 * static_cast<double>(h)));
+    const int dHi = static_cast<int>(std::lround(0.40 * static_cast<double>(h)));
+    const int strokeCap = nPix / 4;
+    CombineLightWin best;
+    std::vector<uint8_t> stroke(static_cast<size_t>(nPix), 0);
+    int seenT[64];
+    int nSeen = 0;
+    for (int v = 0; v < nValley; ++v) {
+        int t = valleys[v] * 4 + 2;
+        if (t < 0) t = 0;
+        if (t > 255) t = 255;
+        bool dup = false;
+        for (int s = 0; s < nSeen; ++s) {
+            if (seenT[s] == t) { dup = true; break; }
+        }
+        if (dup) continue;
+        if (nSeen < 64) seenT[nSeen++] = t;
+        const int sPx = combineBothPolHRunSPx(y, t, loSw, hiSw);
+        if (sPx < 1 || sPx < dLo || sPx > dHi) continue;
+        std::memset(stroke.data(), 0, static_cast<size_t>(nPix));
+        bool hasH = false, hasV = false;
+        combineMarkLightCores(y, t, sPx, &stroke, &hasH, &hasV);
+        if (!hasH || !hasV) continue;
+        int nStroke = 0, nWhite = 0;
+        for (int yy = 0; yy < h; ++yy) {
+            const uint8_t* p = y.ptr<uint8_t>(yy);
+            for (int xx = 0; xx < w; ++xx) {
+                if (static_cast<int>(p[xx]) > t) ++nWhite;
+                if (stroke[static_cast<size_t>(yy * w + xx)]) ++nStroke;
+            }
+        }
+        if (nStroke < 1 || nStroke > strokeCap) continue;
+        if (static_cast<double>(nWhite) > 0.85 * static_cast<double>(nPix)) continue;
+        if (!combineLightWins(best, nStroke, sPx, t, h)) continue;
+        best.have = true;
+        best.nStroke = nStroke;
+        best.sPx = sPx;
+        best.t = t;
+    }
+    if (!best.have || best.sPx <= loSw) return false;
+    *tOut = best.t;
+    *sPxOut = best.sPx;
+    return true;
+}
+
 /** Seed-sized 255/0 combined + poison mask. Does not write lookBin. */
 static int seedCombine255(
     const cv::Mat& src, int sl, int st, int sr, int sb,
@@ -4727,6 +4903,35 @@ static int seedCombine255(
         v0 = hh0.peak;
         needFb0 = strokeNeedFb(hh0, v0, seedW, inkFrac);
         sPx0 = (v0 > 4 && !needFb0) ? v0 : fallback;
+    }
+    if (!srcIsBin && inverted) {
+        const int loSw = imgW >= 2000 ? 16 : 4;
+        const int hiSw = std::max(35, seedH / 2);
+        const int lightSPx = combineBothPolHRunSPx(
+            seedY, static_cast<int>(otsu), loSw, hiSw);
+        if (sPx0 == loSw || lightSPx == loSw) {
+            int tStar = 0, sPxL = 0;
+            if (combinePickValleyLight(seedY, loSw, hiSw, &tStar, &sPxL)) {
+                inverted = true;
+                otsu = static_cast<double>(tStar);
+                sPx0 = sPxL;
+                v0 = sPxL;
+                int nzL = 0;
+                const int nPixL = std::max(1, seedH * seedW);
+                for (int yy = 0; yy < bh; ++yy) {
+                    const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+                    uint8_t* op = bin.ptr<uint8_t>(yy);
+                    for (int xx = 0; xx < bw; ++xx) {
+                        const bool ink = static_cast<int>(yp[xx]) > tStar;
+                        op[xx] = ink ? 255 : 0;
+                        if (ink) ++nzL;
+                    }
+                }
+                inkFrac = nzL / static_cast<float>(nPixL);
+                needFb0 = strokeNeedFb(hh0, v0, seedW, inkFrac);
+                if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPx0);
+            }
+        }
     }
     cv::Mat poison(seedH, seedW, CV_8UC1);
     poison.setTo(0);
