@@ -2603,6 +2603,7 @@ object ContentExpandUtils {
                 if (p.size < 8) return null
                 // u = edge closest to horizontal (|atan2| folded to [0, 90°]); tie → longer.
                 // v = +90° from u, flipped so vy ≥ 0 (v1 = lower flatter side).
+                // Then if ux < 0: flip u and swap-negate u extents so ux ≥ 0 (no L-R mirror).
                 var bestAng = 1e9
                 var bestLen = 0.0
                 var ux = 1f
@@ -2654,6 +2655,13 @@ object ContentExpandUtils {
                     if (v > v1) v1 = v
                 }
                 if (u1 - u0 < 2f || v1 - v0 < 2f) return null
+                if (ux < 0f) {
+                    ux = -ux
+                    uy = -uy
+                    val t = u0
+                    u0 = -u1
+                    u1 = -t
+                }
                 return OrientedBox(cx, cy, ux, uy, vx, vy, u0, u1, v0, v1)
             }
         }

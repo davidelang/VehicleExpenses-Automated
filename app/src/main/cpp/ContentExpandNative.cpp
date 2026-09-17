@@ -6651,6 +6651,7 @@ struct OriBox {
 static bool oriFromQuad(const float* p, OriBox* b) {
     // u = edge closest to horizontal (|atan2| folded to [0, 90°]); tie → longer.
     // v = +90° from u, flipped so vy ≥ 0 (v1 = lower flatter side).
+    // Then if ux < 0: flip u and swap-negate u extents so ux ≥ 0 (no L-R mirror).
     double bestAng = 1e9;
     double bestLen = 0.0;
     float ux = 1.f, uy = 0.f;
@@ -6693,6 +6694,13 @@ static bool oriFromQuad(const float* p, OriBox* b) {
         if (v > v1) v1 = v;
     }
     if (u1 - u0 < 2.f || v1 - v0 < 2.f) return false;
+    if (ux < 0.f) {
+        ux = -ux;
+        uy = -uy;
+        const float t = u0;
+        u0 = -u1;
+        u1 = -t;
+    }
     b->cx = cx; b->cy = cy; b->ux = ux; b->uy = uy;
     b->vx = vx; b->vy = vy;
     b->u0 = u0; b->u1 = u1; b->v0 = v0; b->v1 = v1;
