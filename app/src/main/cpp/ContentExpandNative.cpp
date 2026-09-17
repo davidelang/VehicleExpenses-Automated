@@ -7839,6 +7839,8 @@ struct SeedInkSamp {
     const cv::Mat* gray = nullptr;
     const cv::Mat* uv = nullptr;
     const uint8_t* raster = nullptr;
+    const uint8_t* altY = nullptr;
+    int altYStride = 0;
     int w = 0, h = 0, grayW = 0, grayH = 0, ox = 0, oy = 0;
     bool hasRot = false;
     OriBox rot{};
@@ -7870,7 +7872,13 @@ static bool seedInPhoto(const SeedInkSamp& s, int sx, int sy) {
 }
 
 static bool seedYAt(const SeedInkSamp& s, int sx, int sy, int* out) {
-    if (!s.gray || !out) return false;
+    if (!out) return false;
+    if (s.altY && sx >= 0 && sy >= 0 && sx < s.w && sy < s.h) {
+        *out = s.altY[static_cast<size_t>(sy) * static_cast<size_t>(s.altYStride) +
+            static_cast<size_t>(sx)];
+        return true;
+    }
+    if (!s.gray) return false;
     if (!s.hasRot && sx >= 0 && sy >= 0 && sx < s.w && sy < s.h) {
         *out = s.gray->ptr<uint8_t>(s.oy + sy)[s.ox + sx];
         return true;
@@ -8805,6 +8813,143 @@ static void seedEmitPickFlood(
     thrs->push_back(std::move(flood));
 }
 
+static void seedFillHist256(
+    const SeedInkSamp& s, int hist256[256], int ySkipGe, int* nKeep
+) {
+    std::memset(hist256, 0, 256 * sizeof(int));
+    int n = 0;
+    for (int sy = 0; sy < s.h; ++sy) {
+        for (int sx = 0; sx < s.w; ++sx) {
+            int yv = 0;
+            if (!seedYAt(s, sx, sy, &yv)) continue;
+            if (ySkipGe >= 0 && yv >= ySkipGe) continue;
+            if (yv < 0) yv = 0;
+            if (yv > 255) yv = 255;
+            hist256[yv]++;
+            ++n;
+        }
+    }
+    if (nKeep) *nKeep = n;
+}
+
+static void seedValleysFromHist256(
+    const int hist256[256], int valleyTs[64], int* nValleyTs
+) {
+    float hist64[64] = {};
+    for (int i = 0; i < 256; ++i) hist64[i / 4] += static_cast<float>(hist256[i]);
+    int valleys[64];
+    int nValley = 0;
+    findValleyMidpoints64(hist64, valleys, &nValley);
+    *nValleyTs = 0;
+    for (int i = 0; i < nValley; ++i) {
+        int tv = valleys[i] * 4 + 2;
+        if (tv < 0) tv = 0;
+        if (tv > 255) tv = 255;
+        bool dup = false;
+        for (int j = 0; j < *nValleyTs; ++j) {
+            if (valleyTs[j] == tv) { dup = true; break; }
+        }
+        if (!dup && *nValleyTs < 64) valleyTs[(*nValleyTs)++] = tv;
+    }
+}
+
+static void seedConsiderValleyPick(
+    const SeedInkSamp& s, const int* valleyTs, int nValleyTs,
+    int seedW, int seedH, int loSw, int hiSw,
+    const SeedInkPlanes& p, int nPix, uint8_t* pickW, uint8_t* pickS,
+    SeedPickBest* best
+) {
+    const int w = s.w, h = s.h;
+    for (int i = 0; i < nValleyTs; ++i) {
+        const int tv = valleyTs[i];
+        SeedPolCtx ctx{};
+        ctx.kind = SeedPol::Light;
+        ctx.t = tv;
+        ctx.samp = &s;
+        SeedInkThrNat one{};
+        seedEvalGrey(
+            s, ctx, tv, tv, tv, 0, seedW, seedH, loSw, hiSw, true, &one, p);
+        seedConsiderSlices(
+            best, true, one.t, one.tLo, one.tHi, one.sPx, 0, 0, ctx, p,
+            w, h, seedH, nPix, pickW, pickS);
+    }
+    for (int i = 0; i + 1 < nValleyTs; ++i) {
+        const int tLo = valleyTs[i];
+        const int tHi = valleyTs[i + 1];
+        if (tHi <= tLo) continue;
+        SeedPolCtx ctx{};
+        ctx.kind = SeedPol::Band;
+        ctx.tLo = tLo;
+        ctx.tHi = tHi;
+        ctx.samp = &s;
+        SeedInkThrNat one{};
+        seedEvalGrey(
+            s, ctx, tHi, tLo, tHi, 1, seedW, seedH, loSw, hiSw, true, &one, p);
+        seedConsiderSlices(
+            best, false, one.t, one.tLo, one.tHi, one.sPx, one.skipTint, 1,
+            ctx, p, w, h, seedH, nPix, pickW, pickS);
+    }
+}
+
+static void seedBoxMeanFlatten(
+    const SeedInkSamp& s, const SeedInkPlanes& p, int r, uint8_t* ypPacked
+) {
+    const int w = s.w, h = s.h;
+    if (!ypPacked || !p.white || w < 1 || h < 1) return;
+    if (r < 0) r = 0;
+    std::vector<uint32_t> cs(static_cast<size_t>(std::max(w, h)) + 1u, 0);
+    for (int y = 0; y < h; ++y) {
+        cs[0] = 0;
+        for (int x = 0; x < w; ++x) {
+            int yv = 0;
+            if (!seedYAt(s, x, y, &yv)) yv = 0;
+            cs[static_cast<size_t>(x) + 1] =
+                cs[static_cast<size_t>(x)] + static_cast<uint32_t>(yv);
+        }
+        uint8_t* row = p.white + static_cast<size_t>(y) * static_cast<size_t>(p.whiteStride);
+        for (int x = 0; x < w; ++x) {
+            const int lo = std::max(0, x - r);
+            const int hi = std::min(w - 1, x + r);
+            const uint32_t sum =
+                cs[static_cast<size_t>(hi) + 1] - cs[static_cast<size_t>(lo)];
+            const int n = hi - lo + 1;
+            row[x] = static_cast<uint8_t>(sum / static_cast<uint32_t>(std::max(1, n)));
+        }
+    }
+    for (int x = 0; x < w; ++x) {
+        cs[0] = 0;
+        for (int y = 0; y < h; ++y) {
+            const uint32_t v = p.white[
+                static_cast<size_t>(y) * static_cast<size_t>(p.whiteStride) +
+                static_cast<size_t>(x)];
+            cs[static_cast<size_t>(y) + 1] = cs[static_cast<size_t>(y)] + v;
+        }
+        for (int y = 0; y < h; ++y) {
+            const int lo = std::max(0, y - r);
+            const int hi = std::min(h - 1, y + r);
+            const uint32_t sum =
+                cs[static_cast<size_t>(hi) + 1] - cs[static_cast<size_t>(lo)];
+            const int n = hi - lo + 1;
+            ypPacked[static_cast<size_t>(y) * static_cast<size_t>(w) +
+                static_cast<size_t>(x)] =
+                static_cast<uint8_t>(sum / static_cast<uint32_t>(std::max(1, n)));
+        }
+    }
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            int yv = 0;
+            if (!seedYAt(s, x, y, &yv)) yv = 0;
+            const int bg = ypPacked[
+                static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x)];
+            int yp = yv - bg + 128;
+            if (yp < 0) yp = 0;
+            if (yp > 255) yp = 255;
+            ypPacked[static_cast<size_t>(y) * static_cast<size_t>(w) +
+                static_cast<size_t>(x)] = static_cast<uint8_t>(yp);
+        }
+    }
+}
+
 static void seedOrUnionBands(
     const SeedInkSamp& s, const std::vector<SeedInkThrNat>& bands,
     const SeedInkThrNat& uni, bool color, bool uvOk,
@@ -8998,7 +9143,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
     uint16_t* vRun = canPickFlood
         ? reinterpret_cast<uint16_t*>(destY->ptr()) : nullptr;
     std::vector<SeedInkThrNat> thrs;
-    thrs.reserve(static_cast<size_t>(nCands) * 2 + 8);
+    thrs.reserve(static_cast<size_t>(nCands) * 2 + 16);
     SeedPickBest best{};
     for (int i = 0; i < nCands; ++i) {
         SeedPolCtx ctx{};
@@ -9102,6 +9247,143 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
         seedEmitPickFlood(
             samp, cbest, true, uvOk, canPickFlood, 7, 8, seedW, seedH, loSw, hiSw,
             p, pickW, pickS, hRun, vRun, &thrs);
+    }
+    if (!wantColor) {
+        if (nPix >= 1 && nPix <= p.deskewCap && p.deskew) {
+            int r = std::max(16, seedH / 4);
+            const int rCap = seedH / 2;
+            if (r > rCap) r = rCap;
+            if (r < 0) r = 0;
+            seedBoxMeanFlatten(samp, p, r, p.deskew);
+            seedCopyPackedToStrided(p.deskew, p.white, p.whiteStride, w, h);
+            seedZeroPlane(p.stroke, p.strokeStride, w, h);
+            SeedInkThrNat flaty = seedEmptyThr(9, seedW, seedH, w, h);
+            flaty.t = 2 * r + 1;
+            seedEncodeThr(p, w, h, &flaty);
+            thrs.push_back(std::move(flaty));
+            samp.altY = p.deskew;
+            samp.altYStride = w;
+            int histF[256];
+            seedFillHist256(samp, histF, -1, nullptr);
+            int vtsF[64];
+            int nvtF = 0;
+            seedValleysFromHist256(histF, vtsF, &nvtF);
+            SeedPickBest fbest{};
+            seedConsiderValleyPick(
+                samp, vtsF, nvtF, seedW, seedH, loSw, hiSw, p, nPix, pickW, pickS,
+                &fbest);
+            uint16_t* hRunF = (3 * nPix <= p.deskewCap)
+                ? reinterpret_cast<uint16_t*>(p.deskew + nPix) : nullptr;
+            seedEmitPickFlood(
+                samp, fbest, false, uvOk, canPickFlood, 10, 11, seedW, seedH,
+                loSw, hiSw, p, pickW, pickS, hRunF, vRun, &thrs);
+            samp.altY = nullptr;
+            samp.altYStride = 0;
+        }
+        {
+            int histG[256];
+            int nKeep = 0;
+            seedFillHist256(samp, histG, 250, &nKeep);
+            if (nKeep < nPix / 4) seedFillHist256(samp, histG, -1, nullptr);
+            int vtsG[64];
+            int nvtG = 0;
+            seedValleysFromHist256(histG, vtsG, &nvtG);
+            SeedPickBest gbest{};
+            seedConsiderValleyPick(
+                samp, vtsG, nvtG, seedW, seedH, loSw, hiSw, p, nPix, pickW, pickS,
+                &gbest);
+            seedEmitPickFlood(
+                samp, gbest, false, uvOk, canPickFlood, 12, 13, seedW, seedH,
+                loSw, hiSw, p, pickW, pickS, hRun, vRun, &thrs);
+        }
+        if (w >= 3 * 32) {
+            seedZeroPlane(p.white, p.whiteStride, w, h);
+            seedZeroPlane(p.stroke, p.strokeStride, w, h);
+            const int savedW = samp.w;
+            const int savedOx = samp.ox;
+            const int savedIu0 = samp.iu0;
+            uint8_t* const savedWhite = p.white;
+            uint8_t* const savedStroke = p.stroke;
+            uint8_t* const savedSheet = p.sheet;
+            bool haveT = false;
+            int maxSPx = 0;
+            bool anyLight = false;
+            int bestNStroke = -1;
+            int ft = 0, ftLo = 0, ftHi = 0;
+            SeedPolCtx floodCtx{};
+            for (int ti = 0; ti < 3; ++ti) {
+                const int x0 = (ti * w) / 3;
+                const int x1 = ((ti + 1) * w) / 3;
+                const int sw = x1 - x0;
+                if (sw < 1) continue;
+                samp.w = sw;
+                if (samp.hasRot) samp.iu0 = savedIu0 + x0;
+                else samp.ox = savedOx + x0;
+                SeedInkPlanes ps = p;
+                ps.white = savedWhite + x0;
+                ps.stroke = savedStroke + x0;
+                ps.sheet = savedSheet + x0;
+                int histT[256];
+                seedFillHist256(samp, histT, -1, nullptr);
+                int vtsT[64];
+                int nvtT = 0;
+                seedValleysFromHist256(histT, vtsT, &nvtT);
+                SeedPickBest tbest{};
+                seedConsiderValleyPick(
+                    samp, vtsT, nvtT, seedW, seedH, loSw, hiSw, ps, sw * h,
+                    pickW, pickS, &tbest);
+                if (tbest.have) {
+                    seedMaterializePick(
+                        samp, tbest, false, uvOk, seedW, seedH, loSw, hiSw, ps,
+                        pickW, pickS);
+                    haveT = true;
+                    if (tbest.sPx > maxSPx) maxSPx = tbest.sPx;
+                    if (tbest.light) anyLight = true;
+                    if (tbest.nStroke > bestNStroke) {
+                        bestNStroke = tbest.nStroke;
+                        ft = tbest.t;
+                        ftLo = tbest.tLo;
+                        ftHi = tbest.tHi;
+                        floodCtx = tbest.ctx;
+                    }
+                } else {
+                    seedZeroPlane(ps.white, ps.whiteStride, sw, h);
+                    seedZeroPlane(ps.stroke, ps.strokeStride, sw, h);
+                }
+            }
+            samp.w = savedW;
+            samp.ox = savedOx;
+            samp.iu0 = savedIu0;
+            SeedInkThrNat tpick = seedEmptyThr(14, seedW, seedH, w, h);
+            SeedInkThrNat tflood = seedEmptyThr(15, seedW, seedH, w, h);
+            if (haveT) {
+                seedFillMeta(
+                    &tpick, 14, ft, ftLo, ftHi, maxSPx, seedW, seedH, 0,
+                    anyLight ? 0 : 1, w, h);
+                seedEncodeThr(p, w, h, &tpick);
+                if (canPickFlood && hRun && vRun) {
+                    floodCtx.samp = &samp;
+                    seedFloodFromCores(
+                        samp, tpick, floodCtx, 15, &tflood, p, hRun, vRun);
+                    seedEncodeThr(p, w, h, &tflood);
+                } else {
+                    tflood.t = tpick.t;
+                    tflood.tLo = tpick.tLo;
+                    tflood.tHi = tpick.tHi;
+                    tflood.sPx = tpick.sPx;
+                    tflood.skipTint = tpick.skipTint;
+                    tflood.nBand = tpick.nBand;
+                    tflood.jpeg = tpick.jpeg;
+                }
+            } else {
+                seedZeroPlane(p.white, p.whiteStride, w, h);
+                seedZeroPlane(p.stroke, p.strokeStride, w, h);
+                seedEncodeThr(p, w, h, &tpick);
+                tflood.jpeg = tpick.jpeg;
+            }
+            thrs.push_back(std::move(tpick));
+            thrs.push_back(std::move(tflood));
+        }
     }
     return packSeedInkThrs(env, thrs);
 }

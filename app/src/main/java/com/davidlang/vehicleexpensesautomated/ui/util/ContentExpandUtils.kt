@@ -2681,6 +2681,7 @@ object ContentExpandUtils {
 
     private val seedInkKindNames = arrayOf(
         "gt", "band", "union", "cband", "cunion", "pick", "flood", "cpick", "cflood",
+        "flaty", "fpick", "fflood", "gpick", "gflood", "tpick", "tflood",
     )
 
     private fun unpackSeedInkProbe(

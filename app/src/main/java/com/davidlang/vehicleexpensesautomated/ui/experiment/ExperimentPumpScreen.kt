@@ -5325,7 +5325,11 @@ suspend fun runPumpExperiment(
                                     } else {
                                         thr.kind == "gt" || thr.kind == "band" ||
                                             thr.kind == "union" ||
-                                            thr.kind == "pick" || thr.kind == "flood"
+                                            thr.kind == "pick" || thr.kind == "flood" ||
+                                            thr.kind == "flaty" || thr.kind == "fpick" ||
+                                            thr.kind == "fflood" || thr.kind == "gpick" ||
+                                            thr.kind == "gflood" || thr.kind == "tpick" ||
+                                            thr.kind == "tflood"
                                     }
                                     if (!okKind) continue
                                     snapshotSeedInkProbe(
@@ -5414,7 +5418,11 @@ suspend fun runPumpExperiment(
                                     } else {
                                         thr.kind == "gt" || thr.kind == "band" ||
                                             thr.kind == "union" ||
-                                            thr.kind == "pick" || thr.kind == "flood"
+                                            thr.kind == "pick" || thr.kind == "flood" ||
+                                            thr.kind == "flaty" || thr.kind == "fpick" ||
+                                            thr.kind == "fflood" || thr.kind == "gpick" ||
+                                            thr.kind == "gflood" || thr.kind == "tpick" ||
+                                            thr.kind == "tflood"
                                     }
                                     if (!okKind) continue
                                     snapshotSeedInkProbe(
@@ -8492,6 +8500,29 @@ private fun lookInkCountCap(c: org.json.JSONObject): String {
             }
             "cpick" -> "cpick Band ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed$skip"
             "cflood" -> "cflood Band ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed$skip"
+            "flaty" -> "flaty win=${c.optInt("t", 0)} sPx=$sPx $seed"
+            "fpick" -> if (c.optInt("nBand", 0) == 1) {
+                "fpick Band ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed"
+            } else {
+                "fpick Light t=${c.optInt("t", 0)} sPx=$sPx $seed"
+            }
+            "fflood" -> if (c.optInt("nBand", 0) == 1) {
+                "fflood Band ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed"
+            } else {
+                "fflood Light t=${c.optInt("t", 0)} sPx=$sPx $seed"
+            }
+            "gpick" -> if (c.optInt("nBand", 0) == 1) {
+                "gpick Band ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed"
+            } else {
+                "gpick Light t=${c.optInt("t", 0)} sPx=$sPx $seed"
+            }
+            "gflood" -> if (c.optInt("nBand", 0) == 1) {
+                "gflood Band ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed"
+            } else {
+                "gflood Light t=${c.optInt("t", 0)} sPx=$sPx $seed"
+            }
+            "tpick" -> "tpick sPx=$sPx nBand=${c.optInt("nBand", 0)} $seed"
+            "tflood" -> "tflood sPx=$sPx nBand=${c.optInt("nBand", 0)} $seed"
             else -> "$kind t=${c.optInt("t", 0)} sPx=$sPx $seed"
         }
     }
