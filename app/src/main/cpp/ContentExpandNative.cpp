@@ -6279,7 +6279,7 @@ static void aabbJumpOnLook(
 
 }  // namespace
 
-/** 12 ints/seed: l0,t0,r0,b0, l1,t1,r1,b1, sPx, vSW, hSW, flags. l1..b1 = 0.6H, same t/b. */
+/** 12 ints/seed: l0,t0,r0,b0, l1,t1,r1,b1, sPx, vSW, hSW, flags. l1..b1 = 0.1H, same t/b. */
 static void packAabb12(
     std::vector<jint>& out, int i,
     int l0, int t0, int r0, int b0,
@@ -6296,7 +6296,7 @@ static void packAabb12(
     out[static_cast<size_t>(o) + 2] = r0;
     out[static_cast<size_t>(o) + 3] = b0;
     const int h = std::max(1, b0 - t0);
-    const int hp = static_cast<int>(std::lround(0.6f * static_cast<float>(h)));
+    const int hp = static_cast<int>(std::lround(0.1f * static_cast<float>(h)));
     int l1 = l0 - hp;
     int r1 = r0 + hp;
     if (l1 < 0) l1 = 0;

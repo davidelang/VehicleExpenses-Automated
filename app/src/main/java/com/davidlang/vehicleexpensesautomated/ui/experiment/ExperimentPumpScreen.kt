@@ -1955,7 +1955,7 @@ suspend fun runPumpExperiment(
                     inkWalkSeeds = walks.map { it.first }
                     inkWalkBoxes = jumpedOnce
                     inkWalkPads = official.map {
-                        ContentExpandUtils.calculatedAabb(it, 0f, 0.6f, imgW, imgH)
+                        ContentExpandUtils.calculatedAabb(it, 0f, horiz = ContentExpandUtils.SEG7_HORIZ_PAD_H_FRAC, imgW, imgH)
                     }
                     inkJumpOpts = jumpOpts
                     branch.metadata["s_per_red"] = seg7Strokes.joinToString(",") { it.sPx.toString() }
@@ -2197,7 +2197,7 @@ suspend fun runPumpExperiment(
                         )
                         emitHorizPad(
                             kk,
-                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.6f, imgW, imgH) },
+                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, horiz = ContentExpandUtils.SEG7_HORIZ_PAD_H_FRAC, imgW, imgH) },
                             skipExtraK,
                         )
                     }
@@ -2703,7 +2703,7 @@ suspend fun runPumpExperiment(
                         ),
                     )
                     val aabbHorizPad = expandedBase.map {
-                        ContentExpandUtils.calculatedAabb(it, 0f, 0.6f, imgW, imgH)
+                        ContentExpandUtils.calculatedAabb(it, 0f, horiz = ContentExpandUtils.SEG7_HORIZ_PAD_H_FRAC, imgW, imgH)
                     }
                     val aabbPadOcr = ocrPumpRectsAsisAndDigits(aabbHorizPad)
                     val aabbPadCands = buildRedBoxCandidates(
@@ -2974,7 +2974,7 @@ suspend fun runPumpExperiment(
                         ),
                     )
                     val aabbHorizPad = expandedBase.map {
-                        ContentExpandUtils.calculatedAabb(it, 0f, 0.6f, imgW, imgH)
+                        ContentExpandUtils.calculatedAabb(it, 0f, horiz = ContentExpandUtils.SEG7_HORIZ_PAD_H_FRAC, imgW, imgH)
                     }
                     val aabbPadOcr = ocrPumpRectsAsisAndDigits(aabbHorizPad)
                     val aabbPadCands = buildRedBoxCandidates(
@@ -3394,7 +3394,7 @@ suspend fun runPumpExperiment(
                         )
                         emitHorizPad(
                             kk,
-                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.6f, imgW, imgH) },
+                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, horiz = ContentExpandUtils.SEG7_HORIZ_PAD_H_FRAC, imgW, imgH) },
                             skipExtraK,
                         )
                     }
@@ -3781,7 +3781,7 @@ suspend fun runPumpExperiment(
                         )
                         emitHorizPad(
                             kk,
-                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.6f, imgW, imgH) },
+                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, horiz = ContentExpandUtils.SEG7_HORIZ_PAD_H_FRAC, imgW, imgH) },
                             skipExtraK,
                         )
                     }
@@ -4181,7 +4181,7 @@ suspend fun runPumpExperiment(
                         )
                         emitHorizPad(
                             kk,
-                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.6f, imgW, imgH) },
+                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, horiz = ContentExpandUtils.SEG7_HORIZ_PAD_H_FRAC, imgW, imgH) },
                             skipExtraK,
                         )
                     }
@@ -6628,7 +6628,7 @@ suspend fun runPumpExperiment(
                             branch.metadata["t_ocr_g_ms"] = "0"
                             branch.metadata["n_ocr_g"] = "0"
                             val aabbHorizPad = expandedBase.map {
-                                ContentExpandUtils.calculatedAabb(it, 0f, 0.6f, imgW, imgH)
+                                ContentExpandUtils.calculatedAabb(it, 0f, horiz = ContentExpandUtils.SEG7_HORIZ_PAD_H_FRAC, imgW, imgH)
                             }
                             val aabbPadOcr = ocrPumpRectsAsisAndDigits(aabbHorizPad)
                             val aabbPadCands = buildRedBoxCandidates(

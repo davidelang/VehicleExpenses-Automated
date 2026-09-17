@@ -766,6 +766,9 @@ object ContentExpandUtils {
         return Rect(l, nt, rr, nb)
     }
 
+    /** OCR horiz_pad extra width per side as a fraction of walked AABB height. */
+    const val SEG7_HORIZ_PAD_H_FRAC = 0.1f
+
     /** G-style calculated AABB: height × (1+2v), each side horiz × newH. */
     fun calculatedAabb(seed: Rect, v: Float, horiz: Float, imgW: Int, imgH: Int): Rect =
         ratioExpand(seed, v, horiz, imgW, imgH)
@@ -2280,6 +2283,7 @@ object ContentExpandUtils {
         }
     }
 
+    /** horiz = fraction of newH (walked height when v=0) per side. */
     private fun ratioExpand(seed: Rect, v: Float, horiz: Float, imgW: Int, imgH: Int): Rect {
         val hgt = max(1, seed.height())
         val nt = (seed.top - v * hgt).roundToInt().coerceIn(0, imgH - 1)
