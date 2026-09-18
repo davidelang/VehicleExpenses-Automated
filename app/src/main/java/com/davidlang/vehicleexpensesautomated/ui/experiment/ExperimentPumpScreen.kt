@@ -2347,6 +2347,7 @@ suspend fun runPumpExperiment(
                     branch.metadata["t_deskew_ms"] =
                         (System.currentTimeMillis() - tDeskewStart).toString()
                     branch.metadata["heatmap_box_mode"] = "aabb"
+                    branch.metadata["heatmap_grow_cells"] = "0"
                     branch.metadata["hm_thresh"] = HEAT_THR_U8_GE1.toString()
                     branch.metadata["hm_thresh_note"] = "u8>=1"
                     branch.metadata["mask_dilate_passes"] = "0"
@@ -2374,6 +2375,7 @@ suspend fun runPumpExperiment(
                             boxMode = NativeImageUtils.HEATMAP_BOX_AABB,
                             hmThresh = HEAT_THR_U8_GE1,
                             maskDilatePasses = 0,
+                            growCells = 0,
                             heatToPhoto = heatToPhoto,
                             photoW = fullW,
                             photoH = fullH,
