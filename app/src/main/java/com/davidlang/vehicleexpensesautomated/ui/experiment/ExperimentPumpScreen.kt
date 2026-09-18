@@ -4622,7 +4622,7 @@ suspend fun runPumpExperiment(
                         ),
                     )
                     val padQuads = expandedQuads.mapIndexed { i, q ->
-                        ContentExpandUtils.padOrientedU(q, 0.5f, seedQuads.getOrNull(i))
+                        ContentExpandUtils.padOrientedU(q, ContentExpandUtils.SEG7_HORIZ_PAD_H_FRAC, seedQuads.getOrNull(i))
                     }
                     val padRects = padQuads.map { it.toAabb() }
                     val padOcr = ocrPumpOrientedFlattenAp(padQuads, workspace.p.mat)
@@ -4806,7 +4806,7 @@ suspend fun runPumpExperiment(
                         ),
                     )
                     val padQuads = expandedQuads.mapIndexed { i, q ->
-                        ContentExpandUtils.padOrientedU(q, 0.5f, seedQuads.getOrNull(i))
+                        ContentExpandUtils.padOrientedU(q, ContentExpandUtils.SEG7_HORIZ_PAD_H_FRAC, seedQuads.getOrNull(i))
                     }
                     val padRects = padQuads.map { it.toAabb() }
                     val padOcr = ocrPumpOrientedFlattenAp(padQuads, workspace.p.mat)
@@ -5138,7 +5138,7 @@ suspend fun runPumpExperiment(
                         )
                         emitHorizPad(
                             kk,
-                            quads.map { ContentExpandUtils.padOrientedU(it, 0.5f) },
+                            quads.map { ContentExpandUtils.padOrientedU(it, ContentExpandUtils.SEG7_HORIZ_PAD_H_FRAC) },
                             skipExtraK,
                         )
                     }
@@ -5801,7 +5801,7 @@ suspend fun runPumpExperiment(
                                         ContentExpandUtils.strokeWidthInSeed(
                                             masterBuffer.p.mat, q.toAabb(),
                                         ),
-                                        quadPad = ContentExpandUtils.padOrientedU(q, 0.5f),
+                                        quadPad = ContentExpandUtils.padOrientedU(q, ContentExpandUtils.SEG7_HORIZ_PAD_H_FRAC),
                                     ),
                                 )
                             }
@@ -6101,7 +6101,7 @@ suspend fun runPumpExperiment(
                             val pads = emitRotHorizPad(
                                 kk,
                                 if (kk == 0f) inkWalkPadQuads
-                                else quads.map { ContentExpandUtils.padOrientedU(it, 0.5f) },
+                                else quads.map { ContentExpandUtils.padOrientedU(it, ContentExpandUtils.SEG7_HORIZ_PAD_H_FRAC) },
                                 if (kk == 0f) null else skipExtraK,
                             )
                             if (kk == 0f) pdPadQuads = pads
@@ -6171,7 +6171,7 @@ suspend fun runPumpExperiment(
                     val hybridRects = hybridQuads.map { it.toAabb() }
                     if (!seg7Stroke) {
                         pdPadQuads = expandedQuads.mapIndexed { i, q ->
-                            ContentExpandUtils.padOrientedU(q, 0.5f, seedQuads.getOrNull(i))
+                            ContentExpandUtils.padOrientedU(q, ContentExpandUtils.SEG7_HORIZ_PAD_H_FRAC, seedQuads.getOrNull(i))
                         }
                         val horizPadRects = pdPadQuads.map { it.toAabb() }
                         val horizPadOcr = ocrPumpOrientedQuads(pdPadQuads, masterBuffer.p.mat, imgW, imgH)

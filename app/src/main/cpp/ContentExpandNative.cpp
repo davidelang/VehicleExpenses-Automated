@@ -6939,11 +6939,12 @@ static void oriToQuad(const OriBox& b, float* out) {
     c(b.u0, b.v1, 6);
 }
 
-/** 18 floats/seed: 8 pts unexpanded, 8 pts 0.5H along u, sPx, flags. */
+/** 18 floats/seed: 8 pts unexpanded, 8 pts 0.1H along u, sPx, flags.
+ *  Same as packAabb12 / SEG7_HORIZ_PAD_H_FRAC (C++ cannot see the Kotlin const). */
 static void packOri18(float* op, const OriBox& walked, float sPx, float flags) {
     oriToQuad(walked, op);
     OriBox pad = walked;
-    const float hp = 0.5f * std::max(1.f, walked.v1 - walked.v0);
+    const float hp = 0.1f * std::max(1.f, walked.v1 - walked.v0);
     pad.u0 -= hp;
     pad.u1 += hp;
     oriToQuad(pad, op + 8);
