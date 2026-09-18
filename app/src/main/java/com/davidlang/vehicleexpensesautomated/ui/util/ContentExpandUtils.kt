@@ -767,7 +767,7 @@ object ContentExpandUtils {
     }
 
     /** OCR horiz_pad extra width per side as a fraction of walked AABB height. */
-    const val SEG7_HORIZ_PAD_H_FRAC = 0.1f
+    const val SEG7_HORIZ_PAD_H_FRAC = 0.2f
 
     /** G-style calculated AABB: height × (1+2v), each side horiz × newH. */
     fun calculatedAabb(seed: Rect, v: Float, horiz: Float, imgW: Int, imgH: Int): Rect =
