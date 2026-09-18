@@ -1524,7 +1524,8 @@ static void jumpRetractH(
     cv::Mat* lookBin = nullptr, int seedT = 0, int seedB = 0, int minRun = 0,
     int lookOx = 0, int lookOy = 0, ObjPack* lookPack = nullptr,
     const cv::Mat* recSrc = nullptr, int recSPx = 0, int recSeedIndex = 0,
-    int recDispKind = 0, int recHMul = 7, int recVMul = 16
+    int recDispKind = 0, int recHMul = 7, int recVMul = 16,
+    bool virtSp = false
 ) {
     (void)capPx;
     (void)retractClearFrac;
@@ -1551,7 +1552,7 @@ static void jumpRetractH(
         if (useInk) {
             return maxInkRunCol(
                 *lookBin, x - lookOx, inkT - lookOy, inkB - lookOy, lookPack,
-                false, imgW) >= minRun;
+                virtSp, imgW) >= minRun;
         }
         return meanRectF(eng, x, coreT, x + 1, coreB, imgW, imgH) >= thr;
     };
@@ -3013,7 +3014,10 @@ static int maxInkRunCol(
             const int gapStart = y;
             while (y < yEnd && !isLookInkId(bin.ptr<uint8_t>(y)[x], pack)) ++y;
             const int g = y - gapStart;
-            if (y < yEnd && vspSkipRun(g, run, gapMax)) continue;
+            if (y < yEnd && vspSkipRun(g, run, gapMax)) {
+                run += g;
+                continue;
+            }
             y = gapStart;
             break;
         }
@@ -3117,7 +3121,7 @@ static void aabbJumpOnLook(
     int imgW, int imgH, int seedT, int seedB, int seedL, int seedR, int sPx,
     int lookOx = 0, int lookOy = 0, int* farL = nullptr, int* farR = nullptr,
     ObjPack* pack = nullptr, const cv::Mat* src = nullptr, int seedIndex = 0,
-    int dispKind = 0, int hMul = 7, int vMul = 16);
+    int dispKind = 0, int hMul = 7, int vMul = 16, bool virtSp = false);
 static void paintLookOverlay(
     const cv::Mat& lookBin, const cv::Mat& lookPoison,
     cv::Mat* overlayY, cv::Mat* overlayUv,
@@ -3244,7 +3248,10 @@ static HorizSW horizPeakSW(
                 const int gapStart = x;
                 while (x < bin.cols && p[x] == 0) ++x;
                 const int g = x - gapStart;
-                if (x < bin.cols && vspSkipRun(g, run, gapMax)) continue;
+                if (x < bin.cols && vspSkipRun(g, run, gapMax)) {
+                    run += g;
+                    continue;
+                }
                 x = gapStart;
                 break;
             }
@@ -4186,7 +4193,7 @@ static void seg7One(
     aabbJumpOnLook(
         &lookBin, ol, *ot, oright, *ob, imgW, imgH,
         st, sb, sl, sr, sPx, 0, 0, &farL, &farR, objPack, &src, seedIndex,
-        recDisp, recHm, recVm);
+        recDisp, recHm, recVm, virtSp);
     if (virtSp && poisonStats) {
         const bool skipT = rowHasStrokeBar(
             lookBin, st, minRun, glareW, objPack, lookL, lookR, true, imgW);
@@ -5516,7 +5523,10 @@ static bool rowHasStrokeBar(
             const int gapStart = x;
             while (x < x1 && !isLookInkId(p[x], pack)) ++x;
             const int g = x - gapStart;
-            if (x < x1 && vspSkipRun(g, run, gapMax)) continue;
+            if (x < x1 && vspSkipRun(g, run, gapMax)) {
+                run += g;
+                continue;
+            }
             x = gapStart;
             break;
         }
@@ -6469,7 +6479,8 @@ static void aabbJumpOnLook(
     int imgW, int imgH, int seedT, int seedB, int seedL, int seedR, int sPx,
     int lookOx, int lookOy, int* farL, int* farR, ObjPack* pack,
     const cv::Mat* src, int seedIndex,
-    int dispKind, int hMul, int vMul
+    int dispKind, int hMul, int vMul,
+    bool virtSp
 ) {
     if (!look || look->empty() || look->type() != CV_8UC1 || sPx < 1) return;
     const int maxIn = maxInSeedRunRows(
@@ -6479,7 +6490,7 @@ static void aabbJumpOnLook(
     jumpRetractH(
         *look, l, t, r, b, imgW, imgH, 0.0, 1, 0.60f, 0.30f,
         std::max(1, seedB - seedT), farL, farR, look, seedT, seedB, minRun, lookOx, lookOy, pack,
-        src, sPx, seedIndex, dispKind, hMul, vMul);
+        src, sPx, seedIndex, dispKind, hMul, vMul, virtSp);
 }
 
 }  // namespace
