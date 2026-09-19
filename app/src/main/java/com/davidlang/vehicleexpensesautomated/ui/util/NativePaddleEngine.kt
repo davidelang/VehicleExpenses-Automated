@@ -1205,6 +1205,32 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         return if (n == bufferRecInt8.size) bufferRecInt8 else bufferRecInt8.copyOf(n)
     }
 
+    /**
+     * Packed Lite feed. Canvas may be 48/56/64; tensor H is always 48 (scale 56/64, copy).
+     * Does not mutate [srcMat].
+     */
+    private fun packRecForLite(srcMat: Mat, w: Int, h: Int): Triple<ByteArray, Int, Int>? {
+        if (w > REC_CANVAS_W || w < 1) return null
+        if (h == 48) return Triple(recTensorBytes(srcMat, w, h), w, 48)
+        if (h != 56 && h != 64) return null
+        var tw = kotlin.math.round(w * 48.0 / h.toDouble()).toInt().coerceAtLeast(2)
+        if (tw % 2 != 0) tw += 1
+        tw = tw.coerceAtMost(REC_CANVAS_W)
+        if (tw % 2 != 0) tw = (tw - 1).coerceAtLeast(2)
+        val dest = Mat()
+        Imgproc.resize(
+            srcMat,
+            dest,
+            Size(tw.toDouble(), 48.0),
+            0.0,
+            0.0,
+            Imgproc.INTER_AREA,
+        )
+        val bytes = recTensorBytes(dest, tw, 48)
+        dest.release()
+        return Triple(bytes, tw, 48)
+    }
+
     private suspend fun processOcr(input: Any, predictor: PaddlePredictor?, dictionary: List<String>): RecStageResult = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         if (predictor == null) return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
@@ -1217,39 +1243,32 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
         heartbeat("rec_v3_begin ${w}x$h path=$activeProductPathId")
 
-        if (w > REC_CANVAS_W || w < 1 || h !in setOf(48, 56, 64)) {
+        val tPop0 = System.nanoTime()
+        val packed = packRecForLite(srcMat, w, h)
+        if (packed == null) {
             Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) not a rec H of 48/56/64 (canvas ${REC_CANVAS_W}x${REC_CANVAS_H}).")
             return@withContext RecStageResult("(Size Error)", 0, 0f, null)
         }
-        val recPred = when (h) {
-            48 -> predictor
-            56 -> sharedRecognizerV3H56
-            64 -> sharedRecognizerV3H64
-            else -> null
-        }
-        if (recPred == null) {
-            Log.e("PaddleDetect", "No rec_v3 predictor for H=$h (48=prod, 56/64=exp_rec_h).")
-            return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
-        }
-
-        val tPop0 = System.nanoTime()
-        val recFeed = recTensorBytes(srcMat, w, h)
+        val recFeed = packed.first
+        val tw = packed.second
+        val th = packed.third
+        heartbeat("rec_v3_tensor ${tw}x$th (from ${w}x$h)")
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
             val tJniIn0 = System.nanoTime()
-            val inputTensor = recPred.getInput(0)
-            inputTensor.resize(longArrayOf(1, 1, h.toLong(), w.toLong()))
-            requireSetData(inputTensor.setData(recFeed), "rec_v3 uint8 ${w}x$h")
+            val inputTensor = predictor.getInput(0)
+            inputTensor.resize(longArrayOf(1, 1, th.toLong(), tw.toLong()))
+            requireSetData(inputTensor.setData(recFeed), "rec_v3 uint8 ${tw}x$th")
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val tInfer0 = System.nanoTime()
             heartbeat("rec_v3_run")
-            recPred.run()
+            predictor.run()
             val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
 
             val tJniOut0 = System.nanoTime()
-            val outputTensor = recPred.getOutput(0); val data = outputTensor.floatData; val dims = outputTensor.shape()
+            val outputTensor = predictor.getOutput(0); val data = outputTensor.floatData; val dims = outputTensor.shape()
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
 
             val meta = mapOf(
@@ -1292,39 +1311,32 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
         heartbeat("rec_num_begin ${w}x$h path=$activeProductPathId")
 
-        if (w > REC_CANVAS_W || w < 1 || h !in setOf(48, 56, 64)) {
+        val tPop0 = System.nanoTime()
+        val packed = packRecForLite(srcMat, w, h)
+        if (packed == null) {
             Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) not a rec H of 48/56/64 (canvas ${REC_CANVAS_W}x${REC_CANVAS_H}).")
             return@withContext RecStageResult("(Size Error)", 0, 0f, null)
         }
-        val recPred = when (h) {
-            48 -> predictor
-            56 -> sharedRecognizerNumericH56
-            64 -> sharedRecognizerNumericH64
-            else -> null
-        }
-        if (recPred == null) {
-            Log.e("PaddleDetect", "No rec_numeric predictor for H=$h (48=prod, 56/64=exp_rec_h).")
-            return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
-        }
-
-        val tPop0 = System.nanoTime()
-        val recFeed = recTensorBytes(srcMat, w, h)
+        val recFeed = packed.first
+        val tw = packed.second
+        val th = packed.third
+        heartbeat("rec_num_tensor ${tw}x$th (from ${w}x$h)")
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
             val tJniIn0 = System.nanoTime()
-            val inputTensor = recPred.getInput(0)
-            inputTensor.resize(longArrayOf(1, 1, h.toLong(), w.toLong()))
-            requireSetData(inputTensor.setData(recFeed), "rec_numeric uint8 ${w}x$h")
+            val inputTensor = predictor.getInput(0)
+            inputTensor.resize(longArrayOf(1, 1, th.toLong(), tw.toLong()))
+            requireSetData(inputTensor.setData(recFeed), "rec_numeric uint8 ${tw}x$th")
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val tInfer0 = System.nanoTime()
             heartbeat("rec_num_run")
-            recPred.run()
+            predictor.run()
             val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
 
             val tJniOut0 = System.nanoTime()
-            val outputTensor = recPred.getOutput(0); val data = outputTensor.floatData; val dims = outputTensor.shape()
+            val outputTensor = predictor.getOutput(0); val data = outputTensor.floatData; val dims = outputTensor.shape()
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
 
             val meta = mapOf(
