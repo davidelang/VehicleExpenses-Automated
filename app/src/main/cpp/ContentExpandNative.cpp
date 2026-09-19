@@ -3287,7 +3287,8 @@ static int vertPeakSW(
     return peakCapped(hist, overlapMinK(imgW), maxH, imgW);
 }
 
-/** H-only. Fill interior 0-runs with gap∈(0,gapMax] and 2×gap≤leading ink. No iterate. */
+/** H-only. Fill interior 0-runs in 255; suppress interior 255-runs in 0.
+ *  Same gapMax / 2×gap≤lead. No iterate. */
 static void fillSaltPepperLine(uint8_t* p, int n, int stride, int gapMax) {
     int i = 0;
     while (i < n) {
@@ -3307,6 +3308,24 @@ static void fillSaltPepperLine(uint8_t* p, int n, int stride, int gapMax) {
             for (int k = gapStart; k < gapStart + gap; ++k) p[k * stride] = 255;
         }
     }
+    i = 0;
+    while (i < n) {
+        if (p[i * stride] != 0) {
+            ++i;
+            continue;
+        }
+        const int leadStart = i;
+        while (i < n && p[i * stride] == 0) ++i;
+        const int lead = i - leadStart;
+        if (i >= n) break;
+        const int gapStart = i;
+        while (i < n && p[i * stride] != 0) ++i;
+        const int gap = i - gapStart;
+        if (i >= n) break;
+        if (gap > 0 && gap <= gapMax && 2 * gap <= lead) {
+            for (int k = gapStart; k < gapStart + gap; ++k) p[k * stride] = 0;
+        }
+    }
 }
 
 static void fillSaltPepper(cv::Mat* bin, int imgW) {
@@ -3319,82 +3338,8 @@ static void fillSaltPepper(cv::Mat* bin, int imgW) {
     }
 }
 
-static void dropTiny255CCs(cv::Mat* bin, int minWh) {
-    if (!bin || bin->empty() || bin->type() != CV_8UC1 || minWh < 1) return;
-    const int h = bin->rows, w = bin->cols;
-    if (h < 1 || w < 1) return;
-    std::vector<uint32_t> st;
-    st.reserve(256);
-    std::vector<uint32_t> pix;
-    pix.reserve(256);
-    auto packXY = [](int x, int y) -> uint32_t {
-        return (static_cast<uint32_t>(static_cast<uint16_t>(y)) << 16) |
-            static_cast<uint32_t>(static_cast<uint16_t>(x));
-    };
-    for (int y = 0; y < h; ++y) {
-        uint8_t* row = bin->ptr<uint8_t>(y);
-        for (int x = 0; x < w; ++x) {
-            if (row[x] != 255) continue;
-            st.clear();
-            pix.clear();
-            st.push_back(packXY(x, y));
-            row[x] = 254;
-            int x0 = x, x1 = x + 1, y0 = y, y1 = y + 1;
-            while (!st.empty()) {
-                const uint32_t i = st.back();
-                st.pop_back();
-                const uint16_t cy = static_cast<uint16_t>(i >> 16);
-                const uint16_t cx = static_cast<uint16_t>(i & 0xffffu);
-                pix.push_back(i);
-                if (cx < x0) x0 = cx;
-                if (static_cast<int>(cx) + 1 > x1) x1 = static_cast<int>(cx) + 1;
-                if (cy < y0) y0 = cy;
-                if (static_cast<int>(cy) + 1 > y1) y1 = static_cast<int>(cy) + 1;
-                for (int dy = -1; dy <= 1; ++dy) {
-                    for (int dx = -1; dx <= 1; ++dx) {
-                        if (!dx && !dy) continue;
-                        const int ny = static_cast<int>(cy) + dy;
-                        const int nx = static_cast<int>(cx) + dx;
-                        if (ny < 0 || nx < 0 || ny >= h || nx >= w) continue;
-                        if (bin->ptr<uint8_t>(ny)[nx] != 255) continue;
-                        bin->ptr<uint8_t>(ny)[nx] = 254;
-                        st.push_back(packXY(nx, ny));
-                    }
-                }
-            }
-            const uint16_t bw = static_cast<uint16_t>(x1 - x0);
-            const uint16_t bh = static_cast<uint16_t>(y1 - y0);
-            if (bw < minWh && bh < minWh) {
-                for (uint32_t i : pix) {
-                    const uint16_t cy = static_cast<uint16_t>(i >> 16);
-                    const uint16_t cx = static_cast<uint16_t>(i & 0xffffu);
-                    bin->ptr<uint8_t>(cy)[cx] = 0;
-                }
-            }
-        }
-    }
-}
-
-static void fillSaltPepperSeed(cv::Mat* bin, int imgW, int sPx = 0) {
+static void fillSaltPepperSeed(cv::Mat* bin, int imgW) {
     fillSaltPepper(bin, imgW);
-    if (imgW >= 2000 && sPx > 4) dropTiny255CCs(bin, std::max(1, sPx / 2));
-}
-
-static void fillSaltPepperRect(
-    cv::Mat* bin, int y0, int y1, int x0, int x1, int imgW
-) {
-    if (!bin || bin->empty() || bin->type() != CV_8UC1) return;
-    const int h = bin->rows, w = bin->cols;
-    if (y0 < 0) y0 = 0;
-    if (x0 < 0) x0 = 0;
-    if (y1 > h) y1 = h;
-    if (x1 > w) x1 = w;
-    if (y1 <= y0 || x1 <= x0) return;
-    const int n = x1 - x0;
-    const int gapMax = saltPepperGapMax(imgW);
-    for (int y = y0; y < y1; ++y) {
-        fillSaltPepperLine(bin->ptr<uint8_t>(y) + x0, n, 1, gapMax);
-    }
 }
 
 static int maxBlobRunH(std::vector<int>& pix, int w) {
@@ -4904,13 +4849,6 @@ static int seedCombine255(
     int v0 = hh0.peak;
     bool needFb0 = strokeNeedFb(hh0, v0, seedW, inkFrac);
     int sPx0 = (v0 > 4 && !needFb0) ? v0 : fallback;
-    if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPx0);
-    if (!virtSp && imgW >= 2000 && sPx0 > 4) {
-        hh0 = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
-        v0 = hh0.peak;
-        needFb0 = strokeNeedFb(hh0, v0, seedW, inkFrac);
-        sPx0 = (v0 > 4 && !needFb0) ? v0 : fallback;
-    }
     if (!srcIsBin && inverted) {
         const int loSw = imgW >= 2000 ? 16 : 4;
         const int hiSw = std::max(35, seedH / 2);
@@ -4936,7 +4874,7 @@ static int seedCombine255(
                 }
                 inkFrac = nzL / static_cast<float>(nPixL);
                 needFb0 = strokeNeedFb(hh0, v0, seedW, inkFrac);
-                if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPx0);
+                if (!virtSp) fillSaltPepperSeed(&bin, imgW);
             }
         }
     }
@@ -4965,7 +4903,7 @@ static int seedCombine255(
         haveClean = otsuKeepPoison0(seedY, poison, &cleanThr, &cleanDark, &cleanInkFrac);
         if (haveClean) {
             applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
-            if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPx0);
+            if (!virtSp) fillSaltPepperSeed(&bin, imgW);
         } else {
             bin.setTo(0);
         }
@@ -4984,7 +4922,7 @@ static int seedCombine255(
             float frac2 = 0.f;
             if (otsuKeepPoison0(seedY, poison, &thr2, &dark2, &frac2, cleanThr)) {
                 applyThrKeepPoison0(seedY, poison, thr2, dark2, &bin, cleanThr);
-                if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPx);
+                if (!virtSp) fillSaltPepperSeed(&bin, imgW);
                 if (dark2 && frac2 >= 0.05f && frac2 <= 0.42f) {
                     cleanThr = thr2;
                     cleanDark = dark2;
@@ -4995,7 +4933,7 @@ static int seedCombine255(
                     sPx = (v0Clean > 4 && !needFbClean) ? v0Clean : fallback;
                 } else {
                     applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
-                    if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPx);
+                    if (!virtSp) fillSaltPepperSeed(&bin, imgW);
                 }
             }
         }
@@ -5032,7 +4970,7 @@ static int seedCombine255(
         flipped = true;
         cleanDark = !cleanDark;
         applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
-        if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPx);
+        if (!virtSp) fillSaltPepperSeed(&bin, imgW);
         hhC = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
         v0Clean = hhC.peak;
         needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, cleanInkFrac);
@@ -5289,13 +5227,6 @@ static int seedCombine255(
                     int v0R = hhR.peak;
                     bool needFbR = strokeNeedFb(hhR, v0R, seedW, inkFrac);
                     int sPxR = (v0R > 4 && !needFbR) ? v0R : fallback;
-                    if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPxR);
-                    if (!virtSp && imgW >= 2000 && sPxR > 4) {
-                        hhR = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
-                        v0R = hhR.peak;
-                        needFbR = strokeNeedFb(hhR, v0R, seedW, inkFrac);
-                        sPxR = (v0R > 4 && !needFbR) ? v0R : fallback;
-                    }
                     fillPoisonMask(bin, v0R, needFbR, seedW, glareMult, &poison);
                     orBrightBands(seedY, bin, sPxR, &poison, &bandTop, &bandBot, &bandH);
                     haveClean = otsuKeepPoison0(
@@ -5303,7 +5234,7 @@ static int seedCombine255(
                     if (haveClean) {
                         applyThrKeepPoison0(
                             seedY, poison, cleanThr, cleanDark, &bin);
-                        if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPxR);
+                        if (!virtSp) fillSaltPepperSeed(&bin, imgW);
                     } else {
                         bin.setTo(0);
                     }
@@ -5357,7 +5288,7 @@ static int seedCombine255(
                     if (fillGate.nAttempts >= kSeg7AttemptMax) break;
                     applyThrKeepPoison0(
                         seedY, poison, static_cast<double>(thr), cleanDark, &bin);
-                    if (!virtSp) fillSaltPepperSeed(&bin, imgW, sPx);
+                    if (!virtSp) fillSaltPepperSeed(&bin, imgW);
                     ++extras;
                     tried.push_back(thr);
                     cleanThr = static_cast<double>(thr);
@@ -6171,7 +6102,6 @@ static int fillPoisonLookRaster(
                 if (op[x]) op[x] = 255;
             }
         }
-        if (!virtSp) fillSaltPepperRect(lookBin, lookT, lookB, lookL, lookR, imgW);
         if (sPx >= 1) {
             flood255LookIds(
                 lookBin, sPx, objPack, seedIndex, lookL, lookT, lookR, lookB, statsOut,
