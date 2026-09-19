@@ -1510,6 +1510,11 @@ static bool vspSkipRun(int run, int lead, int gapMax);
 static int maxInkRunCol(
     const cv::Mat& bin, int x, int y0, int y1, const ObjPack* pack = nullptr,
     bool virtSp = false, int imgW = 0);
+static int maxBlobRunH(std::vector<int>& pix, int w);
+static int maxBlobRunV(std::vector<int>& pix, int w);
+static bool keepCcIsPlausibleStroke(
+    const cv::Mat& bin, int y0, int y1, const ObjPack* pack, int sPx,
+    const std::vector<int>& starts);
 
 static void recoverStrokeNearInk(
     const cv::Mat& src, cv::Mat* look, int sPx, int y0, int y1, ObjPack* pack, int seedIndex,
@@ -1566,6 +1571,8 @@ static void jumpRetractH(
             *recSrc, lookBin, recSPx, yt, yb, lookPack, recSeedIndex, xl, yt, xr, yb,
             recDispKind, recHMul, recVMul);
     };
+    const int seedL0 = *l;
+    const int seedR0 = *r;
     int probeL = *l;
     int probeR = *r;
     int jumpsL = 0;
@@ -1626,6 +1633,30 @@ static void jumpRetractH(
     }
     if (farL) *farL = probeL;
     if (farR) *farR = probeR;
+    if (useInk && recSPx > 0 && lookBin) {
+        auto edgeIsStroke = [&](int x) -> bool {
+            const int lx = x - lookOx;
+            const int ya = inkT - lookOy;
+            const int yb = inkB - lookOy;
+            if (lx < 0 || lx >= lookBin->cols) return false;
+            const int ya2 = std::max(0, ya);
+            const int yb2 = std::min(lookBin->rows, yb);
+            std::vector<int> starts;
+            starts.reserve(static_cast<size_t>(std::max(0, yb2 - ya2)));
+            for (int y = ya2; y < yb2; ++y) {
+                if (isLookInkId(lookBin->ptr<uint8_t>(y)[lx], lookPack)) {
+                    starts.push_back(y * lookBin->cols + lx);
+                }
+            }
+            return keepCcIsPlausibleStroke(*lookBin, ya, yb, lookPack, recSPx, starts);
+        };
+        while (*l < seedL0 && !edgeIsStroke(*l)) ++*l;
+        while (*r > seedR0 && !edgeIsStroke(*r - 1)) --*r;
+        if (*l >= *r) {
+            *l = seedL0;
+            *r = seedR0;
+        }
+    }
 }
 
 static void extrema1d(
@@ -3024,6 +3055,64 @@ static int maxInkRunCol(
         if (run > best) best = run;
     }
     return best;
+}
+
+/** Keep-CC at probe starts: 8-way keep flood, no virtSp. Stroke if maxH ≥ sPx/2 and maxV ≥ sPx. */
+static bool keepCcIsPlausibleStroke(
+    const cv::Mat& bin, int y0, int y1, const ObjPack* pack, int sPx,
+    const std::vector<int>& starts
+) {
+    if (sPx < 1 || bin.empty() || bin.type() != CV_8UC1 || starts.empty()) return false;
+    const int minH = std::max(1, sPx / 2);
+    const int minV = sPx;
+    const int w = bin.cols, h = bin.rows;
+    if (w < 1 || h < 1) return false;
+    const int ya = std::max(0, y0);
+    const int yb = std::min(h, y1);
+    if (yb <= ya) return false;
+    const int bandH = yb - ya;
+    std::vector<uint8_t> vis(static_cast<size_t>(w) * static_cast<size_t>(bandH), 0);
+    std::vector<int> st;
+    std::vector<int> pix;
+    st.reserve(256);
+    pix.reserve(256);
+    auto visAt = [&](int x, int y) -> uint8_t& {
+        return vis[static_cast<size_t>(y - ya) * static_cast<size_t>(w) + static_cast<size_t>(x)];
+    };
+    for (int s : starts) {
+        const int sy = s / w, sx = s - sy * w;
+        if (sx < 0 || sy < ya || sx >= w || sy >= yb) continue;
+        if (!isLookInkId(bin.ptr<uint8_t>(sy)[sx], pack)) continue;
+        if (visAt(sx, sy)) continue;
+        st.clear();
+        pix.clear();
+        st.push_back(sy * w + sx);
+        visAt(sx, sy) = 1;
+        while (!st.empty()) {
+            const int i = st.back();
+            st.pop_back();
+            pix.push_back(i);
+            const int cy = i / w, cx = i - cy * w;
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    if (!dx && !dy) continue;
+                    const int ny = cy + dy, nx = cx + dx;
+                    if (ny < ya || nx < 0 || ny >= yb || nx >= w) continue;
+                    if (visAt(nx, ny)) continue;
+                    if (!isLookInkId(bin.ptr<uint8_t>(ny)[nx], pack)) continue;
+                    visAt(nx, ny) = 1;
+                    st.push_back(ny * w + nx);
+                }
+            }
+        }
+        if (pix.empty()) continue;
+        std::vector<int> runPix = pix;
+        const int maxH = maxBlobRunH(runPix, w);
+        runPix = pix;
+        const int maxV = maxBlobRunV(runPix, w);
+        if (maxH >= minH && maxV >= minV) return true;
+    }
+    return false;
 }
 
 /** Per-seed gray/color minRun: never raise 0.5×sPx; if seed has ink, min(halfS, 0.4×max in-seed row run). */
@@ -7655,6 +7744,8 @@ static void jumpOrientedOne(
     };
     const float jx = static_cast<float>(
         std::max(1, static_cast<int>(std::lround(jumpFrac * vSpan))));
+    const float seedU0 = box->u0;
+    const float seedU1 = box->u1;
     float u0 = box->u0;
     float u1 = box->u1;
     float probe0 = u0;
@@ -7711,11 +7802,50 @@ static void jumpOrientedOne(
         }
         break;
     }
+    if (farU0) *farU0 = probe0;
+    if (farU1) *farU1 = probe1;
+    if (useInk && sPx > 0 && lookBin && bw > 0 && bh > 0) {
+        const bool photo = bw >= imgW && bh >= imgH;
+        auto iyAt = [&](float uu, float vv) {
+            const int py = static_cast<int>(std::lround(
+                box->cy + uu * box->uy + vv * box->vy));
+            return photo ? py : (py - lookOy);
+        };
+        int ys[4] = {
+            iyAt(seedU0, sv0), iyAt(seedU0, sv1),
+            iyAt(seedU1, sv0), iyAt(seedU1, sv1)
+        };
+        const int clipY0 = std::min(std::min(ys[0], ys[1]), std::min(ys[2], ys[3]));
+        const int clipY1 = std::max(std::max(ys[0], ys[1]), std::max(ys[2], ys[3])) + 1;
+        auto faceIsStroke = [&](float u) -> bool {
+            const int n = std::max(4, static_cast<int>(std::lround(sv1 - sv0)));
+            std::vector<int> starts;
+            starts.reserve(static_cast<size_t>(n));
+            for (int i = 0; i < n; ++i) {
+                const float v = sv0 + (i + 0.5f) / static_cast<float>(n) * (sv1 - sv0);
+                const int px = static_cast<int>(std::lround(
+                    box->cx + u * box->ux + v * box->vx));
+                const int py = static_cast<int>(std::lround(
+                    box->cy + u * box->uy + v * box->vy));
+                if (px < 0 || py < 0 || px >= imgW || py >= imgH) continue;
+                const int ix = photo ? px : (px - lookOx);
+                const int iy = photo ? py : (py - lookOy);
+                if (ix < 0 || iy < 0 || ix >= bw || iy >= bh) continue;
+                if (!isLookInkId(lookBin->ptr<uint8_t>(iy)[ix], pack)) continue;
+                starts.push_back(iy * bw + ix);
+            }
+            return keepCcIsPlausibleStroke(*lookBin, clipY0, clipY1, pack, sPx, starts);
+        };
+        while (u0 < seedU0 - 0.5f && !faceIsStroke(u0)) u0 += 1.f;
+        while (u1 > seedU1 + 0.5f && !faceIsStroke(u1)) u1 -= 1.f;
+        if (u1 < u0 + 2.f) {
+            u0 = seedU0;
+            u1 = seedU1;
+        }
+    }
     if (u1 < u0 + 2.f) u1 = u0 + 2.f;
     box->u0 = u0;
     box->u1 = u1;
-    if (farU0) *farU0 = probe0;
-    if (farU1) *farU1 = probe1;
 }
 
 }  // namespace
