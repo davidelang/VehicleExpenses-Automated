@@ -7416,6 +7416,7 @@ suspend fun runPumpOcrGeomExperiment(
     val experimentProdDir = experimentPumpProductDir()
     onLog("OCR geom loadProductionModels forceProdDir=$experimentProdDir")
     NativePaddleEngine.loadProductionModels(context, forceProdDir = experimentProdDir)
+    NativePaddleEngine.loadExperimentRecHeights(context)
     val paddleEngine = NativePaddleEngine(context)
 
     val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
