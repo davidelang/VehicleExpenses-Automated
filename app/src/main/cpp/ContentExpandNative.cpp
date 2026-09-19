@@ -3641,37 +3641,89 @@ static bool strokeNeedFb(const HorizSW& hh, int vSW, int seedW, float inkFrac);
 static bool strokesAgree(int a, int b);
 static double otsuThrFromHist(const int hist[256], int n);
 
-/** Seed-style valley retry on a band-clipped poison CC. Ink pixels only on keep. */
+/** Peak/valley vs panel on large poison CCs; 0-promote bbox. Whole-CC Otsu is not the keeper. */
 static bool retryPoisonChunkInk(
     const cv::Mat& src, const std::vector<int>& pix, int lookW,
     int bx0, int by0, int bw, int bh, int seedSPx, cv::Mat* inkBin
 ) {
-    if (!inkBin || pix.size() < 2 || bw < 1 || bh < 1) return false;
+    if (!inkBin || pix.size() < 2 || bw < 1 || bh < 1 || seedSPx < 1) return false;
+    const int imgW = src.cols;
+    const bool large = bw > 3 * seedSPx || bh > 3 * seedSPx;
     int hist[256] = {};
     int n = 0;
-    for (int i : pix) {
-        const int y = i / lookW, x = i - y * lookW;
-        if (y < 0 || x < 0 || y >= src.rows || x >= src.cols) continue;
-        hist[src.ptr<uint8_t>(y)[x]]++;
-        ++n;
+    if (large) {
+        for (int yy = 0; yy < bh; ++yy) {
+            const int y = by0 + yy;
+            if (y < 0 || y >= src.rows) continue;
+            const uint8_t* row = src.ptr<uint8_t>(y);
+            for (int xx = 0; xx < bw; ++xx) {
+                const int x = bx0 + xx;
+                if (x < 0 || x >= src.cols) continue;
+                hist[row[x]]++;
+                ++n;
+            }
+        }
+    } else {
+        for (int i : pix) {
+            const int y = i / lookW, x = i - y * lookW;
+            if (y < 0 || x < 0 || y >= src.rows || x >= src.cols) continue;
+            hist[src.ptr<uint8_t>(y)[x]]++;
+            ++n;
+        }
     }
     if (n < 2) return false;
-    const int imgW = src.cols;
-    const double otsu = otsuThrFromHist(hist, n);
-    const int ti = static_cast<int>(otsu);
-    int nz = 0;
-    for (int t = 0; t <= ti && t < 256; ++t) nz += hist[t];
-    float inkFrac = nz / static_cast<float>(n);
-    bool dark = true;
-    if (inkFrac >= 0.45f) dark = false;
-    const int area = std::max(1, n);
-    const float fillLo = 0.05f;
-    const float fillHi = 0.45f;
+    float hist64[64] = {};
+    for (int g = 0; g < 256; ++g) hist64[g / 4] += static_cast<float>(hist[g]);
+    int panelBin = 0;
+    float panelMass = hist64[0];
+    for (int b = 1; b < 64; ++b) {
+        if (hist64[b] > panelMass) {
+            panelMass = hist64[b];
+            panelBin = b;
+        }
+    }
+    int valleys[64];
+    int nValley = 0;
+    findValleyMidpoints64(hist64, valleys, &nValley);
+    int peaks[64];
+    int nPeak = 0;
+    for (int b = 1; b < 63 && nPeak < 64; ++b) {
+        if (hist64[b] > hist64[b - 1] && hist64[b] >= hist64[b + 1] && hist64[b] > 0.f) {
+            peaks[nPeak++] = b;
+        }
+    }
+    std::vector<int> cands;
+    auto addThr = [&](int thr) {
+        if (thr < 0 || thr > 255) return;
+        for (int t : cands) {
+            if (t == thr) return;
+        }
+        cands.push_back(thr);
+    };
+    for (int v = 0; v < nValley; ++v) addThr(valleys[v] * 4 + 2);
+    int inkGuess = panelBin;
+    float inkMass = -1.f;
+    for (int p = 0; p < nPeak; ++p) {
+        if (peaks[p] == panelBin) continue;
+        if (hist64[peaks[p]] > inkMass) {
+            inkMass = hist64[peaks[p]];
+            inkGuess = peaks[p];
+        }
+        addThr(((peaks[p] + panelBin) / 2) * 4 + 2);
+    }
+    if (cands.empty()) return false;
+    const int prefer = ((inkGuess + panelBin) / 2) * 4 + 2;
+    std::sort(cands.begin(), cands.end(), [&](int a, int b) {
+        const int da = std::abs(a - prefer);
+        const int db = std::abs(b - prefer);
+        if (da != db) return da < db;
+        return a < b;
+    });
     cv::Mat bin(bh, bw, CV_8UC1);
-    auto applyThr = [&](double thr, bool d) -> int {
+    const int bboxArea = std::max(1, bw * bh);
+    const float fillHi = 0.45f;
+    auto applyPix = [&](int ith, bool d) {
         bin.setTo(0);
-        int nInk = 0;
-        const int ith = static_cast<int>(std::lround(thr));
         for (int i : pix) {
             const int y = i / lookW, x = i - y * lookW;
             if (y < 0 || x < 0 || y >= src.rows || x >= src.cols) continue;
@@ -3679,105 +3731,56 @@ static bool retryPoisonChunkInk(
             if (yy < 0 || xx < 0 || yy >= bh || xx >= bw) continue;
             const int yv = static_cast<int>(src.ptr<uint8_t>(y)[x]);
             const bool ink = d ? (yv <= ith) : (yv > ith);
-            if (ink) {
-                bin.ptr<uint8_t>(yy)[xx] = 255;
-                ++nInk;
+            if (ink) bin.ptr<uint8_t>(yy)[xx] = 255;
+        }
+    };
+    auto promote0 = [&](int peakLo, int peakHi, int ith, bool d) {
+        for (int yy = 0; yy < bh; ++yy) {
+            const int y = by0 + yy;
+            if (y < 0 || y >= src.rows) continue;
+            const uint8_t* row = src.ptr<uint8_t>(y);
+            uint8_t* bo = bin.ptr<uint8_t>(yy);
+            for (int xx = 0; xx < bw; ++xx) {
+                if (bo[xx]) continue;
+                const int x = bx0 + xx;
+                if (x < 0 || x >= src.cols) continue;
+                const int yv = static_cast<int>(row[x]);
+                if (yv < peakLo || yv > peakHi) continue;
+                const bool ink = d ? (yv <= ith) : (yv > ith);
+                if (ink) bo[xx] = 255;
             }
         }
-        return nInk;
     };
-    int nInk = applyThr(otsu, dark);
-    float fill = nInk / static_cast<float>(area);
-    HorizSW hh = horizPeakSW(bin, bh, bw, false, imgW);
-    int vNow = hh.peak;
-    bool acceptedSpx = vNow > 4 && !strokeNeedFb(hh, vNow, bw, fill);
-    const bool highFill = fill > fillHi;
-    const bool lowFill = fill < fillLo || nInk == 0;
-    const bool swDiscarded = vNow <= 4 || !acceptedSpx;
-    const int retryWhyWant = highFill ? 2 : (lowFill ? 1 : (swDiscarded ? 3 : 0));
-    const int nInk0 = nInk;
-    cv::Mat commitBin;
-    int commitPeak = 0;
-    bool haveCommit = false;
     int nAttempts = 0;
-    auto noteAttempt = [&]() -> bool {
-        ++nAttempts;
-        hh = horizPeakSW(bin, bh, bw, false, imgW);
-        vNow = hh.peak;
-        fill = nInk / static_cast<float>(area);
-        acceptedSpx = vNow > 4 && !strokeNeedFb(hh, vNow, bw, fill);
-        const bool inBandNow = fill >= fillLo && fill <= fillHi;
-        bool take = false;
-        bool stop = false;
-        if (retryWhyWant == 0) {
-            take = inBandNow && acceptedSpx;
-            stop = true;
-        } else {
-            take = inBandNow && acceptedSpx;
-            stop = take;
-        }
-        if (take) {
-            bin.copyTo(commitBin);
-            commitPeak = vNow;
-            haveCommit = true;
-        }
-        return stop;
-    };
-    if (noteAttempt()) {
-        if (haveCommit && strokesAgree(commitPeak, seedSPx)) {
-            *inkBin = commitBin;
-            return true;
-        }
-        return false;
-    }
-    float hist64[64] = {};
-    for (int i : pix) {
-        const int y = i / lookW, x = i - y * lookW;
-        if (y < 0 || x < 0 || y >= src.rows || x >= src.cols) continue;
-        int b = static_cast<int>(src.ptr<uint8_t>(y)[x]) / 4;
-        if (b < 0) b = 0;
-        if (b > 63) b = 63;
-        hist64[b] += 1.f;
-    }
-    int valleys[64];
-    int nValley = 0;
-    findValleyMidpoints64(hist64, valleys, &nValley);
-    const int usedKeep = static_cast<int>(std::lround(otsu));
-    std::vector<int> tried;
-    tried.push_back(usedKeep);
-    std::vector<int> cands;
-    cands.reserve(static_cast<size_t>(nValley));
-    for (int v = 0; v < nValley; ++v) {
-        const int thr = valleys[v] * 4 + 2;
-        if (thr < 0 || thr > 255) continue;
-        bool seen = false;
-        for (int t : tried) {
-            if (t == thr) { seen = true; break; }
-        }
-        if (seen) continue;
-        const bool moreInk = dark ? (thr > usedKeep) : (thr < usedKeep);
-        const bool lessInk = dark ? (thr < usedKeep) : (thr > usedKeep);
-        if (retryWhyWant == 1) {
-            if (nInk0 != 0 && !moreInk) continue;
-        } else if (retryWhyWant == 2) {
-            if (!lessInk) continue;
-        }
-        cands.push_back(thr);
-    }
-    std::sort(cands.begin(), cands.end(), [&](int a, int b) {
-        const int da = std::abs(a - usedKeep);
-        const int db = std::abs(b - usedKeep);
-        if (da != db) return da < db;
-        return a < b;
-    });
     for (int thr : cands) {
         if (nAttempts >= kSeg7AttemptMax) break;
-        nInk = applyThr(static_cast<double>(thr), dark);
-        if (noteAttempt()) break;
+        ++nAttempts;
+        const int vBin = thr / 4;
+        if (panelBin == vBin) continue;
+        const bool dark = panelBin > vBin;
+        int lo = dark ? 0 : vBin;
+        int hi = dark ? vBin : 63;
+        int inkPeak = lo;
+        float best = -1.f;
+        for (int b = lo; b <= hi; ++b) {
+            if (hist64[b] > best) {
+                best = hist64[b];
+                inkPeak = b;
+            }
+        }
+        const int peakLo = std::max(0, (inkPeak - 1) * 4);
+        const int peakHi = std::min(255, (inkPeak + 1) * 4 + 3);
+        applyPix(thr, dark);
+        promote0(peakLo, peakHi, thr, dark);
+        const int nInk = cv::countNonZero(bin);
+        if (nInk < 2) continue;
+        if (nInk / static_cast<float>(bboxArea) > fillHi) continue;
+        const HorizSW hh = horizPeakSW(bin, bh, bw, false, imgW);
+        if (!strokesAgree(hh.peak, seedSPx)) continue;
+        *inkBin = bin;
+        return true;
     }
-    if (!haveCommit || !strokesAgree(commitPeak, seedSPx)) return false;
-    *inkBin = commitBin;
-    return true;
+    return false;
 }
 
 static void recoverStrokeNearInk(
@@ -3932,12 +3935,15 @@ static void recoverStrokeNearInk(
             }
             uint8_t id = 0;
             if (!lookAlloc(pack, true, seedIndex, kKindInk, &id)) return;
-            for (int i : pix) {
-                const int py = i / w, px = i - py * w;
-                const int yy = py - cy0, xx = px - x0;
-                if (yy < 0 || xx < 0 || yy >= inkBin.rows || xx >= inkBin.cols) continue;
-                if (!inkBin.ptr<uint8_t>(yy)[xx]) continue;
-                look->ptr<uint8_t>(py)[px] = id;
+            for (int yy = 0; yy < inkBin.rows; ++yy) {
+                const uint8_t* br = inkBin.ptr<uint8_t>(yy);
+                for (int xx = 0; xx < inkBin.cols; ++xx) {
+                    if (!br[xx]) continue;
+                    const int py = cy0 + yy, px = x0 + xx;
+                    if (py < 0 || px < 0 || py >= h || px >= w) continue;
+                    uint8_t& lv = look->ptr<uint8_t>(py)[px];
+                    if (lv == 0 || isPoison(lv)) lv = id;
+                }
             }
         }
     }
