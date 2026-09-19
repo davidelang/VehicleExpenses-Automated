@@ -3518,16 +3518,15 @@ static void flood255LookIds(
                 if (static_cast<int>(cx) + 1 > x1) x1 = static_cast<int>(cx) + 1;
                 if (cy < y0) y0 = cy;
                 if (static_cast<int>(cy) + 1 > y1) y1 = static_cast<int>(cy) + 1;
-                for (int dy = -1; dy <= 1; ++dy) {
-                    for (int dx = -1; dx <= 1; ++dx) {
-                        if (!dx && !dy) continue;
-                        const int ny = static_cast<int>(cy) + dy;
-                        const int nx = static_cast<int>(cx) + dx;
-                        if (ny < lookT || nx < lookL || ny >= lookB || nx >= lookR) continue;
-                        if (look->ptr<uint8_t>(ny)[nx] != 255) continue;
-                        look->ptr<uint8_t>(ny)[nx] = kScan;
-                        st.push_back(packXY(nx, ny));
-                    }
+                static const int k4dx[4] = { -1, 1, 0, 0 };
+                static const int k4dy[4] = { 0, 0, -1, 1 };
+                for (int k = 0; k < 4; ++k) {
+                    const int ny = static_cast<int>(cy) + k4dy[k];
+                    const int nx = static_cast<int>(cx) + k4dx[k];
+                    if (ny < lookT || nx < lookL || ny >= lookB || nx >= lookR) continue;
+                    if (look->ptr<uint8_t>(ny)[nx] != 255) continue;
+                    look->ptr<uint8_t>(ny)[nx] = kScan;
+                    st.push_back(packXY(nx, ny));
                 }
             }
             const uint16_t bw = static_cast<uint16_t>(x1 - x0);
@@ -3839,17 +3838,16 @@ static void recoverStrokeNearInk(
                 if (cx + 1 > x1) x1 = cx + 1;
                 if (cy < cy0) cy0 = cy;
                 if (cy + 1 > cy1) cy1 = cy + 1;
-                for (int dy = -1; dy <= 1; ++dy) {
-                    for (int dx = -1; dx <= 1; ++dx) {
-                        if (!dx && !dy) continue;
-                        const int ny = cy + dy, nx = cx + dx;
-                        if (ny < y0 || nx < lookL || ny >= y1 || nx >= lookR) continue;
-                        if (!isPoison(look->ptr<uint8_t>(ny)[nx])) continue;
-                        const int nvi = (ny - y0) * bandW + (nx - lookL);
-                        if (vis[static_cast<size_t>(nvi)]) continue;
-                        vis[static_cast<size_t>(nvi)] = 1;
-                        st.push_back(ny * w + nx);
-                    }
+                static const int k4dx[4] = { -1, 1, 0, 0 };
+                static const int k4dy[4] = { 0, 0, -1, 1 };
+                for (int k = 0; k < 4; ++k) {
+                    const int ny = cy + k4dy[k], nx = cx + k4dx[k];
+                    if (ny < y0 || nx < lookL || ny >= y1 || nx >= lookR) continue;
+                    if (!isPoison(look->ptr<uint8_t>(ny)[nx])) continue;
+                    const int nvi = (ny - y0) * bandW + (nx - lookL);
+                    if (vis[static_cast<size_t>(nvi)]) continue;
+                    vis[static_cast<size_t>(nvi)] = 1;
+                    st.push_back(ny * w + nx);
                 }
             }
             bool tL = false, tR = false, tT = false, tB = false;
@@ -3899,11 +3897,10 @@ static void recoverStrokeNearInk(
                         if (cx + 1 > gx1) gx1 = cx + 1;
                         if (cy < gy0) gy0 = cy;
                         if (cy + 1 > gy1) gy1 = cy + 1;
-                        for (int dy = -1; dy <= 1; ++dy) {
-                            for (int dx = -1; dx <= 1; ++dx) {
-                                if (!dx && !dy) continue;
-                                gpush(cx + dx, cy + dy);
-                            }
+                        static const int k4dx[4] = { -1, 1, 0, 0 };
+                        static const int k4dy[4] = { 0, 0, -1, 1 };
+                        for (int k = 0; k < 4; ++k) {
+                            gpush(cx + k4dx[k], cy + k4dy[k]);
                         }
                     }
                     if (gx1 <= gx0) { gx0 = x0; gx1 = x1; gy0 = cy0; gy1 = cy1; }
@@ -5606,15 +5603,14 @@ static void stampPoisonFlood(
                 if (cx + 1 > x1) x1 = cx + 1;
                 if (cy < y0) y0 = cy;
                 if (cy + 1 > y1) y1 = cy + 1;
-                for (int dy = -1; dy <= 1; ++dy) {
-                    for (int dx = -1; dx <= 1; ++dx) {
-                        if (!dx && !dy) continue;
-                        const int ny = cy + dy, nx = cx + dx;
-                        if (ny < 0 || nx < 0 || ny >= h || nx >= w) continue;
-                        if (pois.ptr<uint8_t>(ny)[nx] != 255) continue;
-                        pois.ptr<uint8_t>(ny)[nx] = 128;
-                        st.push_back(ny * w + nx);
-                    }
+                static const int k4dx[4] = { -1, 1, 0, 0 };
+                static const int k4dy[4] = { 0, 0, -1, 1 };
+                for (int k = 0; k < 4; ++k) {
+                    const int ny = cy + k4dy[k], nx = cx + k4dx[k];
+                    if (ny < 0 || nx < 0 || ny >= h || nx >= w) continue;
+                    if (pois.ptr<uint8_t>(ny)[nx] != 255) continue;
+                    pois.ptr<uint8_t>(ny)[nx] = 128;
+                    st.push_back(ny * w + nx);
                 }
             }
             const int cw = x1 - x0, ch = y1 - y0;
