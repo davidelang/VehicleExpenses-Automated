@@ -163,6 +163,94 @@ object RecBufferFeed {
     }
 
     /**
+     * Unpadded blue → [contentH] px of text; dest strip is [canvasH].
+     * Source pad each side is `ceil(recBorder × pH / contentH)` (clamped).
+     * Resize the padded sub to [canvasH] (isotropic W, even). Packed crop is
+     * the rec image (`targetW`×`canvasH`), not a 4096 letterbox.
+     *
+     * 48-in-56: contentH=48, canvasH=56, recBorder=4.
+     * 48-in-64: contentH=48, canvasH=64, recBorder=8.
+     * Control 40-in-48 stays [feedSourceBorderHeightStrip] (48, 4).
+     */
+    fun feedContentInCanvas(
+        srcMat: Mat,
+        srcLeft: Int,
+        srcTop: Int,
+        srcRight: Int,
+        srcBottom: Int,
+        recBuffer: BufferSet,
+        contentH: Int,
+        canvasH: Int,
+        recBorder: Int,
+        maxW: Int = DEFAULT_MAX_W,
+    ): Result {
+        val matW = srcMat.cols()
+        val matH = srcMat.rows()
+        val pH = (srcBottom - srcTop).coerceAtLeast(1)
+        val cH = contentH.coerceAtLeast(1)
+        val destH = canvasH.coerceAtLeast(2).coerceAtMost(recBuffer.p.height)
+        val rScContent = cH.toFloat() / pH
+        val pad = ceil(recBorder.toDouble() * pH.toDouble() / cH.toDouble()).toInt().coerceAtLeast(0)
+        val sL = (srcLeft - pad).coerceAtLeast(0)
+        val sT = (srcTop - pad).coerceAtLeast(0)
+        val sR = (srcRight + pad).coerceAtMost(matW)
+        val sB = (srcBottom + pad).coerceAtMost(matH)
+        val subW = (sR - sL).coerceAtLeast(1)
+        val subH = (sB - sT).coerceAtLeast(1)
+        val sub = srcMat.submat(org.opencv.core.Rect(sL, sT, subW, subH))
+        val scale = destH.toFloat() / subH
+        fun even(n: Int): Int = if (n % 2 == 0) n else n + 1
+        val maxContentW = recBuffer.p.width.coerceAtMost(maxW)
+        var srcW = subW
+        var srcL = 0
+        var cw = even((srcW * scale).toInt().coerceAtLeast(1))
+        if (cw > maxContentW) {
+            srcW = (maxContentW / scale).toInt().coerceAtLeast(1).coerceAtMost(subW)
+            srcL = ((subW - srcW) / 2).coerceAtLeast(0)
+            cw = even((srcW * scale).toInt().coerceAtLeast(2)).coerceAtMost(maxContentW)
+            if (cw % 2 != 0) cw = (cw - 1).coerceAtLeast(2)
+        }
+        val srcRoi = sub.submat(0, subH, srcL, srcL + srcW)
+        recBuffer.p.clear()
+        val recCropId = recBuffer.createCrop(0, 0, cw, destH)
+        val interp = if (srcW > cw) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR
+        Imgproc.resize(
+            srcRoi,
+            recBuffer.c[recCropId].mat,
+            Size(cw.toDouble(), destH.toDouble()),
+            0.0,
+            0.0,
+            interp,
+        )
+        srcRoi.release()
+        sub.release()
+        return Result(rScContent, pad, recCropId, cw, destH)
+    }
+
+    fun feedContentInCanvas(
+        workspace: BufferSet,
+        rect: Rect,
+        imgW: Int,
+        imgH: Int,
+        recBuffer: BufferSet,
+        contentH: Int,
+        canvasH: Int,
+        recBorder: Int,
+        maxW: Int = DEFAULT_MAX_W,
+    ): Result {
+        val l = rect.left.coerceIn(0, imgW - 1)
+        val t = rect.top.coerceIn(0, imgH - 1)
+        val rr = rect.right.coerceIn(l + 1, imgW)
+        val bb = rect.bottom.coerceIn(t + 1, imgH)
+        return feedContentInCanvas(
+            workspace.p.mat,
+            l, t, rr, bb,
+            recBuffer,
+            contentH, canvasH, recBorder, maxW,
+        )
+    }
+
+    /**
      * Place an already-prepared horizontal strip [strip] (e.g. warped quad) into rec without
      * black inset. Caller owns [strip] release. Inflating source before warp is preferred;
      * this only drops the black pad when the strip is already built.

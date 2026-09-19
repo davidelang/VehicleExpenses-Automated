@@ -272,7 +272,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         /** One rec canvas everywhere. Engine infers a createCrop slice, not the unused width. */
         const val REC_CANVAS_W = 4096
-        const val REC_CANVAS_H = 48
+        const val REC_CANVAS_H = 64
 
         /** Default reference dash size when probe fails (matches shared buffer / typical 12MP refs). Not 4000. */
         const val DEFAULT_REF_DASH_W = 4080
