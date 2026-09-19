@@ -3057,7 +3057,7 @@ static int maxInkRunCol(
     return best;
 }
 
-/** Keep-CC at probe starts: 8-way keep flood, no virtSp. Stroke if maxH ≥ sPx/2 and maxV ≥ sPx. */
+/** Keep-CC at probe starts: 4-way keep flood, no virtSp. Stroke if maxH ≥ sPx/2 and maxV ≥ sPx. */
 static bool keepCcIsPlausibleStroke(
     const cv::Mat& bin, int y0, int y1, const ObjPack* pack, int sPx,
     const std::vector<int>& starts
@@ -3093,16 +3093,15 @@ static bool keepCcIsPlausibleStroke(
             st.pop_back();
             pix.push_back(i);
             const int cy = i / w, cx = i - cy * w;
-            for (int dy = -1; dy <= 1; ++dy) {
-                for (int dx = -1; dx <= 1; ++dx) {
-                    if (!dx && !dy) continue;
-                    const int ny = cy + dy, nx = cx + dx;
-                    if (ny < ya || nx < 0 || ny >= yb || nx >= w) continue;
-                    if (visAt(nx, ny)) continue;
-                    if (!isLookInkId(bin.ptr<uint8_t>(ny)[nx], pack)) continue;
-                    visAt(nx, ny) = 1;
-                    st.push_back(ny * w + nx);
-                }
+            static const int k4dx[4] = { -1, 1, 0, 0 };
+            static const int k4dy[4] = { 0, 0, -1, 1 };
+            for (int k = 0; k < 4; ++k) {
+                const int ny = cy + k4dy[k], nx = cx + k4dx[k];
+                if (ny < ya || nx < 0 || ny >= yb || nx >= w) continue;
+                if (visAt(nx, ny)) continue;
+                if (!isLookInkId(bin.ptr<uint8_t>(ny)[nx], pack)) continue;
+                visAt(nx, ny) = 1;
+                st.push_back(ny * w + nx);
             }
         }
         if (pix.empty()) continue;
