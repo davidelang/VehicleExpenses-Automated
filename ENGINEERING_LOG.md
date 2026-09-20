@@ -740,3 +740,7 @@ Policy: permission denials → report human / script residual; no creative worka
 - Plan Status: APPROVED → implementing
 - Scope: run-grok-imagine always-approve; landlock role imagine = yellow-ink-map + HOME/.grok only
 - Default run-grok-planner stays ask. No allow=* on project config.
+
+## 2026-09-20 - Fix run-grok-imagine CLI permission flags
+
+Grok rejects --permission-mode always-approve. Pin bypassPermissions plus --always-approve (same Aim, valid CLI).

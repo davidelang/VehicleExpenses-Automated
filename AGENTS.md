@@ -53,7 +53,7 @@ When **spawning** planner/executor roles, load the full file under `.grok/prompt
 | Native plan **`a`** / `exit_plan_mode` starts building | Not execute. Work plan is only `dev-ai-interaction/plans/…-plan.md` |
 | Subagents on (incl. during planning) | Planner: `GROK_SUBAGENTS=0`. No spawn while planning. Execute body: fresh child (`execution-subagent.md`, `isolation=none`) or fresh `./run-grok-coder` (no `-c` across plans). Long-lived coder/master **dispatch** that child; they must not implement in the organizer transcript |
 | Workflows / `/goal` on | Planner + coder: `GROK_WORKFLOWS=0`. Orch/bare may opt in |
-| Shift+Tab → Plan / always-approve | Launchers stay ask. Do not cycle modes on role sessions. Exception: `./run-grok-imagine` pins always-approve with Landlock **only** `yellow-ink-map` + `$HOME/.grok` |
+| Shift+Tab → Plan / always-approve | Launchers stay ask. Do not cycle modes on role sessions. Exception: `./run-grok-imagine` pins `--always-approve` and `--permission-mode bypassPermissions` with Landlock **only** `yellow-ink-map` + `$HOME/.grok` |
 | User/config `xhigh` reasoning | Coder+master launchers `--effort high` (`GROK_REASONING_EFFORT` overrides). Planner/orch unset. Spawned execute child inherits parent |
 | `grok -c` uses new default model | `-c` keeps **stored** model; `/model grok-4.6` to switch |
 

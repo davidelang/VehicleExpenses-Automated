@@ -1,6 +1,6 @@
 # Role: Imagine paint (`./run-grok-imagine`)
 
-OS user: `planning_user` (`ai-planner`). This process is **always-approve** by design so `image_edit` is not clicked per crop.
+OS user: `planning_user` (`ai-planner`). This process pins `--always-approve` / `bypassPermissions` so `image_edit` is not clicked per crop.
 
 **Landlock (mutation):** `$SANDBOX/research/yellow-ink-map/` + `$HOME/.grok` + `/tmp` only. No worktree, no `.git`, no TODO/eng-log, no `app/`. Writes outside that tree fail with EACCES — do not chmod around it.
 
