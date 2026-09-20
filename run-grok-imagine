@@ -1,0 +1,11 @@
+#!/bin/bash
+# run-grok-imagine — always-approve + Landlock paint-tree + $HOME/.grok only.
+# Rules: files listed in .grok/prompts/packs/imagine.pack
+set -euo pipefail
+GROK_LAUNCHER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export GROK_LAUNCHER_DIR
+ROLE_KEY=imagine
+export ROLE_KEY
+# shellcheck source=/dev/null
+source "$GROK_LAUNCHER_DIR/.grok/lib/grok-launch-common.sh"
+grok_launch_main "$@"

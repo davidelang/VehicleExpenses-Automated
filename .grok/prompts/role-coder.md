@@ -14,11 +14,13 @@ Follow `new_agent_prompt` (already in this session). Then **read with tools** (r
 
 STOP & WAIT until the user names an **approved** plan path under `dev-ai-interaction/plans/`.
 
+Refuse `/validate-plans` unless the human explicitly says to run it anyway (planner/orch own that skill).
+
 ## On execute approval
 
 Do **not** implement a named plan in a multi-day `-c` / `--resume` transcript. That chat is not product SoT. Pack re-read stays; the execute **body** is a fresh context.
 
-This long-lived coder session is the **organizer**. After pack re-read, **spawn** — do not edit app files in this session. Implementing the plan body here (`search_replace` / `write` on app/docs Critical Files) is a **protocol failure**. Do **not** spawn execute for a **wrong-host** plan (path not under this host’s `$SANDBOX/plans/`, or the contract is clearly another git clone). **Do not guess** another cwd. Refuse and report this `pwd` / `AGENT_CONTEXT`.
+This long-lived coder session is the **organizer**. After pack re-read, **spawn** — do not edit app files in this session. Do **not** ask whether to implement: the named plan path **is** execute. Implementing the plan body here (`search_replace` / `write` on app/docs Critical Files) is a **protocol failure**. Do **not** spawn execute for a **wrong-host** plan (path not under this host’s `$SANDBOX/plans/`, or the contract is clearly another git clone). **Do not guess** another cwd. Refuse and report this `pwd` / `AGENT_CONTEXT`. Child first Shell: `./exec-preflight` \<plan path\>.
 
 **Preferred:** `spawn_subagent` `subagent_type=general-purpose`, `isolation=none`, `cwd` = this worktree. Prompt = **full** `.grok/prompts/execution-subagent.md` + “read the role pack, then **only** this plan path.” Files not listed: no edits; report extras.
 
@@ -36,7 +38,7 @@ If you *are* that fresh child (or a new coder process):
 
 Then:
 
-1. `./append-to-engineering-log` (first action; never ritual TODO)
+1. `./exec-preflight` \<plan path\> (one segment), then `./append-to-engineering-log @file` (never ritual TODO)
 2. Set plan **Status: APPROVED**
 3. Implement **only** that plan; phase gates per STANDARD BLOCK
 4. **Completeness** before handoff: re-read plan; finish missing/reverted **Critical Files** work or **BLOCKED** + report (no almost-done ready-to-test). Do not hunt unlisted files.

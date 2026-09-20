@@ -1,0 +1,3 @@
+# Session prompt composition for imagine (one repo-relative path per line)
+new_agent_prompt
+.grok/prompts/role-imagine.md
