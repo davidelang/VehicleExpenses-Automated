@@ -8332,8 +8332,7 @@ private fun plusOrientedCrop(
     walked: ContentExpandUtils.OrientedQuad,
     sPx: Int,
 ): Triple<ContentExpandUtils.OrientedQuad, Float, Float> {
-    val so = ContentExpandUtils.orderQuadForWarp(seed)
-        ?: return Triple(walked, 1f, 1f)
+    val so = seed.pts.takeIf { it.size >= 8 } ?: return Triple(walked, 1f, 1f)
     val wp = walked.pts
     val tlx = so[0]
     val tly = so[1]
@@ -8381,7 +8380,7 @@ private fun orientedLookUnionCrop(
     walked: ContentExpandUtils.OrientedQuad,
     k4: ContentExpandUtils.OrientedQuad,
 ): Pair<ContentExpandUtils.OrientedQuad, Int>? {
-    val so = ContentExpandUtils.orderQuadForWarp(seed) ?: return null
+    val so = seed.pts.takeIf { it.size >= 8 } ?: return null
     val tlx = so[0]
     val tly = so[1]
     val ux = so[2] - so[0]
@@ -8468,7 +8467,7 @@ private fun growOrientedByPad(
     q: ContentExpandUtils.OrientedQuad,
     pad: Int,
 ): ContentExpandUtils.OrientedQuad {
-    val so = ContentExpandUtils.orderQuadForWarp(seed) ?: return q
+    val so = seed.pts.takeIf { it.size >= 8 } ?: return q
     val tlx = so[0]
     val tly = so[1]
     val ux = so[2] - so[0]
@@ -8521,7 +8520,7 @@ private fun destAabbOfQuad(
     destW: Int,
     destH: Int,
 ): android.graphics.Rect {
-    val co = ContentExpandUtils.orderQuadForWarp(crop)
+    val co = crop.pts.takeIf { it.size >= 8 }
         ?: return android.graphics.Rect(0, 0, destW, destH)
     val src = MatOfPoint2f(
         Point(co[0].toDouble(), co[1].toDouble()),
@@ -8590,8 +8589,8 @@ private suspend fun snapshotLookInkOriented(
     val k4 = ContentExpandUtils.padOrientedByStrokes(walked, seed, 4f, sPx)
     val union = orientedLookUnionCrop(seed, official, walked, k4) ?: return
     val cropQ = union.first
-    val seedOrder = ContentExpandUtils.orderQuadForWarp(seed) ?: return
-    val cropOrder = ContentExpandUtils.orderQuadForWarp(cropQ) ?: return
+    val seedOrder = seed.pts.takeIf { it.size >= 8 } ?: return
+    val cropOrder = cropQ.pts.takeIf { it.size >= 8 } ?: return
     val wSeed = hypot(
         (seedOrder[2] - seedOrder[0]).toDouble(),
         (seedOrder[3] - seedOrder[1]).toDouble(),
@@ -8651,7 +8650,7 @@ private suspend fun snapshotLookInkOriented(
     val srcUv = NativePaddleEngine.bufferSetB.p.uvMat
     val dstUv = dest.uvMat
     if (!srcUv.empty() && !dstUv.empty() && dstUv.cols() >= 1 && dstUv.rows() >= 1) {
-        val order = ContentExpandUtils.orderQuadForWarp(cropQ)
+        val order = cropQ.pts.takeIf { it.size >= 8 }
         if (order != null) {
             val src = MatOfPoint2f(
                 Point(order[0] / 2.0, order[1] / 2.0),
@@ -8808,8 +8807,8 @@ private fun seedVRowsInWarp(
     destW: Int,
     destH: Int,
 ): Pair<Int, Int> {
-    val co = ContentExpandUtils.orderQuadForWarp(crop) ?: return 0 to destH - 1
-    val so = ContentExpandUtils.orderQuadForWarp(seed) ?: return 0 to destH - 1
+    val co = crop.pts.takeIf { it.size >= 8 } ?: return 0 to destH - 1
+    val so = seed.pts.takeIf { it.size >= 8 } ?: return 0 to destH - 1
     val src = MatOfPoint2f(
         Point(co[0].toDouble(), co[1].toDouble()),
         Point(co[2].toDouble(), co[3].toDouble()),

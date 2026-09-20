@@ -628,7 +628,8 @@ object ContentExpandUtils {
         maxW: Int = NativePaddleEngine.REC_CANVAS_W,
     ): Boolean {
         if (gray.empty()) return false
-        val order = orderQuadForWarp(quad) ?: return false
+        val order = quad.pts
+        if (order.size < 8) return false
         val wSrc = hypot(
             (order[2] - order[0]).toDouble(),
             (order[3] - order[1]).toDouble(),
@@ -681,12 +682,10 @@ object ContentExpandUtils {
     }
 
     /**
-     * Order corners TL,TR,BR,BL. BL = two smallest-x, then largest y (left short side).
-     * BR = cycle neighbor with larger x (long baseline to the right). Other neighbor is TL.
-     * Dest maps TL→(0,0) so BL→BR flattens to +x. Not Y-first (that picks the right end on a droop).
+     * Canonical image-y-down order TL,TR,BR,BL.
+     * BL = two smallest-x, then largest y; BR = cyclic neighbor with larger x.
      */
-    fun orderQuadForWarp(quad: OrientedQuad): FloatArray? {
-        val p = quad.pts
+    fun quadPtsTlTrBrBl(p: FloatArray): FloatArray? {
         if (p.size < 8) return null
         data class C(val i: Int, val x: Float, val y: Float)
         val c = Array(4) { i -> C(i, p[i * 2], p[i * 2 + 1]) }
@@ -735,11 +734,10 @@ object ContentExpandUtils {
         val c10 = corner(+1f, -1f)
         val c11 = corner(+1f, +1f)
         val c01 = corner(-1f, +1f)
-        return OrientedQuad(
-            floatArrayOf(
-                c00[0], c00[1], c10[0], c10[1], c11[0], c11[1], c01[0], c01[1],
-            ),
+        val raw = floatArrayOf(
+            c00[0], c00[1], c10[0], c10[1], c11[0], c11[1], c01[0], c01[1],
         )
+        return OrientedQuad(quadPtsTlTrBrBl(raw) ?: raw)
     }
 
 
@@ -2596,9 +2594,8 @@ object ContentExpandUtils {
             val b = c(u1, v0)
             val d = c(u1, v1)
             val e = c(u0, v1)
-            return OrientedQuad(
-                floatArrayOf(a[0], a[1], b[0], b[1], d[0], d[1], e[0], e[1]),
-            )
+            val raw = floatArrayOf(a[0], a[1], b[0], b[1], d[0], d[1], e[0], e[1])
+            return OrientedQuad(quadPtsTlTrBrBl(raw) ?: raw)
         }
 
         companion object {

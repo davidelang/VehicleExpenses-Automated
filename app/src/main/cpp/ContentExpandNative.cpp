@@ -6959,6 +6959,44 @@ static void oriExtentsInFrame(const OriBox& frame, const float* p,
     *u0 = a0; *u1 = a1; *v0 = b0; *v1 = b1;
 }
 
+/** Image y-down: TL,TR,BR,BL. BL = two smallest-x then max y; BR = cyclic neighbor with larger x. */
+static void canonicalizeQuadTlTrBrBl(float* p) {
+    struct C { int i; float x, y; };
+    C c[4];
+    for (int i = 0; i < 4; ++i) {
+        c[i].i = i;
+        c[i].x = p[i * 2];
+        c[i].y = p[i * 2 + 1];
+    }
+    int a = 0, b = 1;
+    if (c[1].x < c[0].x) {
+        a = 1;
+        b = 0;
+    }
+    for (int i = 2; i < 4; ++i) {
+        if (c[i].x < c[a].x) {
+            b = a;
+            a = i;
+        } else if (c[i].x < c[b].x) {
+            b = i;
+        }
+    }
+    const C bl = (c[a].y >= c[b].y) ? c[a] : c[b];
+    const C n0 = c[(bl.i + 3) % 4];
+    const C n1 = c[(bl.i + 1) % 4];
+    const C br = (n0.x >= n1.x) ? n0 : n1;
+    const C tl = (br.i == n0.i) ? n1 : n0;
+    C tr = c[0];
+    for (int i = 0; i < 4; ++i) {
+        if (i != bl.i && i != br.i && i != tl.i) {
+            tr = c[i];
+            break;
+        }
+    }
+    const float o[8] = {tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y};
+    for (int i = 0; i < 8; ++i) p[i] = o[i];
+}
+
 static void oriToQuad(const OriBox& b, float* out) {
     auto c = [&](float u, float v, int i) {
         out[i] = b.cx + u * b.ux + v * b.vx;
@@ -6968,6 +7006,7 @@ static void oriToQuad(const OriBox& b, float* out) {
     c(b.u1, b.v0, 2);
     c(b.u1, b.v1, 4);
     c(b.u0, b.v1, 6);
+    canonicalizeQuadTlTrBrBl(out);
 }
 
 /** 18 floats/seed: 8 pts unexpanded, 8 pts 0.2H along u, sPx, flags.
