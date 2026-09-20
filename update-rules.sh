@@ -265,7 +265,9 @@ FILES=(
     ".grok/prompts/packs/master.pack"
     ".grok/prompts/packs/orchestrator.pack"
     ".grok/prompts/packs/planner.pack"
+    ".grok/prompts/packs/imagine.pack"
     ".grok/prompts/packs/primary.pack"
+    ".grok/prompts/role-imagine.md"
     # Tracked human-facing ritual document (magic words, forbidden phrases, post-handoff instructions).
     # Added per approved meta-plan for plan/execute cycle enforcement; synced to all worktrees.
     "MULTI_AGENT_USER_INSTRUCTIONS.md"
@@ -279,6 +281,7 @@ FILES=(
     # interaction with the planner until explicit approval. Synced for use from
     # any worktree.
     "run-grok-planner"
+    "run-grok-imagine"
     "run-grok-master"
     "run-grok-coder"
     "run-grok-orchestrator"
@@ -293,6 +296,7 @@ FILES=(
     ".grok/skills/rebase-on-master/SKILL.md"
     ".grok/skills/review/SKILL.md"
     ".grok/skills/check-upgrade/SKILL.md"
+    ".grok/skills/validate-plans/SKILL.md"
     "generate_pr.sh"
     # Stable canonical guardrails block (cite by path in plans; do not paste).
     # This is the single source of truth for the short "Compliance & Execution
@@ -327,6 +331,7 @@ FILES=(
     # Enforces format and works with chattr +a / restricted perms to stop agents
     # from editing history.
     "append-to-engineering-log"
+    "exec-preflight"
     "todo-append"
     "todo-close"
     "run-as-primary.c"

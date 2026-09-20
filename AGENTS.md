@@ -33,6 +33,7 @@ When **spawning** planner/executor roles, load the full file under `.grok/prompt
 | `./run-grok-orchestrator` | ai-orchestrator | Meta rules / brain | Meta | Meta | Optional |
 | `./run-grok-master` | ai-coder | Execute dispatch; PR review/merge | No | Via coder | No |
 | `./run-grok-planner` | ai-planner | Long-lived planning; **owns new cycles** | Yes | **No** | **Avoid** |
+| `./run-grok-imagine` | ai-planner | Imagine paint batches (`image_edit`) | Sandbox paint only | **No** | **No** |
 | `./run-grok-coder` | ai-coder | Implement in agent-N | **No** | Yes (approved plan only) | **No** |
 | `./run-grok` | dlang | Bare process-break session | Yes | Yes | Optional |
 
@@ -40,7 +41,7 @@ When **spawning** planner/executor roles, load the full file under `.grok/prompt
 
 | Enabled (project) | Disabled (do not use for app multi-agent) |
 |-------------------|------------------------------------------|
-| `prepare-local-pr`, `master-merge`, `rebase-on-master`, `review` (local; shadows bundled GitHub `review`), `check-upgrade` | `pr-babysit`, `execute-plan`, `design`, `check-work`, **`implement`** |
+| `prepare-local-pr`, `master-merge`, `rebase-on-master`, `review` (local; shadows bundled GitHub `review`), `check-upgrade`, `validate-plans` | `pr-babysit`, `execute-plan`, `design`, `check-work`, **`implement`** |
 
 `/code-review` only when user explicitly wants ambitious restructure (separate planned turn).
 
@@ -52,7 +53,7 @@ When **spawning** planner/executor roles, load the full file under `.grok/prompt
 | Native plan **`a`** / `exit_plan_mode` starts building | Not execute. Work plan is only `dev-ai-interaction/plans/…-plan.md` |
 | Subagents on (incl. during planning) | Planner: `GROK_SUBAGENTS=0`. No spawn while planning. Execute body: fresh child (`execution-subagent.md`, `isolation=none`) or fresh `./run-grok-coder` (no `-c` across plans). Long-lived coder/master **dispatch** that child; they must not implement in the organizer transcript |
 | Workflows / `/goal` on | Planner + coder: `GROK_WORKFLOWS=0`. Orch/bare may opt in |
-| Shift+Tab → Plan / always-approve | Launchers stay ask. Do not cycle modes on role sessions |
+| Shift+Tab → Plan / always-approve | Launchers stay ask. Do not cycle modes on role sessions. Exception: `./run-grok-imagine` pins always-approve with Landlock **only** `yellow-ink-map` + `$HOME/.grok` |
 | User/config `xhigh` reasoning | Coder+master launchers `--effort high` (`GROK_REASONING_EFFORT` overrides). Planner/orch unset. Spawned execute child inherits parent |
 | `grok -c` uses new default model | `-c` keeps **stored** model; `/model grok-4.6` to switch |
 
