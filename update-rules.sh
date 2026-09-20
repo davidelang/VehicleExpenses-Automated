@@ -265,7 +265,9 @@ FILES=(
     ".grok/prompts/packs/master.pack"
     ".grok/prompts/packs/orchestrator.pack"
     ".grok/prompts/packs/planner.pack"
+    ".grok/prompts/packs/imagine.pack"
     ".grok/prompts/packs/primary.pack"
+    ".grok/prompts/role-imagine.md"
     # Tracked human-facing ritual document (magic words, forbidden phrases, post-handoff instructions).
     # Added per approved meta-plan for plan/execute cycle enforcement; synced to all worktrees.
     "MULTI_AGENT_USER_INSTRUCTIONS.md"
@@ -279,6 +281,7 @@ FILES=(
     # interaction with the planner until explicit approval. Synced for use from
     # any worktree.
     "run-grok-planner"
+    "run-grok-imagine"
     "run-grok-master"
     "run-grok-coder"
     "run-grok-orchestrator"

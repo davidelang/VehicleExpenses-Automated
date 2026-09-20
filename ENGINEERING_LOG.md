@@ -734,3 +734,9 @@ Policy: permission denials → report human / script residual; no creative worka
 - Plan Status: APPROVED → implementing
 - Scope: ./exec-preflight helper + allow; no git add in execute gates; deploy-orchestration seed; sandbox deploy script
 - No update-rules / deploy-exec-preflight-hosts.sh this turn
+
+## 2026-09-20 - Start execution: imagine-yolo-tight-landlock-launcher-20260920-0725-plan.md
+
+- Plan Status: APPROVED → implementing
+- Scope: run-grok-imagine always-approve; landlock role imagine = yellow-ink-map + HOME/.grok only
+- Default run-grok-planner stays ask. No allow=* on project config.
