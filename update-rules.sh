@@ -328,6 +328,7 @@ FILES=(
     # Enforces format and works with chattr +a / restricted perms to stop agents
     # from editing history.
     "append-to-engineering-log"
+    "exec-preflight"
     "todo-append"
     "todo-close"
     "run-as-primary.c"

@@ -221,12 +221,16 @@ build_policy_list() {
     run-grok-master
     run-grok-orchestrator
     run-grok-planner
+    exec-preflight
   )
   local f
   for f in "${fixed[@]}"; do
     in_never "$f" && continue
     [[ -f "$VE/$f" ]] || continue
-    [[ -f "$dest/$f" ]] || continue
+    # Seed exec-preflight onto dests that do not have it yet.
+    if [[ "$f" != "exec-preflight" ]]; then
+      [[ -f "$dest/$f" ]] || continue
+    fi
     POLICY_FILES+=("$f")
   done
   while IFS= read -r f; do

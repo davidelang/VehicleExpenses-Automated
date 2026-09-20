@@ -68,6 +68,8 @@ rules = [
   # without repeated permission prompts. See AGENT_MANDATES.md (mandatory use via wrapper).
   { action = "allow", tool = "bash", pattern = "./append-to-engineering-log*" },
   { action = "allow", tool = "bash", pattern = "../append-to-engineering-log*" },
+  { action = "allow", tool = "bash", pattern = "./exec-preflight*" },
+  { action = "allow", tool = "bash", pattern = "../exec-preflight*" },
   # cd && blessed-helper chains: allowed only via plan-mode-hard-stops.js with
   # in-project cd validation (no broad * && patterns — avoids system-wide backdoor).
   # Run launchers (invoked as ./run-* from root or ../run-* from worktrees)

@@ -728,3 +728,9 @@ Policy: permission denials → report human / script residual; no creative worka
 - Plan Status: APPROVED → implementing
 - Scope: project skill /validate-plans; Host+Worktree+Aim stamps; per-worktree ignore; coder/master refuse
 - No update-rules / deploy-orchestration sweep
+
+## 2026-09-19 - Start execution: exec-preflight-helper-no-git-add-20260919-1337-plan.md
+
+- Plan Status: APPROVED → implementing
+- Scope: ./exec-preflight helper + allow; no git add in execute gates; deploy-orchestration seed; sandbox deploy script
+- No update-rules / deploy-exec-preflight-hosts.sh this turn
