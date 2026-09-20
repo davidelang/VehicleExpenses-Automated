@@ -7361,15 +7361,9 @@ suspend fun runPumpExperiment(
 }
 
 private val OCR_GEOM_COLUMNS = listOf(
-    "Set G-- (4 pass, none, calculated)",
-    "Set ink-energy-tight",
-    "Set ink-energy-retract",
-    "Set ink-color-tight",
-    "Set ink-color-retract",
-    "Set rot-energy-tight",
-    "Set rot-energy-retract",
-    "Set rot-color-tight",
-    "Set rot-color-retract",
+    "Set G--",
+    "Set AABB",
+    "Set Rot",
 )
 
 private data class OcrGeomSpec(
@@ -7388,7 +7382,8 @@ private val OCR_GEOM_SPECS = listOf(
 
 /**
  * Stage-3 only: OCR precomputed winning blues (no detect/expand/hpad/k/poison).
- * 9 columns × cost/vol × 6 recs (40-in-48 / 48-in-56 / 48-in-64 × WoB then BoW).
+ * 3 columns (G-- / AABB / Rot) × cost/vol × winner then extra × 6 recs
+ * (40-in-48 / 48-in-56 / 48-in-64 × WoB then BoW).
  */
 suspend fun runPumpOcrGeomExperiment(
     experimentDir: File,
@@ -7578,9 +7573,9 @@ suspend fun runPumpOcrGeomExperiment(
     html.append("img{max-width:none;image-rendering:pixelated;}</style></head><body>")
     html.append("<h2>OCR geom $timestamp</h2>")
     html.append("<p>${ExperimentReportMeta.jsonFields()} device=$deviceModel total=$total</p>")
-    html.append("<p>6 recs/field: 40-in-48, 48-in-56, 48-in-64 × white-on-black then black-on-white. No expand.</p>")
+    html.append("<p>3 columns (G-- / AABB / Rot). 6 recs/box: 40-in-48, 48-in-56, 48-in-64 × white-on-black then black-on-white. Extra one-sided hpad is a second box. No expand.</p>")
     html.append("<table><tr><th># file</th>")
-    OCR_GEOM_COLUMNS.forEach { html.append("<th>$it</th>") }
+    OCR_GEOM_COLUMNS.forEachIndexed { ci, name -> html.append("<th data-col='$ci'>$name</th>") }
     html.append("</tr>\n")
 
     photos.forEachIndexed { index, file ->
@@ -7624,59 +7619,80 @@ suspend fun runPumpOcrGeomExperiment(
                 val colIn = columnsJson?.optJSONObject(colName)
                 val colOut = JSONObject()
                 val cellHtml = StringBuilder()
-                val isRot = colName.contains("rot-", ignoreCase = true)
+                val isRot = colName == "Set Rot"
                 listOf("cost", "vol").forEach { role ->
                     val field = colIn?.optJSONObject(role) ?: return@forEach
-                    val label = field.optString("label", role)
-                    val recsAll = JSONArray()
-                    val aabb = parseRect(field)
-                    val quad = parseQuad(field)
-                    OCR_GEOM_SPECS.forEach { spec ->
-                        val stem = "r${index + 1}_${colName.hashCode()}_${role}_${label}"
-                        val fed = if (isRot) {
-                            if (quad == null) return@forEach
-                            feedRot(masterBuffer.p.mat, quad, spec)
+                    val extras = mutableListOf(field to "win")
+                    field.optJSONObject("extra")?.let { extras.add(it to "extra") }
+                    val roleOut = JSONObject()
+                    extras.forEach { (box, tag) ->
+                        val label = box.optString("label", role)
+                        val recsAll = JSONArray()
+                        val aabb = parseRect(box)
+                        val quad = parseQuad(box)
+                        OCR_GEOM_SPECS.forEach { spec ->
+                            val stem = "r${index + 1}_${colName.hashCode()}_${role}_${label}_$tag"
+                            val fed = if (isRot) {
+                                if (quad == null) return@forEach
+                                feedRot(masterBuffer.p.mat, quad, spec)
+                            } else {
+                                if (aabb == null || aabb.width() < 2 || aabb.height() < 2) return@forEach
+                                feedAabb(NativePaddleEngine.bufferSetA, aabb, imgW, imgH, spec)
+                            }
+                            if (fed == null || fed.targetW < 2 || fed.targetH < 2) {
+                                if (fed != null) recBuffer.c[fed.recCropId].release()
+                                return@forEach
+                            }
+                            val pair = ocrPolarPair(
+                                fed.recCropId, fed.targetW, fed.targetH, nativeWoB, spec.id, stem,
+                            )
+                            for (ri in 0 until pair.length()) recsAll.put(pair.getJSONObject(ri))
+                        }
+                        val boxOut = JSONObject()
+                            .put("label", label)
+                            .put("kind", box.optString("kind"))
+                            .put("k", box.optDouble("k"))
+                            .put("pad", box.optString("pad"))
+                            .put("recs", recsAll)
+                        if (aabb != null) {
+                            boxOut.put(
+                                "rect",
+                                JSONObject().put("l", aabb.left).put("t", aabb.top)
+                                    .put("r", aabb.right).put("b", aabb.bottom),
+                            )
+                        }
+                        if (tag == "win") {
+                            roleOut.put("label", label)
+                            roleOut.put("kind", box.optString("kind"))
+                            roleOut.put("k", box.optDouble("k"))
+                            roleOut.put("pad", box.optString("pad"))
+                            roleOut.put("recs", recsAll)
+                            if (aabb != null) {
+                                roleOut.put(
+                                    "rect",
+                                    JSONObject().put("l", aabb.left).put("t", aabb.top)
+                                        .put("r", aabb.right).put("b", aabb.bottom),
+                                )
+                            }
                         } else {
-                            if (aabb == null || aabb.width() < 2 || aabb.height() < 2) return@forEach
-                            feedAabb(NativePaddleEngine.bufferSetA, aabb, imgW, imgH, spec)
+                            roleOut.put("extra", boxOut)
                         }
-                        if (fed == null || fed.targetW < 2 || fed.targetH < 2) {
-                            if (fed != null) recBuffer.c[fed.recCropId].release()
-                            return@forEach
+                        cellHtml.append("<div><b>$role</b> $tag $label pad=${box.optString("pad")}")
+                        for (ri in 0 until recsAll.length()) {
+                            val rec = recsAll.getJSONObject(ri)
+                            val recH = rec.optInt("recH", 48).coerceAtLeast(1)
+                            val geom = rec.optString("geom")
+                            val pol = rec.optString("pol")
+                            val src = "${imgDir.name}/r${index + 1}_${colName.hashCode()}_${role}_${label}_${tag}_${geom}_$pol.jpg"
+                            val asis = rec.optString("asis")
+                            val dig = rec.optString("digits")
+                            cellHtml.append(
+                                "<div>${pumpImgTag(src, "height:${recH}px;width:auto;", "$tag $geom $pol asis=$asis dig=$dig")}</div>",
+                            )
                         }
-                        val pair = ocrPolarPair(
-                            fed.recCropId, fed.targetW, fed.targetH, nativeWoB, spec.id, stem,
-                        )
-                        for (k in 0 until pair.length()) recsAll.put(pair.getJSONObject(k))
+                        cellHtml.append("</div>")
                     }
-                    val fieldOut = JSONObject()
-                        .put("label", label)
-                        .put("kind", field.optString("kind"))
-                        .put("k", field.optInt("k"))
-                        .put("pad", field.optString("pad"))
-                        .put("recs", recsAll)
-                    if (aabb != null) {
-                        fieldOut.put(
-                            "rect",
-                            JSONObject().put("l", aabb.left).put("t", aabb.top)
-                                .put("r", aabb.right).put("b", aabb.bottom),
-                        )
-                    }
-                    colOut.put(role, fieldOut)
-                    cellHtml.append("<div><b>$role</b> $label")
-                    for (k in 0 until recsAll.length()) {
-                        val rec = recsAll.getJSONObject(k)
-                        val recH = rec.optInt("recH", 48).coerceAtLeast(1)
-                        val geom = rec.optString("geom")
-                        val pol = rec.optString("pol")
-                        val src = "${imgDir.name}/r${index + 1}_${colName.hashCode()}_${role}_${label}_${geom}_$pol.jpg"
-                        val asis = rec.optString("asis")
-                        val dig = rec.optString("digits")
-                        cellHtml.append(
-                            "<div>${pumpImgTag(src, "height:${recH}px;width:auto;", "$geom $pol asis=$asis dig=$dig")}</div>",
-                        )
-                    }
-                    cellHtml.append("</div>")
+                    colOut.put(role, roleOut)
                 }
                 colsOut.put(colName, colOut)
                 rowHtml.append("<td>$cellHtml</td>")
