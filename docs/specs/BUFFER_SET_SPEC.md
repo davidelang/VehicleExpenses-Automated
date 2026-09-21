@@ -4,102 +4,113 @@ status: locked
 ai_directive: "This is an upstream specification. DO NOT modify this document to match the codebase. If the code deviates from this spec, the code is wrong. Modifications to this file require a dedicated 'Strategy' turn and explicit user approval."
 ---
 
-# BufferSet Architectural Specification (Phase 25)
+# BufferSet Architectural Specification
 
-## 1. Overview
-`BufferSet` is the single authority for managing high-performance native image buffers. It is designed to solve memory fragmentation and race conditions by replacing loose, independently allocated native objects with a single, atomic container. 
+`BufferSet` is a **type**: an 8-bit **YUV** pair of full-size planes (logical Primary `.p` and Scratch `.s`) plus a crop registry. The application holds **several instances** (for example `bufferSetA` / `bufferSetB` at 4096², `recBufferSet` at 4096×48, det squares 256² / 608², `deskewBufferSetLarge` at 2048²). Each instance is independent. Which instance is used for which job is **not** defined here; see `dev-ai-interaction/research/bufferset-use.md` (non-normative).
 
-The core philosophy is **zero-allocation iterative processing**. Processing routines read from the Primary instance and write to the Scratch instance, then call `flip()` to atomically swap roles.
+The manager owns physical RAM. It exists to stop loose native allocations, fragmentation, and races. UV may be unused. Storing packed integers in the 8-bit Y allocation is pointer abuse (sometimes legitimate); it is **not** a BufferSet feature and is not specified here.
+
+## 1. Logical image vs two buffers
+
+**Preferred:** modify the image **in place** on the slice you already hold (usually `.p`).
+
+**If in-place is not possible:** read from one slice (usually `.p`), write the modified result to the other (usually `.s`), then **`flip()`**. `flip()` is a first-class manager operation. After `flip()`, the modified image lives in the **same logical slice** you started with (as if you had mutated in place).
+
+**If you must keep the original:** do **not** `flip()`. You are treating the BufferSet as **two separate buffers**, not one logical image. Example: `quantizeMonoInputToScratch()` writes an int8 tensor into `.s` and leaves `.p` readable.
 
 ## 2. Terminology
-- **Manager (`BufferSet`)**: The root object that owns physical RAM allocations.
-- **Primary/Scratch Buffer**: The full-size physical memory blocks. Contiguous.
-- **ROI (Region of Interest)**: A specific sub-section of an image buffer, also known as a **Crop**. ROIs are non-contiguous views with a stride.
-- **Slice**: The unified interface representing either a Primary/Scratch Buffer or a Crop. Any function taking a `Slice` can be passed the full buffer or a specific crop.
 
-## 3. Syntax Structure
+- **Manager (`BufferSet`)**: Owns physical RAM for both full-size planes and the crop registry.
+- **Primary / Scratch**: The two full-size 8-bit YUV allocations. Logical roles `.p` / `.s` swap on `flip()`.
+- **ROI / Crop**: A sub-rectangle of a **logical** slice (`.p` or `.s`). Non-contiguous view with a stride. Owned by that logical slice: after read-`.p` / write-`.s` / `flip()`, crops that were on `.p` are still on `.p`.
+- **Slice**: Unified interface for a full-size plane or a crop. Any `Slice` parameter accepts either.
 
-### Level 1: Manager Properties (`foo`)
+## 3. Syntax
+
+### Level 1: Manager properties (`foo`)
+
 | Syntax | Type | Description |
 | :--- | :--- | :--- |
-| `foo.p` / `foo.primary` | `Slice` | Current logical Primary Buffer. |
-| `foo.s` / `foo.scratch` / `foo.secondary` | `Slice` | Current logical Scratch/Secondary Buffer. |
-| `foo.crop[id]` / `foo.c[id]` | `Slice` | Keyed access to a persistent managed ROI. |
-| `foo.width` / `foo.height` | `Int` | Physical dashboard buffer dimensions. |
+| `foo.p` / `foo.primary` | `Slice` | Current logical Primary. |
+| `foo.s` / `foo.scratch` / `foo.secondary` | `Slice` | Current logical Scratch. |
+| `foo.crop[id]` / `foo.c[id]` | `Slice` | Persistent managed ROI. |
+| `foo.width` / `foo.height` | `Int` | **Logical** dimensions (may be smaller than allocated capacity). |
 
-### Level 2: Manager Functions
+### Level 2: Manager functions
+
 | Syntax | Description |
 | :--- | :--- |
-| `foo.flip()` | Atomically swaps P/S roles. All ROIs mathematically re-project onto the new Primary RAM. |
-| `foo.resize(w, h)` | Reallocates P/S RAM. **Normalized ROIs are preserved**; Pixel ROIs are released. |
-| `foo.normalizeYUV()` | Packs `p.yuv` into `s` (standard NV21 layout), then automatically calls `flip()`. |
-| `foo.createCrop(...)` | Convenience alias for `foo.p.createCrop(...)`. |
-| `foo.release()` | Destroys all RAM and clears the ROI registry. |
+| `foo.flip()` | Swap logical P/S. Crops stay on their **logical** slice (`.p` crops remain `.p`). If `.p` is borrowed, `unborrow()` runs on `.p` **before** the swap. |
+| `foo.resize(w, h)` | Set logical size. **Reallocates only to grow** past the prior max allocation; capacity is retained. ICRS crops refresh; pixel crops are released. No-op if `w`/`h` unchanged. |
+| `foo.normalizeYUV()` | Pack `p.yuv` into `s` as **NV21**, then `flip()`. |
+| `foo.quantizeMonoInputToScratch(tensorW, tensorH)` | Map luma `.p` → int8 in `.s` (`q = b XOR 128`). **No `flip()`** — original stays on `.p` (two-buffer mode). |
+| `foo.createCrop(...)` | Alias for `foo.p.createCrop(...)`. Scratch-owned crops: `foo.s.createCrop(...)`. |
+| `foo.clearCrops()` | Drop the ROI registry; do not free P/S RAM. |
+| `foo.release()` | Free all RAM and clear the ROI registry. |
+| `foo.borrowYuv(y, u, v, ...)` | Point **Primary** at external memory (e.g. CameraX). |
+| `foo.unborrow()` | Restore **both** instances’ pointers to internal RAM. Also used automatically from `flip()` on the current `.p` if borrowed. |
 
-### Level 3: Slice Properties (`slice`)
-*(Applies to `foo.p`, `foo.s`, and `foo.c[id]`)*
+### Level 3: Slice properties (`slice`)
+
+Applies to `foo.p`, `foo.s`, and `foo.c[id]`. Layout is **YUV** in the allocated 8-bit space. **NV21** is a special case of YUV (tight pack, defined stride / alignment / plane placement). `normalizeYUV()` produces NV21. `nv21` / `nv21Mat` are valid only when that layout holds.
+
 | Syntax | Type | Description |
 | :--- | :--- | :--- |
-| `slice.mat` / `slice.yMat` | `Mat` | Luma (Y) view (`8UC1`). |
-| `slice.uvMat` | `Mat` | Chroma (UV) view (`8UC2` Interleaved). |
-| `slice.nv21` | `ByteBuffer` | Contiguous 1.5x Byte hunk **(Primary/Scratch Buffers only)**. |
-| `slice.raw` | `ByteBuffer` | Luma-only 1.0x Byte hunk. |
-| `slice.nv21Mat` | `Mat` | Single Mat view of 1.5x RAM **(Primary/Scratch Buffers only)**. |
-| `slice.yuv` | `YuvHandle`| Industry-standard multi-plane descriptor. |
-| `slice.width` / `slice.height` | `Int` | Dimensions of this specific Slice. |
+| `slice.mat` / `slice.yMat` | `Mat` | Luma (Y) `8UC1`. |
+| `slice.uvMat` | `Mat` | Chroma `8UC2` interleaved (may be unused). |
+| `slice.yuv` | `YuvHandle` | Multi-plane YUV descriptor (any valid YUV in the allocation). |
+| `slice.raw` | `ByteBuffer` | Luma-only 1.0× byte hunk. |
+| `slice.nv21` | `ByteBuffer` | Contiguous 1.5× NV21 hunk **(full P/S only; only if NV21 layout)**. |
+| `slice.nv21Mat` | `Mat` | Single Mat on that 1.5× hunk **(full P/S only; only if NV21)**. |
+| `slice.width` / `slice.height` | `Int` | This slice’s dimensions. |
 
-### Level 4: Slice Functions
+### Level 4: Slice functions
+
 | Syntax | Description |
 | :--- | :--- |
-| `slice.createCrop(x,y,w,h,id?)` | Overloaded (Int/Float). Registers an ROI relative to this slice. Overwrites if `id` exists. |
-| `slice.resize(x,y,w,h)` | Overloaded (Int/Float). Updates coordinates/size of this ROI. **(Crops only)**. |
-| `slice.release()` | Removes this ROI from the registry. **(Crops only)**. |
-| `slice.clear()` | Zeroes Luma AND resets Chroma to 128. |
-| `slice.clearChroma()` | Resets only the Chroma (UV) to 128. |
+| `slice.createCrop(x,y,w,h,id?)` | Int = pixels; Float = ICRS. ROI is owned by **this** logical slice. Overwrites `id` if present. |
+| `slice.resize(x,y,w,h)` | Crops only. Int = pixels; Float = ICRS. |
+| `slice.release()` | Crops only. Remove from registry. |
+| `slice.clear()` | Zero luma and set chroma to 128. |
+| `slice.clearChroma()` | Chroma to 128 only. |
 
-### Level 5: Borrowing Functions (Primary Buffer Only)
-| Syntax | Description |
-| :--- | :--- |
-| `foo.borrowYuv(y, u, v, ...)` | Overrides the physical pointers of the Primary Buffer to target external memory (e.g., CameraX `ImageProxy`). |
-| `foo.unborrow()` | Resets Primary Buffer pointers to internal RAM. **Note: This is automatically called by `foo.flip()` if a borrow is active.** |
+Full-size `.p` / `.s` cannot `resize`/`release` via `Slice`; use `BufferSet.resize` / `release`.
 
-## 4. Behavioral Rules
+## 4. Behavioral rules
 
-### A. Coordinate Overloading
-Kotlin supports full parameter-type overloading. `createCrop` and `resize` natively support both absolute pixel offsets (`Int`) and ICRS offsets (`Float`). "Normalized" in this context now means ICRS (radial shortest-edge normalization from the optical center). Legacy per-axis 0.0–1.0 is obsolete. See `docs/specs/ISOTROPIC_COORDINATE_SPEC.md` (authoritative). 
+### A. Coordinate overloading
 
-### B. Nested Crop Flattening
-If you call `foo.c[1].createCrop(...)` to create `foo.c[2]`, the API performs **Coordinate Flattening**. `c[2]` is stored in the registry as an absolute offset from the *root buffer origin*, not as a child. Releasing `c[1]` has zero effect on `c[2]`. 
-*Note: This feature can be dangerous and lead to confusing state management where a "child" outlives its "parent". It is supported for strict math isolation, but generally discouraged. Use at your own risk.*
+`createCrop` and crop `resize` overload `Int` (pixels) vs `Float` (ICRS). ICRS = radial shortest-edge from the optical center. Per-axis 0.0–1.0 is obsolete. Authoritative: `docs/specs/ISOTROPIC_COORDINATE_SPEC.md`.
 
-### C. Boundary Enforcement & YUV Alignment
-- **Clamping:** ROI creation/resizing is safely clamped to the boundaries of the parent slice.
-- **Round Out:** To satisfy YUV 4:2:0 subsampling geometry, all ROI boundaries are rounded **outward** to a multiple of 2:
-    - **Left and Top:** Rounded **DOWN** to nearest even number.
-    - **Right and Bottom:** Rounded **UP** to nearest even number.
+### B. Nested crop flattening
 
-### D. Resize Lifecycle
-When `foo.resize()` changes the physical dimensions of the buffer:
-- **Normalized ROIs:** Automatically recalculated to stretch with the new physical dimensions.
-- **Pixel ROIs:** Automatically released. Their absolute offsets are no longer valid, preventing memory corruption.
+`foo.c[1].createCrop(...)` creating `c[2]` stores `c[2]` as an **absolute** offset from the root origin, not as a child. Releasing `c[1]` does not release `c[2]`. Discouraged; supported for math isolation.
 
-### E. Handle Persistence & Smart Proxies
-To prevent JVM crashes and memory corruption during `flip()` or `resize()` operations, `BufferSet` implements a persistence layer for its handles:
-- **Mat Persistence:** OpenCV `Mat` objects (`mat`, `uvMat`) for both base buffers and crops are **persistent**. When a flip or resize occurs, the underlying C++ data pointers are updated in-place via JNI.
-- **YuvHandle Smart Proxy:** The `YuvHandle` is a **Smart Proxy**. While the `YuvHandle` object itself can be cached, its `planes` property dynamically generates fresh `ByteBuffer` slices at the moment of access. This ensures that even if a `YuvHandle` is cached across a `flip()`, accessing its data will always yield pointers to the correct, current Primary RAM.
+### C. Boundaries and even YUV 4:2:0
 
-**MANDATE:** Caching or assigning local JVM/native references (aliases) to active `Slice` or `Mat` instances (e.g., `val trialMat = odoBuffer.p.mat`) is **STRICTLY FORBIDDEN** across the codebase. Assigning local aliases to save typing or shorten code is unacceptable. Because functions or operations may invoke `flip()` internally now or in future refactoring, local aliases create severe pointer stability risks. You must always query handles dynamically (e.g., `odoBuffer.p.mat`) at the call-site.
+ROI create/resize is clamped to the parent slice. Edges round **out** to even: left/top down, right/bottom up.
 
-### F. Buffer Borrowing Lifecycle
-`BufferSet` supports **Zero-Copy Ingestion** via Buffer Borrowing. This allows the Primary (`p`) buffer to temporarily wrap memory owned by the OS or another subsystem.
-- **External Authority:** While borrowed, the external provider maintains ownership of the memory. The `BufferSet` must not attempt to free this memory.
-- **Automatic Unborrow Safeguard:** To prevent data corruption or accidental writes to external memory, the `flip()` operation includes a **Strict Safeguard**: if the `BufferSet` is currently in a borrowed state, it MUST automatically execute `unborrow()` *before* swapping the Primary and Scratch roles. This ensures the Scratch buffer (the target for the next write operation) is always backed by safe, internal RAM.
-- **Scope:** Borrowing is only supported on the Primary Buffer. Crops and Scratch buffers cannot be independently borrowed.
+### D. Resize lifecycle
 
-### G. Threading Model: Sequential Processing
-This application enforces a sequential, single-threaded execution model for its image processing logic. While underlying library components (such as OpenCV or ML Kit) may run on multiple threads, and the user interface runs on the main Android UI thread, all high-level image processing stages (frame capture, deskew, landmark discovery, and alignment) are strictly non-overlapping and sequential. 
+`resize` changes **logical** `width`/`height`. Allocation grows only if the new size exceeds the prior max; it is not freed on shrink.
 
-Application control logic (such as `isProcessing` flags in the UI screens) enforces that no two pipelines or visual snapshots run concurrently. Consequently, `BufferSet` does not implement locks, mutexes, or synchronization wrappers.
+- **ICRS crops:** kept; coordinates re-evaluated.
+- **Pixel crops:** released (absolute offsets would be wrong).
 
-## 5. Future Tasks
-- [ ] **AUDIT:** Audit the entire codebase to locate and remove any cached Mat/Slice pointer aliases (e.g., `trialMat`), replacing them with dynamic call-site queries.
+### E. Handle persistence
+
+`Mat` handles (`mat`, `uvMat`) stay live across `flip()` / `resize()`; native pointers update in place. `YuvHandle` is a smart proxy: `planes` are rebuilt on access so a cached handle still sees the current logical primary after `flip()`.
+
+**MANDATE:** Do not cache aliases to `Slice` or `Mat` (e.g. `val trialMat = odoBuffer.p.mat`). Always query at the call site (`odoBuffer.p.mat`). `flip()` may run inside callees.
+
+### F. Borrowing
+
+Zero-copy ingest: `.p` may wrap external memory. The external owner frees it. `flip()` **unborrows `.p` before** swapping so the next write target is internal RAM. Only Primary can be borrowed; not crops, not Scratch independently. `unborrow()` on the manager clears borrow on **both** physical instances.
+
+### G. Threading
+
+Image-processing stages are sequential (UI may be main thread; OpenCV/ML Kit may use worker threads). No two pipelines/snapshots overlap. `BufferSet` has no locks.
+
+## 5. Future tasks
+
+- [ ] **AUDIT:** Remove cached Mat/Slice aliases; use call-site queries only.
