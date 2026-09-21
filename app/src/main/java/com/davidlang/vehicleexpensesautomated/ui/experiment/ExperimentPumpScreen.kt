@@ -7376,6 +7376,197 @@ private val OCR_GEOM_COLUMNS = listOf(
     OcrGeomCol("Set Rot mild", "Set Rot", rot = true, mild = true),
 )
 
+private fun ocrGeomEvenAtLeast2(n: Int): Int {
+    val v = n.coerceAtLeast(2)
+    return if (v % 2 == 0) v else v + 1
+}
+
+private fun ocrGeomApplyRecPrep(work: Mat, prep: String) {
+    when (prep) {
+        "clip" -> OdometerOcrUtils.automaticContrastStretch(work)
+        "valley" -> OdometerOcrUtils.valleyPushToPeaks(work)
+        "clahe" -> OdometerOcrUtils.applyClaheMat(work)
+        "unsharp" -> OdometerOcrUtils.applyUnsharpMat(work)
+        "divblur" -> OdometerOcrUtils.applyDivBlurMat(work)
+        "sigmoid" -> OdometerOcrUtils.applySigmoidValleyMat(work)
+    }
+}
+
+private fun ocrGeomMatJpegB64(mat: Mat): String {
+    val buf = org.opencv.core.MatOfByte()
+    return try {
+        if (!org.opencv.imgcodecs.Imgcodecs.imencode(".jpg", mat, buf)) return ""
+        Base64.encodeToString(buf.toArray(), Base64.NO_WRAP)
+    } catch (_: Exception) {
+        ""
+    } finally {
+        buf.release()
+    }
+}
+
+private suspend fun ocrGeomPolarPair(
+    recBuffer: BufferSet,
+    paddleEngine: NativePaddleEngine,
+    imgDir: File,
+    recCropId: Int,
+    targetW: Int,
+    targetH: Int,
+    nativeWoB: Boolean,
+    geomId: String,
+    stem: String,
+    tFeedMs: Long,
+    integerK: Int,
+    mildS: Float,
+): JSONArray {
+    val crop = recBuffer.c[recCropId]
+    if (nativeWoB.not()) Core.bitwise_not(crop.mat, crop.mat)
+    val preps = listOf("", "clip", "valley", "clahe", "unsharp", "divblur", "sigmoid")
+    val out = JSONArray()
+    listOf("wob", "bow").forEachIndexed { idx, pol ->
+        if (idx == 1) Core.bitwise_not(crop.mat, crop.mat)
+        preps.forEach { prep ->
+            val work = Mat()
+            crop.mat.copyTo(work)
+            ocrGeomApplyRecPrep(work, prep)
+            val snap = ocrGeomMatJpegB64(work)
+            val asisRes = paddleEngine.recognize(work)
+            val digRes = paddleEngine.recognizeNumericDecimal(work)
+            work.release()
+            val asis = PumpCostVolUtils.pumpOcrCleanAndProbs(asisRes.debugText, asisRes.perCharProbs)
+            val digs = PumpCostVolUtils.pumpOcrCleanAndProbs(digRes.debugText, digRes.perCharProbs)
+            val geomFull = geomId + prep
+            val rec = JSONObject()
+                .put("geom", geomFull)
+                .put("prep", if (prep.isEmpty()) "raw" else prep)
+                .put("pol", pol)
+                .put("asis", asis.first)
+                .put("digits", digs.first)
+                .put("asisProbs", asis.second)
+                .put("digitsProbs", digs.second)
+                .put("recW", targetW)
+                .put("recH", targetH)
+                .put("t_feed_ms", tFeedMs)
+                .put("t_rec_v3_ms", asisRes.executionTimeMs)
+                .put("t_rec_num_ms", digRes.executionTimeMs)
+            if (integerK > 0) rec.put("k", integerK)
+            if (mildS > 0f) rec.put("s", mildS.toDouble())
+            if (snap.isNotEmpty()) {
+                pumpPersistJpeg(imgDir, "${stem}_${geomFull}_$pol.jpg", snap)
+            }
+            out.put(rec)
+        }
+    }
+    recBuffer.c[recCropId].release()
+    return out
+}
+
+private fun ocrGeomFeedAabb(
+    src: BufferSet,
+    rect: android.graphics.Rect,
+    imgW: Int,
+    imgH: Int,
+    mild: Boolean,
+    recBuffer: BufferSet,
+): RecBufferFeed.Result? {
+    return try {
+        if (mild) {
+            RecBufferFeed.feedMildNoPartial(src, rect, imgW, imgH, recBuffer)
+        } else {
+            RecBufferFeed.feedIntegerKContent40(src, rect, imgW, imgH, recBuffer)
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun ocrGeomFeedRot(
+    gray: Mat,
+    quad: ContentExpandUtils.OrientedQuad,
+    mild: Boolean,
+    recBuffer: BufferSet,
+): RecBufferFeed.Result? {
+    return try {
+        val ap = NativePaddleEngine.bufferSetA
+        val bh = quad.shortAxisBh().coerceAtLeast(1f)
+        val bw = quad.longAxisBw().coerceAtLeast(1f)
+        val maxW = NativePaddleEngine.REC_CANVAS_W
+            .coerceAtMost(ap.s.width.coerceAtLeast(2))
+        val canvasH = RecBufferFeed.DEFAULT_REC_H
+        if (mild) {
+            val s = 40f / bh
+            if (s <= 0f) return null
+            var destW = ocrGeomEvenAtLeast2(4 + (bw * s).roundToInt()).coerceAtMost(maxW)
+            if (destW % 2 != 0) destW = (destW - 1).coerceAtLeast(2)
+            val srcH = ceil(49.0 / s).toInt().coerceAtLeast(2)
+            val srcW = ceil((destW + 1.0) / s).toInt().coerceAtLeast(2)
+            if (srcW > ap.s.width || srcH > ap.s.height) return null
+            val padX = (4f / s).roundToInt().coerceAtLeast(0)
+            val padY = (4f / s).roundToInt().coerceAtLeast(0)
+            val nativeId = ap.s.createCrop(0, 0, srcW, srcH)
+            val dest = ap.c[nativeId]
+            dest.clear()
+            val blueW = bw.roundToInt().coerceAtLeast(2)
+                .coerceAtMost((dest.width - padX).coerceAtLeast(2))
+            val blueH = bh.roundToInt().coerceAtLeast(2)
+                .coerceAtMost((dest.height - padY).coerceAtLeast(2))
+            val blueId = dest.createCrop(padX, padY, blueW, blueH)
+            val blue = ap.c[blueId]
+            val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
+                gray, quad, blue.mat, targetH = 0,
+            )
+            if (!ok || blue.mat.empty()) {
+                blue.release()
+                dest.release()
+                return null
+            }
+            val fed = RecBufferFeed.feedMildNoPartial(dest.mat, recBuffer, s, destW)
+            blue.release()
+            dest.release()
+            fed
+        } else {
+            var k = maxOf(1, (bh / 40f).roundToInt())
+            var fed: RecBufferFeed.Result? = null
+            while (k >= 1) {
+                var destW = ocrGeomEvenAtLeast2(4 + (bw / k).roundToInt()).coerceAtMost(maxW)
+                if (destW % 2 != 0) destW = (destW - 1).coerceAtLeast(2)
+                val srcW = k * destW
+                val srcH = k * canvasH
+                if (srcW > ap.s.width || srcH > ap.s.height) {
+                    k--
+                    continue
+                }
+                val pad = 4 * k
+                val nativeId = ap.s.createCrop(0, 0, srcW, srcH)
+                val dest = ap.c[nativeId]
+                dest.clear()
+                val blueW = bw.roundToInt().coerceAtLeast(2)
+                    .coerceAtMost((dest.width - pad).coerceAtLeast(2))
+                val blueH = bh.roundToInt().coerceAtLeast(2)
+                    .coerceAtMost((dest.height - pad).coerceAtLeast(2))
+                val blueId = dest.createCrop(pad, pad, blueW, blueH)
+                val blue = ap.c[blueId]
+                val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
+                    gray, quad, blue.mat, targetH = 0,
+                )
+                if (!ok || blue.mat.empty()) {
+                    blue.release()
+                    dest.release()
+                    k--
+                    continue
+                }
+                fed = RecBufferFeed.feedIntegerKContent40(dest.mat, recBuffer)
+                blue.release()
+                dest.release()
+                if (fed != null) break
+                k--
+            }
+            fed
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
+
 /**
  * Stage-3 only: OCR precomputed winning blues (no detect/expand/hpad/k/poison).
  * 6 columns (G--/AABB/Rot × int/mild) × cost/vol × winner then extra ×
@@ -7430,145 +7621,6 @@ suspend fun runPumpOcrGeomExperiment(
         return ContentExpandUtils.OrientedQuad(FloatArray(8) { i -> pts.optDouble(i).toFloat() })
     }
 
-    fun applyGeomRecPrep(work: Mat, prep: String) {
-        when (prep) {
-            "clip" -> OdometerOcrUtils.automaticContrastStretch(work)
-            "valley" -> OdometerOcrUtils.valleyPushToPeaks(work)
-            "clahe" -> OdometerOcrUtils.applyClaheMat(work)
-            "unsharp" -> OdometerOcrUtils.applyUnsharpMat(work)
-            "divblur" -> OdometerOcrUtils.applyDivBlurMat(work)
-            "sigmoid" -> OdometerOcrUtils.applySigmoidValleyMat(work)
-        }
-    }
-
-    fun geomMatJpegB64(mat: Mat): String {
-        val buf = org.opencv.core.MatOfByte()
-        return try {
-            if (!org.opencv.imgcodecs.Imgcodecs.imencode(".jpg", mat, buf)) return ""
-            Base64.encodeToString(buf.toArray(), Base64.NO_WRAP)
-        } catch (_: Exception) {
-            ""
-        } finally {
-            buf.release()
-        }
-    }
-
-    suspend fun ocrPolarPair(
-        recCropId: Int,
-        targetW: Int,
-        targetH: Int,
-        nativeWoB: Boolean,
-        geomId: String,
-        stem: String,
-        tFeedMs: Long,
-        integerK: Int,
-        mildS: Float,
-    ): JSONArray {
-        val crop = recBuffer.c[recCropId]
-        if (nativeWoB.not()) Core.bitwise_not(crop.mat, crop.mat)
-        val preps = listOf("", "clip", "valley", "clahe", "unsharp", "divblur", "sigmoid")
-        val out = JSONArray()
-        listOf("wob", "bow").forEachIndexed { idx, pol ->
-            if (idx == 1) Core.bitwise_not(crop.mat, crop.mat)
-            preps.forEach { prep ->
-                val work = Mat()
-                crop.mat.copyTo(work)
-                applyGeomRecPrep(work, prep)
-                val snap = geomMatJpegB64(work)
-                val asisRes = paddleEngine.recognize(work)
-                val digRes = paddleEngine.recognizeNumericDecimal(work)
-                work.release()
-                val asis = PumpCostVolUtils.pumpOcrCleanAndProbs(asisRes.debugText, asisRes.perCharProbs)
-                val digs = PumpCostVolUtils.pumpOcrCleanAndProbs(digRes.debugText, digRes.perCharProbs)
-                val geomFull = geomId + prep
-                val rec = JSONObject()
-                    .put("geom", geomFull)
-                    .put("prep", if (prep.isEmpty()) "raw" else prep)
-                    .put("pol", pol)
-                    .put("asis", asis.first)
-                    .put("digits", digs.first)
-                    .put("asisProbs", asis.second)
-                    .put("digitsProbs", digs.second)
-                    .put("recW", targetW)
-                    .put("recH", targetH)
-                    .put("t_feed_ms", tFeedMs)
-                    .put("t_rec_v3_ms", asisRes.executionTimeMs)
-                    .put("t_rec_num_ms", digRes.executionTimeMs)
-                if (integerK > 0) rec.put("k", integerK)
-                if (mildS > 0f) rec.put("s", mildS.toDouble())
-                if (snap.isNotEmpty()) {
-                    rec.put("_htmlRec", snap)
-                    pumpPersistJpeg(imgDir, "${stem}_${geomFull}_$pol.jpg", snap)
-                }
-                out.put(rec)
-            }
-        }
-        recBuffer.c[recCropId].release()
-        return out
-    }
-
-    suspend fun feedAabb(
-        src: BufferSet,
-        rect: android.graphics.Rect,
-        imgW: Int,
-        imgH: Int,
-        mild: Boolean,
-    ): RecBufferFeed.Result {
-        return if (mild) {
-            RecBufferFeed.feedMildNoPartial(src, rect, imgW, imgH, recBuffer)
-        } else {
-            RecBufferFeed.feedIntegerKContent40(src, rect, imgW, imgH, recBuffer)
-        }
-    }
-
-    suspend fun feedRot(
-        gray: Mat,
-        quad: ContentExpandUtils.OrientedQuad,
-        mild: Boolean,
-    ): RecBufferFeed.Result? {
-        val ap = NativePaddleEngine.bufferSetA
-        val bh = quad.shortAxisBh().coerceAtLeast(1f)
-        val bw = quad.longAxisBw().coerceAtLeast(1f)
-        val nativeH: Int
-        val nativeW: Int
-        if (mild) {
-            nativeH = bh.roundToInt().coerceAtLeast(1)
-            nativeW = bw.roundToInt().coerceAtLeast(1)
-                .coerceAtMost(NativePaddleEngine.REC_CANVAS_W)
-                .coerceAtMost(ap.s.width.coerceAtLeast(2))
-        } else {
-            val k = maxOf(1, (bh / 40f).roundToInt())
-            nativeH = (40 * k).coerceAtMost(ap.s.height.coerceAtLeast(2))
-            var destW = (bw / k).roundToInt().coerceAtLeast(2)
-            if (destW % 2 != 0) destW -= 1
-            destW = destW.coerceAtLeast(2)
-            nativeW = (destW * k).coerceAtMost(NativePaddleEngine.REC_CANVAS_W)
-                .coerceAtMost(ap.s.width.coerceAtLeast(2))
-        }
-        val nh = nativeH.coerceAtMost(ap.s.height.coerceAtLeast(2))
-        val nativeId = ap.s.createCrop(0, 0, nativeW.coerceAtLeast(2), nh.coerceAtLeast(2))
-        val dest = ap.c[nativeId]
-        dest.clear()
-        val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
-            gray, quad, dest.mat, targetH = 0,
-        )
-        if (!ok || dest.mat.empty()) {
-            ap.c[nativeId].release()
-            return null
-        }
-        val fed = if (mild) {
-            RecBufferFeed.feedMildNoPartial(
-                dest.mat, 0, 0, dest.mat.cols(), dest.mat.rows(), recBuffer,
-            )
-        } else {
-            RecBufferFeed.feedIntegerKContent40(
-                dest.mat, 0, 0, dest.mat.cols(), dest.mat.rows(), recBuffer,
-            )
-        }
-        ap.c[nativeId].release()
-        return fed
-    }
-
     val jsonHeader = "{\n  \"timestamp\": \"$timestamp\",\n${ExperimentReportMeta.jsonFields()},\n" +
         "  \"device\": \"$deviceModel\",\n  \"kind\": \"ocr-geom\",\n  \"total_photos\": $total,\n  \"results\": [\n"
     var firstPhoto = true
@@ -7596,6 +7648,17 @@ suspend fun runPumpOcrGeomExperiment(
             val (probedW, probedH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
             if (probedW <= 0 || probedH <= 0) {
                 onLog("OCR geom skip invalid probe ${file.name}")
+                val skipObj = JSONObject()
+                    .put("file", file.name)
+                    .put("line", allPhotos.indexOfFirst { it.name == file.name } + 1)
+                    .put("probedWidth", probedW)
+                    .put("probedHeight", probedH)
+                if (!firstPhoto) jsonSyncStr(",\n")
+                firstPhoto = false
+                jsonSyncStr(skipObj.toString())
+                html.append("<tr><td><b>#${index + 1}</b><br><small>${file.name}</small></td>")
+                OCR_GEOM_COLUMNS.forEach { _ -> html.append("<td></td>") }
+                html.append("</tr>\n")
                 return@forEachIndexed
             }
             val imgW = probedW
@@ -7649,17 +7712,20 @@ suspend fun runPumpOcrGeomExperiment(
                         val tFeed0 = System.nanoTime()
                         val fed = if (isRot) {
                             if (quad == null) return@forEach
-                            feedRot(masterBuffer.p.mat, quad, col.mild)
+                            ocrGeomFeedRot(masterBuffer.p.mat, quad, col.mild, recBuffer)
                         } else {
                             if (aabb == null || aabb.width() < 2 || aabb.height() < 2) return@forEach
-                            feedAabb(NativePaddleEngine.bufferSetA, aabb, imgW, imgH, col.mild)
+                            ocrGeomFeedAabb(
+                                NativePaddleEngine.bufferSetA, aabb, imgW, imgH, col.mild, recBuffer,
+                            )
                         }
                         val tFeedMs = (System.nanoTime() - tFeed0) / 1_000_000L
                         if (fed == null || fed.targetW < 2 || fed.targetH < 2) {
                             if (fed != null) recBuffer.c[fed.recCropId].release()
                             return@forEach
                         }
-                        val pair = ocrPolarPair(
+                        val pair = ocrGeomPolarPair(
+                            recBuffer, paddleEngine, imgDir,
                             fed.recCropId, fed.targetW, fed.targetH, nativeWoB, geomId, stem,
                             tFeedMs, fed.integerK, fed.mildS,
                         )
@@ -7729,6 +7795,16 @@ suspend fun runPumpOcrGeomExperiment(
         } catch (e: Exception) {
             Log.e(TAG, "OCR geom failed ${file.name}", e)
             onLog("OCR geom FAIL ${file.name}: ${e.message}")
+            try {
+                val failObj = JSONObject()
+                    .put("file", file.name)
+                    .put("line", allPhotos.indexOfFirst { it.name == file.name } + 1)
+                    .put("error", e.message ?: "fail")
+                if (!firstPhoto) jsonSyncStr(",\n")
+                firstPhoto = false
+                jsonSyncStr(failObj.toString())
+            } catch (_: Exception) {
+            }
         }
     }
 
