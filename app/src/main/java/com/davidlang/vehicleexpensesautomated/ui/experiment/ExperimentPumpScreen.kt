@@ -7437,6 +7437,49 @@ private fun ocrGeomPadQuadPlusU(
     return ContentExpandUtils.OrientedQuad(out)
 }
 
+/** Grow blue to the dest-frame parallelogram: −u/−v pad, +u/+v remainder (source px). */
+private fun ocrGeomExpandQuadFrame(
+    quad: ContentExpandUtils.OrientedQuad,
+    minusU: Float,
+    plusU: Float,
+    minusV: Float,
+    plusV: Float,
+): ContentExpandUtils.OrientedQuad {
+    if (minusU == 0f && plusU == 0f && minusV == 0f && plusV == 0f) return quad
+    val ang = Math.toRadians(quad.uAngleDeg().toDouble())
+    val ux = cos(ang).toFloat()
+    val uy = sin(ang).toFloat()
+    var vx = -uy
+    var vy = ux
+    if (vy < 0f) {
+        vx = -vx
+        vy = -vy
+    }
+    val pts = quad.copyPts()
+    val us = FloatArray(4) { i -> pts[i * 2] * ux + pts[i * 2 + 1] * uy }
+    val vs = FloatArray(4) { i -> pts[i * 2] * vx + pts[i * 2 + 1] * vy }
+    var uMin = us[0]
+    var uMax = us[0]
+    var vMin = vs[0]
+    var vMax = vs[0]
+    for (i in 1 until 4) {
+        if (us[i] < uMin) uMin = us[i]
+        if (us[i] > uMax) uMax = us[i]
+        if (vs[i] < vMin) vMin = vs[i]
+        if (vs[i] > vMax) vMax = vs[i]
+    }
+    val uMid = (uMin + uMax) * 0.5f
+    val vMid = (vMin + vMax) * 0.5f
+    val out = FloatArray(8)
+    for (i in 0 until 4) {
+        val du = if (us[i] <= uMid) -minusU else plusU
+        val dv = if (vs[i] <= vMid) -minusV else plusV
+        out[i * 2] = pts[i * 2] + du * ux + dv * vx
+        out[i * 2 + 1] = pts[i * 2 + 1] + du * uy + dv * vy
+    }
+    return ContentExpandUtils.OrientedQuad(out)
+}
+
 private fun ocrGeomApplyRecPrep(work: Mat, prep: String) {
     when (prep) {
         "clip" -> OdometerOcrUtils.automaticContrastStretch(work)
@@ -7567,10 +7610,6 @@ private fun ocrGeomFeedRot(
         val canvasH = RecBufferFeed.DEFAULT_REC_H
         val extraL = extraLeftDestPx.coerceAtLeast(0)
         val extraR = extraRightDestPx.coerceAtLeast(0)
-        fun warpPadded(extraSrcL: Float, extraSrcR: Float): ContentExpandUtils.OrientedQuad {
-            val left = if (extraSrcL > 0f) ocrGeomPadQuadMinusU(quad, extraSrcL) else quad
-            return if (extraSrcR > 0f) ocrGeomPadQuadPlusU(left, extraSrcR) else left
-        }
         if (mild) {
             val s = 40f / bh
             if (s <= 0f) return null
@@ -7579,31 +7618,21 @@ private fun ocrGeomFeedRot(
             val srcH = ceil(49.0 / s).toInt().coerceAtLeast(2)
             val srcW = ceil((destW + 1.0) / s).toInt().coerceAtLeast(2)
             if (srcW > ap.s.width || srcH > ap.s.height) return null
-            val extraSrcL = (extraL.toFloat() / s).roundToInt().coerceAtLeast(0)
-            val extraSrcR = (extraR.toFloat() / s).roundToInt().coerceAtLeast(0)
-            val extraSrc = extraSrcL + extraSrcR
-            val padX = (4f / s).roundToInt().coerceAtLeast(0)
-            val padY = (4f / s).roundToInt().coerceAtLeast(0)
-            val warpQuad = warpPadded(extraSrcL.toFloat(), extraSrcR.toFloat())
+            val minusU = (4f + extraL) / s
+            val minusV = 4f / s
+            val plusU = srcW - minusU - bw
+            val plusV = srcH - minusV - bh
+            val warpQuad = ocrGeomExpandQuadFrame(quad, minusU, plusU, minusV, plusV)
             val nativeId = ap.s.createCrop(0, 0, srcW, srcH)
             val dest = ap.c[nativeId]
-            dest.clear()
-            val blueW = (bw.roundToInt() + extraSrc).coerceAtLeast(2)
-                .coerceAtMost((dest.width - padX).coerceAtLeast(2))
-            val blueH = bh.roundToInt().coerceAtLeast(2)
-                .coerceAtMost((dest.height - padY).coerceAtLeast(2))
-            val blueId = dest.createCrop(padX, padY, blueW, blueH)
-            val blue = ap.c[blueId]
             val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
-                gray, warpQuad, blue.mat, targetH = 0,
+                gray, warpQuad, dest.mat, targetH = 0,
             )
-            if (!ok || blue.mat.empty()) {
-                blue.release()
+            if (!ok || dest.mat.empty()) {
                 dest.release()
                 return null
             }
             val fed = RecBufferFeed.feedMildNoPartial(dest.mat, recBuffer, s, destW)
-            blue.release()
             dest.release()
             fed
         } else {
@@ -7618,31 +7647,22 @@ private fun ocrGeomFeedRot(
                     k--
                     continue
                 }
-                val pad = 4 * k
-                val extraSrcL = extraL * k
-                val extraSrcR = extraR * k
-                val extraSrc = extraSrcL + extraSrcR
-                val warpQuad = warpPadded(extraSrcL.toFloat(), extraSrcR.toFloat())
+                val minusU = ((4 + extraL) * k).toFloat()
+                val minusV = (4 * k).toFloat()
+                val plusU = srcW - minusU - bw
+                val plusV = srcH - minusV - bh
+                val warpQuad = ocrGeomExpandQuadFrame(quad, minusU, plusU, minusV, plusV)
                 val nativeId = ap.s.createCrop(0, 0, srcW, srcH)
                 val dest = ap.c[nativeId]
-                dest.clear()
-                val blueW = (bw.roundToInt() + extraSrc).coerceAtLeast(2)
-                    .coerceAtMost((dest.width - pad).coerceAtLeast(2))
-                val blueH = bh.roundToInt().coerceAtLeast(2)
-                    .coerceAtMost((dest.height - pad).coerceAtLeast(2))
-                val blueId = dest.createCrop(pad, pad, blueW, blueH)
-                val blue = ap.c[blueId]
                 val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
-                    gray, warpQuad, blue.mat, targetH = 0,
+                    gray, warpQuad, dest.mat, targetH = 0,
                 )
-                if (!ok || blue.mat.empty()) {
-                    blue.release()
+                if (!ok || dest.mat.empty()) {
                     dest.release()
                     k--
                     continue
                 }
                 fed = RecBufferFeed.feedIntegerKContent40(dest.mat, recBuffer)
-                blue.release()
                 dest.release()
                 if (fed != null) break
                 k--
