@@ -5,7 +5,7 @@ This is the **source of truth** for bringing up Vehicle Expenses Automated:
 1. **Plain app environment** — clean `git clone` of `master` → successful `./build_app` / Gradle assemble.
 2. **Full multi-worktree environment** — orchestration root + `master/` + `agent-N/` + shared sandbox (current primary workflow).
 
-Related docs: `docs/specs/PERMISSIONS_MODEL.md`, `README-multi-agent.md`, `docs/specs/OPERATIONAL_HANDBOOK.md` (agent protocol, not host bootstrap).
+Related docs: `docs/specs/PERMISSIONS_MODEL.md`, `README-multi-agent.md`, `AGENT_MANDATES.md` (agent protocol, not host bootstrap).
 
 ---
 
@@ -303,8 +303,8 @@ test -r "$ANDROID_SDK_ROOT/ndk/"*/toolchains/llvm/prebuilt/linux-x86_64/sysroot/
 |-------|----------|
 | Host + plain + multi setup | **This file** (`docs/ENVIRONMENT_SETUP.md`) |
 | Unix permissions model | `docs/specs/PERMISSIONS_MODEL.md` |
-| Agent bi-modal protocol | `AGENT_MANDATES.md`, `OPERATIONAL_HANDBOOK.md` |
+| Agent protocol | `AGENT_MANDATES.md` |
 | Multi-agent workflows | `README-multi-agent.md` |
-| Architecture / OCR coords | `docs/specs/ARCHITECTURE.md`, `ISOTROPIC_COORDINATE_SPEC.md` (if present) |
+| App overview / Quick Fill / coordinates | `docs/OVERVIEW.md`, `docs/reference/QUICK_FILL_CAMERA.md`, `docs/specs/ISOTROPIC_COORDINATE_SPEC.md` |
 
 Update this file when: new native prebuilts are required, SDK/NDK floors change, or the FILES sync contract changes.

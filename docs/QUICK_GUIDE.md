@@ -4,13 +4,13 @@ status: dynamic
 ai_directive: "This is a downstream reference. It MUST be updated continuously to reflect the current state of the codebase. If you change a function or architecture described here, update this document in the same commit."
 ---
 
-# Vehicle Expenses Automated — User Guide (condensed)
+# Vehicle Expenses Automated — Quick Guide
 
-**Full illustrated manual (HTML for browsers):** [docs/user-manual.html](../user-manual.html)  
-**Edit source:** [docs/user-manual.md](../user-manual.md) — regenerate HTML + assets with `./scripts/render-user-manual.sh` (see [USER_MANUAL_BUILD.md](USER_MANUAL_BUILD.md))  
+**Full illustrated manual:** [docs/user-manual/index.html](user-manual/index.html)  
+**Edit source:** [docs/user-manual/manual.md](user-manual/manual.md) — regenerate with `./scripts/render-user-manual.sh` ([USER_MANUAL_BUILD.md](reference/USER_MANUAL_BUILD.md))  
 **On device:** Menu → **Help** (quick start) · Menu → **About** / Help → full manual (in-app HTML + screenshots)
 
-This file is a short reference for everyday use and sync behavior. Prefer the full manual for first-time setup with screenshots.
+Short everyday guide. Use the full manual for first-time setup with screenshots.
 
 ## What the app does
 
@@ -64,7 +64,7 @@ This file is a short reference for everyday use and sync behavior. Prefer the fu
 - **Offline first** — add fills and receipts with no network; sync is background.
 - **Data (tabular):** Google Sheets, Excel, EtherCalc; Other → Baserow, NocoDB, Airtable, PocketBase, Supabase, Firebase, Zoho Sheet (+ deferred OnlyOffice/Collabora).
 - **Photos:** Google Drive, OneDrive, S3, Other (rclone: WebDAV, SFTP, …).
-- Full detail + setup screenshots: [user-manual.html § Backups](../user-manual.html#backups-and-multi-device-sync). Self-host: [self-host/INDEX.md](self-host/INDEX.md).
+- Full detail + setup screenshots: [manual § Backups](user-manual/index.html#backups-and-multi-device-sync). Self-host: [self-host/INDEX.md](reference/self-host/INDEX.md).
 
 ## Google Sheets / Drive (quick)
 
@@ -78,12 +78,12 @@ Failures: red summary + **Details** (full API text, Copy); **!** in app bar open
 - Multi-dest: sequential; Sheets paces reads/writes under ~60/min per quota with wait/retry; compare pass uses bulk `batchGet` where possible.
 - Upgrade splash: local sync-id backfill (“Updating database after upgrade…”).
 - Same fill entered twice = two rows (delete extras).
-- Detail: [SYNC_BEHAVIOR.md](SYNC_BEHAVIOR.md).
+- Detail: [SYNC_BEHAVIOR.md](reference/SYNC_BEHAVIOR.md).
 
 ## Reports
 
-Menu → **Reports** opens the product hub (all-time summary + catalog). Child reports support vehicle mode (**All / Each / Single**) and period filters. **Time based reports** plots optional metrics on **one** plot with **independent Y scales** per unit family (economy left; $ / trip miles / trip % by type on the right) and Smooth bins; labels use unit façades (`$/G`, `G/mi`, …). **Trip miles** lists trip starts (tap to edit); Fill history / Fuel History are fills only. Photos missing locally can **Fetch from archive** using any configured photo destination. Illustrated steps: [user-manual.html](../user-manual.html). Math: [REPORTS_METRICS.md](REPORTS_METRICS.md).
+Menu → **Reports** opens the product hub (all-time summary + catalog). Child reports support vehicle mode (**All / Each / Single**) and period filters. **Time based reports** plots optional metrics on **one** plot with **independent Y scales** per unit family (economy left; $ / trip miles / trip % by type on the right) and Smooth bins; labels use unit façades (`$/G`, `G/mi`, …). **Trip miles** lists trip starts (tap to edit); Fill history / Fuel History are fills only. Photos missing locally can **Fetch from archive** using any configured photo destination. Illustrated steps: [user-manual/index.html](user-manual/index.html). Math: [REPORTS_METRICS.md](reference/REPORTS_METRICS.md).
 
 ## Navigation map
 
-See [NAVIGATION_MAP.md](NAVIGATION_MAP.md).
+See [NAVIGATION_MAP.md](reference/NAVIGATION_MAP.md).

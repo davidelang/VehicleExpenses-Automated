@@ -1,8 +1,4 @@
----
-type: intent-spec
-status: locked
-ai_directive: "This is an upstream specification for the Paddle-Lite PRs. DO NOT modify this document to match the codebase. If the code deviates from this spec, the code is wrong. Modifications to this file require a dedicated 'Strategy' turn and explicit user approval."
----
+**Status:** Obsolete. Saved upstream PR text, not a locked spec.
 
 # Paddle-Lite Proposed PR Descriptions
 

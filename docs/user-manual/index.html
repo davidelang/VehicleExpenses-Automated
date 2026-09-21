@@ -44,11 +44,11 @@
   </style>
 </head>
 <body>
-  <p class="note">Vehicle Expenses Automated — full illustrated user manual (HTML for browsers). Edit source: <code>docs/user-manual.md</code>; regenerate with <code>./scripts/render-user-manual.sh</code>.</p>
+  <p class="note">Vehicle Expenses Automated — full illustrated user manual (HTML for browsers). Edit source: <code>docs/user-manual/manual.md</code>; regenerate with <code>./scripts/render-user-manual.sh</code>.</p>
   <h1 id="vehicle-expenses-automated-user-manual">Vehicle Expenses Automated — User Manual</h1>
 <blockquote>
 <p><strong>Edit source (Markdown).</strong> Browsers and the in-app reader open the <strong>rendered HTML</strong>:<br />
-- Web: <a href="user-manual.html"><code>docs/user-manual.html</code></a> (regenerate with <code>./scripts/render-user-manual.sh</code>)<br />
+- Web: <a href="index.html"><code>docs/user-manual/index.html</code></a> (regenerate with <code>./scripts/render-user-manual.sh</code>)<br />
 - App: Help / About → full manual (bundled HTML + screenshots)</p>
 <p>Do not point end users at raw <code>.md</code> URLs — browsers show plain text only.</p>
 </blockquote>
@@ -200,7 +200,7 @@
 <li>Tap <strong>☰</strong> at the top left.</li>
 <li>Choose a page.</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Navigation drawer" src="user-manual/images/01-drawer.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Navigation drawer" src="images/01-drawer.jpg" /></p>
 <p><strong>Main drawer:</strong> Quick Fill-up · Start trip · Manage Vehicles · New expense · <strong>Reports</strong> · Settings · Syncing · Help · About.</p>
 <p><strong>Experiment drawer</strong> (Settings → Show experiment screens): Alignment Experiment · Pump Experiment · <strong>Import Old Pictures</strong>.</p>
 <p><strong>Via Reports hub (not main drawer):</strong> Expenses list · Fill history.</p>
@@ -209,7 +209,7 @@
 <p>OCR and <strong>automatic vehicle matching</strong> work best after you register each vehicle with a <strong>reference dashboard photo</strong>, crop the odometer, and run <strong>Discovery</strong> so the app stores landmark text for that dash. (How landmarks are chosen and matched will be documented in more detail in a later update.)</p>
 <h3 id="open-manage-vehicles">Open Manage Vehicles</h3>
 <p>Menu → <strong>Manage Vehicles</strong>. Choose a vehicle (or <strong>Add New Vehicle</strong>).</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Manage Vehicles with reference dash, crops, and discovery" src="user-manual/images/r1-manage-vehicles-crops.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Manage Vehicles with reference dash, crops, and discovery" src="images/r1-manage-vehicles-crops.jpg" /></p>
 <h3 id="add-or-edit-a-vehicle">Add or edit a vehicle</h3>
 <ol>
 <li>Open the <strong>Vehicle</strong> dropdown → pick a vehicle or <strong>Add New Vehicle</strong>.</li>
@@ -223,10 +223,10 @@
 <li>Fill <strong>Vehicle Name</strong> (required), plus make/model/year/plate as you like.</li>
 <li>Tap <strong>Create Vehicle</strong> or <strong>Save Changes</strong> (requires name + reference photo for a new vehicle).</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Add new vehicle form fields" src="user-manual/images/03b-manage-vehicles-new.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Add new vehicle form fields" src="images/03b-manage-vehicles-new.jpg" /></p>
 <h3 id="landmarks-fix-what-discovery-missed">Landmarks: fix what Discovery missed</h3>
 <p>After <strong>Show Landmarks</strong>, scroll the list and correct values. Engines sometimes miss small digits (for example a clock <strong>60</strong> on the bottom right of the cluster). Use <strong>Edit OCR</strong> to add or fix them so vehicle identity stays reliable.</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Landmarks dialog — review and edit OCR" src="user-manual/images/r2-manage-vehicles-landmarks.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Landmarks dialog — review and edit OCR" src="images/r2-manage-vehicles-landmarks.jpg" /></p>
 <h3 id="typing-without-a-perfect-photo">Typing without a perfect photo</h3>
 <p>You can still use the app by selecting a vehicle and <strong>typing</strong> odometer, volume, and cost on Quick Fill — OCR is optional for every field. Gallery import works for the reference dash photo when you prefer not to shoot in-app.</p>
 <p><strong>Tip:</strong> After spreadsheet sync, vehicle definitions (crops, landmarks) live in the local database — you do not need to re-open Manage Vehicles for Quick Fill to use them.</p>
@@ -333,15 +333,15 @@
 <ol>
 <li><strong>Menu → Syncing → Spreadsheet sync</strong> (or Settings → Spreadsheet sync).</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Spreadsheet sync list" src="user-manual/images/08-spreadsheet-sync.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Spreadsheet sync list" src="images/08-spreadsheet-sync.jpg" /></p>
 <ol start="2">
 <li>Tap <strong>Add spreadsheet destination</strong>.</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Provider picker" src="user-manual/images/09-spreadsheet-provider-picker.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Provider picker" src="images/09-spreadsheet-provider-picker.jpg" /></p>
 <ol start="3">
 <li>Choose <strong>Google Sheets</strong>.</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Google Sheets form" src="user-manual/images/10-spreadsheet-google-form.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Google Sheets form" src="images/10-spreadsheet-google-form.jpg" /></p>
 <ol start="4">
 <li><strong>Sign in with Google</strong> → display name → <strong>Sheet URL</strong> or <strong>🔍</strong> browse/create → schedule options → enable → save.</li>
 <li><strong>Sync now</strong> once to create/update tabs: <code>Vehicles</code>, <code>Expenses</code>, <code>Fuel - {vehicle name}</code>.</li>
@@ -350,15 +350,15 @@
 <ol>
 <li><strong>Menu → Syncing → Photo backup</strong> (or Settings → Photo backup).</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Photo backup list" src="user-manual/images/11-photo-backup.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Photo backup list" src="images/11-photo-backup.jpg" /></p>
 <ol start="2">
 <li>Tap <strong>Add photo destination</strong>.</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Photo provider picker" src="user-manual/images/12-photo-provider-picker.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Photo provider picker" src="images/12-photo-provider-picker.jpg" /></p>
 <ol start="3">
 <li>Choose <strong>Google Drive</strong>.</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Google Drive form" src="user-manual/images/13-photo-google-form.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Google Drive form" src="images/13-photo-google-form.jpg" /></p>
 <ol start="4">
 <li><strong>Sign in with Google (Drive)</strong> → optional folder URL/browse → enable → save → <strong>Sync now</strong>.</li>
 </ol>
@@ -376,17 +376,17 @@
 <p>You do <strong>not</strong> need to pick the vehicle first. When vehicles have <strong>landmarks</strong> set up in Manage Vehicles, Quick Fill <strong>auto-detects which vehicle</strong> from the dash image after you capture the odometer. You can still open the <strong>Vehicle</strong> dropdown to override if needed.</p>
 <h3 id="aim-at-the-odometer">Aim at the odometer</h3>
 <p>Stay in odometer mode and frame the cluster. Instruction: <em>Aim at odometer. Tap shutter to capture.</em></p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Quick Fill — live camera on odometer (example dash image in preview)" src="user-manual/images/r3-quickfill-odo-live.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Quick Fill — live camera on odometer (example dash image in preview)" src="images/r3-quickfill-odo-live.jpg" /></p>
 <h3 id="after-the-odometer-shutter">After the odometer shutter</h3>
 <p>OCR fills <strong>Odo</strong> and tries to match the vehicle from landmarks (review both if needed). The main button becomes <strong>Retry</strong> to re-shoot. Instruction summarizes the reading.</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Quick Fill — odometer OCR result" src="user-manual/images/r4-quickfill-odo-result.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Quick Fill — odometer OCR result" src="images/r4-quickfill-odo-result.jpg" /></p>
 <h3 id="pump-mode-cost-and-volume">Pump mode (cost and volume)</h3>
 <ol>
 <li>Tap <strong>↕</strong> to switch to pump mode: <em>Aim at pump display (cost/volume). Tap shutter.</em></li>
 <li>Capture the pump totals. Cost and volume fields fill; use <strong>↔</strong> if they are swapped.</li>
 <li>Tap currency or <strong>G/L</strong> if needed, then <strong>Save</strong> (disk). Empty fields make a <strong>partial fill</strong> (still allowed).</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Quick Fill — pump preview / totals (example pump image in preview)" src="user-manual/images/r5-quickfill-pump-result.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Quick Fill — pump preview / totals (example pump image in preview)" src="images/r5-quickfill-pump-result.jpg" /></p>
 <p>You stay on Quick Fill for the next stop (fields clear after save). Work fully <strong>offline</strong>; sync runs later in the background when configured.</p>
 <h3 id="manual-entry-no-camera-bad-ocr">Manual entry (no camera / bad OCR)</h3>
 <ol>
@@ -405,7 +405,7 @@
 <h2 id="expenses">Expenses</h2>
 <h3 id="new-expense">New expense</h3>
 <p>Menu → <strong>New expense</strong>.</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="New expense form and camera controls (example dash image in camera band when empty)" src="user-manual/images/r6-new-expense.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="New expense form and camera controls (example dash image in camera band when empty)" src="images/r6-new-expense.jpg" /></p>
 <ol>
 <li><strong>Save</strong> (disk), <strong>shutter</strong> (receipt photo), or <strong>gallery</strong> (pick image).</li>
 <li>Fill <strong>Date</strong>, <strong>Vehicle</strong>, <strong>Vendor</strong>, <strong>Description</strong>, <strong>Amount</strong> (currency symbol tappable), <strong>Category</strong>, optional <strong>Odometer</strong>.</li>
@@ -414,45 +414,45 @@
 </ol>
 <h3 id="expense-list">Expense list</h3>
 <p>Menu → <strong>Reports</strong> → <strong>Expenses list</strong> — browse past non-fuel expenses; open an item to edit.</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Expense list" src="user-manual/images/05-expense-list.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Expense list" src="images/05-expense-list.jpg" /></p>
 <h3 id="edit-expense">Edit expense</h3>
 <p>Open a row from the list. Correct vendor, amount, category, vehicle, and description. If the receipt is only in photo backup (no readable local file), use <strong>Fetch image from archive</strong> when shown (works across configured photo destinations).</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Edit expense" src="user-manual/images/expense-edit.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Edit expense" src="images/expense-edit.jpg" /></p>
 <hr />
 <h2 id="start-trip">Start trip</h2>
 <p>Menu → <strong>Start trip</strong> (after Quick Fill in the drawer). Capture or enter odometer, choose trip type, save with the <strong>disk</strong> icon. <strong>Stop</strong> is a shortcut for Personal now at the held GPS location. Use <strong>ⓘ</strong> for control reminders.</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Start trip" src="user-manual/images/start-trip.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Start trip" src="images/start-trip.jpg" /></p>
 <p>Trip starts are stored as fuel rows with a <strong>Trip Type</strong> (not normal fills). They appear under <strong>Reports → Trip miles</strong>, not under Fuel History.</p>
 <hr />
 <h2 id="reports">Reports</h2>
 <p>Menu → <strong>Reports</strong> opens the product hub (all-time summary + catalog cards). This is the only product reports surface — there is no separate “Reports &amp; Charts” drawer item.</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Reports hub" src="user-manual/images/06-reports.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Reports hub" src="images/06-reports.jpg" /></p>
 <p>Open a card for vehicle mode (<strong>All / Each / Single</strong>), period filters, charts, and share (<strong>TEXT / CSV / PDF</strong>). Top bar on report children: <strong>☰ + ←</strong> (and <strong>ⓘ</strong> when registered).</p>
 <h3 id="time-based-reports">Time based reports</h3>
 <p>The main chart card. Optional metrics (mpg, volume/distance such as G/mi, unit price such as $/G, cost/distance, monthly $, trip miles, trip % by type) with <strong>Smooth</strong> bins and <strong>independent Y scales</strong> (economy left; money and trip families on the right).</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Time based reports" src="user-manual/images/time-based-reports.jpg" /></p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Time based reports — scrolled metrics" src="user-manual/images/time-based-reports-scrolled.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Time based reports" src="images/time-based-reports.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Time based reports — scrolled metrics" src="images/time-based-reports-scrolled.jpg" /></p>
 <p>Details of economy math: <a href="reference/REPORTS_METRICS.md">REPORTS_METRICS.md</a>.</p>
 <h3 id="fill-history-vs-fuel-history">Fill history vs Fuel History</h3>
 <ul>
 <li><strong>Reports → Fill history</strong> — chronological fills for the report filters (<strong>fills only</strong>; no trip starts).</li>
 </ul>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Fill history report" src="user-manual/images/fill-history.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Fill history report" src="images/fill-history.jpg" /></p>
 <ul>
 <li><strong>Fuel History</strong> (if present in your build’s navigation) — per-vehicle fill inventory, also fills only; tap a row to edit.</li>
 </ul>
 <h3 id="trip-miles">Trip miles</h3>
 <p><strong>Reports → Trip miles</strong> — miles by type, charts, and a chronological <strong>trip start / segment list</strong>. Tap a real start to open <strong>Edit fill</strong> for that row.</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Trip miles" src="user-manual/images/trip-miles.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Trip miles" src="images/trip-miles.jpg" /></p>
 <h3 id="edit-fill">Edit fill</h3>
 <p>From Fill history, Fuel History, or Trip miles, open a fill. Layout: vehicle and odometer, <strong>currency before cost</strong>, volume, notes. Trip type appears only when the row is a trip start. Location has a summary plus <strong>Location details</strong>. Missing local photo with cloud identity: <strong>Fetch image from archive</strong>.</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Edit fill — Fetch from archive when local photo missing" src="user-manual/images/fuel-edit.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Edit fill — Fetch from archive when local photo missing" src="images/fuel-edit.jpg" /></p>
 <p>Other catalog cards include expenses by category, vehicle summary, and expenses list.</p>
 <p>Money uses each row’s currency when set. Mixed-currency totals show <strong>per-currency subtotals</strong> (no silent FX conversion).</p>
 <hr />
 <h2 id="syncing">Syncing</h2>
 <p>Menu → <strong>Syncing</strong> is the hub for spreadsheet and photo destinations (not only buried under Settings).</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Syncing hub" src="user-manual/images/syncing-hub.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Syncing hub" src="images/syncing-hub.jpg" /></p>
 <ul>
 <li>Cards for <strong>Spreadsheet sync</strong> and <strong>Photo backup</strong> with short status, <strong>Sync</strong> for that kind, and <strong>›</strong> into the destination list.</li>
 <li>Open a destination for <strong>Test connection</strong> and <strong>Sync now (this destination)</strong> / all configured.</li>
@@ -462,8 +462,8 @@
 <hr />
 <h2 id="settings-local-preferences">Settings (local preferences)</h2>
 <p>Menu → <strong>Settings</strong>.</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Settings" src="user-manual/images/07-settings.jpg" /></p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="More settings (scrolled)" src="user-manual/images/07b-settings-more.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Settings" src="images/07-settings.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="More settings (scrolled)" src="images/07b-settings-more.jpg" /></p>
 <p>For destinations, prefer <strong>Menu → Syncing</strong>. Settings may still show summary rows that open the same lists.</p>
 <h3 id="local-preferences-common">Local preferences (common)</h3>
 <ul>
@@ -477,8 +477,8 @@
 <p>CSV <strong>export/import</strong> (ZIP of Vehicles / Expenses / Fuel tabs) is available from Settings when offered by the current build.</p>
 <hr />
 <h2 id="help-about">Help &amp; About</h2>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Help" src="user-manual/images/14-help.jpg" /></p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="About" src="user-manual/images/15-about.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Help" src="images/14-help.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="About" src="images/15-about.jpg" /></p>
 <ul>
 <li><strong>Help</strong> — on-device quick start, setup tutorials, link to this manual, self-host setup index.</li>
 <li><strong>About</strong> — version, licenses, GitHub, this manual (bundled offline + online HTML when published).</li>
@@ -486,10 +486,10 @@
 <hr />
 <h2 id="related-docs">Related docs</h2>
 <ul>
-<li><a href="reference/USER_GUIDE.md">USER_GUIDE.md</a> — condensed reference</li>
-<li><a href="reference/self-host/INDEX.md">self-host/INDEX.md</a> — self-hosted photo/tabular setup</li>
-<li><a href="reference/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a> — merge, recovery, duplicates</li>
-<li><a href="reference/REPORTS_METRICS.md">REPORTS_METRICS.md</a> — economy metrics detail</li>
+<li><a href="../QUICK_GUIDE.md">QUICK_GUIDE.md</a> — short everyday guide</li>
+<li><a href="../reference/self-host/INDEX.md">self-host/INDEX.md</a> — self-hosted photo/tabular setup</li>
+<li><a href="../reference/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a> — merge, recovery, duplicates</li>
+<li><a href="../reference/REPORTS_METRICS.md">REPORTS_METRICS.md</a> — economy metrics detail</li>
 </ul>
 </body>
 </html>

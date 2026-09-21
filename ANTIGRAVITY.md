@@ -1,4 +1,4 @@
-# Gemini & Antigravity Project Mandates (Overlay)
+# Antigravity Project Mandates (Overlay)
 
 This is a thin overlay. The authoritative shared content is in `AGENT_MANDATES.md` (read it for the bi-modal workflow, tags, reset rules, deploy ban, coordinates, forensic validation, etc.).
 

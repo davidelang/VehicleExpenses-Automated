@@ -5,7 +5,7 @@ You are in a **Multi-Agent Orchestration** environment.
 **MANDATORY STARTUP:**
 
 1. Read `./AGENT_CONTEXT.md` (or template + `git status` if missing).
-2. Read CLI overlay `./GROK.md` or `./GEMINI.md`, and `./AGENT_MANDATES.md`.
+2. Read CLI overlay `./GROK.md` or `./ANTIGRAVITY.md`, and `./AGENT_MANDATES.md`.
 3. Read full `./project-facts.md`.
 4. Confirm `pwd` once. Never prefix helpers with `cd … &&`.
 5. Read the rest of your **role pack** from `AGENTS.md` (planner/coder/master extras).

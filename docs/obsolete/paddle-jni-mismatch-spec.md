@@ -1,3 +1,5 @@
+**Status:** Obsolete. Investigation of a JNI layout bug, not a current contract.
+
 # JNI ABI Layout Mismatch and Coordinate Scaling Specification
 
 This specification document details the architectural problem, investigation, and ultimate engineering solution for the dual Paddle OCR C++ parallel execution harness. It serves as a historical and technical guide for future agents maintaining or refactoring this system.

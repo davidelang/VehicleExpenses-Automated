@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Render docs/user-manual.md → browser HTML + app assets (with screenshots).
+# Render docs/user-manual/manual.md → browser HTML + app assets (with screenshots).
 # Markdown is the edit source; HTML is what browsers and the in-app WebView open.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

@@ -8,18 +8,18 @@ ai_directive: "This is an upstream specification. DO NOT modify this document to
 
 ## 1. The Problem Space
 
-### 1.1 The Anisotropic Flaw
-The current coordinate architecture normalizes Region of Interest (ROI) and landmark coordinates independently by their respective axes:
-*   `X_norm = X_pixel / Image_Width`
-*   `Y_norm = Y_pixel / Image_Height`
+Persistent coordinates have to mean the same dashboard region when the photo’s aspect ratio is not the reference photo’s, and after the text has been rotated level for OCR.
 
-This creates an **anisotropic** coordinate space. If an image's aspect ratio changes (e.g., from 4:3 to 16:9), the physical distances between landmarks are mathematically squashed or stretched. A rigid Affine solver (`EstimateAffinePartial2D`) cannot calculate a valid transformation matrix between a 4:3 point cloud and a differently stretched 16:9 point cloud, leading to failure or severe distortion.
+### 1.1 Aspect ratio
+Physical distances between landmarks must survive a change of aspect ratio (4:3 versus 16:9). A space that scales X by width and Y by height squashes those distances, so a rigid mapping from one photo onto the other distorts or fails.
 
-### 1.2 Constraint: OCR Rotation Tolerance
-Optical Character Recognition (OCR) engines perform poorly on slanted text, frequently causing overlapping bounding boxes across multiple lines. Therefore, text must be physically rotated to horizontal *before* targeted OCR or final ROI extraction occurs. This invalidates approaches that simply extract a rotated bounding box from the raw image.
+### 1.2 Rotation
+OCR on slanted text overlaps lines. The image is rotated to horizontal before the odometer crop is read. A box stored on the unrotated frame does not stay on the same digits after that rotation. Stored crops are in the leveled, center-relative space below.
 
-### 1.3 Constraint: Resolution Independence
-A solution cannot rely on warping the New Image to exactly match the pixel resolution of the Reference Image. Doing so couples geometry (aspect ratio) with density (resolution). Upscaling a low-res image wastes memory, and downscaling a high-res image destroys the detail needed for the final OCR pass.
+### 1.3 Resolution
+Do not warp the new photo to the reference photo’s pixel size. That ties shape to pixel density. Upscaling wastes memory. Downscaling throws away the detail the OCR pass needs.
+
+Per-axis normalization (`X / width`, `Y / height`) was the earlier storage and was rejected for the aspect-ratio reason in §1.1. It is not a second coordinate system in this spec.
 
 ---
 

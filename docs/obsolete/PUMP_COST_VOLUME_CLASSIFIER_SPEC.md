@@ -1,3 +1,5 @@
+**Status:** Obsolete. Historical per-set A–G cost/volume rules. Live Quick Fill classification is `docs/reference/PUMP_CLASSIFICATION.md`.
+
 # Pump Cost/Volume Classifier Specification
 
 **Authority:** `docs/specs/PUMP_COST_VOLUME_CLASSIFIER_SPEC.md`  

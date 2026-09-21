@@ -1,6 +1,12 @@
+---
+type: intent-spec
+status: locked
+ai_directive: "This is an upstream specification. DO NOT modify this document to match the codebase. If the code deviates from this spec, the code is wrong. Modifications to this file require a dedicated 'Strategy' turn and explicit user approval."
+---
+
 # Third-party pin builds — materialize, build, audit
 
-**Status:** Authoritative (2026-08-03).  
+**Status:** Locked contract (moved from reference 2026-09-21). Was authoritative as of 2026-08-03.  
 **Audience:** developers (human or automated) who pin, rebuild, or audit external libraries used by this project.  
 **Quick start:** `third_party/README.md`  
 **Example:** `third_party/example/`  

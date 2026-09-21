@@ -69,7 +69,7 @@ PADDLE_ABIS="arm64-v8a armeabi-v7a x86_64" PADDLE_SKIP_IMAGE_BUILD=1 \
 
 **Multi-ABI emulator matrix:** `docs/reference/PADDLE_ABI_EMULATOR_TEST.md`
 
-**Authoritative process doc:** `docs/reference/PADDLE_PIN_BUILDS.md`  
+**Authoritative process doc:** `docs/specs/PADDLE_PIN_BUILDS.md`  
 **Is-vs-should report (post-merge cleanup):** `dev-ai-interaction/scratch/paddle-pin-is-vs-should-20260804.md`  
 **armv7 plan (fp32 product; FP16 workstream B declined for true-v7):** `dev-ai-interaction/plans/paddle-armv7-fp16-and-functional-calib-20260803-plan.md`
 
@@ -167,4 +167,4 @@ Rebuild armv7 models: `app/src/main/assets/paddle/scripts/optimize_armv7_prod_u8
 # ./build mounts paddle-models/src as /tailor_models when present
 ```
 
-See `docs/reference/PADDLE_PIN_BUILDS.md` and `third_party/paddle-models/SOURCE.md`.
+See `docs/specs/PADDLE_PIN_BUILDS.md` and `third_party/paddle-models/SOURCE.md`.

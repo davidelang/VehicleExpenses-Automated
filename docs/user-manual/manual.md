@@ -1,7 +1,7 @@
 # Vehicle Expenses Automated — User Manual
 
 > **Edit source (Markdown).** Browsers and the in-app reader open the **rendered HTML**:
-> - Web: [`docs/user-manual.html`](user-manual.html) (regenerate with `./scripts/render-user-manual.sh`)
+> - Web: [`docs/user-manual/index.html`](index.html) (regenerate with `./scripts/render-user-manual.sh`)
 > - App: Help / About → full manual (bundled HTML + screenshots)
 >
 > Do not point end users at raw `.md` URLs — browsers show plain text only.
@@ -401,7 +401,7 @@ CSV **export/import** (ZIP of Vehicles / Expenses / Fuel tabs) is available from
 
 ## Related docs
 
-- [USER_GUIDE.md](reference/USER_GUIDE.md) — condensed reference
-- [self-host/INDEX.md](reference/self-host/INDEX.md) — self-hosted photo/tabular setup
-- [SYNC_BEHAVIOR.md](reference/SYNC_BEHAVIOR.md) — merge, recovery, duplicates
-- [REPORTS_METRICS.md](reference/REPORTS_METRICS.md) — economy metrics detail
+- [QUICK_GUIDE.md](../QUICK_GUIDE.md) — short everyday guide
+- [self-host/INDEX.md](../reference/self-host/INDEX.md) — self-hosted photo/tabular setup
+- [SYNC_BEHAVIOR.md](../reference/SYNC_BEHAVIOR.md) — merge, recovery, duplicates
+- [REPORTS_METRICS.md](../reference/REPORTS_METRICS.md) — economy metrics detail

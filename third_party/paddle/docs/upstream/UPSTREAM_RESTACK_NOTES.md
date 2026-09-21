@@ -110,5 +110,5 @@ After `libpin.toml` `git_sha` → tip of uint8 restack:
 
 ## Related VE docs
 
-- `docs/reference/PADDLE_PIN_BUILDS.md` — pin/build variations  
+- `docs/specs/PADDLE_PIN_BUILDS.md` — pin/build variations  
 - `third_party/paddle/SOURCE.md` — pin contract  

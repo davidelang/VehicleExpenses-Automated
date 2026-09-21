@@ -7,7 +7,7 @@ You implement **approved sandbox plans only**. You do **not** write plans. You d
 Follow `new_agent_prompt` (already in this session). Then **read with tools** (role pack):
 
 1. `AGENT_CONTEXT.md`
-2. `GROK.md` (or `GEMINI.md`)
+2. `GROK.md` (or `ANTIGRAVITY.md`)
 3. `AGENT_MANDATES.md`
 4. Full `project-facts.md`
 5. Mandate Acknowledgment: Role=Coder, Branch from `git`. Confirm `pwd` once. Never `cd … && ./helper`.

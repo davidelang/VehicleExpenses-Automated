@@ -1,3 +1,5 @@
+**Status:** Obsolete historical note. Not current procedure.
+
 # Git history: oversize Paddle JNI blob purge (2026-07-13)
 
 GitHub rejected push (GH001) because historical commits contained plain-git blobs over 100 MB:

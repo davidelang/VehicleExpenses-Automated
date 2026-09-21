@@ -1,6 +1,6 @@
 # Pump Experiment N-Sets Architecture
 
-This document describes the tree-based reporting architecture used in the Pump Experiment and the **current active flows**.
+Current heatmap-expand attempts used by the pump experiment. Quick Fill’s generic camera stages (deskew, find ink, expand, OCR, classify) are in [QUICK_FILL_CAMERA.md](QUICK_FILL_CAMERA.md). This file is the detail those stages point at for **how expansion is tried today**. It is not the product overview.
 
 ## Active flows (current)
 

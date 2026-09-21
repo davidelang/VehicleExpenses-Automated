@@ -1,3 +1,9 @@
+---
+type: intent-spec
+status: locked
+ai_directive: "This is an upstream specification. DO NOT modify this document to match the codebase. If the code deviates from this spec, the code is wrong. Modifications to this file require a dedicated 'Strategy' turn and explicit user approval."
+---
+
 # PERMISSIONS_MODEL.md — Authoritative Permissions Specification
 
 **This is the source of truth for the multi-user / multi-agent permissions model.**
@@ -66,6 +72,7 @@ New files inherit group via setgid. **General/project shells and agent launchers
 - **Per-worktree homes:** `GRADLE_USER_HOME` is `$WT/.gradle-home` (shared caches). Gradle 9 hardcodes `chmod 700` on `daemon/<ver>` when writing `registry.bin` (`--no-daemon` still does this; there is no flag to skip it). `build_app` / `deploy` `rm -rf` that `daemon/` tree as the current builder before and after Gradle so the next mkdir is owned by the runner. Do not chmod that dir. `ANDROID_USER_HOME` is `$WT/.android-shared`. `orch_root` is **read/seed only** (keystore copy). Project incremental state stays in `$WT/.gradle` and `app/build` — same-uid only.
 - **`app/build` incremental is same-uid.** `build_app` `rm -rf` `intermediates` / `generated` / `kspCaches` when any of those dirs is not owned by `id -un` (AGP `chmod 770` on leftover dest dirs such as `java_res/…/META-INF` fails for non-owners). `deploy` always wipes those three. Do not chmod/chown `app/build` as the fix.
 - Kotlin compile strategy is the **Gradle** property `kotlin.compiler.execution.strategy=in-process` (`gradle.properties` plus `-P` and `-D` on `gradlew`). A residual probe of `~/.local/share/kotlin` must not be fatal; do not grant Landlock there.
+- **Agent session confinement is Landlock** (mutation allow-list; read stays on Unix permissions). bubblewrap and AppArmor were compared as write sandboxes and are not the agent session. That comparison is a sandbox research note (`dev-ai-interaction/research/WRITE_SANDBOX_OPTIONS.md`), not a second permissions spec. Pin builds may still use a separate `libpin-sandbox` helper.
 - Scripts always: `umask 007; sg ai-code` (and `sudo -u dlang` only for keystore/signing if needed).
 - No direct `gradlew` or `gradlew.bat`. Agent builds through `build_app`; device install through `deploy` (human/primary).
 - `build_app` forwards gradle flags after `--` (e.g. `build_app "msg" file -- --info --stacktrace`).

@@ -1,8 +1,4 @@
----
-type: implementation-reference
-status: dynamic
-ai_directive: "This is a downstream reference. It MUST be updated continuously to reflect the current state of the codebase. If you change a function or architecture described here, update this document in the same commit."
----
+**Status:** Obsolete. Old mono-pipeline note. Live dash and odometer behavior is `docs/reference/QUICK_FILL_CAMERA.md`.
 
 # Odometer Reading by Camera (Technical Workflow)
 

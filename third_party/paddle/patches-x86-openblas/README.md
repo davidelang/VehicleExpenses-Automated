@@ -19,7 +19,7 @@ Applied only when `ARCH` is `x86` / `x86_64` in `scripts/run-android-historical.
 
 Size knobs kept: `DYNAMIC_ARCH=0 TARGET=CORE2 ONLY_CBLAS=1` (see `docs/specs/PADDLE_BUILD.md` § OpenBLAS).
 
-**Rebuild (libpin — see `third_party/README.md`, `docs/reference/PADDLE_PIN_BUILDS.md`):**
+**Rebuild (libpin — see `third_party/README.md`, `docs/specs/PADDLE_PIN_BUILDS.md`):**
 
 ```bash
 # From VehicleExpenses worktree root

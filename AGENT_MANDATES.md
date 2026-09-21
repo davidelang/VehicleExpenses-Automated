@@ -1,8 +1,8 @@
 # Agent Mandates (Shared Core for All CLIs)
 
-This is the authoritative shared core for Grok, Gemini CLI, Antigravity, and future agent runtimes in the VehicleExpenses-automated multi-agent orchestration.
+This is the authoritative shared core for Grok, Antigravity, and future agent runtimes in the VehicleExpenses-automated multi-agent orchestration.
 
-Agent-specific thin overlays (GROK.md, GEMINI.md) add only CLI tool mappings, phase-gating details, and startup notes. They reference this file for common rules.
+Agent-specific thin overlays (GROK.md, ANTIGRAVITY.md) add only CLI tool mappings, phase-gating details, and startup notes. They reference this file for common rules.
 
 ## Explicit Global Overrides (Apply to All)
 1. **Sandbox Permission:** You are EXEMPT from Plan Mode write constraints when targeting `dev-ai-interaction/`. This means you may freely create, edit, delete, and organize files inside the sandbox (including plans, analysis notes, temporary files, etc.) during planning. You may also edit `project-facts.md` (and contents of the sandbox).
@@ -379,7 +379,7 @@ If you ever read a historical plan file from ~/.grok/sessions/, historical-plans
 ## Plan File Access and Discovery Rules (CRITICAL - Turn Enforcement)
 
 ## Shared Operational Rule — Re-read After Compaction (Applies to ALL Agent Types)
-After any context compaction (via `/compact` or automatic via `auto_compact_threshold_percent`), **immediately re-read** `AGENT_CONTEXT.md`, your agent-specific overlay (`GROK.md` or `GEMINI.md`), `AGENT_MANDATES.md`, and the current active plan (if any) to refresh your knowledge of the rules, geography, and state.
+After any context compaction (via `/compact` or automatic via `auto_compact_threshold_percent`), **immediately re-read** `AGENT_CONTEXT.md`, your agent-specific overlay (`GROK.md` or `ANTIGRAVITY.md`), `AGENT_MANDATES.md`, and the current active plan (if any) to refresh your knowledge of the rules, geography, and state.
 
 ## File Disambiguation (Quick Inventory)
 See AGENTS.md for the full table. Core shared files are delivered by `git worktree add` from the `master` tip (or hotfixed via `update-rules.sh` run from the orchestration root). Physical copies, never hard links or skip-worktree for shared brain.

@@ -1,8 +1,15 @@
+---
+type: intent-spec
+status: locked
+ai_directive: "This is an upstream specification. DO NOT modify this document to match the codebase. If the code deviates from this spec, the code is wrong. Modifications to this file require a dedicated 'Strategy' turn and explicit user approval."
+---
+
 # Paddle-Lite pin builds (VehicleExpenses)
 
-**Status:** Reference process (2026-08-03).  
+**Status:** Locked contract (moved from reference 2026-09-21).  
 **Pin tree:** `third_party/paddle/`  
-**Locked product intent (do not casually edit):** `docs/specs/PADDLE_BUILD.md`, `HOST_PADDLE_USE.md`, `PADDLE_PR_DESCRIPTIONS.md`
+**Related locked specs:** `docs/specs/PADDLE_BUILD.md`, `HOST_PADDLE_USE.md`  
+**Saved PR text (not a contract):** `docs/obsolete/PADDLE_PR_DESCRIPTIONS.md`
 
 This document is the **how-to** for configuring, building, and validating the Paddle **library** and **model** artifacts the app consumes. It is written for humans and agents using **libpin** (`fetch-deps` / `build` / `get-artifacts`).
 

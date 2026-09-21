@@ -15,4 +15,4 @@ cat third_party/example/artifact/hello.bin
 | `reproducible` | `false` (timestamp in output name) |
 | `from` glob + `pick: newest` | `src/bin/hello-*.bin` |
 
-Full rules: `docs/reference/THIRD_PARTY_PIN_BUILDS.md`.
+Full rules: `docs/specs/THIRD_PARTY_PIN_BUILDS.md`.

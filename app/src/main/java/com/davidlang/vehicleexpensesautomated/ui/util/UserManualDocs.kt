@@ -10,9 +10,9 @@ import com.davidlang.vehicleexpensesautomated.ui.help.UserManualActivity
  * Browsers do not render GitHub raw `.md` as a document with images. Browser-facing
  * and in-app readers always open **HTML**:
  * - In-app: packaged assets (`UserManualActivity` WebView) — offline, no login
- * - Web: [ONLINE_HTML_URL] (`docs/user-manual.html` on master via jsDelivr)
+ * - Web: [ONLINE_HTML_URL] (`docs/user-manual/index.html` on master via jsDelivr)
  *
- * Edit source remains `docs/user-manual.md`. After editing, run
+ * Edit source remains `docs/user-manual/manual.md`. After editing, run
  * `./scripts/render-user-manual.sh` to refresh HTML + assets.
  */
 object UserManualDocs {
@@ -20,10 +20,10 @@ object UserManualDocs {
 
     /**
      * Public **HTML** manual (screenshots render). No GitHub login.
-     * Available after `docs/user-manual.html` is on the public master branch.
+     * Available after `docs/user-manual/index.html` is on the public master branch.
      */
     const val ONLINE_HTML_URL =
-        "https://cdn.jsdelivr.net/gh/$REPO@master/docs/user-manual.html"
+        "https://cdn.jsdelivr.net/gh/$REPO@master/docs/user-manual/index.html"
 
     fun openFullManual(context: Context) {
         context.startActivity(Intent(context, UserManualActivity::class.java))

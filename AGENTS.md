@@ -7,7 +7,7 @@ This file (AGENTS.md) is the entry point for agent CLIs in this multi-agent Vehi
 **Role pack** (full read on each **event** below — law: `AGENT_MANDATES.md` §10):
 
 1. `./AGENT_CONTEXT.md` — identity, branch/role, sandbox.
-2. CLI overlay: `./GROK.md` or `./GEMINI.md`.
+2. CLI overlay: `./GROK.md` or `./ANTIGRAVITY.md`.
 3. `./AGENT_MANDATES.md` (shared core).
 4. `./project-facts.md` (**full** file — orientation only).
 5. **If Master:** also `MASTER_AGENT_MANDATE.md`.
@@ -67,7 +67,7 @@ When **spawning** planner/executor roles, load the full file under `.grok/prompt
 | AGENT_MANDATES.md | Shared core law |
 | `.grok/prompts/*.md` | Full spawn templates |
 | MASTER_AGENT_MANDATE.md | Master merge/execute |
-| GROK.md / GEMINI.md | Thin CLI overlays |
+| GROK.md / ANTIGRAVITY.md | Thin CLI overlays |
 | new_agent_prompt | Startup ack + STOP |
 | standard-plan-compliance-block.md | Execution gates — **cite path; do not paste** |
 | project-facts.md | Orientation map |

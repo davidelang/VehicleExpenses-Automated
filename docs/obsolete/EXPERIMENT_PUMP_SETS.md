@@ -218,6 +218,6 @@ Source file unless noted: `app/src/main/java/com/davidlang/vehicleexpensesautoma
 
 ## Related docs / tags
 
-- Live architecture notes: `docs/PUMP_EXPERIMENT_FLOWS.md` (updated after simplify to G-- + I only).
+- Live expand notes: `docs/reference/PUMP_EXPERIMENT_FLOWS.md`. Quick Fill stages: `docs/reference/QUICK_FILL_CAMERA.md`.
 - Alignment counterpart: `docs/obsolete/EXPERIMENT_ALIGNMENT_SETS.md` + `obsolete-experiment-alignment-sets-a-e`.
 - Shared pump classification / verts live in `ui/util/PumpCostVolUtils.kt` and related production harness code — not archived here.

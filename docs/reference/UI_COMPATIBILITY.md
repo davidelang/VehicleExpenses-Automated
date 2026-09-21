@@ -85,7 +85,7 @@ Helpers: `PhotoBackupCoordinator`, `ArchivePhotoHelpers`, Fuel History / Edit / 
 - LTR language packs / `strings.xml` translations — TODO + later plan  
 - RTL / complex scripts — `dev-ai-interaction/research/i18n-rtl-and-beyond-languages-20260730.md`  
 - mi/km prefs, L/100km economy mode  
-- Full illustrated `user-manual.md` rewrite (condensed guide: `USER_GUIDE.md`)
+- Full illustrated manual: `docs/user-manual/manual.md` (short guide: `docs/QUICK_GUIDE.md`)
 
 ## 10. Quick grep checklist (before claiming UI done)
 

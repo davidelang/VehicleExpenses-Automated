@@ -32,4 +32,4 @@ Refresh this file when cheatsheets go stale. Prefer official vendor + rclone pag
 | Resource | URL (placeholder) |
 |----------|-------------------|
 | Tracked cheatsheet root | `https://github.com/<org>/VehicleExpenses-Automated/blob/master/docs/reference/self-host/` |
-| User guide | `docs/reference/USER_GUIDE.md` (repo) |
+| Quick guide | `docs/QUICK_GUIDE.md` (repo) |

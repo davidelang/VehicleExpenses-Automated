@@ -1,3 +1,5 @@
+**Status:** Obsolete. Side-by-side Kotlin/C++ harness design, not a current contract.
+
 # Paddle OCR Parallel Execution & Consensus Verification Harness
 
 This specification document details the design, JNI implementation, coordinate processing, consensus voting algorithm, and host-side verification pipeline for the C++ parallel execution harness. 

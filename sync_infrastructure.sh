@@ -19,14 +19,13 @@ FILES=(
     ".gemini/policies/auto-saved.toml"
     ".gemini/system.md"
     ".gemini/system_prompt.md"
-    "GEMINI.md"
+    "ANTIGRAVITY.md"
     # TODO.md intentionally not synced (per-branch backlog; see update-rules.sh)
     "MASTER_AGENT_MANDATE.md"
     "README-multi-agent.md"
     "agent_reminder"
     "new_agent_prompt"
     ".gitignore"
-    "docs/specs/OPERATIONAL_HANDBOOK.md"
     # New for Grok CLI parallel support (added per approved plan + review)
     "AGENT_MANDATES.md"
     "AGENTS.md"

@@ -120,7 +120,7 @@ User edits (gap insert, odo fix, partial checkbox) go through repository APIs th
 
 ## Related docs
 
-- User-facing summary: [USER_GUIDE.md](USER_GUIDE.md) — Synchronization section
+- User-facing summary: [QUICK_GUIDE.md](../QUICK_GUIDE.md) — Synchronization section
 - Economy chain rules: [REPORTS_METRICS.md](REPORTS_METRICS.md)
 - Self-hosted setup: [self-host/INDEX.md](self-host/INDEX.md)
 - Non-Google version-history caveat: [self-host/README.md](self-host/README.md)

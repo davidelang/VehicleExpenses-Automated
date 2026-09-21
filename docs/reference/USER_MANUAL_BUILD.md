@@ -10,8 +10,8 @@ ai_directive: "Update when the user-manual render pipeline or package paths chan
 
 | Artifact | Audience | Notes |
 |----------|----------|--------|
-| **`docs/user-manual.md`** | Authors / git | **Edit source.** Markdown is easy to review and diff. |
-| **`docs/user-manual.html`** | **Browsers / web** | **Rendered** with screenshots. Browsers do **not** treat raw `.md` as a document with images. |
+| **`docs/user-manual/manual.md`** | Authors / git | **Edit source.** Markdown is easy to review and diff. |
+| **`docs/user-manual/index.html`** | **Browsers / web** | **Rendered** with screenshots. Browsers do **not** treat raw `.md` as a document with images. |
 | **`docs/user-manual/images/*.jpg`** | Both | Screenshots (phone + chrome). |
 | **`app/src/main/assets/user-manual/`** | **In-app** | Offline HTML + images for Help / About. |
 
@@ -21,12 +21,12 @@ ai_directive: "Update when the user-manual render pipeline or package paths chan
 
 - Help / About → `UserManualDocs.openFullManual` → `UserManualActivity` (WebView loads `file:///android_asset/user-manual/index.html`).
 - Optional published web HTML (after master has the file): `UserManualDocs.ONLINE_HTML_URL`  
-  `https://cdn.jsdelivr.net/gh/davidelang/VehicleExpenses-Automated@master/docs/user-manual.html`  
-  (no GitHub login; images via relative `user-manual/images/` paths next to the HTML).
+  `https://cdn.jsdelivr.net/gh/davidelang/VehicleExpenses-Automated@master/docs/user-manual/index.html`  
+  (no GitHub login; images via relative `images/` paths next to the HTML).
 
 ## How to update the manual
 
-1. Edit **`docs/user-manual.md`** (and add/replace images under **`docs/user-manual/images/`** if needed).
+1. Edit **`docs/user-manual/manual.md`** (and add/replace images under **`docs/user-manual/images/`** if needed).
 2. Regenerate browser HTML + app assets:
 
    ```bash
@@ -36,8 +36,8 @@ ai_directive: "Update when the user-manual render pipeline or package paths chan
    (Implementation: `scripts/render_user_manual.py`. Requires Python 3; installs `markdown` if missing.)
 
 3. Commit **together**:
-   - `docs/user-manual.md`
-   - `docs/user-manual.html`
+   - `docs/user-manual/manual.md`
+   - `docs/user-manual/index.html`
    - `docs/user-manual/images/*` (if changed)
    - `app/src/main/assets/user-manual/**` (regenerated)
 
@@ -47,5 +47,5 @@ If you change only Markdown and forget the script, the **in-app and web manuals 
 
 ## Related
 
-- Condensed user reference: [USER_GUIDE.md](USER_GUIDE.md)
+- Short everyday guide: [QUICK_GUIDE.md](../QUICK_GUIDE.md)
 - Orientation: worktree `project-facts.md` (user-manual paths)

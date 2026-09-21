@@ -1421,7 +1421,7 @@ suspend fun runPumpExperiment(
                             hmThresh = HEAT_THR_U8_GE1,
                         )
                     }
-                // Parked (re-enable via docs/PUMP_EXPERIMENT_FLOWS.md): G-dense, K thr, L/M dilate, N–Q content.
+                // Parked (re-enable via docs/reference/PUMP_EXPERIMENT_FLOWS.md): G-dense, K thr, L/M dilate, N–Q content.
                 @Suppress("unused")
                 val procGDense = makeGProc(
                     SET_G_DENSE_VERT_FACTORS,

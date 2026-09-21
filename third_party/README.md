@@ -2,7 +2,7 @@
 
 **Audience:** any developer (human or automated) who clones this tree and needs to **audit, reproduce, or tweak** custom builds of external libraries.
 
-**Detail:** `docs/reference/THIRD_PARTY_PIN_BUILDS.md`  
+**Detail:** `docs/specs/THIRD_PARTY_PIN_BUILDS.md`  
 **Toy example:** `third_party/example/`  
 **Future tooling name (if extracted):** *libpin* — name appears free on GitHub / PyPI / npm as of 2026-08-03; leave in-tree until OpenCV + rclone + paddle + remotetable/extractmail profiles all work.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render docs/user-manual.md to HTML for browsers + app assets.
+"""Render docs/user-manual/manual.md to HTML for browsers + app assets.
 
 Markdown is the edit source. HTML is the browser-facing / in-app document
 (with screenshots). Run: ./scripts/render-user-manual.sh
@@ -84,7 +84,7 @@ def render(md: str) -> str:
   </style>
 </head>
 <body>
-  <p class="note">Vehicle Expenses Automated — full illustrated user manual (HTML for browsers). Edit source: <code>docs/user-manual.md</code>; regenerate with <code>./scripts/render-user-manual.sh</code>.</p>
+  <p class="note">Vehicle Expenses Automated — full illustrated user manual (HTML for browsers). Edit source: <code>docs/user-manual/manual.md</code>; regenerate with <code>./scripts/render-user-manual.sh</code>.</p>
   {body}
 </body>
 </html>
@@ -93,14 +93,14 @@ def render(md: str) -> str:
 
 def main() -> None:
     root = Path(__file__).resolve().parent.parent
-    md_path = root / "docs" / "user-manual.md"
+    md_path = root / "docs" / "user-manual" / "manual.md"
     if not md_path.is_file():
         raise SystemExit(f"missing {md_path}")
     md_text = md_path.read_text(encoding="utf-8")
 
-    # Browser: docs/user-manual.html with relative user-manual/images/
-    web_html = render(normalize_md_for_html(md_text, "user-manual/images/"))
-    web_out = root / "docs" / "user-manual.html"
+    # Browser HTML sits beside images/, same relative prefix as the app asset HTML.
+    web_html = render(normalize_md_for_html(md_text, "images/"))
+    web_out = root / "docs" / "user-manual" / "index.html"
     web_out.write_text(web_html, encoding="utf-8")
     print(f"wrote {web_out} ({web_out.stat().st_size} bytes, {web_html.count('<img ')} images)")
 
@@ -113,7 +113,10 @@ def main() -> None:
     src_imgs = root / "docs" / "user-manual" / "images"
     n = 0
     for p in sorted(src_imgs.glob("*.jpg")):
-        shutil.copy2(p, asset_img / p.name)
+        dest = asset_img / p.name
+        data = p.read_bytes()
+        if not dest.is_file() or dest.read_bytes() != data:
+            dest.write_bytes(data)
         n += 1
     print(f"wrote {asset_root / 'index.html'} + {n} jpgs")
 
