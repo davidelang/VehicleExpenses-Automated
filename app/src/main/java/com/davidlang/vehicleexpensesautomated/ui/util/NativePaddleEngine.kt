@@ -65,10 +65,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var sharedDetectorSmall: PaddlePredictor? = null
         private var sharedRecognizerV3: PaddlePredictor? = null
         private var sharedRecognizerNumeric: PaddlePredictor? = null
-        private var sharedRecognizerV3H56: PaddlePredictor? = null
-        private var sharedRecognizerNumericH56: PaddlePredictor? = null
-        private var sharedRecognizerV3H64: PaddlePredictor? = null
-        private var sharedRecognizerNumericH64: PaddlePredictor? = null
 
         private var isNativeLibLoaded = false
         private val dictionaryV3 = mutableListOf<String>()
@@ -199,16 +195,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
             releasePredictor(sharedRecognizerV3, "rec_v3")
             releasePredictor(sharedRecognizerNumeric, "rec_numeric")
-            releasePredictor(sharedRecognizerV3H56, "rec_v3_h56")
-            releasePredictor(sharedRecognizerNumericH56, "rec_numeric_h56")
-            releasePredictor(sharedRecognizerV3H64, "rec_v3_h64")
-            releasePredictor(sharedRecognizerNumericH64, "rec_numeric_h64")
             sharedRecognizerV3 = null
             sharedRecognizerNumeric = null
-            sharedRecognizerV3H56 = null
-            sharedRecognizerNumericH56 = null
-            sharedRecognizerV3H64 = null
-            sharedRecognizerNumericH64 = null
             sharedDetectorLarge = null
             sharedDetectorSmall = null
             // Drop large host buffers so next load reallocates clean sizes for the path.
@@ -284,7 +272,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         /** One rec canvas everywhere. Engine infers a createCrop slice, not the unused width. */
         const val REC_CANVAS_W = 4096
-        const val REC_CANVAS_H = 64
+        const val REC_CANVAS_H = 48
 
         /** Default reference dash size when probe fails (matches shared buffer / typical 12MP refs). Not 4000. */
         const val DEFAULT_REF_DASH_W = 4080
@@ -528,42 +516,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 ?: throw IllegalStateException("createPaddlePredictor rec_numeric null file=$recNumPath")
             sharedRecognizerNumeric!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
             heartbeat("load_models_done path=$pathId tiers=${sharedTiers.size}")
-        }
-
-        /**
-         * Experiment rec predictors opt'd at H=56 and H=64 (`paddle/exp_rec_h{H}/`).
-         * Production [sharedRecognizerV3] / [sharedRecognizerNumeric] stay 48.
-         * Call after [loadProductionModels].
-         */
-        fun loadExperimentRecHeights(context: Context) {
-            val arch = modelArchForPrimaryAbi()
-            fun copyAsset(p: String): String {
-                val f = File(context.filesDir, p.replace("/", "_"))
-                context.assets.open(p).use { inp -> FileOutputStream(f).use { out -> inp.copyTo(out) } }
-                return f.absolutePath
-            }
-            fun loadOne(h: Int, base: String): PaddlePredictor {
-                val asset = "paddle/exp_rec_h$h/${base}_$arch.nb"
-                val path = copyAsset(asset)
-                val config = MobileConfig()
-                config.setThreads(4)
-                config.setPowerMode(PowerMode.LITE_POWER_NO_BIND)
-                config.setModelFromFile(path)
-                val p = PaddlePredictor.createPaddlePredictor(config)
-                    ?: throw IllegalStateException("createPaddlePredictor $asset null")
-                p.getInput(0).resize(longArrayOf(1, 1, h.toLong(), 320))
-                Log.i("PaddleLite", "exp rec H=$h $base arch=$arch → $path")
-                return p
-            }
-            releasePredictor(sharedRecognizerV3H56, "rec_v3_h56")
-            releasePredictor(sharedRecognizerNumericH56, "rec_numeric_h56")
-            releasePredictor(sharedRecognizerV3H64, "rec_v3_h64")
-            releasePredictor(sharedRecognizerNumericH64, "rec_numeric_h64")
-            sharedRecognizerV3H56 = loadOne(56, "rec_v3")
-            sharedRecognizerNumericH56 = loadOne(56, "rec_numeric")
-            sharedRecognizerV3H64 = loadOne(64, "rec_v3")
-            sharedRecognizerNumericH64 = loadOne(64, "rec_numeric")
-            heartbeat("load_exp_rec_h56_h64_done arch=$arch")
         }
 
         /**
@@ -1205,30 +1157,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         return if (n == bufferRecInt8.size) bufferRecInt8 else bufferRecInt8.copyOf(n)
     }
 
-    /**
-     * Packed Lite feed. Canvas may be 48/56/64; tensor H is always 48 (scale 56/64, copy).
-     * Does not mutate [srcMat].
-     */
+    /** Packed Lite feed. Rec tensor H is 48 only. Does not mutate [srcMat]. */
     private fun packRecForLite(srcMat: Mat, w: Int, h: Int): Triple<ByteArray, Int, Int>? {
-        if (w > REC_CANVAS_W || w < 1) return null
-        if (h == 48) return Triple(recTensorBytes(srcMat, w, h), w, 48)
-        if (h != 56 && h != 64) return null
-        var tw = kotlin.math.round(w * 48.0 / h.toDouble()).toInt().coerceAtLeast(2)
-        if (tw % 2 != 0) tw += 1
-        tw = tw.coerceAtMost(REC_CANVAS_W)
-        if (tw % 2 != 0) tw = (tw - 1).coerceAtLeast(2)
-        val dest = Mat()
-        Imgproc.resize(
-            srcMat,
-            dest,
-            Size(tw.toDouble(), 48.0),
-            0.0,
-            0.0,
-            Imgproc.INTER_AREA,
-        )
-        val bytes = recTensorBytes(dest, tw, 48)
-        dest.release()
-        return Triple(bytes, tw, 48)
+        if (w > REC_CANVAS_W || w < 1 || h != 48) return null
+        return Triple(recTensorBytes(srcMat, w, h), w, 48)
     }
 
     private suspend fun processOcr(input: Any, predictor: PaddlePredictor?, dictionary: List<String>): RecStageResult = withContext(Dispatchers.IO) {
@@ -1246,7 +1178,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val tPop0 = System.nanoTime()
         val packed = packRecForLite(srcMat, w, h)
         if (packed == null) {
-            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) not a rec H of 48/56/64 (canvas ${REC_CANVAS_W}x${REC_CANVAS_H}).")
+            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) not rec H=48 (canvas ${REC_CANVAS_W}x${REC_CANVAS_H}).")
             return@withContext RecStageResult("(Size Error)", 0, 0f, null)
         }
         val recFeed = packed.first
@@ -1314,7 +1246,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val tPop0 = System.nanoTime()
         val packed = packRecForLite(srcMat, w, h)
         if (packed == null) {
-            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) not a rec H of 48/56/64 (canvas ${REC_CANVAS_W}x${REC_CANVAS_H}).")
+            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) not rec H=48 (canvas ${REC_CANVAS_W}x${REC_CANVAS_H}).")
             return@withContext RecStageResult("(Size Error)", 0, 0f, null)
         }
         val recFeed = packed.first
