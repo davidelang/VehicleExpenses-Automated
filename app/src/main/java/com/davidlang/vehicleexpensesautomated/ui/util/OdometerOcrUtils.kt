@@ -20,8 +20,10 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
@@ -982,6 +984,55 @@ object OdometerOcrUtils {
         org.opencv.android.Utils.matToBitmap(outMat, out)
         mat.release(); gray.release(); outMat.release()
         return out
+    }
+
+    /** In-place CLAHE 2.0, tile 8×8. For rec H=48 strips. */
+    fun applyClaheMat(mat: Mat) {
+        val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
+        val out = Mat()
+        clahe.apply(mat, out)
+        out.copyTo(mat)
+        out.release()
+    }
+
+    /** Gaussian residual sharpen: 1.5·src − 0.5·gauss3. In-place. */
+    fun applyUnsharpMat(mat: Mat) {
+        val blur = Mat()
+        Imgproc.GaussianBlur(mat, blur, Size(3.0, 3.0), 0.0)
+        Core.addWeighted(mat, 1.5, blur, -0.5, 0.0, mat)
+        blur.release()
+    }
+
+    /** Homomorphic-lite: src / (gaussσ + ε), rescale 0–255. In-place. No Otsu. */
+    fun applyDivBlurMat(mat: Mat, sigma: Double = 8.0) {
+        val blur = Mat()
+        Imgproc.GaussianBlur(mat, blur, Size(0.0, 0.0), sigma)
+        val sf = Mat()
+        val bf = Mat()
+        val out = Mat()
+        mat.convertTo(sf, CvType.CV_32F)
+        blur.convertTo(bf, CvType.CV_32F)
+        Core.add(bf, org.opencv.core.Scalar(1.0), bf)
+        Core.divide(sf, bf, out)
+        Core.normalize(out, out, 0.0, 255.0, Core.NORM_MINMAX)
+        out.convertTo(mat, CvType.CV_8U)
+        blur.release(); sf.release(); bf.release(); out.release()
+    }
+
+    /** Logistic LUT around histogram valley (soft split). Not THRESH_OTSU. In-place. */
+    fun applySigmoidValleyMat(mat: Mat) {
+        val (valleys, _) = getValleyPeakGrays(mat)
+        val v = if (valleys.isNotEmpty()) valleys.sorted()[valleys.size / 2] else 128
+        val k = 0.12
+        val lutData = ByteArray(256)
+        for (g in 0..255) {
+            val s = 255.0 / (1.0 + exp(-k * (g - v)))
+            lutData[g] = s.roundToInt().coerceIn(0, 255).toByte()
+        }
+        val lutMat = Mat(1, 256, CvType.CV_8U)
+        lutMat.put(0, 0, lutData)
+        Core.LUT(mat, lutMat, mat)
+        lutMat.release()
     }
 
     fun applyOtsu(bitmap: Bitmap): Bitmap {

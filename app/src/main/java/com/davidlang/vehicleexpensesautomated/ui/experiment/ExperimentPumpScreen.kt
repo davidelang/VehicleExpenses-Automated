@@ -7379,7 +7379,7 @@ private val OCR_GEOM_COLUMNS = listOf(
 /**
  * Stage-3 only: OCR precomputed winning blues (no detect/expand/hpad/k/poison).
  * 6 columns (G--/AABB/Rot × int/mild) × cost/vol × winner then extra ×
- * 40in48int/40in48mild × wob/bow.
+ * 7 rec-buffer preps × wob/bow (14 recs/box). No 36/38/42. No Otsu.
  */
 suspend fun runPumpOcrGeomExperiment(
     experimentDir: File,
@@ -7430,6 +7430,29 @@ suspend fun runPumpOcrGeomExperiment(
         return ContentExpandUtils.OrientedQuad(FloatArray(8) { i -> pts.optDouble(i).toFloat() })
     }
 
+    fun applyGeomRecPrep(work: Mat, prep: String) {
+        when (prep) {
+            "clip" -> OdometerOcrUtils.automaticContrastStretch(work)
+            "valley" -> OdometerOcrUtils.valleyPushToPeaks(work)
+            "clahe" -> OdometerOcrUtils.applyClaheMat(work)
+            "unsharp" -> OdometerOcrUtils.applyUnsharpMat(work)
+            "divblur" -> OdometerOcrUtils.applyDivBlurMat(work)
+            "sigmoid" -> OdometerOcrUtils.applySigmoidValleyMat(work)
+        }
+    }
+
+    fun geomMatJpegB64(mat: Mat): String {
+        val buf = org.opencv.core.MatOfByte()
+        return try {
+            if (!org.opencv.imgcodecs.Imgcodecs.imencode(".jpg", mat, buf)) return ""
+            Base64.encodeToString(buf.toArray(), Base64.NO_WRAP)
+        } catch (_: Exception) {
+            ""
+        } finally {
+            buf.release()
+        }
+    }
+
     suspend fun ocrPolarPair(
         recCropId: Int,
         targetW: Int,
@@ -7443,33 +7466,42 @@ suspend fun runPumpOcrGeomExperiment(
     ): JSONArray {
         val crop = recBuffer.c[recCropId]
         if (nativeWoB.not()) Core.bitwise_not(crop.mat, crop.mat)
+        val preps = listOf("", "clip", "valley", "clahe", "unsharp", "divblur", "sigmoid")
         val out = JSONArray()
         listOf("wob", "bow").forEachIndexed { idx, pol ->
             if (idx == 1) Core.bitwise_not(crop.mat, crop.mat)
-            val snap = PumpCostVolUtils.snapRecCrop(recBuffer, recCropId, targetW, targetH)
-            val asisRes = paddleEngine.recognize(crop)
-            val digRes = paddleEngine.recognizeNumericDecimal(crop)
-            val asis = PumpCostVolUtils.pumpOcrCleanAndProbs(asisRes.debugText, asisRes.perCharProbs)
-            val digs = PumpCostVolUtils.pumpOcrCleanAndProbs(digRes.debugText, digRes.perCharProbs)
-            val rec = JSONObject()
-                .put("geom", geomId)
-                .put("pol", pol)
-                .put("asis", asis.first)
-                .put("digits", digs.first)
-                .put("asisProbs", asis.second)
-                .put("digitsProbs", digs.second)
-                .put("recW", targetW)
-                .put("recH", targetH)
-                .put("t_feed_ms", tFeedMs)
-                .put("t_rec_v3_ms", asisRes.executionTimeMs)
-                .put("t_rec_num_ms", digRes.executionTimeMs)
-            if (integerK > 0) rec.put("k", integerK)
-            if (mildS > 0f) rec.put("s", mildS.toDouble())
-            if (snap.isNotEmpty()) {
-                rec.put("_htmlRec", snap)
-                pumpPersistJpeg(imgDir, "${stem}_${geomId}_$pol.jpg", snap)
+            preps.forEach { prep ->
+                val work = Mat()
+                crop.mat.copyTo(work)
+                applyGeomRecPrep(work, prep)
+                val snap = geomMatJpegB64(work)
+                val asisRes = paddleEngine.recognize(work)
+                val digRes = paddleEngine.recognizeNumericDecimal(work)
+                work.release()
+                val asis = PumpCostVolUtils.pumpOcrCleanAndProbs(asisRes.debugText, asisRes.perCharProbs)
+                val digs = PumpCostVolUtils.pumpOcrCleanAndProbs(digRes.debugText, digRes.perCharProbs)
+                val geomFull = geomId + prep
+                val rec = JSONObject()
+                    .put("geom", geomFull)
+                    .put("prep", if (prep.isEmpty()) "raw" else prep)
+                    .put("pol", pol)
+                    .put("asis", asis.first)
+                    .put("digits", digs.first)
+                    .put("asisProbs", asis.second)
+                    .put("digitsProbs", digs.second)
+                    .put("recW", targetW)
+                    .put("recH", targetH)
+                    .put("t_feed_ms", tFeedMs)
+                    .put("t_rec_v3_ms", asisRes.executionTimeMs)
+                    .put("t_rec_num_ms", digRes.executionTimeMs)
+                if (integerK > 0) rec.put("k", integerK)
+                if (mildS > 0f) rec.put("s", mildS.toDouble())
+                if (snap.isNotEmpty()) {
+                    rec.put("_htmlRec", snap)
+                    pumpPersistJpeg(imgDir, "${stem}_${geomFull}_$pol.jpg", snap)
+                }
+                out.put(rec)
             }
-            out.put(rec)
         }
         recBuffer.c[recCropId].release()
         return out
@@ -7554,7 +7586,7 @@ suspend fun runPumpOcrGeomExperiment(
     html.append("img{max-width:none;image-rendering:pixelated;}</style></head><body>")
     html.append("<h2>OCR geom $timestamp</h2>")
     html.append("<p>${ExperimentReportMeta.jsonFields()} device=$deviceModel total=$total</p>")
-    html.append("<p>6 columns: G--/AABB/Rot × int (integer k) vs mild (isotropic s, drop partial dest). Same boxes. 40in48 × wob/bow. Rec thumbs 48px. No expand.</p>")
+    html.append("<p>6 columns: G--/AABB/Rot × int vs mild. Same boxes. Each 40-in-48 strip: raw/clip/valley/clahe/unsharp/divblur/sigmoid × wob/bow (14 recs). Thumbs 48px post-prep. No Otsu. No expand.</p>")
     html.append("<table><tr><th># file</th>")
     OCR_GEOM_COLUMNS.forEachIndexed { ci, col -> html.append("<th data-col='$ci'>${col.title}</th>") }
     html.append("</tr>\n")
@@ -7669,8 +7701,10 @@ suspend fun runPumpOcrGeomExperiment(
                             val src = "${imgDir.name}/r${index + 1}_${colName.hashCode()}_${role}_${label}_${tag}_${geom}_$pol.jpg"
                             val asis = rec.optString("asis")
                             val dig = rec.optString("digits")
+                            val scaleLab = if (geom.contains("mild")) "mild" else "int"
+                            val prepLab = rec.optString("prep", "raw")
                             cellHtml.append(
-                                "<div>${pumpImgTag(src, "height:48px;width:auto;", "$tag $geom $pol asis=$asis dig=$dig")}</div>",
+                                "<div>${pumpImgTag(src, "height:48px;width:auto;", "$tag $scaleLab $prepLab $pol asis=$asis dig=$dig")}</div>",
                             )
                         }
                         cellHtml.append("</div>")
