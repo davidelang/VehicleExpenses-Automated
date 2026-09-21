@@ -178,6 +178,9 @@ function hasBlessedHelperInChain(chainBases, blessedBases) {
     './get-builds-tag.sh', '../get-builds-tag.sh',
     './update-rules.sh', '../update-rules.sh',
     './append-to-engineering-log', '../append-to-engineering-log',
+    './exec-preflight', '../exec-preflight',
+    './todo-append', '../todo-append',
+    './todo-close', '../todo-close',
   ]);
   return chainBases.some((b) => helperBases.has(b));
 }
@@ -198,6 +201,9 @@ if (toolName === 'bash') {
     './get-builds-tag.sh', '../get-builds-tag.sh',
     './update-rules.sh', '../update-rules.sh',
     './append-to-engineering-log', '../append-to-engineering-log',
+    './exec-preflight', '../exec-preflight',
+    './todo-append', '../todo-append',
+    './todo-close', '../todo-close',
     'true', 'adb'   // adb for read-only logcat (user confirmed reading data is allowed)
   ]);
 
