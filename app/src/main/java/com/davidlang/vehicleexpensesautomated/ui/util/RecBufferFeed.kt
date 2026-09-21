@@ -172,6 +172,8 @@ object RecBufferFeed {
      * k = max(1, round(boxH/40)); 4k source pad above and left of the blue box;
      * remainder pad right/bottom. Origin clamps to 0. Drop k until k×48 fits.
      * BufferSet crops only. Dest is the full 48 (no 40-tall hole).
+     * [extraLeftDestPx] grows only the left (another dest px × k of source);
+     * height and right/bottom of the stored crop stay put.
      * Does not change [feedSourceBorderHeightStrip].
      */
     fun feedIntegerKContent40(
@@ -187,18 +189,34 @@ object RecBufferFeed {
         imgH: Int,
         recBuffer: BufferSet,
         maxW: Int = DEFAULT_MAX_W,
+        extraLeftDestPx: Int = 0,
     ): Result? {
         val l = rect.left.coerceIn(0, imgW - 1)
         val t = rect.top.coerceIn(0, imgH - 1)
         val rr = rect.right.coerceIn(l + 1, imgW)
         val bb = rect.bottom.coerceIn(t + 1, imgH)
-        return feedIntegerKFromWorkspace(workspace, l, t, rr, bb, recBuffer, maxW)
+        return feedIntegerKFromWorkspace(
+            workspace, l, t, rr, bb, recBuffer, maxW, extraLeftDestPx,
+        )
     }
+
+    fun feedIntegerKContent40LeftPad(
+        workspace: BufferSet,
+        rect: Rect,
+        imgW: Int,
+        imgH: Int,
+        recBuffer: BufferSet,
+        maxW: Int = DEFAULT_MAX_W,
+    ): Result? = feedIntegerKContent40(
+        workspace, rect, imgW, imgH, recBuffer, maxW, extraLeftDestPx = 4,
+    )
 
     /**
      * Geom-only isotropic s = 40/boxH. Dest canvas 48. Source sized as dest 49 / W+1
      * at the same s; custom sampler writes dest rows 0..47 and destW columns only.
      * Extra source: bottom/right. BufferSet crops only.
+     * [extraLeftDestPx] grows only the left (another dest px / s of source);
+     * height and right/bottom of the stored crop stay put.
      */
     fun feedMildNoPartial(
         srcMat: Mat,
@@ -215,13 +233,27 @@ object RecBufferFeed {
         imgH: Int,
         recBuffer: BufferSet,
         maxW: Int = DEFAULT_MAX_W,
+        extraLeftDestPx: Int = 0,
     ): Result? {
         val l = rect.left.coerceIn(0, imgW - 1)
         val t = rect.top.coerceIn(0, imgH - 1)
         val rr = rect.right.coerceIn(l + 1, imgW)
         val bb = rect.bottom.coerceIn(t + 1, imgH)
-        return feedMildFromWorkspace(workspace, l, t, rr, bb, recBuffer, maxW)
+        return feedMildFromWorkspace(
+            workspace, l, t, rr, bb, recBuffer, maxW, extraLeftDestPx,
+        )
     }
+
+    fun feedMildNoPartialLeftPad(
+        workspace: BufferSet,
+        rect: Rect,
+        imgW: Int,
+        imgH: Int,
+        recBuffer: BufferSet,
+        maxW: Int = DEFAULT_MAX_W,
+    ): Result? = feedMildNoPartial(
+        workspace, rect, imgW, imgH, recBuffer, maxW, extraLeftDestPx = 4,
+    )
 
     private fun evenAtLeast2(n: Int): Int {
         val v = n.coerceAtLeast(2)
@@ -292,6 +324,7 @@ object RecBufferFeed {
         srcBottom: Int,
         recBuffer: BufferSet,
         maxW: Int,
+        extraLeftDestPx: Int = 0,
     ): Result? {
         return try {
             val matW = workspace.width
@@ -300,10 +333,11 @@ object RecBufferFeed {
             val boxH = (srcBottom - srcTop).coerceAtLeast(1)
             val canvasH = DEFAULT_REC_H.coerceAtMost(recBuffer.p.height)
             if (matW < 2 || matH < 2 || canvasH < 2) return null
+            val extraL = extraLeftDestPx.coerceAtLeast(0)
             var k = maxOf(1, (boxH / 40f).roundToInt())
             var srcId: Int? = null
             while (k >= 1) {
-                var destW = evenAtLeast2(4 + (boxW.toFloat() / k).roundToInt())
+                var destW = evenAtLeast2(4 + extraL + (boxW.toFloat() / k).roundToInt())
                     .coerceAtMost(maxW.coerceAtMost(recBuffer.p.width))
                 destW = evenDown(destW)
                 var srcW = k * destW
@@ -320,7 +354,7 @@ object RecBufferFeed {
                     k--
                     continue
                 }
-                var sL = evenOrigin((srcLeft - 4 * k).coerceAtLeast(0))
+                var sL = evenOrigin((srcLeft - (4 + extraL) * k).coerceAtLeast(0))
                 var sT = evenOrigin((srcTop - 4 * k).coerceAtLeast(0))
                 if (sL + srcW > matW) sL = 0
                 if (sT + srcH > matH) sT = 0
@@ -372,6 +406,7 @@ object RecBufferFeed {
         srcBottom: Int,
         recBuffer: BufferSet,
         maxW: Int,
+        extraLeftDestPx: Int = 0,
     ): Result? {
         return try {
             val matW = workspace.width
@@ -380,13 +415,14 @@ object RecBufferFeed {
             val boxH = (srcBottom - srcTop).coerceAtLeast(1)
             val s = 40f / boxH
             if (s <= 0f || matW < 2 || matH < 2) return null
+            val extraL = extraLeftDestPx.coerceAtLeast(0)
             val destW = evenDown(
-                evenAtLeast2(4 + (boxW * s).roundToInt())
+                evenAtLeast2(4 + extraL + (boxW * s).roundToInt())
                     .coerceAtMost(maxW.coerceAtMost(recBuffer.p.width)),
             )
             var srcH = ceil(49.0 / s).toInt().coerceAtLeast(2)
             var srcW = ceil((destW + 1.0) / s).toInt().coerceAtLeast(2)
-            val leftPad = (4f / s).roundToInt().coerceAtLeast(0)
+            val leftPad = ((4f + extraL) / s).roundToInt().coerceAtLeast(0)
             val topPad = (4f / s).roundToInt().coerceAtLeast(0)
             val sL = evenOrigin((srcLeft - leftPad).coerceAtLeast(0))
             val sT = evenOrigin((srcTop - topPad).coerceAtLeast(0))
