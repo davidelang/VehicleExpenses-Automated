@@ -744,3 +744,12 @@ Policy: permission denials → report human / script residual; no creative worka
 ## 2026-09-20 - Fix run-grok-imagine CLI permission flags
 
 Grok rejects --permission-mode always-approve. Pin bypassPermissions plus --always-approve (same Aim, valid CLI).
+
+## 2026-09-21 - Fix worktree .grok/config.toml TOML syntax (stray rules after ])
+
+Moved three allow rows (fetch-deps / checkifclean / execute-third-party-plan.sh) back inside [permission].rules on agent-1, agent-2, master, test-smudge-filters, and grok-worktrees/infra-harden-20260809. orch and agent-3 already parsed. dlang ~/.grok/pager.toml still has unquoted alt_screen = never; sudo installer is dev-ai-interaction/install-dlang-pager-toml.sh.
+
+## 2026-09-21 - Start execution: research-docs-obsolete-to-docs-obsolete-20260921-0723-plan.md
+
+- Copy staged TFLite/Tesseract/researcher GEMINI+TODO into docs/obsolete/
+- AI_DEVELOPER_GUIDE.md is not on orch (lives on master) — report extra; do not edit master from orch
