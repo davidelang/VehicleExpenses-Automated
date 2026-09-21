@@ -229,7 +229,7 @@ FILES=(
     ".gemini/policies/auto-saved.toml"
     ".gemini/system.md"
     ".gemini/system_prompt.md"
-    "GEMINI.md"
+    "ANTIGRAVITY.md"
     # TODO.md is NOT synced. It is per-branch backlog (master product backlog vs
     # orchestration meta). Blind cp from orchestration destroyed master cleanups.
     # Merge via MASTER_AGENT_MANDATE special-file protocol only (todo-append/todo-close).
@@ -238,10 +238,9 @@ FILES=(
     "agent_reminder"
     "new_agent_prompt"
     ".gitignore"
-    "docs/specs/OPERATIONAL_HANDBOOK.md"
     "docs/ENVIRONMENT_SETUP.md"
     "docs/reference/ORCHESTRATION_MERGE_INFRA_SYNC.md"
-    "docs/reference/MERGE_POSTMORTEM_IMPROVE_PUMP_CLASSIFICATION.md"
+    "docs/obsolete/MERGE_POSTMORTEM_IMPROVE_PUMP_CLASSIFICATION.md"
     # New for Grok CLI parallel support (added per approved plan)
     "AGENT_MANDATES.md"
     "AGENTS.md"

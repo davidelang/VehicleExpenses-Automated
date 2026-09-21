@@ -1,8 +1,8 @@
 # Agent Mandates (Shared Core for All CLIs)
 
-This is the authoritative shared core for Grok, Gemini CLI, Antigravity, and future agent runtimes in the VehicleExpenses-automated multi-agent orchestration.
+This is the authoritative shared core for Grok, Antigravity, and future agent runtimes in the VehicleExpenses-automated multi-agent orchestration.
 
-Agent-specific thin overlays (`GROK.md`, `GEMINI.md`) add CLI tool mappings and startup notes. They reference this file for common rules.
+Agent-specific thin overlays (`GROK.md`, `ANTIGRAVITY.md`) add CLI tool mappings and startup notes. They reference this file for common rules.
 
 **Spawn prompt files** (load full text when spawning; do not paste into plans):
 - `.grok/prompts/planning-subagent.md`

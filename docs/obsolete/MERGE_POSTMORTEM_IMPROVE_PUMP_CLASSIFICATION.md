@@ -1,3 +1,5 @@
+**Status:** Obsolete historical note. Not current procedure.
+
 # Postmortem: `improve-pump-classification` merge (2026-07-16)
 
 **Branch:** `improve-pump-classification` → `master`  

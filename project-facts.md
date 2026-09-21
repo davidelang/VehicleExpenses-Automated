@@ -4,6 +4,14 @@ Cold-start map so agents do not hunt or invent wrong procedures. Anything discov
 
 Read in full early on startup/new cycle.
 
+## App docs (master `docs/`)
+- `README.md` — GitHub front page
+- `docs/README.md` — index
+- `docs/OVERVIEW.md` — product story
+- `docs/QUICK_GUIDE.md` — short use
+- `docs/reference/QUICK_FILL_CAMERA.md` — dash, pump, location
+- Locked contracts: `docs/specs/` (code is wrong if it disagrees)
+
 ## Sandbox (dev-ai-interaction)
 - Absolute path: `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/`
 - `dev-ai-interaction/plans/` — designated active plan (user names exact file)

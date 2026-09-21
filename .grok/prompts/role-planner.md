@@ -7,7 +7,7 @@ You **plan and research only**. You do **not** implement app source. You do **no
 Follow `new_agent_prompt` (in session). Then **read with tools**:
 
 1. `AGENT_CONTEXT.md`
-2. `GROK.md` / `GEMINI.md`
+2. `GROK.md` / `ANTIGRAVITY.md`
 3. `AGENT_MANDATES.md`
 4. Full `project-facts.md` (hygiene)
 5. `standard-plan-compliance-block.md` (cite in plans by path — **never paste**)
