@@ -7369,21 +7369,20 @@ private val OCR_GEOM_COLUMNS = listOf(
 private data class OcrGeomSpec(
     val id: String,
     val contentH: Int,
-    val canvasH: Int,
     val recBorder: Int,
-    val control48: Boolean,
 )
 
 private val OCR_GEOM_SPECS = listOf(
-    OcrGeomSpec("40in48", 40, 48, 4, control48 = true),
-    OcrGeomSpec("48in56", 48, 56, 4, control48 = false),
-    OcrGeomSpec("48in64", 48, 64, 8, control48 = false),
+    OcrGeomSpec("36in48", 36, 6),
+    OcrGeomSpec("38in48", 38, 5),
+    OcrGeomSpec("40in48", 40, 4),
+    OcrGeomSpec("42in48", 42, 3),
 )
 
 /**
  * Stage-3 only: OCR precomputed winning blues (no detect/expand/hpad/k/poison).
- * 3 columns (G-- / AABB / Rot) × cost/vol × winner then extra × 6 recs
- * (40-in-48 / 48-in-56 / 48-in-64 × WoB then BoW).
+ * 3 columns (G-- / AABB / Rot) × cost/vol × winner then extra × 8 recs
+ * (36/38/40/42-in-48 × WoB then BoW).
  */
 suspend fun runPumpOcrGeomExperiment(
     experimentDir: File,
@@ -7480,20 +7479,11 @@ suspend fun runPumpOcrGeomExperiment(
         imgH: Int,
         spec: OcrGeomSpec,
     ): RecBufferFeed.Result {
-        return if (spec.control48) {
-            RecBufferFeed.feedSourceBorderHeightStrip(
-                src, rect, imgW, imgH, recBuffer,
-                targetH = RecBufferFeed.DEFAULT_REC_H,
-                borderPx = RecBufferFeed.DEFAULT_BORDER_PX,
-            )
-        } else {
-            RecBufferFeed.feedContentInCanvas(
-                src, rect, imgW, imgH, recBuffer,
-                contentH = spec.contentH,
-                canvasH = spec.canvasH,
-                recBorder = spec.recBorder,
-            )
-        }
+        return RecBufferFeed.feedSourceBorderHeightStrip(
+            src, rect, imgW, imgH, recBuffer,
+            targetH = RecBufferFeed.DEFAULT_REC_H,
+            borderPx = spec.recBorder,
+        )
     }
 
     suspend fun feedRot(
@@ -7502,46 +7492,17 @@ suspend fun runPumpOcrGeomExperiment(
         spec: OcrGeomSpec,
     ): RecBufferFeed.Result? {
         val ap = NativePaddleEngine.bufferSetA
-        if (spec.control48) {
-            val contentH = RecBufferFeed.DEFAULT_REC_H - 2 * RecBufferFeed.DEFAULT_BORDER_PX
-            val pad = ceil(
-                RecBufferFeed.DEFAULT_BORDER_PX.toDouble() * quad.shortAxisBh() / contentH.toDouble(),
-            ).toInt()
-            val qPad = quad.padUv(pad)
-            val nativeH = qPad.shortAxisBh().roundToInt().coerceAtLeast(1)
-            val nativeW = qPad.longAxisBw().roundToInt().coerceAtLeast(1)
-                .coerceAtMost(NativePaddleEngine.REC_CANVAS_W)
-                .coerceAtMost(ap.s.width.coerceAtLeast(2))
-            val nh = nativeH.coerceAtMost(ap.s.height.coerceAtLeast(2))
-            val nativeId = ap.s.createCrop(0, 0, nativeW.coerceAtLeast(2), nh.coerceAtLeast(2))
-            val dest = ap.c[nativeId]
-            dest.clear()
-            val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
-                gray, qPad, dest.mat, targetH = 0,
-            )
-            if (!ok || dest.mat.empty()) {
-                ap.c[nativeId].release()
-                return null
-            }
-            val fed = RecBufferFeed.feedSourceBorderHeightStrip(
-                dest.mat, 0, 0, dest.mat.cols(), dest.mat.rows(),
-                recBuffer,
-                targetH = RecBufferFeed.DEFAULT_REC_H,
-            )
-            ap.c[nativeId].release()
-            return fed
-        }
+        val contentH = (RecBufferFeed.DEFAULT_REC_H - 2 * spec.recBorder).coerceAtLeast(1)
         val pad = ceil(
-            spec.recBorder.toDouble() * quad.shortAxisBh() / spec.contentH.toDouble(),
+            spec.recBorder.toDouble() * quad.shortAxisBh() / contentH.toDouble(),
         ).toInt()
         val qPad = quad.padUv(pad)
-        val destH = spec.canvasH.coerceAtMost(ap.s.height.coerceAtLeast(2))
-        val destW = even(
-            (qPad.longAxisBw() / qPad.shortAxisBh().coerceAtLeast(1f) * destH).roundToInt(),
-        ).coerceAtLeast(2)
+        val nativeH = qPad.shortAxisBh().roundToInt().coerceAtLeast(1)
+        val nativeW = qPad.longAxisBw().roundToInt().coerceAtLeast(1)
             .coerceAtMost(NativePaddleEngine.REC_CANVAS_W)
             .coerceAtMost(ap.s.width.coerceAtLeast(2))
-        val nativeId = ap.s.createCrop(0, 0, destW, destH)
+        val nh = nativeH.coerceAtMost(ap.s.height.coerceAtLeast(2))
+        val nativeId = ap.s.createCrop(0, 0, nativeW.coerceAtLeast(2), nh.coerceAtLeast(2))
         val dest = ap.c[nativeId]
         dest.clear()
         val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
@@ -7551,7 +7512,12 @@ suspend fun runPumpOcrGeomExperiment(
             ap.c[nativeId].release()
             return null
         }
-        val fed = RecBufferFeed.feedPreparedStripNoBlackPad(dest.mat, recBuffer)
+        val fed = RecBufferFeed.feedSourceBorderHeightStrip(
+            dest.mat, 0, 0, dest.mat.cols(), dest.mat.rows(),
+            recBuffer,
+            targetH = RecBufferFeed.DEFAULT_REC_H,
+            borderPx = spec.recBorder,
+        )
         ap.c[nativeId].release()
         return fed
     }
@@ -7573,7 +7539,7 @@ suspend fun runPumpOcrGeomExperiment(
     html.append("img{max-width:none;image-rendering:pixelated;}</style></head><body>")
     html.append("<h2>OCR geom $timestamp</h2>")
     html.append("<p>${ExperimentReportMeta.jsonFields()} device=$deviceModel total=$total</p>")
-    html.append("<p>3 columns (G-- / AABB / Rot). 6 recs/box: 40-in-48, 48-in-56, 48-in-64 × white-on-black then black-on-white. Extra one-sided hpad is a second box. No expand.</p>")
+    html.append("<p>3 columns (G-- / AABB / Rot). 8 recs/box: 36/38/40/42-in-48 × white-on-black then black-on-white. Extra one-sided hpad is a second box. Rec thumbs 48px. No expand.</p>")
     html.append("<table><tr><th># file</th>")
     OCR_GEOM_COLUMNS.forEachIndexed { ci, name -> html.append("<th data-col='$ci'>$name</th>") }
     html.append("</tr>\n")
