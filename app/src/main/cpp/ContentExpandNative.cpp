@@ -1,4 +1,16 @@
+#if defined(VE_IDEAL_MASK_MAIN)
+#include <cstdarg>
+#include <cstdio>
+#ifndef ANDROID_LOG_INFO
+#define ANDROID_LOG_INFO 4
+#define ANDROID_LOG_ERROR 6
+#endif
+static inline int __android_log_print(int, const char*, const char*, ...) { return 0; }
 #include <jni.h>
+#else
+#include <jni.h>
+#include <android/log.h>
+#endif
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -13,7 +25,6 @@
 #include <utility>
 #include <vector>
 #include <cstdlib>
-#include <android/log.h>
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "ContentExpandNative", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "ContentExpandNative", __VA_ARGS__)
@@ -9749,4 +9760,283 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
     }
     return packSeedInkThrs(env, thrs);
 }
+
+#if defined(VE_IDEAL_MASK_MAIN)
+// Host/device driver. Calls the eight expand JNI entry points. Walks unchanged.
+// Input: magic IMSK, u32 w,h, i32 seed l,t,r,b, u32 geom (0 aabb, 1 rot),
+// gray w*h, uv w*h*2. One stdout line per file: OK then four boxes.
+
+extern "C" bool veEncodeGrayJpegU8(const cv::Mat&, std::vector<uint8_t>*) { return false; }
+extern "C" bool veEncodeYuvMatJpeg(const cv::Mat&, const cv::Mat&, std::vector<uint8_t>*) {
+    return false;
+}
+
+struct HostArr {
+    int kind = 0;
+    std::vector<jint> ii;
+    std::vector<jfloat> ff;
+    std::vector<jshort> ss;
+    jsize len() const {
+        if (kind == 1) return static_cast<jsize>(ii.size());
+        if (kind == 2) return static_cast<jsize>(ff.size());
+        if (kind == 3) return static_cast<jsize>(ss.size());
+        return 0;
+    }
+};
+
+static HostArr* hostArr(jarray a) { return reinterpret_cast<HostArr*>(a); }
+
+static jsize hostGetArrayLength(JNIEnv*, jarray a) {
+    if (!a) return 0;
+    return hostArr(a)->len();
+}
+static jintArray hostNewInt(JNIEnv*, jsize n) {
+    auto* h = new HostArr();
+    h->kind = 1;
+    h->ii.assign(static_cast<size_t>(n > 0 ? n : 0), 0);
+    return reinterpret_cast<jintArray>(h);
+}
+static jfloatArray hostNewFloat(JNIEnv*, jsize n) {
+    auto* h = new HostArr();
+    h->kind = 2;
+    h->ff.assign(static_cast<size_t>(n > 0 ? n : 0), 0.f);
+    return reinterpret_cast<jfloatArray>(h);
+}
+static jshortArray hostNewShort(JNIEnv*, jsize n) {
+    auto* h = new HostArr();
+    h->kind = 3;
+    h->ss.assign(static_cast<size_t>(n > 0 ? n : 0), 0);
+    return reinterpret_cast<jshortArray>(h);
+}
+static void hostGetInt(JNIEnv*, jintArray a, jsize start, jsize len, jint* buf) {
+    auto* h = hostArr(a);
+    for (jsize i = 0; i < len; ++i) buf[i] = h->ii[static_cast<size_t>(start + i)];
+}
+static void hostSetInt(JNIEnv*, jintArray a, jsize start, jsize len, const jint* buf) {
+    auto* h = hostArr(a);
+    for (jsize i = 0; i < len; ++i) h->ii[static_cast<size_t>(start + i)] = buf[i];
+}
+static void hostGetFloat(JNIEnv*, jfloatArray a, jsize start, jsize len, jfloat* buf) {
+    auto* h = hostArr(a);
+    for (jsize i = 0; i < len; ++i) buf[i] = h->ff[static_cast<size_t>(start + i)];
+}
+static void hostSetFloat(JNIEnv*, jfloatArray a, jsize start, jsize len, const jfloat* buf) {
+    auto* h = hostArr(a);
+    for (jsize i = 0; i < len; ++i) h->ff[static_cast<size_t>(start + i)] = buf[i];
+}
+static void hostGetShort(JNIEnv*, jshortArray a, jsize start, jsize len, jshort* buf) {
+    auto* h = hostArr(a);
+    for (jsize i = 0; i < len; ++i) buf[i] = h->ss[static_cast<size_t>(start + i)];
+}
+static void hostSetShort(JNIEnv*, jshortArray a, jsize start, jsize len, const jshort* buf) {
+    auto* h = hostArr(a);
+    for (jsize i = 0; i < len; ++i) h->ss[static_cast<size_t>(start + i)] = buf[i];
+}
+static jboolean hostExceptionCheck(JNIEnv*) { return JNI_FALSE; }
+
+static JNINativeInterface gFns;
+static _JNIEnv gEnv;
+static bool gEnvReady = false;
+
+static void hostInitEnv() {
+    if (gEnvReady) return;
+    std::memset(&gFns, 0, sizeof(gFns));
+    gFns.GetArrayLength = hostGetArrayLength;
+    gFns.NewIntArray = hostNewInt;
+    gFns.NewFloatArray = hostNewFloat;
+    gFns.NewShortArray = hostNewShort;
+    gFns.GetIntArrayRegion = hostGetInt;
+    gFns.SetIntArrayRegion = hostSetInt;
+    gFns.GetFloatArrayRegion = hostGetFloat;
+    gFns.SetFloatArrayRegion = hostSetFloat;
+    gFns.GetShortArrayRegion = hostGetShort;
+    gFns.SetShortArrayRegion = hostSetShort;
+    gFns.ExceptionCheck = hostExceptionCheck;
+    gEnv.functions = &gFns;
+    gEnvReady = true;
+}
+
+static jintArray hostInts(const jint* v, jsize n) {
+    jintArray a = hostNewInt(nullptr, n);
+    hostSetInt(nullptr, a, 0, n, v);
+    return a;
+}
+static jfloatArray hostFloats(const jfloat* v, jsize n) {
+    jfloatArray a = hostNewFloat(nullptr, n);
+    hostSetFloat(nullptr, a, 0, n, v);
+    return a;
+}
+
+static void quadFromEnergy(const float* o, float* q) {
+    const double rad = static_cast<double>(o[4]) * (3.14159265358979323846 / 180.0);
+    const float ux = static_cast<float>(std::cos(rad));
+    const float uy = static_cast<float>(std::sin(rad));
+    const float vx = -uy;
+    const float vy = ux;
+    const float hu = o[2] * 0.5f;
+    const float hv = o[3] * 0.5f;
+    auto corner = [&](float su, float sv, int i) {
+        q[i] = o[0] + su * hu * ux + sv * hv * vx;
+        q[i + 1] = o[1] + su * hu * uy + sv * hv * vy;
+    };
+    corner(-1.f, -1.f, 0);
+    corner(1.f, -1.f, 2);
+    corner(1.f, 1.f, 4);
+    corner(-1.f, 1.f, 6);
+}
+
+static void fmtInts(char* dst, size_t cap, const jint* v, int n) {
+    size_t used = 0;
+    dst[0] = 0;
+    for (int i = 0; i < n; ++i) {
+        const int wr = std::snprintf(
+            dst + used, cap > used ? cap - used : 0, "%s%d", i ? "," : "", static_cast<int>(v[i]));
+        if (wr < 0) return;
+        used += static_cast<size_t>(wr);
+    }
+}
+static void fmtFloats(char* dst, size_t cap, const float* v, int n) {
+    size_t used = 0;
+    dst[0] = 0;
+    for (int i = 0; i < n; ++i) {
+        const int wr = std::snprintf(
+            dst + used, cap > used ? cap - used : 0, "%s%.6f", i ? "," : "", static_cast<double>(v[i]));
+        if (wr < 0) return;
+        used += static_cast<size_t>(wr);
+    }
+}
+
+static int runOne(const char* path) {
+    FILE* f = std::fopen(path, "rb");
+    if (!f) {
+        std::printf("ERR open %s\n", path);
+        return 1;
+    }
+    char magic[4];
+    uint32_t w = 0, h = 0, geom = 0;
+    int32_t sl = 0, st = 0, sr = 0, sb = 0;
+    if (std::fread(magic, 1, 4, f) != 4 || std::memcmp(magic, "IMSK", 4) != 0 ||
+        std::fread(&w, 4, 1, f) != 1 || std::fread(&h, 4, 1, f) != 1 ||
+        std::fread(&sl, 4, 1, f) != 1 || std::fread(&st, 4, 1, f) != 1 ||
+        std::fread(&sr, 4, 1, f) != 1 || std::fread(&sb, 4, 1, f) != 1 ||
+        std::fread(&geom, 4, 1, f) != 1) {
+        std::fclose(f);
+        std::printf("ERR hdr %s\n", path);
+        return 1;
+    }
+    if (w < 1 || h < 1 || w > 20000 || h > 20000) {
+        std::fclose(f);
+        std::printf("ERR size %s\n", path);
+        return 1;
+    }
+    const size_t grayN = static_cast<size_t>(w) * static_cast<size_t>(h);
+    const size_t uvN = grayN * 2;
+    std::vector<uint8_t> grayB(grayN), uvB(uvN);
+    if (std::fread(grayB.data(), 1, grayN, f) != grayN ||
+        std::fread(uvB.data(), 1, uvN, f) != uvN) {
+        std::fclose(f);
+        std::printf("ERR body %s\n", path);
+        return 1;
+    }
+    std::fclose(f);
+    cv::Mat gray(static_cast<int>(h), static_cast<int>(w), CV_8UC1);
+    cv::Mat uv(static_cast<int>(h), static_cast<int>(w), CV_8UC2);
+    cv::Mat scratch(static_cast<int>(h), static_cast<int>(w), CV_8UC1);
+    cv::Mat tint(static_cast<int>(h), static_cast<int>(w), CV_8UC1);
+    if (!gray.isContinuous() || !uv.isContinuous()) {
+        std::printf("ERR mat %s\n", path);
+        return 1;
+    }
+    std::memcpy(gray.data, grayB.data(), grayN);
+    std::memcpy(uv.data, uvB.data(), uvN);
+    const jlong gP = reinterpret_cast<jlong>(&gray);
+    const jlong uP = reinterpret_cast<jlong>(&uv);
+    const jlong sP = reinterpret_cast<jlong>(&scratch);
+    const jlong tP = reinterpret_cast<jlong>(&tint);
+    char b0[256], b1[256], b2[256], b3[256];
+    if (geom == 0) {
+        const jint seed[4] = {sl, st, sr, sb};
+        auto box4 = [&](jintArray arr, char* dst) {
+            jint v[4] = {sl, st, sr, sb};
+            if (arr && hostGetArrayLength(nullptr, arr) >= 4) hostGetInt(nullptr, arr, 0, 4, v);
+            fmtInts(dst, 256, v, 4);
+        };
+        scratch.setTo(0);
+        box4(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbTight(
+            &gEnv, nullptr, gP, uP, sP, hostInts(seed, 4), nullptr, nullptr, 0, 0, 0, nullptr, nullptr), b0);
+        scratch.setTo(0);
+        box4(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbRetract(
+            &gEnv, nullptr, gP, uP, sP, hostInts(seed, 4), nullptr, nullptr, 0, 0, 0, nullptr, nullptr), b1);
+        scratch.setTo(0);
+        box4(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyAabbTight(
+            &gEnv, nullptr, gP, uP, hostInts(seed, 4), nullptr, nullptr, sP), b2);
+        scratch.setTo(0);
+        box4(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyAabbRetract(
+            &gEnv, nullptr, gP, uP, hostInts(seed, 4), nullptr, nullptr, sP), b3);
+        std::printf("OK aabb %s %s %s %s\n", b0, b1, b2, b3);
+    } else {
+        const jfloat q0[8] = {
+            static_cast<jfloat>(sl), static_cast<jfloat>(st),
+            static_cast<jfloat>(sr), static_cast<jfloat>(st),
+            static_cast<jfloat>(sr), static_cast<jfloat>(sb),
+            static_cast<jfloat>(sl), static_cast<jfloat>(sb),
+        };
+        auto box8 = [&](jfloatArray arr, int stride, bool energy, char* dst) {
+            float v[8] = {q0[0], q0[1], q0[2], q0[3], q0[4], q0[5], q0[6], q0[7]};
+            if (arr && hostGetArrayLength(nullptr, arr) >= stride) {
+                if (!energy) {
+                    hostGetFloat(nullptr, arr, 0, 8, v);
+                } else {
+                    float e[13];
+                    hostGetFloat(nullptr, arr, 0, 13, e);
+                    quadFromEnergy(e, v);
+                }
+            }
+            fmtFloats(dst, 256, v, 8);
+        };
+        scratch.setTo(0);
+        tint.setTo(0);
+        box8(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientTight(
+            &gEnv, nullptr, gP, uP, sP, hostFloats(q0, 8), nullptr, nullptr, 0, 0, 0, nullptr, tP, nullptr),
+            18, false, b0);
+        scratch.setTo(0);
+        tint.setTo(0);
+        box8(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientRetract(
+            &gEnv, nullptr, gP, uP, sP, hostFloats(q0, 8), nullptr, nullptr, 0, 0, 0, nullptr, tP, nullptr),
+            18, false, b1);
+        scratch.setTo(0);
+        box8(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyOrientTight(
+            &gEnv, nullptr, gP, hostFloats(q0, 8), nullptr, sP),
+            13, true, b2);
+        scratch.setTo(0);
+        box8(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyOrientRetract(
+            &gEnv, nullptr, gP, hostFloats(q0, 8), nullptr, sP),
+            13, true, b3);
+        std::printf("OK rot %s %s %s %s\n", b0, b1, b2, b3);
+    }
+    std::fflush(stdout);
+    return 0;
+}
+
+int main(int argc, char** argv) {
+    hostInitEnv();
+    if (argc < 2) {
+        std::fprintf(stderr, "usage: ideal_mask_expand <imsk>...\n");
+        return 2;
+    }
+    int rc = 0;
+    for (int i = 1; i < argc; ++i) {
+        try {
+            if (runOne(argv[i]) != 0) rc = 1;
+        } catch (const cv::Exception& ex) {
+            std::printf("ERR cv %s %s\n", argv[i], ex.what());
+            rc = 1;
+        } catch (const std::exception& ex) {
+            std::printf("ERR c++ %s %s\n", argv[i], ex.what());
+            rc = 1;
+        }
+    }
+    return rc;
+}
+#endif
 
