@@ -1330,8 +1330,7 @@ internal suspend fun runBinTrialsPaddle(
         // TEMP DIAGNOSTIC (2026-06-23) - remove after root cause fixed
         Log.i("HIST_DIAG", "trial start vehicle=$vehicleId odoPre=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} srcCrop=${masterBuffer.c[vehicleId].mat.cols()}x${masterBuffer.c[vehicleId].mat.rows()}")
         odoBuffer.p.clear()
-        val interp = if (masterBuffer.c[vehicleId].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-        org.opencv.imgproc.Imgproc.resize(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+        RecBufferFeed.scaleCropToFitBuffer(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat)
         Log.d("ALIGN_ODO_POP", "masterCrop=${masterBuffer.c[vehicleId].mat.cols()}x${masterBuffer.c[vehicleId].mat.rows()} -> odoTarget=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()}")
         Log.i("HIST_DIAG", "after resize+clear vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()}")
 
@@ -1842,8 +1841,7 @@ internal suspend fun runBinTrialsPaddle(
     // Set winning binarization state (threshold from selected trial)
     if (winnerTrial != null) {
         odoBuffer.p.clear()
-        val interp = if (masterBuffer.c[vehicleId].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-        org.opencv.imgproc.Imgproc.resize(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+        RecBufferFeed.scaleCropToFitBuffer(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat)
 
         odoBuffer.s.clear()
         org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, winnerTrial.thresh, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
@@ -2342,8 +2340,9 @@ internal suspend fun runPaddleValleyIterative(
         when (masterBuffer) {
             is BufferSet -> {
                 odoBuffer.p.clear()
-                val interp = if (masterBuffer.c[winnerRef.vehicle.id].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-                org.opencv.imgproc.Imgproc.resize(masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+                RecBufferFeed.scaleCropToFitBuffer(
+                    masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat,
+                )
             }
         }
 

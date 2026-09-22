@@ -3,6 +3,7 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 import android.graphics.Rect
 import android.util.Log
 import org.opencv.core.Mat
+import org.opencv.core.Scalar
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import kotlin.math.ceil
@@ -542,10 +543,47 @@ object RecBufferFeed {
         }
     }
 
-    /** Area sample at scale [s]; write only dest.cols × dest.rows (drop the pixel past the buffer). */
-    fun scaleIsotropicNoPartial(src: Mat, dest: Mat, s: Float) {
-        val dw = dest.cols()
-        val dh = dest.rows()
+    /**
+     * Aspect-fit [src] into [dest] at one scale. Clears [dest] first. Writes the largest
+     * top-left rectangle whose +1 source window still fits in [src]. Outside that rectangle
+     * stays clear. Logs CropScale when the buffer is narrower than the crop aspect.
+     */
+    fun scaleCropToFitBuffer(src: Mat, dest: Mat) {
+        if (dest.empty()) return
+        val srcW = src.cols()
+        val srcH = src.rows()
+        val destW = dest.cols()
+        val destH = dest.rows()
+        dest.setTo(Scalar(0.0))
+        if (src.empty() || srcW < 1 || srcH < 1 || destW < 1 || destH < 1) return
+        val sFitW = destW.toFloat() / srcW
+        val sFitH = destH.toFloat() / srcH
+        val s = min(sFitW, sFitH)
+        if (s <= 0f) return
+        if (sFitW < sFitH) {
+            Log.i(
+                "CropScale",
+                "buffer too narrow src=${srcW}x${srcH} dest=${destW}x${destH} s=$s",
+            )
+        }
+        var writeW = destW
+        while (writeW > 0 && ceil((writeW + 1.0) / s).toInt() > srcW) writeW--
+        var writeH = destH
+        while (writeH > 0 && ceil((writeH + 1.0) / s).toInt() > srcH) writeH--
+        if (writeW < 1 || writeH < 1) return
+        scaleIsotropicNoPartial(src, dest, s, writeW, writeH)
+    }
+
+    /** Area sample at scale [s]; write only [writeW]×[writeH] (the pixel past that rect is not written). */
+    fun scaleIsotropicNoPartial(
+        src: Mat,
+        dest: Mat,
+        s: Float,
+        writeW: Int = dest.cols(),
+        writeH: Int = dest.rows(),
+    ) {
+        val dw = writeW.coerceIn(0, dest.cols())
+        val dh = writeH.coerceIn(0, dest.rows())
         val sw = src.cols()
         val sh = src.rows()
         if (dw < 1 || dh < 1 || sw < 1 || sh < 1 || s <= 0f) return

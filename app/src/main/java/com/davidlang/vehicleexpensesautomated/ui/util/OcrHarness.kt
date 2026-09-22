@@ -660,10 +660,7 @@ object OcrHarness {
         fun repopulateOdoFromMasterCrop() {
             odoBuffer.p.clear()
             val src = masterBuffer.c[vehicle.id].mat
-            val interp =
-                if (src.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA
-                else org.opencv.imgproc.Imgproc.INTER_LINEAR
-            org.opencv.imgproc.Imgproc.resize(src, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+            RecBufferFeed.scaleCropToFitBuffer(src, odoBuffer.p.mat)
         }
 
         suspend fun detectBoxesOnOdo(): List<TextBlock> {
