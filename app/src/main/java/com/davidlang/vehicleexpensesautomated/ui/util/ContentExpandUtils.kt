@@ -618,7 +618,7 @@ object ContentExpandUtils {
     /**
      * Warp [quad] into [dest] at **native** u/v size (no dest-height floor).
      * Pivot BL, flatten BL→BR to +x. INTER_CUBIC, BORDER_CONSTANT black.
-     * If [dest] is already sized, that size is used. Caller INTER_AREA downscales to rec 48.
+     * If [dest] is already sized, that size is used.
      */
     fun warpQuadToHorizontalStrip(
         gray: Mat,
@@ -669,16 +669,6 @@ object ContentExpandUtils {
         )
         m.release(); src.release(); dst.release()
         return !dest.empty() && dest.cols() >= 1 && dest.rows() >= 1
-    }
-
-    /** INTER_AREA [src] into [dest] sized [targetW]×[targetH] (rec 48). */
-    fun downscaleStripArea(src: Mat, dest: Mat, targetW: Int, targetH: Int): Boolean {
-        if (src.empty() || targetW < 1 || targetH < 1) return false
-        Imgproc.resize(
-            src, dest, Size(targetW.toDouble(), targetH.toDouble()),
-            0.0, 0.0, Imgproc.INTER_AREA,
-        )
-        return !dest.empty()
     }
 
     /**

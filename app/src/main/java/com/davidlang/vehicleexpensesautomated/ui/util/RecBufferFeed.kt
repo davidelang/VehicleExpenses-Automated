@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.graphics.Rect
+import android.util.Log
 import org.opencv.core.Mat
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
@@ -11,14 +12,9 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * Shared recognition-buffer feed: scale a source ROI into [BufferSet] for Paddle rec.
- *
- * **Source-border (default):** inflate the source rect by ~[borderPx]/scale so that after
- * scaling, the margin is real image pixels (same idea as alignment odo Raw/Bin feed).
- * No black letterbox from `createCrop(borderPx, borderPx, …)`.
- *
- * **Legacy black pad:** scale exact ROI into `createCrop(borderPx, borderPx, ew, eh)` on a
- * cleared buffer (kept only for A/B if needed).
+ * Shared recognition-buffer feed: 40 px of content in a 48-high buffer, one isotropic scale.
+ * Left and top margin are 4 dest px of real source. Slack is the bottom and right.
+ * Pixel op is [scaleIsotropicNoPartial]. Geom integer-k and mild feeds stay separate.
  */
 object RecBufferFeed {
     const val DEFAULT_BORDER_PX = 4
@@ -37,8 +33,8 @@ object RecBufferFeed {
     )
 
     /**
-     * Odo-style letterbox: fit content into (recW-2b)×(recH-2b) conceptually, with source-border
-     * expanding the crop so the full rec canvas is filled without a black inset.
+     * 40 px of content in a 48-high canvas. One scale. Left/top margin is [borderPx] dest px
+     * of source. Slack is the bottom and right. Caller releases [Result.recCropId].
      */
     fun feedSourceBorderLetterbox(
         srcMat: Mat,
@@ -48,42 +44,15 @@ object RecBufferFeed {
         srcBottom: Int,
         recBuffer: BufferSet,
         borderPx: Int = DEFAULT_BORDER_PX,
-    ): Result {
-        val matW = srcMat.cols()
-        val matH = srcMat.rows()
-        val recW = recBuffer.p.width
-        val recH = recBuffer.p.height
-        val w0 = (srcRight - srcLeft).coerceAtLeast(1)
-        val h0 = (srcBottom - srcTop).coerceAtLeast(1)
-        val contentW = (recW - 2 * borderPx).coerceAtLeast(1)
-        val contentH = (recH - 2 * borderPx).coerceAtLeast(1)
-        val rScContent = min(contentW.toFloat() / w0, contentH.toFloat() / h0)
-        val pad = ceil(borderPx.toDouble() / rScContent.toDouble()).toInt().coerceAtLeast(1)
-        val sL = (srcLeft - pad).coerceAtLeast(0)
-        val sT = (srcTop - pad).coerceAtLeast(0)
-        val sR = (srcRight + pad).coerceAtMost(matW)
-        val sB = (srcBottom + pad).coerceAtMost(matH)
-        val sub = srcMat.submat(org.opencv.core.Rect(sL, sT, (sR - sL).coerceAtLeast(1), (sB - sT).coerceAtLeast(1)))
-        recBuffer.p.clear()
-        val rSc = min(recW.toFloat() / sub.cols(), recH.toFloat() / sub.rows())
-        val ew = ((sub.cols() * rSc + 1).toInt() / 2 * 2).coerceAtLeast(2).coerceAtMost(recW)
-        val eh = ((sub.rows() * rSc + 1).toInt() / 2 * 2).coerceAtLeast(2).coerceAtMost(recH)
-        val recCropId = recBuffer.createCrop(0, 0, ew, eh)
-        Imgproc.resize(
-            sub,
-            recBuffer.c[recCropId].mat,
-            recBuffer.c[recCropId].mat.size(),
-            0.0,
-            0.0,
-            Imgproc.INTER_AREA,
-        )
-        sub.release()
-        return Result(rScContent, pad, recCropId, ew, eh)
-    }
+    ): Result = feedContent40(
+        srcMat, srcLeft, srcTop, srcRight, srcBottom, recBuffer,
+        DEFAULT_REC_H, recBuffer.p.width.coerceAtMost(DEFAULT_MAX_W), borderPx,
+    )
 
     /**
-     * Pump-style height-locked strip: scale so height → [targetH] (usually 48),
-     * width isotropic (`subW/subH`). 32-align is empty canvas to the right, not a scale.
+     * 40 px of content in a 48-high strip ([targetH] clamped to 48). One scale.
+     * [destW] is even, `border + round(cropW * s)`, capped by [maxW]. A width miss
+     * lowers [s] (content shorter than 40) and logs CropScale. No center crop.
      *
      * @return [Result] including [Result.recCropId] that caller must [BufferSet.Slice.release]
      */
@@ -97,53 +66,10 @@ object RecBufferFeed {
         targetH: Int = DEFAULT_REC_H,
         maxW: Int = DEFAULT_MAX_W,
         borderPx: Int = DEFAULT_BORDER_PX,
-    ): Result {
-        val matW = srcMat.cols()
-        val matH = srcMat.rows()
-        val pW = (srcRight - srcLeft).coerceAtLeast(1)
-        val pH = (srcBottom - srcTop).coerceAtLeast(1)
-        // Content height for pad math ≈ targetH (full strip height after source-border).
-        val rScContent = targetH.toFloat() / pH
-        val pad = ceil(borderPx.toDouble() / rScContent.toDouble()).toInt().coerceAtLeast(1)
-        val sL = (srcLeft - pad).coerceAtLeast(0)
-        val sT = (srcTop - pad).coerceAtLeast(0)
-        val sR = (srcRight + pad).coerceAtMost(matW)
-        val sB = (srcBottom + pad).coerceAtMost(matH)
-        val subW = (sR - sL).coerceAtLeast(1)
-        val subH = (sB - sT).coerceAtLeast(1)
-        val sub = srcMat.submat(org.opencv.core.Rect(sL, sT, subW, subH))
-        val scale = targetH.toFloat() / subH
-        fun even(n: Int): Int = if (n % 2 == 0) n else n + 1
-        val ch = targetH.coerceAtMost(recBuffer.p.height)
-        val maxContentW = recBuffer.p.width.coerceAtMost(maxW)
-        var srcW = subW
-        var srcL = 0
-        var cw = even((srcW * scale).toInt().coerceAtLeast(1))
-        if (cw > maxContentW) {
-            srcW = (maxContentW / scale).toInt().coerceAtLeast(1).coerceAtMost(subW)
-            srcL = ((subW - srcW) / 2).coerceAtLeast(0)
-            cw = even((srcW * scale).toInt().coerceAtLeast(2)).coerceAtMost(maxContentW)
-            if (cw % 2 != 0) cw = (cw - 1).coerceAtLeast(2)
-        }
-        val srcRoi = sub.submat(0, subH, srcL, srcL + srcW)
-        recBuffer.p.clear()
-        val canvasW = ((cw + 31) / 32 * 32).coerceAtMost(recBuffer.p.width).coerceAtLeast(cw)
-        val recCropId = recBuffer.createCrop(0, 0, canvasW, ch)
-        val destContent = recBuffer.c[recCropId].mat.submat(0, ch, 0, cw)
-        val interp = if (srcW > cw) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR
-        Imgproc.resize(
-            srcRoi,
-            destContent,
-            Size(cw.toDouble(), ch.toDouble()),
-            0.0,
-            0.0,
-            interp,
-        )
-        destContent.release()
-        srcRoi.release()
-        sub.release()
-        return Result(rScContent, pad, recCropId, cw, ch)
-    }
+    ): Result = feedContent40(
+        srcMat, srcLeft, srcTop, srcRight, srcBottom, recBuffer,
+        targetH, maxW, borderPx,
+    )
 
     fun feedSourceBorderHeightStrip(
         workspace: BufferSet,
@@ -469,8 +395,155 @@ object RecBufferFeed {
         }
     }
 
-    /** Area sample at scale [s]; write only dest.cols × dest.rows (drop dest W+1 / row 48). */
-    private fun scaleIsotropicNoPartial(src: Mat, dest: Mat, s: Float) {
+    data class Content40Plan(
+        val s: Float,
+        val destW: Int,
+        val destH: Int,
+        val srcW: Int,
+        val srcH: Int,
+        val marginSrc: Float,
+    )
+
+    /**
+     * s starts at 40/cropH. destW is even, border + round(cropW * s), capped by [maxDestW].
+     * If that width does not fit, s drops and CropScale is logged. Source window is
+     * ceil((dest+1)/s), rounded up to an even size so the pixel past the buffer is kept.
+     */
+    fun planContent40In48(
+        cropW: Float,
+        cropH: Float,
+        maxDestW: Int,
+        destH: Int,
+        borderPx: Int = DEFAULT_BORDER_PX,
+    ): Content40Plan {
+        val h = cropH.coerceAtLeast(1f)
+        val w = cropW.coerceAtLeast(1f)
+        val canvasH = destH.coerceAtLeast(2)
+        val cap = maxDestW.coerceAtLeast(2)
+        val maxEven = if (cap % 2 == 0) cap else (cap - 1).coerceAtLeast(2)
+        val border = borderPx.coerceAtLeast(0)
+        var s = 40f / h
+        fun destWidth(scale: Float): Int = evenAtLeast2(border + (w * scale).roundToInt())
+        var destW = destWidth(s)
+        if (destW > maxEven) {
+            val s0 = s
+            val cMax = (maxEven - border).coerceAtLeast(1)
+            var chosen = 1f / w
+            var c = cMax
+            while (c >= 1) {
+                var sTry = (c + 0.5f) / w
+                var guard = 0
+                while (guard < 6 && (w * sTry).roundToInt() > c) {
+                    sTry = java.lang.Math.nextDown(sTry.toDouble()).toFloat()
+                    guard++
+                }
+                if (sTry > 0f && (w * sTry).roundToInt() <= c && destWidth(sTry) <= maxEven) {
+                    chosen = sTry
+                    break
+                }
+                c--
+            }
+            s = min(s0, chosen)
+            destW = destWidth(s).coerceAtMost(maxEven)
+            if (destW % 2 != 0) destW = evenDown(destW)
+            Log.i(
+                "CropScale",
+                "width fit crop=${w}x${h} s0=$s0 s=$s dest=${destW}x${canvasH} cap=$cap",
+            )
+        }
+        val srcW = evenAtLeast2(ceil((destW + 1.0) / s).toInt())
+        val srcH = evenAtLeast2(ceil((canvasH + 1.0) / s).toInt())
+        return Content40Plan(s, destW, canvasH, srcW, srcH, border.toFloat() / s)
+    }
+
+    private fun feedContent40(
+        srcMat: Mat,
+        srcLeft: Int,
+        srcTop: Int,
+        srcRight: Int,
+        srcBottom: Int,
+        recBuffer: BufferSet,
+        targetH: Int,
+        maxW: Int,
+        borderPx: Int,
+    ): Result {
+        val cropW = (srcRight - srcLeft).coerceAtLeast(1)
+        val cropH = (srcBottom - srcTop).coerceAtLeast(1)
+        var destH = targetH.coerceAtLeast(2).coerceAtMost(DEFAULT_REC_H).coerceAtMost(recBuffer.p.height)
+        if (destH % 2 != 0) destH -= 1
+        val capW = recBuffer.p.width.coerceAtMost(maxW).coerceAtLeast(2)
+        val plan = planContent40In48(cropW.toFloat(), cropH.toFloat(), capW, destH, borderPx)
+        val matW = srcMat.cols()
+        val matH = srcMat.rows()
+        val rawL = (srcLeft - plan.marginSrc).roundToInt()
+        val rawT = (srcTop - plan.marginSrc).roundToInt()
+        var cut = rawL < 0 || rawT < 0 || rawL + plan.srcW > matW || rawT + plan.srcH > matH
+        var sL = evenOrigin(rawL)
+        var sT = evenOrigin(rawT)
+        var winW = plan.srcW
+        var winH = plan.srcH
+        if (sL + winW > matW) {
+            winW = (matW - sL).let { n -> if (n % 2 == 0) n else n - 1 }
+            cut = true
+        }
+        if (sT + winH > matH) {
+            winH = (matH - sT).let { n -> if (n % 2 == 0) n else n - 1 }
+            cut = true
+        }
+        if (winW < plan.srcW || winH < plan.srcH) cut = true
+        if (cut) {
+            Log.i(
+                "CropScale",
+                "clamp cut ideal=${plan.srcW}x${plan.srcH} at ($rawL,$rawT) got=${winW}x${winH} at ($sL,$sT) parent=${matW}x${matH} crop=${cropW}x${cropH}",
+            )
+        }
+        recBuffer.p.clear()
+        val recCropId = recBuffer.createCrop(0, 0, plan.destW, plan.destH)
+        if (winW < 2 || winH < 2 || srcMat.empty()) {
+            return Result(
+                plan.s, plan.marginSrc.roundToInt(), recCropId,
+                recBuffer.c[recCropId].width, recBuffer.c[recCropId].height,
+            )
+        }
+        val holder = BufferSet(winW, winH)
+        try {
+            copyLumaRect(srcMat, sL, sT, holder.p.mat, winW, winH)
+            val srcId = holder.createCrop(0, 0, winW, winH)
+            scaleIsotropicNoPartial(holder.c[srcId].mat, recBuffer.c[recCropId].mat, plan.s)
+        } finally {
+            holder.release()
+        }
+        val dest = recBuffer.c[recCropId]
+        return Result(plan.s, plan.marginSrc.roundToInt().coerceAtLeast(0), recCropId, dest.width, dest.height)
+    }
+
+    private fun copyLumaRect(src: Mat, x: Int, y: Int, dest: Mat, w: Int, h: Int) {
+        val row = ByteArray(w)
+        val x0 = x.coerceAtLeast(0)
+        val y0 = y.coerceAtLeast(0)
+        for (r in 0 until h) {
+            java.util.Arrays.fill(row, 0.toByte())
+            val sy = y0 + r
+            val avail = src.cols() - x0
+            if (sy < src.rows() && avail > 0) {
+                val need = min(w, avail)
+                val got = if (need == w) {
+                    src.get(sy, x0, row)
+                } else {
+                    val tmp = ByteArray(need)
+                    val n = src.get(sy, x0, tmp)
+                    val copyN = n.coerceIn(0, need)
+                    tmp.copyInto(row, 0, 0, copyN)
+                    copyN
+                }
+                if (got < 0) java.util.Arrays.fill(row, 0.toByte())
+            }
+            dest.put(r, 0, row)
+        }
+    }
+
+    /** Area sample at scale [s]; write only dest.cols × dest.rows (drop the pixel past the buffer). */
+    fun scaleIsotropicNoPartial(src: Mat, dest: Mat, s: Float) {
         val dw = dest.cols()
         val dh = dest.rows()
         val sw = src.cols()
@@ -520,14 +593,8 @@ object RecBufferFeed {
     }
 
     /**
-     * Unpadded blue → [contentH] px of text; dest strip is [canvasH].
-     * Source pad each side is `ceil(recBorder × pH / contentH)` (clamped).
-     * Resize the padded sub to [canvasH] (isotropic W, even). Packed crop is
-     * the rec image (`targetW`×`canvasH`), not a 4096 letterbox.
-     *
-     * 48-in-56: contentH=48, canvasH=56, recBorder=4.
-     * 48-in-64: contentH=48, canvasH=64, recBorder=8.
-     * Control 40-in-48 stays [feedSourceBorderHeightStrip] (48, 4).
+     * No callers. Body is the same 40-in-48 feed as [feedSourceBorderHeightStrip]
+     * ([contentH], [canvasH], and [recBorder] are not a second scale).
      */
     fun feedContentInCanvas(
         srcMat: Mat,
@@ -536,53 +603,14 @@ object RecBufferFeed {
         srcRight: Int,
         srcBottom: Int,
         recBuffer: BufferSet,
-        contentH: Int,
-        canvasH: Int,
-        recBorder: Int,
+        @Suppress("UNUSED_PARAMETER") contentH: Int,
+        @Suppress("UNUSED_PARAMETER") canvasH: Int,
+        @Suppress("UNUSED_PARAMETER") recBorder: Int,
         maxW: Int = DEFAULT_MAX_W,
-    ): Result {
-        val matW = srcMat.cols()
-        val matH = srcMat.rows()
-        val pH = (srcBottom - srcTop).coerceAtLeast(1)
-        val cH = contentH.coerceAtLeast(1)
-        val destH = canvasH.coerceAtLeast(2).coerceAtMost(recBuffer.p.height)
-        val rScContent = cH.toFloat() / pH
-        val pad = ceil(recBorder.toDouble() * pH.toDouble() / cH.toDouble()).toInt().coerceAtLeast(0)
-        val sL = (srcLeft - pad).coerceAtLeast(0)
-        val sT = (srcTop - pad).coerceAtLeast(0)
-        val sR = (srcRight + pad).coerceAtMost(matW)
-        val sB = (srcBottom + pad).coerceAtMost(matH)
-        val subW = (sR - sL).coerceAtLeast(1)
-        val subH = (sB - sT).coerceAtLeast(1)
-        val sub = srcMat.submat(org.opencv.core.Rect(sL, sT, subW, subH))
-        val scale = destH.toFloat() / subH
-        fun even(n: Int): Int = if (n % 2 == 0) n else n + 1
-        val maxContentW = recBuffer.p.width.coerceAtMost(maxW)
-        var srcW = subW
-        var srcL = 0
-        var cw = even((srcW * scale).toInt().coerceAtLeast(1))
-        if (cw > maxContentW) {
-            srcW = (maxContentW / scale).toInt().coerceAtLeast(1).coerceAtMost(subW)
-            srcL = ((subW - srcW) / 2).coerceAtLeast(0)
-            cw = even((srcW * scale).toInt().coerceAtLeast(2)).coerceAtMost(maxContentW)
-            if (cw % 2 != 0) cw = (cw - 1).coerceAtLeast(2)
-        }
-        val srcRoi = sub.submat(0, subH, srcL, srcL + srcW)
-        recBuffer.p.clear()
-        val recCropId = recBuffer.createCrop(0, 0, cw, destH)
-        val interp = if (srcW > cw) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR
-        Imgproc.resize(
-            srcRoi,
-            recBuffer.c[recCropId].mat,
-            Size(cw.toDouble(), destH.toDouble()),
-            0.0,
-            0.0,
-            interp,
-        )
-        srcRoi.release()
-        sub.release()
-        return Result(rScContent, pad, recCropId, cw, destH)
-    }
+    ): Result = feedContent40(
+        srcMat, srcLeft, srcTop, srcRight, srcBottom, recBuffer,
+        DEFAULT_REC_H, maxW, DEFAULT_BORDER_PX,
+    )
 
     fun feedContentInCanvas(
         workspace: BufferSet,
@@ -608,30 +636,14 @@ object RecBufferFeed {
     }
 
     /**
-     * Place an already-prepared horizontal strip [strip] (e.g. warped quad) into rec without
-     * black inset. Caller owns [strip] release. Inflating source before warp is preferred;
-     * this only drops the black pad when the strip is already built.
+     * No callers. Treats [strip] as the crop and runs the same 40-in-48 feed.
+     * Caller owns [strip] release.
      */
     fun feedPreparedStripNoBlackPad(
         strip: Mat,
         recBuffer: BufferSet,
-    ): Result {
-        val tw = strip.cols().coerceAtLeast(2).coerceAtMost(recBuffer.p.width)
-        val th = strip.rows().coerceAtLeast(2).coerceAtMost(recBuffer.p.height)
-        recBuffer.p.clear()
-        val recCropId = recBuffer.createCrop(0, 0, tw, th)
-        if (strip.cols() == tw && strip.rows() == th) {
-            strip.copyTo(recBuffer.c[recCropId].mat)
-        } else {
-            Imgproc.resize(
-                strip,
-                recBuffer.c[recCropId].mat,
-                Size(tw.toDouble(), th.toDouble()),
-                0.0,
-                0.0,
-                Imgproc.INTER_AREA,
-            )
-        }
-        return Result(1f, 0, recCropId, tw, th)
-    }
+    ): Result = feedContent40(
+        strip, 0, 0, strip.cols().coerceAtLeast(1), strip.rows().coerceAtLeast(1),
+        recBuffer, DEFAULT_REC_H, DEFAULT_MAX_W, DEFAULT_BORDER_PX,
+    )
 }

@@ -4315,32 +4315,9 @@ suspend fun runPumpExperiment(
                         if (q.shortAxisBh() < 2f || q.longAxisBw() < 2f) {
                             return OcrOne("?" to "", "?" to "", "", 0, 0)
                         }
-                        val contentH = RecBufferFeed.DEFAULT_REC_H - 2 * RecBufferFeed.DEFAULT_BORDER_PX
-                        val pad = ceil(
-                            RecBufferFeed.DEFAULT_BORDER_PX.toDouble() * q.shortAxisBh() / contentH.toDouble(),
-                        ).toInt()
-                        val qPad = q.padUv(pad)
-                        val nativeH = qPad.shortAxisBh().roundToInt().coerceAtLeast(1)
-                        val nativeW = qPad.longAxisBw().roundToInt().coerceAtLeast(1)
-                            .coerceAtMost(NativePaddleEngine.REC_CANVAS_W)
-                        val ap = NativePaddleEngine.bufferSetA
-                        val nativeId = ap.s.createCrop(0, 0, nativeW, nativeH)
-                        val dest = ap.c[nativeId]
-                        dest.clear()
-                        val nativeMat = dest.mat
-                        val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
-                            gray, qPad, nativeMat, targetH = 0,
-                        )
-                        if (!ok || nativeMat.empty()) {
-                            ap.c[nativeId].release()
-                            return OcrOne("?" to "", "?" to "", "", 0, 0)
-                        }
-                        val fed = RecBufferFeed.feedSourceBorderHeightStrip(
-                            nativeMat, 0, 0, nativeMat.cols(), nativeMat.rows(),
-                            experimentRecSet,
-                            targetH = RecBufferFeed.DEFAULT_REC_H,
-                        )
-                        ap.c[nativeId].release()
+                        val fed = ocrPumpFeedOriented40(
+                            gray, q, NativePaddleEngine.bufferSetA, experimentRecSet,
+                        ) ?: return OcrOne("?" to "", "?" to "", "", 0, 0)
                         val snap = PumpCostVolUtils.snapRecCrop(
                             experimentRecSet, fed.recCropId, fed.targetW, fed.targetH,
                         )
@@ -5591,15 +5568,13 @@ suspend fun runPumpExperiment(
                     maskDilatePasses = 4,
                 )
 
-                /** OCR oriented quads: warp each to horizontal 48px strip then recognize. */
+                /** OCR oriented quads: expand to the 40-in-48 source window, warp, area-sample. */
                 suspend fun ocrPumpOrientedQuads(
                     quads: List<ContentExpandUtils.OrientedQuad>,
                     gray: org.opencv.core.Mat,
                     imgW: Int,
                     imgH: Int,
                 ): PumpRectOcrLists {
-                    // Pad oriented quads along u/v in source so warp margin is real pixels, then
-                    // place strip at (0,0) without black 4px createCrop inset (same as odo Raw).
                     data class OcrOne(
                         val asis: Pair<String, String>,
                         val digits: Pair<String, String>,
@@ -5611,30 +5586,9 @@ suspend fun runPumpExperiment(
                         if (q.shortAxisBh() < 2f || q.longAxisBw() < 2f) {
                             return OcrOne("?" to "", "?" to "", "", 0, 0)
                         }
-                        val rSc = 48f / q.shortAxisBh()
-                        val pad = kotlin.math.ceil(4.0 / rSc.toDouble()).toInt().coerceAtLeast(1)
-                        val qPad = q.padUv(pad)
-                        experimentRecSet.p.clear()
-                        val nativeH = qPad.shortAxisBh().roundToInt().coerceAtLeast(1)
-                        val nativeW = qPad.longAxisBw().roundToInt().coerceAtLeast(1)
-                        val work = NativePaddleEngine.bufferSetB
-                        val nativeId = work.s.createCrop(0, 0, nativeW, nativeH)
-                        val nativeMat = work.c[nativeId].mat
-                        val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
-                            gray, qPad, nativeMat, targetH = 0,
-                        )
-                        if (!ok || nativeMat.empty()) {
-                            work.c[nativeId].release()
-                            return OcrOne("?" to "", "?" to "", "", 0, 0)
-                        }
-                        val recH = RecBufferFeed.DEFAULT_REC_H.coerceAtMost(nativeH)
-                        val recW = ((nativeW.toFloat() * recH / nativeH).roundToInt()).coerceAtLeast(1)
-                        val recId = experimentRecSet.p.createCrop(0, 0, recW, recH)
-                        ContentExpandUtils.downscaleStripArea(
-                            nativeMat, experimentRecSet.c[recId].mat, recW, recH,
-                        )
-                        work.c[nativeId].release()
-                        val fed = RecBufferFeed.Result(1f, 0, recId, recW, recH)
+                        val fed = ocrPumpFeedOriented40(
+                            gray, q, NativePaddleEngine.bufferSetB, experimentRecSet,
+                        ) ?: return OcrOne("?" to "", "?" to "", "", 0, 0)
                         val snap = PumpCostVolUtils.snapRecCrop(
                             experimentRecSet, fed.recCropId, fed.targetW, fed.targetH,
                         )
@@ -7408,6 +7362,74 @@ private fun ocrGeomPadQuadMinusU(
         out[i * 2 + 1] = pts[i * 2 + 1] + extra * uy
     }
     return ContentExpandUtils.OrientedQuad(out)
+}
+
+/**
+ * Expand the blue quad to the 40-in-48 source window (4/s on −u/−v, remainder +u/+v),
+ * warp that window, then [RecBufferFeed.scaleIsotropicNoPartial] into destW×48.
+ */
+private fun ocrPumpFeedOriented40(
+    gray: org.opencv.core.Mat,
+    quad: ContentExpandUtils.OrientedQuad,
+    scratch: BufferSet,
+    recBuffer: BufferSet,
+): RecBufferFeed.Result? {
+    if (quad.shortAxisBh() < 2f || quad.longAxisBw() < 2f) return null
+    val bw = quad.longAxisBw()
+    val bh = quad.shortAxisBh()
+    val maxW = NativePaddleEngine.REC_CANVAS_W.coerceAtMost(recBuffer.p.width.coerceAtLeast(2))
+    val destH = RecBufferFeed.DEFAULT_REC_H.coerceAtMost(recBuffer.p.height)
+    val plan = RecBufferFeed.planContent40In48(bw, bh, maxW, destH)
+    var srcW = plan.srcW
+    var srcH = plan.srcH
+    val scratchW = scratch.s.width
+    val scratchH = scratch.s.height
+    var cut = false
+    if (srcW > scratchW) {
+        srcW = if (scratchW % 2 == 0) scratchW else scratchW - 1
+        cut = true
+    }
+    if (srcH > scratchH) {
+        srcH = if (scratchH % 2 == 0) scratchH else scratchH - 1
+        cut = true
+    }
+    if (srcW < 2 || srcH < 2) {
+        Log.i(
+            "CropScale",
+            "quad clamp cut empty want=${plan.srcW}x${plan.srcH} scratch=${scratchW}x${scratchH}",
+        )
+        return null
+    }
+    if (cut) {
+        Log.i(
+            "CropScale",
+            "quad clamp cut want=${plan.srcW}x${plan.srcH} got=${srcW}x${srcH} scratch=${scratchW}x${scratchH}",
+        )
+    }
+    val minusU = plan.marginSrc
+    val minusV = plan.marginSrc
+    val plusU = srcW - minusU - bw
+    val plusV = srcH - minusV - bh
+    val warpQuad = ocrGeomExpandQuadFrame(quad, minusU, plusU, minusV, plusV)
+    val nativeId = scratch.s.createCrop(0, 0, srcW, srcH)
+    val native = scratch.c[nativeId]
+    val ok = ContentExpandUtils.warpQuadToHorizontalStrip(gray, warpQuad, native.mat, targetH = 0)
+    if (!ok || native.mat.empty()) {
+        native.release()
+        return null
+    }
+    recBuffer.p.clear()
+    val recId = recBuffer.createCrop(0, 0, plan.destW, plan.destH)
+    RecBufferFeed.scaleIsotropicNoPartial(native.mat, recBuffer.c[recId].mat, plan.s)
+    native.release()
+    val slice = recBuffer.c[recId]
+    return RecBufferFeed.Result(
+        plan.s,
+        plan.marginSrc.roundToInt().coerceAtLeast(0),
+        recId,
+        slice.width,
+        slice.height,
+    )
 }
 
 /** Grow the long-axis +u edge only (source px). u0 / ±v stay put. */
