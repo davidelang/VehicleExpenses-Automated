@@ -7324,11 +7324,8 @@ private data class OcrGeomCol(
 )
 
 private val OCR_GEOM_COLUMNS = listOf(
-    OcrGeomCol("Set G-- int", "Set G--", rot = false, mild = false),
     OcrGeomCol("Set G-- mild", "Set G--", rot = false, mild = true),
-    OcrGeomCol("Set AABB int", "Set AABB", rot = false, mild = false),
     OcrGeomCol("Set AABB mild", "Set AABB", rot = false, mild = true),
-    OcrGeomCol("Set Rot int", "Set Rot", rot = true, mild = false),
     OcrGeomCol("Set Rot mild", "Set Rot", rot = true, mild = true),
 )
 
@@ -7595,13 +7592,15 @@ private fun ocrGeomFeedAabb(
     recBuffer: BufferSet,
     extraLeftDestPx: Int = 0,
     extraRightDestPx: Int = 0,
+    growLeft: Boolean = false,
+    growRight: Boolean = false,
 ): RecBufferFeed.Result? {
     return try {
         if (mild) {
             RecBufferFeed.feedMildNoPartial(
                 src, rect, imgW, imgH, recBuffer,
-                extraLeftDestPx = extraLeftDestPx,
-                extraRightDestPx = extraRightDestPx,
+                growLeft = growLeft,
+                growRight = growRight,
             )
         } else {
             RecBufferFeed.feedIntegerKContent40(
@@ -7622,6 +7621,8 @@ private fun ocrGeomFeedRot(
     recBuffer: BufferSet,
     extraLeftDestPx: Int = 0,
     extraRightDestPx: Int = 0,
+    growLeft: Boolean = false,
+    growRight: Boolean = false,
 ): RecBufferFeed.Result? {
     return try {
         val ap = NativePaddleEngine.bufferSetA
@@ -7635,15 +7636,87 @@ private fun ocrGeomFeedRot(
         if (mild) {
             val s = 40f / bh
             if (s <= 0f) return null
-            var destW = ocrGeomEvenAtLeast2(4 + extraL + extraR + (bw * s).roundToInt()).coerceAtMost(maxW)
-            if (destW % 2 != 0) destW = (destW - 1).coerceAtLeast(2)
-            val srcH = ceil(49.0 / s).toInt().coerceAtLeast(2)
-            val srcW = ceil((destW + 1.0) / s).toInt().coerceAtLeast(2)
-            if (srcW > ap.s.width || srcH > ap.s.height) return null
-            val minusU = (4f + extraL) / s
-            val minusV = 4f / s
-            val plusU = srcW - minusU - bw
-            val plusV = srcH - minusV - bh
+            val frame = 4f / s
+            val grow = (bh * 0.2).roundToInt().coerceAtLeast(0).toFloat()
+            var minusU = frame + if (growLeft) grow else 0f
+            var plusU = frame + if (growRight) grow else 0f
+            val minusV = frame
+            var srcH = ceil(49.0 / s).toInt().coerceAtLeast(2)
+            if (srcH % 2 != 0) {
+                srcH = if (srcH + 1 <= ap.s.height) srcH + 1 else srcH - 1
+            }
+            if (srcH < 2 || srcH > ap.s.height) return null
+            val plusV = srcH.toFloat() - minusV - bh
+            val imgW = gray.cols()
+            val scratchW = ap.s.width
+            fun uSpan(): Float = minusU + bw + plusU
+            if (uSpan() > scratchW) {
+                val overflow = uSpan() - scratchW.toFloat()
+                if (growLeft && !growRight) {
+                    minusU -= overflow.coerceAtMost((minusU - frame).coerceAtLeast(0f))
+                } else if (growRight && !growLeft) {
+                    plusU -= overflow.coerceAtMost((plusU - frame).coerceAtLeast(0f))
+                }
+                if (uSpan() > scratchW) return null
+            }
+            var clampPass = 0
+            while (clampPass < 3) {
+                val probe = ocrGeomExpandQuadFrame(quad, minusU, plusU, minusV, plusV)
+                val xs = floatArrayOf(probe.pts[0], probe.pts[2], probe.pts[4], probe.pts[6])
+                val minX = minOf(xs[0], xs[1], xs[2], xs[3])
+                val maxX = maxOf(xs[0], xs[1], xs[2], xs[3])
+                var changed = false
+                if (minX < 0f && growLeft) {
+                    val cut = (-minX).coerceAtMost((minusU - frame).coerceAtLeast(0f))
+                    if (cut > 0f) {
+                        minusU -= cut
+                        changed = true
+                    }
+                }
+                if (maxX > imgW && growRight) {
+                    val cut = (maxX - imgW).coerceAtMost((plusU - frame).coerceAtLeast(0f))
+                    if (cut > 0f) {
+                        plusU -= cut
+                        changed = true
+                    }
+                }
+                if (!changed) break
+                clampPass++
+            }
+            var srcW = 0
+            fun syncSrc() {
+                srcW = uSpan().roundToInt().coerceAtLeast(2)
+                if (srcW % 2 != 0) {
+                    srcW = if (srcW + 1 <= scratchW) srcW + 1 else (srcW - 1).coerceAtLeast(2)
+                }
+                val sync = srcW - uSpan()
+                if (sync != 0f) {
+                    if (growLeft && !growRight && sync > 0f) minusU += sync else plusU += sync
+                }
+            }
+            syncSrc()
+            fun destForPads(): Int {
+                val w = if (!growRight && plusU >= frame) {
+                    ((minusU + bw) * s).roundToInt() + 4
+                } else if (!growLeft && minusU >= frame) {
+                    4 + ((bw + plusU) * s).roundToInt()
+                } else {
+                    (uSpan() * s).roundToInt()
+                }
+                return w.coerceIn(2, maxW)
+            }
+            var destW = destForPads()
+            if (destW % 2 != 0 && growLeft != growRight) {
+                val add = 1f / s
+                if (growLeft) minusU += add else plusU += add
+                syncSrc()
+                destW = destForPads()
+            }
+            // BufferSet crops are even. Add one px; do not evenDown a locked side.
+            if (destW % 2 != 0) {
+                destW = if (destW < maxW) destW + 1 else (destW - 1).coerceAtLeast(2)
+            }
+            if (srcW < 2 || srcW > scratchW || srcH > ap.s.height) return null
             val warpQuad = ocrGeomExpandQuadFrame(quad, minusU, plusU, minusV, plusV)
             val nativeId = ap.s.createCrop(0, 0, srcW, srcH)
             val dest = ap.c[nativeId]
@@ -7698,8 +7771,9 @@ private fun ocrGeomFeedRot(
 
 /**
  * Stage-3 only: OCR precomputed winning blues (no detect/expand/hpad/k/poison).
- * 6 columns (G--/AABB/Rot × int/mild) × cost/vol × winner then extra ×
- * 7 rec-buffer preps × wob/bow (14 recs/box). No 36/38/42. No Otsu.
+ * 3 mild columns (G--/AABB/Rot). No integer-k columns.
+ * Raw × wob/bow only (no ×7 preps), plus left-grow and right-grow raw × wob/bow.
+ * No 36/38/42. No Otsu.
  */
 suspend fun runPumpOcrGeomExperiment(
     experimentDir: File,
@@ -7767,7 +7841,7 @@ suspend fun runPumpOcrGeomExperiment(
     html.append("img{max-width:none;image-rendering:pixelated;}</style></head><body>")
     html.append("<h2>OCR geom $timestamp</h2>")
     html.append("<p>${ExperimentReportMeta.jsonFields()} device=$deviceModel total=$total</p>")
-    html.append("<p>6 columns: G--/AABB/Rot × int vs mild. Same boxes. Each 40-in-48 strip: raw/clip/valley/clahe/unsharp/divblur/sigmoid × wob/bow (14 recs), plus leftpad raw × wob/bow and rightpad raw × wob/bow. Thumbs 48px post-prep. No Otsu. No expand.</p>")
+    html.append("<p>3 mild columns: G--/AABB/Rot. No integer-k. Each strip is raw × wob/bow only, plus left-grow and right-grow raw × wob/bow. Thumbs 48px. No Otsu. No expand.</p>")
     html.append("<table><tr><th># file</th>")
     OCR_GEOM_COLUMNS.forEachIndexed { ci, col -> html.append("<th data-col='$ci'>${col.title}</th>") }
     html.append("</tr>\n")
@@ -7863,18 +7937,19 @@ suspend fun runPumpOcrGeomExperiment(
                             recBuffer, paddleEngine, imgDir,
                             fed.recCropId, fed.targetW, fed.targetH, nativeWoB, geomId, stem,
                             tFeedMs, fed.integerK, fed.mildS,
+                            rawOnly = true,
                         )
                         for (ri in 0 until pair.length()) recsAll.put(pair.getJSONObject(ri))
                         val tFeedL0 = System.nanoTime()
                         val fedLeft = if (rotQ != null) {
                             ocrGeomFeedRot(
-                                masterBuffer.p.mat, rotQ, col.mild, recBuffer, extraLeftDestPx = 4,
+                                masterBuffer.p.mat, rotQ, col.mild, recBuffer, growLeft = true,
                             )
                         } else {
                             val r = aabbR ?: return@forEach
                             ocrGeomFeedAabb(
                                 NativePaddleEngine.bufferSetA, r, imgW, imgH, col.mild, recBuffer,
-                                extraLeftDestPx = 4,
+                                growLeft = true,
                             )
                         }
                         val tFeedLMs = (System.nanoTime() - tFeedL0) / 1_000_000L
@@ -7892,13 +7967,13 @@ suspend fun runPumpOcrGeomExperiment(
                         val tFeedR0 = System.nanoTime()
                         val fedRight = if (rotQ != null) {
                             ocrGeomFeedRot(
-                                masterBuffer.p.mat, rotQ, col.mild, recBuffer, extraRightDestPx = 4,
+                                masterBuffer.p.mat, rotQ, col.mild, recBuffer, growRight = true,
                             )
                         } else {
                             val r = aabbR ?: return@forEach
                             ocrGeomFeedAabb(
                                 NativePaddleEngine.bufferSetA, r, imgW, imgH, col.mild, recBuffer,
-                                extraRightDestPx = 4,
+                                growRight = true,
                             )
                         }
                         val tFeedRMs = (System.nanoTime() - tFeedR0) / 1_000_000L

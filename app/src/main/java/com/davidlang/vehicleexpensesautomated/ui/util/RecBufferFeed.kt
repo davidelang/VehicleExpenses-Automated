@@ -152,12 +152,12 @@ object RecBufferFeed {
     )
 
     /**
-     * Geom-only isotropic s = 40/boxH. Dest canvas 48. Source sized as dest 49 / W+1
-     * at the same s; custom sampler writes dest rows 0..47 and destW columns only.
-     * Extra source: bottom/right. BufferSet crops only.
-     * [extraLeftDestPx] grows only the left (another dest px / s of source);
-     * [extraRightDestPx] grows only the right (another dest px / s of source);
-     * height and the opposite side of the stored crop stay put.
+     * Geom-only isotropic s = 40/boxH. Dest canvas 48. Source height is the dest-49
+     * window; width is left pad + blue + right pad. Sampler writes dest rows 0..47.
+     * Extra source: bottom. BufferSet crops only.
+     * Both sides are 4 dest px outside the blue box (round(4/s) source).
+     * [growLeft] / [growRight] add round(0.2×boxH) source px on that side only.
+     * The other side stays 4 dest px. Top stays 4 dest px. No ink scan.
      */
     fun feedMildNoPartial(
         srcMat: Mat,
@@ -174,15 +174,15 @@ object RecBufferFeed {
         imgH: Int,
         recBuffer: BufferSet,
         maxW: Int = DEFAULT_MAX_W,
-        extraLeftDestPx: Int = 0,
-        extraRightDestPx: Int = 0,
+        growLeft: Boolean = false,
+        growRight: Boolean = false,
     ): Result? {
         val l = rect.left.coerceIn(0, imgW - 1)
         val t = rect.top.coerceIn(0, imgH - 1)
         val rr = rect.right.coerceIn(l + 1, imgW)
         val bb = rect.bottom.coerceIn(t + 1, imgH)
         return feedMildFromWorkspace(
-            workspace, l, t, rr, bb, recBuffer, maxW, extraLeftDestPx, extraRightDestPx,
+            workspace, l, t, rr, bb, recBuffer, maxW, growLeft, growRight,
         )
     }
 
@@ -194,7 +194,7 @@ object RecBufferFeed {
         recBuffer: BufferSet,
         maxW: Int = DEFAULT_MAX_W,
     ): Result? = feedMildNoPartial(
-        workspace, rect, imgW, imgH, recBuffer, maxW, extraLeftDestPx = 4,
+        workspace, rect, imgW, imgH, recBuffer, maxW, growLeft = true,
     )
 
     fun feedMildNoPartialRightPad(
@@ -205,7 +205,7 @@ object RecBufferFeed {
         recBuffer: BufferSet,
         maxW: Int = DEFAULT_MAX_W,
     ): Result? = feedMildNoPartial(
-        workspace, rect, imgW, imgH, recBuffer, maxW, extraRightDestPx = 4,
+        workspace, rect, imgW, imgH, recBuffer, maxW, growRight = true,
     )
 
     private fun evenAtLeast2(n: Int): Int {
@@ -342,7 +342,11 @@ object RecBufferFeed {
         return try {
             val canvasH = DEFAULT_REC_H.coerceAtMost(recBuffer.p.height)
             if (srcMat.cols() < 2 || srcMat.rows() < 2 || canvasH < 2) return null
-            val destW = evenDown(evenAtLeast2(destWHint).coerceAtMost(maxW).coerceAtMost(recBuffer.p.width))
+            val limit = maxW.coerceAtMost(recBuffer.p.width)
+            var destW = destWHint.coerceAtLeast(2).coerceAtMost(limit)
+            if (destW % 2 != 0) {
+                destW = if (destW + 1 <= limit) destW + 1 else (destW - 1).coerceAtLeast(2)
+            }
             recBuffer.p.clear()
             val recCropId = tryCreateCrop(recBuffer, 0, 0, destW, canvasH) ?: return null
             val dest = recBuffer.c[recCropId]
@@ -361,8 +365,8 @@ object RecBufferFeed {
         srcBottom: Int,
         recBuffer: BufferSet,
         maxW: Int,
-        extraLeftDestPx: Int = 0,
-        extraRightDestPx: Int = 0,
+        growLeft: Boolean = false,
+        growRight: Boolean = false,
     ): Result? {
         return try {
             val matW = workspace.width
@@ -371,21 +375,74 @@ object RecBufferFeed {
             val boxH = (srcBottom - srcTop).coerceAtLeast(1)
             val s = 40f / boxH
             if (s <= 0f || matW < 2 || matH < 2) return null
-            val extraL = extraLeftDestPx.coerceAtLeast(0)
-            val extraR = extraRightDestPx.coerceAtLeast(0)
-            val destW = evenDown(
-                evenAtLeast2(4 + extraL + extraR + (boxW * s).roundToInt())
-                    .coerceAtMost(maxW.coerceAtMost(recBuffer.p.width)),
-            )
+            val frameSrc = (4f / s).roundToInt().coerceAtLeast(0)
+            val growSrc = (boxH * 0.2).roundToInt().coerceAtLeast(0)
+            var leftPad = frameSrc + if (growLeft) growSrc else 0
+            var rightPad = frameSrc + if (growRight) growSrc else 0
+            val topPad = frameSrc
+            if (srcLeft - leftPad < 0) leftPad = srcLeft.coerceAtLeast(0)
+            if (srcRight + rightPad > matW) rightPad = (matW - srcRight).coerceAtLeast(0)
+            var sL = (srcLeft - leftPad).coerceAtLeast(0)
+            sL = (sL / 2) * 2
+            leftPad = (srcLeft - sL).coerceAtLeast(0)
+            val maxDest = maxW.coerceAtMost(recBuffer.p.width).coerceAtLeast(2)
+            fun destForPads(): Int {
+                val w = if (!growRight && rightPad >= frameSrc) {
+                    ((leftPad + boxW) * s).roundToInt() + 4
+                } else if (!growLeft && leftPad >= frameSrc) {
+                    4 + ((boxW + rightPad) * s).roundToInt()
+                } else {
+                    ((leftPad + boxW + rightPad) * s).roundToInt()
+                }
+                return w.coerceIn(2, maxDest)
+            }
+            var destW = destForPads()
+            if (destW % 2 != 0 && growLeft != growRight) {
+                val addSrc = (1.0 / s).roundToInt().coerceAtLeast(1)
+                if (growLeft) {
+                    val room = sL - (sL % 2)
+                    var add = addSrc.coerceAtMost(room)
+                    if (add % 2 != 0) add = (add + 1).coerceAtMost(room)
+                    if (add % 2 != 0) add -= 1
+                    if (add > 0) {
+                        sL -= add
+                        leftPad += add
+                    }
+                } else {
+                    val room = (matW - srcRight - rightPad).coerceAtLeast(0)
+                    rightPad += addSrc.coerceAtMost(room)
+                }
+                destW = destForPads()
+            }
+            // BufferSet crops are even. Add one px; do not evenDown a locked side.
+            if (destW % 2 != 0) {
+                destW = if (destW < maxDest) destW + 1 else (destW - 1).coerceAtLeast(2)
+            }
+            var sT = (srcTop - topPad).coerceAtLeast(0)
+            sT = (sT / 2) * 2
+            var srcW = (leftPad + boxW + rightPad).coerceAtLeast(2)
+            if (sL + srcW > matW) {
+                srcW = (matW - sL).coerceAtLeast(2)
+                rightPad = (srcW - leftPad - boxW).coerceAtLeast(0)
+                destW = destForPads()
+                if (destW % 2 != 0) {
+                    destW = if (destW < maxDest) destW + 1 else (destW - 1).coerceAtLeast(2)
+                }
+            }
+            if (srcW % 2 != 0) {
+                if (sL + srcW + 1 <= matW) srcW += 1 else srcW -= 1
+            }
+            val cover = ceil(destW / s.toDouble()).toInt()
+            if (srcW < cover) {
+                val want = if (cover % 2 == 0) cover else cover + 1
+                if (sL + want <= matW) srcW = want
+            }
             var srcH = ceil(49.0 / s).toInt().coerceAtLeast(2)
-            var srcW = ceil((destW + 1.0) / s).toInt().coerceAtLeast(2)
-            val leftPad = ((4f + extraL) / s).roundToInt().coerceAtLeast(0)
-            val topPad = (4f / s).roundToInt().coerceAtLeast(0)
-            val sL = evenOrigin((srcLeft - leftPad).coerceAtLeast(0))
-            val sT = evenOrigin((srcTop - topPad).coerceAtLeast(0))
-            if (sL + srcW > matW) srcW = evenDown(matW - sL)
-            if (sT + srcH > matH) srcH = evenDown(matH - sT)
-            if (srcW < 2 || srcH < 2) return null
+            if (sT + srcH > matH) srcH = matH - sT
+            if (srcH % 2 != 0) {
+                if (sT + srcH + 1 <= matH) srcH += 1 else srcH -= 1
+            }
+            if (srcW < 2 || srcH < 2 || sL + srcW > matW || sT + srcH > matH) return null
             val srcId = tryCreateCrop(workspace, sL, sT, srcW, srcH) ?: return null
             val src = workspace.c[srcId]
             val fed = downsampleMildSource(src.mat, recBuffer, s, destW, maxW)
