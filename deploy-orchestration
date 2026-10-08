@@ -6,7 +6,7 @@
 # never overwrites dest update-rules.sh.
 # Will not run dest update-rules on staged dest/worktrees unless --force (dangerous).
 #
-# Run as primary_user (dlang) from the VehicleExpenses orchestration root:
+# Run as primary_user from the VehicleExpenses orchestration root:
 #   ./deploy-orchestration --discover
 #   ./deploy-orchestration --dry-run
 #   ./deploy-orchestration --apply
@@ -14,7 +14,7 @@
 #   ./deploy-orchestration --apply --commit --update-rules
 #   ./deploy-orchestration --apply --commit --update-rules --push
 #   ./deploy-orchestration --apply --repos remotetable,extractmail --commit
-#   ./deploy-orchestration --apply --repos /home/dlang/git/remotetable --commit
+#   ./deploy-orchestration --apply --repos "$GIT_HOME/remotetable" --commit
 #
 set -u
 umask 007
@@ -96,7 +96,10 @@ if [[ ! -f "$cfg" ]]; then
 fi
 GIT_HOME=$(sed -n 's/^git_home=//p' "$cfg" | tr -d '\r' | head -1)
 PRIMARY_USER=$(sed -n 's/^primary_user=//p' "$cfg" | tr -d '\r' | head -1)
-PRIMARY_USER=${PRIMARY_USER:-dlang}
+if [[ -z "${PRIMARY_USER:-}" ]]; then
+  echo "ERROR: project.config primary_user= is unset" >&2
+  exit 1
+fi
 if [[ -z "${GIT_HOME:-}" || "$GIT_HOME" == @@* || "$GIT_HOME" != /* ]]; then
   echo "ERROR: project.config git_home= must be an absolute path" >&2
   exit 1

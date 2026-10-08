@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fix-ve-git-shared.sh — repair VE monorepo .git to multi-user model (dlang + sudo).
+# fix-ve-git-shared.sh — repair VE monorepo .git to multi-user model (primary user + sudo).
 # Wrapper around fix-multiuser-git-hosts.sh for this host only.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
