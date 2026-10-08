@@ -98,7 +98,7 @@ Current VE **disabled** (keep unless the human opts in): `pr-babysit`,
 
 Enabled project skills today: `prepare-local-pr`, `master-merge`,
 `rebase-on-master`, `review` (local; shadows bundled GitHub `review`),
-`check-upgrade`.
+`check-upgrade`, `validate-plans`.
 
 ### 2. New commands useful in multi-agent / multi-worktree
 
