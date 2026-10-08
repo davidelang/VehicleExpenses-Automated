@@ -71,7 +71,8 @@ if [[ -z "$SANDBOX_REL" || "$SANDBOX_REL" == @@* ]]; then
   elif [[ -d "$SCRIPT_DIR/../sandbox" || -L "$SCRIPT_DIR/../sandbox" ]]; then
     SANDBOX_REL="../sandbox"
   else
-    SANDBOX_REL="sandbox"
+    echo "ERROR: project.config sandbox_dir/sandbox_path is unset and no sandbox directory exists." >&2
+    exit 1
   fi
 fi
 if [[ "$SANDBOX_REL" = /* ]]; then
@@ -155,8 +156,8 @@ resolve_run_user() {
     coder) echo "${coder_user:-ai-coder}" ;;
     master) echo "${master_user:-${coder_user:-ai-coder}}" ;;
     orchestrator) echo "${orchestrator_user:-ai-orchestrator}" ;;
-    primary) echo "${primary_user:-${SUDO_USER:-${USER:-dlang}}}" ;;
-    *) echo "${primary_user:-${USER:-dlang}}" ;;
+    primary) echo "${primary_user:-${SUDO_USER:-${USER:?primary_user is unset}}}" ;;
+    *) echo "${primary_user:-${USER:?primary_user is unset}}" ;;
   esac
 }
 
