@@ -742,7 +742,7 @@ for dest in "${DESTS[@]}"; do
       }
     else
       before=$(git_c "$dest" rev-parse HEAD)
-      if ! (cd "$dest" && bash ./update-rules.sh ${FORCE:+--force}); then
+      if ! (cd "$dest" && bash "${ur[@]}"); then
         echo "ERROR: dest update-rules failed" >&2
         ANY_FAIL=1
         ur_ok=0
