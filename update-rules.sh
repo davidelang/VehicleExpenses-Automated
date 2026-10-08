@@ -88,6 +88,27 @@ file_blob_in_history() {
   return 1
 }
 
+# Shared rules and manage-configs files. A diverged branch still receives these.
+is_shared_publish_file() {
+  case "$1" in
+    filter-apply-config|filter-clean-config|.gitattributes|.grok/config.toml|\
+AGENTS.md|AGENT_MANDATES.md|GROK.md|ANTIGRAVITY.md|GEMINI.md|\
+new_agent_prompt|standard-plan-compliance-block.md|\
+MULTI_AGENT_USER_INSTRUCTIONS.md|MASTER_AGENT_MANDATE.md|\
+setup-project|setup_agent.sh|ve-resolve-orch|\
+.grok/lib/grok-launch-common.sh|landlock.config|\
+run-antigravity|run-antigravity-master|run-antigravity-planner|\
+run-antigravity-coder|run-antigravity-orchestrator|\
+.grok/prompts/role-planner.md|.grok/prompts/role-coder.md|\
+.grok/prompts/role-master.md|.grok/prompts/role-orchestrator.md|\
+.grok/prompts/dedicated-planner.md|.grok/prompts/planning-subagent.md|\
+.grok/agents/plan.md|.grok/agents/explore.md|project.config.example|\
+update-rules.sh)
+      return 0 ;;
+  esac
+  return 1
+}
+
 # decide_sync_action WT FILE
 # Sets global DECIDE_ACTION=copy|skip and DECIDE_REASON=...
 DECIDE_ACTION=
@@ -113,7 +134,7 @@ decide_sync_action() {
   local src_hash dst_hash
   src_hash=$(git hash-object "$src" 2>/dev/null || cksum "$src" | awk '{print $1}')
   dst_hash=$(git hash-object "$dst" 2>/dev/null || cksum "$dst" | awk '{print $1}')
-  if [ "$file" = "filter-apply-config" ] || [ "$file" = "filter-clean-config" ]; then
+  if is_shared_publish_file "$file"; then
     local porcelain
     porcelain=$(git -C "$wt" status --porcelain -- "$file" 2>/dev/null || true)
     if [ "$src_hash" = "$dst_hash" ] && [ -z "$porcelain" ]; then
@@ -122,11 +143,7 @@ decide_sync_action() {
       return
     fi
     DECIDE_ACTION=copy
-    if [ "$src_hash" != "$dst_hash" ]; then
-      DECIDE_REASON="shared filter"
-    else
-      DECIDE_REASON="shared filter already copied; commit"
-    fi
+    DECIDE_REASON="shared rules publish"
     return
   fi
   if [ "$src_hash" = "$dst_hash" ]; then
