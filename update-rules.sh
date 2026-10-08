@@ -19,6 +19,10 @@
 #   - orch blob appears in worktree history for path, worktree moved on → SKIP
 #   - neither / diverged → SKIP unless --force
 # Content identical → SKIP (noop). mtime is logged only as a soft clue.
+# filter-apply-config and filter-clean-config are the exception: always copy
+# from this checkout and commit, including a dirty or diverged worktree.
+# Identical bytes that already match HEAD stay a no-op.
+# Only paths this run copies are committed. A skipped dirty file stays dirty.
 #
 # Shared brain uses physical copies (no hard links, no skip-worktree).
 
@@ -84,6 +88,27 @@ file_blob_in_history() {
   return 1
 }
 
+# Shared rules and manage-configs files. A diverged branch still receives these.
+is_shared_publish_file() {
+  case "$1" in
+    filter-apply-config|filter-clean-config|.gitattributes|.grok/config.toml|\
+AGENTS.md|AGENT_MANDATES.md|GROK.md|ANTIGRAVITY.md|GEMINI.md|\
+new_agent_prompt|standard-plan-compliance-block.md|\
+MULTI_AGENT_USER_INSTRUCTIONS.md|MASTER_AGENT_MANDATE.md|\
+setup-project|setup_agent.sh|ve-resolve-orch|\
+.grok/lib/grok-launch-common.sh|landlock.config|\
+run-antigravity|run-antigravity-master|run-antigravity-planner|\
+run-antigravity-coder|run-antigravity-orchestrator|\
+.grok/prompts/role-planner.md|.grok/prompts/role-coder.md|\
+.grok/prompts/role-master.md|.grok/prompts/role-orchestrator.md|\
+.grok/prompts/dedicated-planner.md|.grok/prompts/planning-subagent.md|\
+.grok/agents/plan.md|.grok/agents/explore.md|project.config.example|\
+update-rules.sh)
+      return 0 ;;
+  esac
+  return 1
+}
+
 # decide_sync_action WT FILE
 # Sets global DECIDE_ACTION=copy|skip and DECIDE_REASON=...
 DECIDE_ACTION=
@@ -109,6 +134,18 @@ decide_sync_action() {
   local src_hash dst_hash
   src_hash=$(git hash-object "$src" 2>/dev/null || cksum "$src" | awk '{print $1}')
   dst_hash=$(git hash-object "$dst" 2>/dev/null || cksum "$dst" | awk '{print $1}')
+  if is_shared_publish_file "$file"; then
+    local porcelain
+    porcelain=$(git -C "$wt" status --porcelain -- "$file" 2>/dev/null || true)
+    if [ "$src_hash" = "$dst_hash" ] && [ -z "$porcelain" ]; then
+      DECIDE_ACTION=skip
+      DECIDE_REASON="content identical"
+      return
+    fi
+    DECIDE_ACTION=copy
+    DECIDE_REASON="shared rules publish"
+    return
+  fi
   if [ "$src_hash" = "$dst_hash" ]; then
     DECIDE_ACTION=skip
     DECIDE_REASON="content identical"
@@ -274,6 +311,9 @@ FILES=(
     # Agents use TAG=$(./get-builds-tag.sh) to avoid repeated permission prompts
     # for the common git rev-parse logic needed before resets.
     "get-builds-tag.sh"
+    "reset-to-builds.sh"
+    "GEMINI.md"
+    "CLAUDE.md"
     # run-grok-planner: convenience launcher for dedicated narrow Planning Agent sessions.
     # Reads the narrow prompt file (written by the main orchestrator to
     # ${sandbox_dir}/.planning-agent-prompt.txt) to allow the user direct
@@ -561,6 +601,7 @@ while [ "$_wt_i" -lt "${#WT_PATHS[@]}" ]; do
 
     COPIED_N=0
     SKIPPED_N=0
+    COPIED_FILES=()
     for FILE in "${COPY_LIST[@]}"; do
         if [ ! -f "$SOURCE_DIR/$FILE" ]; then
             continue
@@ -575,6 +616,7 @@ while [ "$_wt_i" -lt "${#WT_PATHS[@]}" ]; do
         fi
         echo "    COPY $FILE — $DECIDE_REASON"
         COPIED_N=$((COPIED_N + 1))
+        COPIED_FILES+=("$FILE")
         if [ "$DRY_RUN" -eq 1 ]; then
             continue
         fi
@@ -582,7 +624,11 @@ while [ "$_wt_i" -lt "${#WT_PATHS[@]}" ]; do
         TARGET_DIR_PATH=$(dirname "$TARGET_FILE")
         mkdir -p "$TARGET_DIR_PATH"
         rm -f "$TARGET_FILE"
-        cp -p "$SOURCE_DIR/$FILE" "$TARGET_FILE" 2>/dev/null || cp "$SOURCE_DIR/$FILE" "$TARGET_FILE"
+        if [ -L "$SOURCE_DIR/$FILE" ]; then
+          cp -P "$SOURCE_DIR/$FILE" "$TARGET_FILE"
+        else
+          cp -p "$SOURCE_DIR/$FILE" "$TARGET_FILE" 2>/dev/null || cp "$SOURCE_DIR/$FILE" "$TARGET_FILE"
+        fi
         chown "$PRIMARY_USER:$CODE_GROUP" "$TARGET_FILE" 2>/dev/null || true
         if [ -x "$SOURCE_DIR/$FILE" ] || [[ "$FILE" == *.sh ]] || \
            [[ "$FILE" == deploy || "$FILE" == build_app || "$FILE" == gradlew ]] || \
@@ -624,55 +670,60 @@ while [ "$_wt_i" -lt "${#WT_PATHS[@]}" ]; do
         done
 
         git update-index --no-skip-worktree "${ALLOW_COMMIT[@]}" 2>/dev/null || true
-        chmod +w "${ALLOW_COMMIT[@]}" 2>/dev/null || true
 
-        add_failed=0
-        for f in "${ALLOW_COMMIT[@]}"; do
-          [ -e "$f" ] || continue
-          if ! git add -f -- "$f"; then
-            echo "ERROR: git add failed for $f in $WT"
-            add_failed=1
-          fi
-        done
-        if [ "$add_failed" -ne 0 ]; then
-          echo "ERROR: skip commit in $WT after add failure"
-          git reset >/dev/null 2>&1 || true
-          exit 2
-        fi
-
-        extra_staged=0
-        while IFS= read -r p; do
-          [ -n "$p" ] || continue
-          in_allow=0
-          for a in "${ALLOW_COMMIT[@]}"; do
-            if [ "$p" = "$a" ]; then
-              in_allow=1
-              break
-            fi
-          done
-          if [ "$in_allow" -eq 0 ]; then
-            echo "ERROR: extra staged path $p in $WT — refusing commit"
-            extra_staged=1
-          fi
-        done < <(git diff --cached --name-only)
-
-        if [ "$extra_staged" -ne 0 ]; then
-          git reset >/dev/null 2>&1 || true
-          exit 2
-        fi
-
-        staged_only=()
-        while IFS= read -r p; do
-          [ -n "$p" ] && staged_only+=("$p")
-        done < <(git diff --cached --name-only)
-        if [ "${#staged_only[@]}" -eq 0 ]; then
+        if [ "${#COPIED_FILES[@]}" -eq 0 ]; then
           echo "No changes needed for $WT."
         else
-          echo "Changes detected in $WT, committing allowlist only..."
-          if ! git commit --only -m "chore: Synchronize agent rules and infrastructure" -- "${staged_only[@]}"; then
-            echo "ERROR: git commit --only failed in $WT"
+          chmod +w "${COPIED_FILES[@]}" 2>/dev/null || true
+
+          add_failed=0
+          for f in "${COPIED_FILES[@]}"; do
+            [ -e "$f" ] || continue
+            if ! git add -f -- "$f"; then
+              echo "ERROR: git add failed for $f in $WT"
+              add_failed=1
+            fi
+          done
+          if [ "$add_failed" -ne 0 ]; then
+            echo "ERROR: skip commit in $WT after add failure"
             git reset >/dev/null 2>&1 || true
             exit 2
+          fi
+
+          extra_staged=0
+          while IFS= read -r p; do
+            [ -n "$p" ] || continue
+            in_allow=0
+            for a in "${COPIED_FILES[@]}"; do
+              if [ "$p" = "$a" ]; then
+                in_allow=1
+                break
+              fi
+            done
+            if [ "$in_allow" -eq 0 ]; then
+              echo "ERROR: extra staged path $p in $WT — refusing commit"
+              extra_staged=1
+            fi
+          done < <(git diff --cached --name-only)
+
+          if [ "$extra_staged" -ne 0 ]; then
+            git reset >/dev/null 2>&1 || true
+            exit 2
+          fi
+
+          staged_only=()
+          while IFS= read -r p; do
+            [ -n "$p" ] && staged_only+=("$p")
+          done < <(git diff --cached --name-only)
+          if [ "${#staged_only[@]}" -eq 0 ]; then
+            echo "No changes needed for $WT."
+          else
+            echo "Changes detected in $WT, committing copied files only..."
+            if ! git commit --only -m "chore: Synchronize agent rules and infrastructure" -- "${staged_only[@]}"; then
+              echo "ERROR: git commit --only failed in $WT"
+              git reset >/dev/null 2>&1 || true
+              exit 2
+            fi
           fi
         fi
 
@@ -734,8 +785,12 @@ if [ "$DRY_RUN" -eq 0 ]; then
   USER_POLICY_DIR="$HOME/.gemini/policies"
   echo ">>> Promoting policies to User-tier: $USER_POLICY_DIR"
   mkdir -p "$USER_POLICY_DIR"
-  cp "$SOURCE_DIR/.gemini/policies/plans.toml" "$USER_POLICY_DIR/vehicle_expenses_plans.toml"
-  cp "$SOURCE_DIR/.gemini/policies/auto-saved.toml" "$USER_POLICY_DIR/vehicle_expenses_auto_saved.toml"
+  if [ -f "$SOURCE_DIR/.gemini/policies/plans.toml" ]; then
+    cp "$SOURCE_DIR/.gemini/policies/plans.toml" "$USER_POLICY_DIR/vehicle_expenses_plans.toml"
+  fi
+  if [ -f "$SOURCE_DIR/.gemini/policies/auto-saved.toml" ]; then
+    cp "$SOURCE_DIR/.gemini/policies/auto-saved.toml" "$USER_POLICY_DIR/vehicle_expenses_auto_saved.toml"
+  fi
 fi
 
 echo "--- Rule Update Sync Complete ---"
