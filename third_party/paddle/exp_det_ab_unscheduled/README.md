@@ -4,8 +4,8 @@
 
 v4 mobile dets live in `exp_det_ab_unscheduled` and are not in the APK.
 
-Scheduled on device: `assets/paddle/exp_det_ab/{product_det,PP-OCRv4_mobile_det}_*.nb` only
-(`MultiScaleDetRunner.DET_MODELS`). See `docs/obsolete/EXPERIMENT_DET_MODELS.md`.
+Scheduled on device: `assets/paddle/exp_det_ab/product_det_*.nb` only
+(`MultiScaleDetRunner.DET_MODELS` is `product_det` only). See `docs/obsolete/EXPERIMENT_DET_MODELS.md`.
 
 Still in this directory (small; gitignored from APK by not being assets):
 - `PP-OCRv5_mobile_det_*` — dropped from the matrix (too many 0-box cells)
