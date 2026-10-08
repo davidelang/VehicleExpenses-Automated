@@ -63,7 +63,8 @@ if _unsmudged "$SANDBOX_REL"; then
   elif [[ -d "$PROJECT_ROOT/sandbox" || -L "$PROJECT_ROOT/sandbox" ]]; then
     SANDBOX_REL="sandbox"
   else
-    SANDBOX_REL="dev-ai-interaction"
+    echo "Error: project.config sandbox_dir/sandbox_path is unset and no sandbox directory exists." >&2
+    exit 1
   fi
 fi
 if [[ "$SANDBOX_REL" = /* ]]; then
@@ -96,7 +97,8 @@ _unsmudged "$SHARED_GROUP" && SHARED_GROUP=ai-shared
 GIT_HOME_VAL="${git_home:-}"
 _unsmudged "$GIT_HOME_VAL" && GIT_HOME_VAL=""
 GROK_BIN_VAL="${grok_bin_default:-}"
-_unsmudged "$GROK_BIN_VAL" && GROK_BIN_VAL="\@@GROK_BIN_DEFAULT@@"
+# ${HOME} not $HOME — clean filter would turn $HOME/git/grok/... into @@GROK_BIN_DEFAULT@@
+_unsmudged "$GROK_BIN_VAL" && GROK_BIN_VAL="${HOME}/git/grok/bin/grok"
 GROK_BIN_VAL="$(_expand_path "$GROK_BIN_VAL")"
 
 echo "=== setup-project: Unix Permissions Bootstrap (sandbox-only, ONE-TIME STAMP) ==="
