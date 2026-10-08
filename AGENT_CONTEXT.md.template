@@ -1,14 +1,2 @@
-# AGENT_CONTEXT.md Template
-
-- **Agent ID:** agent-X
-- **Current Branch:** UNASSIGNED
-- **Active Plan:** [the single user-designated fresh file under dev-ai-interaction/plans/ for this turn, e.g. dev-ai-interaction/plans/my-task-20260612-plan.md; see MULTI_AGENT_USER_INSTRUCTIONS.md and AGENT_MANDATES "Sandbox Plan File..." subsection. Harness session plan.md is never the work plan.]
-- **Status:** IDLE
-
----
-## Instructions for the Agent
-1.  **Identity:** You are working in a dedicated Git worktree.
-2.  **Sandbox:** Access the shared sandbox via the `./dev-ai-interaction/` symlink.
-3.  **Brain:** Tracked copies on this branch (delivered at `git worktree add` from master tip; hotfixed to in-flight worktrees via `update-rules.sh` run from the orchestration root). The only required symlink is the sandbox (`./dev-ai-interaction` → `../dev-ai-interaction`). See `GEMINI.md` / `GROK.md` + `AGENT_MANDATES.md`.
-4.  **Tagging:** Use `./build_app` and `./deploy`. They will automatically create branch-scoped tags (e.g., `branch/builds`).
-5.  **State:** Keep this file updated if your status changes.
+Forked-from: master
+Start-branch: BRANCH

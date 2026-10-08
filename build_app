@@ -26,6 +26,39 @@ fi
 # Source/docs: prefer 664/2775 → umask 002. Build outputs tightened after gradle.
 umask 002
 
+# Prefer this branch's -start tag. If the checkout moved to another branch,
+# AGENT_CONTEXT.md names the original start branch and the fork parent.
+describe_here() {
+  local branch parent start
+  branch=$(git rev-parse --abbrev-ref HEAD)
+  if [ "$branch" = "master" ]; then
+    git describe --tags --match builds
+    return
+  fi
+  if git describe --tags --match "${branch}-start" 2>/dev/null; then
+    return
+  fi
+  parent=
+  start=
+  if [ -f AGENT_CONTEXT.md ]; then
+    parent=$(sed -n 's/^Forked-from:[[:space:]]*//p' AGENT_CONTEXT.md | head -1)
+    start=$(sed -n 's/^Start-branch:[[:space:]]*//p' AGENT_CONTEXT.md | head -1)
+  fi
+  if [ -n "$start" ] && git describe --tags --match "${start}-start" 2>/dev/null; then
+    return
+  fi
+  if [ -n "$parent" ] && [ "$parent" != "master" ]; then
+    if git describe --tags --match "${parent}-start" 2>/dev/null; then
+      return
+    fi
+    if git describe --tags --match "${parent}/*" 2>/dev/null; then
+      return
+    fi
+  fi
+  echo "WARN: no ${branch}-start tag and no usable Forked-from/Start-branch anchor." >&2
+  return 1
+}
+
 # ai-shared + ai-code required (agent caches are ai-coder:ai-code). Do not sg one group.
 MISSING=""
 for grp in ai-shared ai-code; do
@@ -115,7 +148,7 @@ if [ ! -x ./gradlew ]; then
     fi
     echo "Updating '$TAG_NAME' tag (no compile performed)."
     git tag -f "$TAG_NAME"
-    git describe --tags --match "${CURRENT_BRANCH}-start" 2>/dev/null || git describe
+    describe_here || true
     exit 0
 else
     # Separate user args from gradle flags after --
@@ -214,7 +247,7 @@ else
         fi
         echo "Build successful. Updating '$TAG_NAME' tag."
         git tag -f "$TAG_NAME"
-        git describe --tags --match "${CURRENT_BRANCH}-start" 2>/dev/null || git describe
+        describe_here || true
         exit 0
     else
         echo "Build failed."

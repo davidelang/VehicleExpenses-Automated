@@ -274,9 +274,12 @@ FILES=(
     # Agents use TAG=$(./get-builds-tag.sh) to avoid repeated permission prompts
     # for the common git rev-parse logic needed before resets.
     "get-builds-tag.sh"
+    "reset-to-builds.sh"
+    "GEMINI.md"
+    "CLAUDE.md"
     # run-grok-planner: convenience launcher for dedicated narrow Planning Agent sessions.
     # Reads the narrow prompt file (written by the main orchestrator to
-    # dev-ai-interaction/.planning-agent-prompt.txt) to allow the user direct
+    # ${sandbox_dir}/.planning-agent-prompt.txt) to allow the user direct
     # interaction with the planner until explicit approval. Synced for use from
     # any worktree.
     "run-grok-planner"
@@ -300,8 +303,8 @@ FILES=(
     # Stable canonical guardrails block (cite by path in plans; do not paste).
     # This is the single source of truth for the short "Compliance & Execution
     # Guardrails (STANDARD BLOCK)" section. Placed at repo root (not under
-    # dev-ai-interaction/) so it is a regular tracked file in every worktree
-    # (dev-ai-interaction/ is gitignored and symlinked in agent worktrees for
+    # ${sandbox_dir}/) so it is a regular tracked file in every worktree
+    # (${sandbox_dir}/ is gitignored and symlinked in agent worktrees for
     # sandbox sharing). Listed in FILES so it is physically copied + committed
     # into each agent-N/ and master/ worktree and can be `cat`'d reliably.
     # This makes drift immediately visible to the user.
@@ -579,7 +582,11 @@ while [ "$_wt_i" -lt "${#WT_PATHS[@]}" ]; do
         TARGET_DIR_PATH=$(dirname "$TARGET_FILE")
         mkdir -p "$TARGET_DIR_PATH"
         rm -f "$TARGET_FILE"
-        cp -p "$SOURCE_DIR/$FILE" "$TARGET_FILE" 2>/dev/null || cp "$SOURCE_DIR/$FILE" "$TARGET_FILE"
+        if [ -L "$SOURCE_DIR/$FILE" ]; then
+          cp -P "$SOURCE_DIR/$FILE" "$TARGET_FILE"
+        else
+          cp -p "$SOURCE_DIR/$FILE" "$TARGET_FILE" 2>/dev/null || cp "$SOURCE_DIR/$FILE" "$TARGET_FILE"
+        fi
         chown "$PRIMARY_USER:$CODE_GROUP" "$TARGET_FILE" 2>/dev/null || true
         if [ -x "$SOURCE_DIR/$FILE" ] || [[ "$FILE" == *.sh ]] || \
            [[ "$FILE" == deploy || "$FILE" == build_app || "$FILE" == gradlew ]] || \
