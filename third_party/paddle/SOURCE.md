@@ -20,6 +20,8 @@
 | armeabi-v7a | **tailor** + int8 (fp32 calib) | **~0.75–3 MB** | same | Branch product path `prod_u8fp32_u8` (no HW fp16). |
 | x86_64 | slim thin-jni | 30936 B | 10430904 B | Ship stamp `so45e4733a`. `libpaddle_lite_jni.so` is unchanged. Models still `prod_u8fp16/*_x86_64.nb` (mid-graph often fp32 demote; not identical to armv8). |
 
+**One arm64 JNI for all aarch64 phones** (Pixel 6 G1 through Pixel 11 G6, other aarch64). Runtime `getauxval(AT_HWCAP)` selects FP16 (`ASIMDHP`) and dotprod (`ASIMDDP`) so unknown CPU parts (e.g. Tensor G6 A725) do not disable those features; the CPU-part allow-list is only a fallback if HWCAP is 0. **SVE2 kernels are in the same SO** (`--with_arm8_sve2=ON`) with **per-TU** `-march=…+sve2` on `sve/*.cc` only; default TUs stay `-march=armv8.2-a+fp16`. Runtime `has_sve2()` / `getauxval(AT_HWCAP2)` selects SVE vs NEON. Do **not** set global `CMAKE_*_FLAGS += +sve2` (SIGILL on Pixel 6). Do not ship a G6-only / per-Tensor-gen extra SO.
+
 **Regression note (2026-08-05):** Rebuilding arm64/x86 under NDK **r28c / clang 19** (vs pin **r20b / clang 8**) changed SO bytes and **broke** emulator First 10 pump L1 vs pin/libpin/Jul27 goldens (heatmap mass ~36k→~9–17k; cost 84.50→N/A/51). Calib stamps still present — **codegen / -ffast-math -Ofast** difference. Restored pin-era arm64+x86 artifacts; human dual-device First 10 on `v0.98-21-gbe84776b` **PASS**.
 
 **r28c re-promote (mandatory):**
