@@ -52,8 +52,8 @@ if [[ -n "$GIT_HOME_CONFIG" && "$GIT_HOME_CONFIG" != @@* ]]; then
 fi
 
 # Prefer sandbox_dir / sandbox_path from project.config; stamped default:
-# sandbox_path=dev-ai-interaction  (smudge from project.config; clean restores token)
-_sandbox_stamp="dev-ai-interaction"
+# sandbox_path=@@SANDBOX_PATH@@  (smudge from project.config; clean restores token)
+_sandbox_stamp="@@SANDBOX_PATH@@"
 SANDBOX_REL="${sandbox_dir:-${sandbox_path:-}}"
 if [[ -z "$SANDBOX_REL" || "$SANDBOX_REL" == @@* ]]; then
   if [[ "$_sandbox_stamp" != @@* && -n "$_sandbox_stamp" ]]; then
@@ -156,8 +156,8 @@ resolve_run_user() {
     coder) echo "${coder_user:-ai-coder}" ;;
     master) echo "${master_user:-${coder_user:-ai-coder}}" ;;
     orchestrator) echo "${orchestrator_user:-ai-orchestrator}" ;;
-    primary) echo "${primary_user:-${SUDO_USER:-${USER:-dlang}}}" ;;
-    *) echo "${primary_user:-${USER:-dlang}}" ;;
+    primary) echo "${primary_user:-${SUDO_USER:-${USER:?primary_user is unset}}}" ;;
+    *) echo "${primary_user:-${USER:?primary_user is unset}}" ;;
   esac
 }
 
@@ -303,23 +303,17 @@ launch_grok_with_prompt() {
   fi
   # User-scope [ui] permission_mode (always-approve on this host) must not
   # override VE-wins “launchers stay ask”. CLI wins. GROK_PERMISSION_MODE overrides.
-  # Exception: ROLE_KEY=imagine pins bypassPermissions + --always-approve
-  # (CLI rejects --permission-mode always-approve). Tight Landlock, Imagine batches.
+  # Exception: ROLE_KEY=imagine pins always-approve (tight Landlock, Imagine batches).
   local grok_permission_mode
-  local grok_always_approve_args=()
   case "${ROLE_KEY:-}" in
     imagine)
-      grok_permission_mode="bypassPermissions"
-      grok_always_approve_args+=(--always-approve)
+      grok_permission_mode="always-approve"
       ;;
     *)
       grok_permission_mode="${GROK_PERMISSION_MODE:-default}"
       ;;
   esac
   echo "GROK_PERMISSION_MODE=${grok_permission_mode}"
-  if [[ ${#grok_always_approve_args[@]} -gt 0 ]]; then
-    echo "GROK_ALWAYS_APPROVE=1"
-  fi
 
   # User-scope [models] default_reasoning_effort (xhigh on this host) must not
   # override VE-wins “coder/master --effort high”. CLI wins.
@@ -400,7 +394,6 @@ launch_grok_with_prompt() {
       --no-alt-screen \
       --minimal \
       --permission-mode "${grok_permission_mode}" \
-      ${grok_always_approve_args[@]+"${grok_always_approve_args[@]}"} \
       ${grok_effort_args[@]+"${grok_effort_args[@]}"} \
       ${freeform_args[@]+"${freeform_args[@]}"} \
       ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}

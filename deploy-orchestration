@@ -2,11 +2,8 @@
 # deploy-orchestration — publish shared multi-agent policy to sibling orch hosts.
 # This is the only policy publisher (not deploy-landlock-fix / pack-launchers / …).
 #
-# Per-host update-rules.sh is not replaced. Missing seed names are inserted
-# into its FILES list so that host's ./update-rules.sh publishes them.
-# Managed files (filter=manage-configs) are cleaned here, checked in as that
-# text (clean filter off), then checked out so the dest smudges its own values.
-# update-rules.sh inside one repo still copies smudged worktree files.
+# Per-host update-rules.sh stays on that host (project FILES). This command
+# never overwrites dest update-rules.sh.
 # Will not run dest update-rules on staged dest/worktrees unless --force (dangerous).
 #
 # Run as primary_user from the VehicleExpenses orchestration root:
@@ -18,11 +15,6 @@
 #   ./deploy-orchestration --apply --commit --update-rules --push
 #   ./deploy-orchestration --apply --repos remotetable,extractmail --commit
 #   ./deploy-orchestration --apply --repos "$GIT_HOME/remotetable" --commit
-#
-# filter-apply-config and filter-clean-config are on the policy list. They are
-# the same bytes on every host (!filter). A dirty dest copy is overwritten.
-# When HEAD does not already store those bytes, they are committed on the dest
-# orch root and on that host's other worktrees.
 #
 set -u
 umask 007
@@ -142,79 +134,6 @@ in_never() {
   return 1
 }
 
-# Created on a dest that does not have them yet, and named in that dest's
-# update-rules.sh FILES list so later ./update-rules.sh keeps publishing them.
-SEED_FILES=(
-  exec-preflight
-  reset-to-builds.sh
-  GEMINI.md
-  CLAUDE.md
-  .gemini/system.md
-  .gemini/system_prompt.md
-)
-
-is_seed() {
-  local f="$1" x
-  for x in "${SEED_FILES[@]}"; do
-    [[ "$f" == "$x" ]] && return 0
-  done
-  return 1
-}
-
-files_entry_present() {
-  local ur="$1" name="$2" line trimmed
-  while IFS= read -r line || [[ -n "${line:-}" ]]; do
-    trimmed="${line#"${line%%[![:space:]]*}"}"
-    trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
-    trimmed="${trimmed%,}"
-    [[ "$trimmed" == "\"$name\"" ]] && return 0
-  done < "$ur"
-  return 1
-}
-
-# Insert seed names missing from dest update-rules.sh FILES. Does not replace
-# the script. Dry-run prints the inserts and leaves the file alone.
-ensure_dest_seed_files_entries() {
-  local dest="$1" ur="$dest/update-rules.sh"
-  local missing=() name joined tmp
-  if [[ ! -f "$ur" ]]; then
-    echo "  SKIP update-rules.sh FILES — dest script missing"
-    return 0
-  fi
-  if [[ "$FORCE" -eq 0 ]] && file_dirty "$dest" "update-rules.sh"; then
-    echo "  SKIP update-rules.sh FILES insert — DIRTY dest (use --force)"
-    return 0
-  fi
-  for name in "${SEED_FILES[@]}"; do
-    if files_entry_present "$ur" "$name"; then
-      continue
-    fi
-    missing+=("$name")
-    echo "  FILES update-rules.sh += $name"
-  done
-  [[ ${#missing[@]} -eq 0 ]] && return 0
-  [[ "$APPLY" -eq 1 ]] || return 0
-  joined=$(IFS='|'; printf '%s' "${missing[*]}")
-  tmp=$(mktemp)
-  if ! awk -v joined="$joined" '
-    BEGIN { n = split(joined, a, "|") }
-    /^FILES=\(/ && !done {
-      print
-      for (i = 1; i <= n; i++) printf "    \"%s\"\n", a[i]
-      done = 1
-      next
-    }
-    { print }
-    END { if (!done) exit 2 }
-  ' "$ur" > "$tmp"; then
-    rm -f "$tmp"
-    echo "ERROR: no FILES=( in $ur" >&2
-    return 1
-  fi
-  cat "$tmp" > "$ur"
-  rm -f "$tmp"
-}
-
 marker_count() {
   local d="$1" n=0
   [[ -f "$d/setup_agent.sh" ]] && n=$((n + 1))
@@ -291,9 +210,8 @@ build_policy_list() {
     todo-close
     get-builds-tag.sh
     reset-to-builds.sh
+    GEMINI.md
     CLAUDE.md
-    .gemini/system.md
-    .gemini/system_prompt.md
     setup_agent.sh
     remove_worktree.sh
     agent-landlock
@@ -310,17 +228,16 @@ build_policy_list() {
     run-grok-orchestrator
     run-grok-planner
     exec-preflight
-    filter-apply-config
-    filter-clean-config
   )
   local f
   for f in "${fixed[@]}"; do
     in_never "$f" && continue
     [[ -f "$VE/$f" ]] || continue
-    # Seed files are created when the dest does not have them yet.
-    if ! is_seed "$f"; then
-      [[ -f "$dest/$f" ]] || continue
-    fi
+    # Seed files a dest may not have yet.
+    case "$f" in
+      exec-preflight|reset-to-builds.sh|GEMINI.md|CLAUDE.md) ;;
+      *) [[ -f "$dest/$f" ]] || continue ;;
+    esac
     POLICY_FILES+=("$f")
   done
   while IFS= read -r f; do
@@ -401,97 +318,21 @@ dest_report_staged() {
   [[ "$any" -eq 1 ]]
 }
 
-# Worktree .gitattributes, including lines not yet committed.
-managed_attr() {
-  local root="$1" rel="$2"
-  [[ -f "$root/.gitattributes" ]] || return 1
-  awk -v p="$rel" '$1 == p && $2 == "filter=manage-configs" { found = 1 } END { exit !found }' \
-    "$root/.gitattributes"
-}
-
-# These two scripts are identical on every host and are not smudged.
-is_shared_filter() {
-  case "$1" in
-    filter-apply-config|filter-clean-config) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-# 0 when dest HEAD does not already store the VE bytes for rel.
-filter_head_differs() {
-  local dest="$1" rel="$2"
-  if ! git_c "$dest" cat-file -e "HEAD:$rel" 2>/dev/null; then
-    return 0
-  fi
-  if git_c "$dest" show "HEAD:$rel" | cmp -s - "$VE/$rel"; then
-    return 1
-  fi
-  return 0
-}
-
-# Bytes that belong in git for this path. Managed files go through the clean filter.
-write_checkin_bytes() {
-  local rel="$1" outfile="$2"
-  if managed_attr "$VE" "$rel"; then
-    bash "$VE/filter-clean-config" "$rel" < "$VE/$rel" > "$outfile"
-  else
-    cat "$VE/$rel" > "$outfile"
-  fi
-}
-
 decide_copy() {
   local dest="$1" rel="$2"
-  local tmp idx want
   DECIDE=copy
   REASON="differs"
-  if [[ ! -f "$VE/$rel" && ! -L "$VE/$rel" ]]; then
+  if [[ ! -f "$VE/$rel" ]]; then
     DECIDE=skip; REASON="source missing"; return
   fi
-  if [[ ! -f "$dest/$rel" && ! -L "$dest/$rel" ]]; then
-    if is_seed "$rel"; then
-      DECIDE=copy; REASON="seed new file"; return
-    fi
+  if [[ ! -f "$dest/$rel" ]]; then
     DECIDE=skip; REASON="dest missing (will not invent)"; return
   fi
-  if [[ -L "$VE/$rel" && ! -L "$dest/$rel" ]]; then
-    if [[ "$FORCE" -eq 0 ]] && file_dirty "$dest" "$rel"; then
-      DECIDE=skip; REASON="DIRTY dest (use --force)"; return
-    fi
-    DECIDE=copy; REASON="replace regular file with symlink"; return
-  fi
-  if [[ -L "$VE/$rel" ]]; then
-    if [[ -L "$dest/$rel" ]] && [[ "$(readlink "$VE/$rel")" == "$(readlink "$dest/$rel")" ]]; then
-      DECIDE=skip; REASON="identical"; return
-    fi
-  elif managed_attr "$VE" "$rel" && git_c "$dest" cat-file -e "HEAD:$rel" 2>/dev/null; then
-    tmp=$(mktemp)
-    if ! write_checkin_bytes "$rel" "$tmp"; then
-      rm -f "$tmp"
-      DECIDE=skip; REASON="clean failed"; return
-    fi
-    if git_c "$dest" show "HEAD:$rel" | cmp -s - "$tmp"; then
-      rm -f "$tmp"
-      DECIDE=skip; REASON="identical"; return
-    fi
-    rm -f "$tmp"
-    REASON="cleaned differs"
-  elif cmp -s "$VE/$rel" "$dest/$rel"; then
-    if is_shared_filter "$rel"; then
-      idx=$(git_c "$dest" rev-parse ":$rel" 2>/dev/null || true)
-      want=$(git hash-object "$VE/$rel" 2>/dev/null || true)
-      if filter_head_differs "$dest" "$rel" || [[ -z "$idx" || "$idx" != "$want" ]]; then
-        REASON="shared filter not at HEAD"
-      else
-        DECIDE=skip; REASON="identical"; return
-      fi
-    else
-      DECIDE=skip; REASON="identical"; return
-    fi
+  if cmp -s "$VE/$rel" "$dest/$rel"; then
+    DECIDE=skip; REASON="identical"; return
   fi
   if [[ "$FORCE" -eq 0 ]] && file_dirty "$dest" "$rel"; then
-    if ! is_shared_filter "$rel"; then
-      DECIDE=skip; REASON="DIRTY dest (use --force)"; return
-    fi
+    DECIDE=skip; REASON="DIRTY dest (use --force)"; return
   fi
 }
 
@@ -533,136 +374,9 @@ fi
 PUSH_DIRS=()
 ANY_FAIL=0
 
-# Library update-rules.sh lists .gemini policy files VE has and those hosts do not.
-# git add of the whole COPY_LIST then fatals on the first missing path and stages nothing.
-repair_dest_update_rules() {
-  local dest="$1" ur="$dest/update-rules.sh"
-  [[ -f "$ur" ]] || return 0
-  local write=0
-  [[ "$DRY" -eq 0 ]] && write=1
-  python3 - "$ur" "$write" <<'PY'
-import pathlib, sys
-path, apply = sys.argv[1], sys.argv[2] == "1"
-file = pathlib.Path(path)
-text = file.read_text()
-old_add = 'git add "${COPY_LIST[@]}" 2>&1 | cat || true'
-new_add = '''add_now=()
-        for f in "${COPY_LIST[@]}"; do
-          [ -e "$f" ] && add_now+=("$f")
-        done
-        if [ "${#add_now[@]}" -gt 0 ]; then
-          git add "${add_now[@]}" 2>&1 | cat || true
-        fi'''
-old_cp = '''  cp "$SOURCE_DIR/.gemini/policies/plans.toml" "$USER_POLICY_DIR/vehicle_expenses_plans.toml"
-  cp "$SOURCE_DIR/.gemini/policies/auto-saved.toml" "$USER_POLICY_DIR/vehicle_expenses_auto_saved.toml"'''
-new_cp = '''  if [ -f "$SOURCE_DIR/.gemini/policies/plans.toml" ]; then
-    cp "$SOURCE_DIR/.gemini/policies/plans.toml" "$USER_POLICY_DIR/vehicle_expenses_plans.toml"
-  fi
-  if [ -f "$SOURCE_DIR/.gemini/policies/auto-saved.toml" ]; then
-    cp "$SOURCE_DIR/.gemini/policies/auto-saved.toml" "$USER_POLICY_DIR/vehicle_expenses_auto_saved.toml"
-  fi'''
-notes = []
-if old_add in text:
-    notes.append("git add skips missing COPY_LIST paths")
-    text = text.replace(old_add, new_add, 1)
-if old_cp in text:
-    notes.append("promote skips missing .gemini policy files")
-    text = text.replace(old_cp, new_cp, 1)
-if not notes:
-    sys.exit(0)
-print("  repair update-rules.sh: " + "; ".join(notes))
-if apply:
-    file.write_text(text)
-PY
-}
-
-# Real worktrees of dest, same skips as dest update-rules (prunable,
-# grok-worktrees, third_party/*/src, foreign git dir).
-dest_worktrees() {
-  local dest="$1" line wt_path="" prunable=0
-  while IFS= read -r line || [[ -n "${line:-}" ]]; do
-    case "$line" in
-      worktree\ *)
-        if [[ -n "$wt_path" && "$prunable" -eq 0 ]] && dest_ur_worktree_ok "$dest" "$wt_path"; then
-          printf '%s\n' "$wt_path"
-        fi
-        wt_path="${line#worktree }"
-        prunable=0
-        ;;
-      prunable*)
-        prunable=1
-        ;;
-    esac
-  done < <(git_c "$dest" worktree list --porcelain)
-  if [[ -n "$wt_path" && "$prunable" -eq 0 ]] && dest_ur_worktree_ok "$dest" "$wt_path"; then
-    printf '%s\n' "$wt_path"
-  fi
-}
-
-# Commit the two filter scripts on dest worktrees other than the orch root
-# (the root is committed with the rest of the policy copy above).
-publish_shared_filters() {
-  local dest="$1" do_write=0 wt rel idx want needs
-  local -a rels=()
-  [[ "$APPLY" -eq 1 && "$DO_COMMIT" -eq 1 ]] && do_write=1
-  [[ "$DRY" -eq 1 || "$do_write" -eq 1 ]] || return 0
-
-  while IFS= read -r wt; do
-    [[ -n "$wt" ]] || continue
-    [[ "$wt" == "$dest" ]] && continue
-    rels=()
-    for rel in filter-apply-config filter-clean-config; do
-      [[ -f "$VE/$rel" && -f "$wt/$rel" ]] || continue
-      needs=0
-      if ! cmp -s "$VE/$rel" "$wt/$rel"; then
-        needs=1
-      elif filter_head_differs "$wt" "$rel"; then
-        needs=1
-      else
-        idx=$(git_c "$wt" rev-parse ":$rel" 2>/dev/null || true)
-        want=$(git hash-object "$VE/$rel" 2>/dev/null || true)
-        if [[ -z "$idx" || "$idx" != "$want" ]]; then
-          needs=1
-        fi
-      fi
-      [[ "$needs" -eq 1 ]] && rels+=("$rel")
-    done
-    [[ ${#rels[@]} -eq 0 ]] && continue
-    if [[ "$do_write" -eq 0 ]]; then
-      echo "  WOULD commit filters in $wt: ${rels[*]}"
-      continue
-    fi
-    echo "  FILTER $wt — ${rels[*]}"
-    for rel in "${rels[@]}"; do
-      cp -f "$VE/$rel" "$wt/$rel"
-      chmod a+x "$wt/$rel" 2>/dev/null || true
-    done
-    if ! git_c "$wt" -c filter.manage-configs.clean=cat add -- "${rels[@]}"; then
-      echo "ERROR: git add filters failed in $wt" >&2
-      ANY_FAIL=1
-      continue
-    fi
-    if git_c "$wt" diff --cached --quiet -- "${rels[@]}"; then
-      echo "  filters already at HEAD in $wt"
-      continue
-    fi
-    if ! git_c "$wt" commit --only -m "deploy-orchestration: shared filter scripts from VE" -- "${rels[@]}"; then
-      echo "ERROR: filter commit failed in $wt" >&2
-      ANY_FAIL=1
-      git_c "$wt" restore --staged -- "${rels[@]}" 2>/dev/null || true
-      continue
-    fi
-    echo "  committed filters $(git_c "$wt" rev-parse --short HEAD)"
-    git_c "$wt" checkout -- "${rels[@]}"
-    PUSH_DIRS+=("$wt")
-  done < <(dest_worktrees "$dest")
-}
-
 for dest in "${DESTS[@]}"; do
   echo "-- $(basename "$dest")  $dest --"
-  repair_dest_update_rules "$dest"
   if [[ "$DRY" -eq 1 || "$APPLY" -eq 1 ]]; then
-    ensure_dest_seed_files_entries "$dest" || exit 1
     build_policy_list "$dest"
     copied=()
     for f in "${POLICY_FILES[@]}"; do
@@ -678,35 +392,19 @@ for dest in "${DESTS[@]}"; do
         mkdir -p "$dest/$(dirname "$f")"
         if [[ -L "$VE/$f" ]]; then
           cp -P "$VE/$f" "$dest/$f"
-        elif managed_attr "$VE" "$f"; then
-          tmp=$(mktemp)
-          if ! write_checkin_bytes "$f" "$tmp"; then
-            rm -f "$tmp"
-            echo "ERROR: clean failed for $f" >&2
-            ANY_FAIL=1
-            continue
-          fi
-          mv "$tmp" "$dest/$f"
         else
           cp -f "$VE/$f" "$dest/$f"
         fi
-        if [[ -x "$VE/$f" || "$f" == *.sh || "$f" == run-grok* || "$f" == git-merge-drivers/* || "$f" == agent-landlock || "$f" == filter-apply-config || "$f" == filter-clean-config ]]; then
+        if [[ -x "$VE/$f" || "$f" == *.sh || "$f" == run-grok* || "$f" == git-merge-drivers/* || "$f" == agent-landlock ]]; then
           chmod a+x "$dest/$f" 2>/dev/null || true
         fi
         copied+=("$f")
       fi
     done
     if [[ "$APPLY" -eq 1 && "$DO_COMMIT" -eq 1 ]]; then
-      add_paths=()
-      if [[ ${#copied[@]} -gt 0 ]]; then
-        add_paths=("${copied[@]}")
-      fi
-      if [[ -n "$(git_c "$dest" status --porcelain -- update-rules.sh)" ]]; then
-        add_paths+=(update-rules.sh)
-      fi
-      if [[ ${#add_paths[@]} -gt 0 ]]; then
-        # Store the cleaned bytes as-is. checkout below is what smudges.
-        git_c "$dest" -c filter.manage-configs.clean=cat add -- "${add_paths[@]}"
+      build_policy_list "$dest"
+      if [[ ${#POLICY_FILES[@]} -gt 0 ]]; then
+        git_c "$dest" add -- "${POLICY_FILES[@]}"
         if git_c "$dest" diff --cached --quiet; then
           echo "  nothing to commit"
         else
@@ -714,11 +412,8 @@ for dest in "${DESTS[@]}"; do
           echo "  committed $(git_c "$dest" rev-parse --short HEAD)"
           PUSH_DIRS+=("$dest")
         fi
-        git_c "$dest" checkout -- "${add_paths[@]}"
-        echo "  checked out (smudged) ${#add_paths[@]} files"
       fi
     fi
-    publish_shared_filters "$dest"
   fi
 
   if [[ "$DO_UR" -eq 1 ]]; then

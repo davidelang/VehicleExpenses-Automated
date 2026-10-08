@@ -31,7 +31,11 @@ fi
 CODE_GROUP=${code_group:-ai-code}
 SHARED_GROUP=${shared_group:-ai-shared}
 SANDBOX_GROUP=${sandbox_group:-ai-sandbox}
-PRIMARY_USER=${primary_user:-dlang}
+PRIMARY_USER=${primary_user:-}
+if [ -z "$PRIMARY_USER" ]; then
+  echo "ERROR: primary_user is unset in project.config" >&2
+  return 1 2>/dev/null || exit 1
+fi
 
 _VE_SOURCED=0
 if [ -n "${BASH_VERSION:-}" ]; then
@@ -82,7 +86,7 @@ _ve_expected_groups() {
   local u
   u=$(id -un)
   case "$u" in
-    "$PRIMARY_USER"|dlang) echo "$CODE_GROUP $SHARED_GROUP $SANDBOX_GROUP" ;;
+    "$PRIMARY_USER") echo "$CODE_GROUP $SHARED_GROUP $SANDBOX_GROUP" ;;
     ai-coder|"${coder_user:-ai-coder}") echo "$CODE_GROUP $SHARED_GROUP $SANDBOX_GROUP" ;;
     ai-orchestrator|"${orchestrator_user:-ai-orchestrator}") echo "$CODE_GROUP $SHARED_GROUP $SANDBOX_GROUP" ;;
     ai-planner|"${planning_user:-ai-planner}") echo "$SHARED_GROUP $SANDBOX_GROUP" ;;

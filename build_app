@@ -11,7 +11,7 @@
 
 # Load primary_user from project.config for portable primary developer identity (no hardcoded names).
 PRIMARY_USER=$(sed -n 's/^primary_user=//p' project.config 2>/dev/null | tr -d '\r' | head -1)
-PRIMARY_USER=${PRIMARY_USER:-dlang}
+: "${PRIMARY_USER:?primary_user unset in project.config}"
 
 # Re-exec as PRIMARY_USER (not root) if we started as root. This ensures we use
 # the primary developer's debug keystore (~/.android/debug.keystore) for consistent APK
@@ -25,6 +25,39 @@ fi
 
 # Source/docs: prefer 664/2775 → umask 002. Build outputs tightened after gradle.
 umask 002
+
+# Prefer this branch's -start tag. If the checkout moved to another branch,
+# AGENT_CONTEXT.md names the original start branch and the fork parent.
+describe_here() {
+  local branch parent start
+  branch=$(git rev-parse --abbrev-ref HEAD)
+  if [ "$branch" = "master" ]; then
+    git describe --tags --match builds
+    return
+  fi
+  if git describe --tags --match "${branch}-start" 2>/dev/null; then
+    return
+  fi
+  parent=
+  start=
+  if [ -f AGENT_CONTEXT.md ]; then
+    parent=$(sed -n 's/^Forked-from:[[:space:]]*//p' AGENT_CONTEXT.md | head -1)
+    start=$(sed -n 's/^Start-branch:[[:space:]]*//p' AGENT_CONTEXT.md | head -1)
+  fi
+  if [ -n "$start" ] && git describe --tags --match "${start}-start" 2>/dev/null; then
+    return
+  fi
+  if [ -n "$parent" ] && [ "$parent" != "master" ]; then
+    if git describe --tags --match "${parent}-start" 2>/dev/null; then
+      return
+    fi
+    if git describe --tags --match "${parent}/*" 2>/dev/null; then
+      return
+    fi
+  fi
+  echo "WARN: no ${branch}-start tag and no usable Forked-from/Start-branch anchor." >&2
+  return 1
+}
 
 # ai-shared + ai-code required (agent caches are ai-coder:ai-code). Do not sg one group.
 MISSING=""
@@ -93,22 +126,13 @@ fi
 
 # 4. Integrity Barrier: Strict 'git describe' protection
 # Ensure NO modified tracked files remain. Everything MUST be in git.
-# clean=cat so a committed expanded sandbox path is not a false local edit.
-DIRTY_FILES=$(git -c filter.manage-configs.clean=cat -c filter.manage-configs.smudge=cat status --porcelain -uno)
+DIRTY_FILES=$(git status --porcelain -uno)
 if [ -n "$DIRTY_FILES" ]; then
     echo "CRITICAL ERROR: Uncommitted tracked files detected:"
     echo "$DIRTY_FILES"
     echo "------------------------------------------------------------------"
     echo "Every modified file MUST be explicitly added to the build command."
     echo "Compile aborted to ensure accurate 'git describe' versioning."
-    exit 1
-fi
-
-# Untracked files under the app or the Paddle tree must not reach Gradle.
-UNTRACKED_PATHS=$(git status --porcelain -uall -- app third_party/paddle | awk '/^\?\?/ { print }')
-if [ -n "$UNTRACKED_PATHS" ]; then
-    echo "CRITICAL ERROR: Untracked files under app/ or third_party/paddle/:"
-    echo "$UNTRACKED_PATHS"
     exit 1
 fi
 
@@ -124,7 +148,7 @@ if [ ! -x ./gradlew ]; then
     fi
     echo "Updating '$TAG_NAME' tag (no compile performed)."
     git tag -f "$TAG_NAME"
-    git describe --tags --match "${CURRENT_BRANCH}-start" 2>/dev/null || git describe
+    describe_here || true
     exit 0
 else
     # Separate user args from gradle flags after --
@@ -223,7 +247,7 @@ else
         fi
         echo "Build successful. Updating '$TAG_NAME' tag."
         git tag -f "$TAG_NAME"
-        git describe --tags --match "${CURRENT_BRANCH}-start" 2>/dev/null || git describe
+        describe_here || true
         exit 0
     else
         echo "Build failed."
