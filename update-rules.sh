@@ -135,9 +135,13 @@ decide_sync_action() {
   src_hash=$(git hash-object "$src" 2>/dev/null || cksum "$src" | awk '{print $1}')
   dst_hash=$(git hash-object "$dst" 2>/dev/null || cksum "$dst" | awk '{print $1}')
   if is_shared_publish_file "$file"; then
-    local porcelain
+    local porcelain head_blob
     porcelain=$(git -C "$wt" status --porcelain -- "$file" 2>/dev/null || true)
-    if [ "$src_hash" = "$dst_hash" ] && [ -z "$porcelain" ]; then
+    head_blob=$(git -C "$wt" rev-parse "HEAD:$file" 2>/dev/null || true)
+    # Worktree bytes can match while HEAD still stores the pre-filter blob.
+    # git status stays clean in that case; still publish so the clean filter
+    # rewrites the stored blob.
+    if [ "$src_hash" = "$dst_hash" ] && [ -z "$porcelain" ] && [ "$head_blob" = "$dst_hash" ]; then
       DECIDE_ACTION=skip
       DECIDE_REASON="content identical"
       return
@@ -679,7 +683,7 @@ while [ "$_wt_i" -lt "${#WT_PATHS[@]}" ]; do
           add_failed=0
           for f in "${COPIED_FILES[@]}"; do
             [ -e "$f" ] || continue
-            if ! git add -f -- "$f"; then
+            if ! git add --renormalize -f -- "$f"; then
               echo "ERROR: git add failed for $f in $WT"
               add_failed=1
             fi
