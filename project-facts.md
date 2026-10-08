@@ -5,18 +5,18 @@ Contains only verifiable locations and structure facts that remain true across w
 Read in full early on startup/new cycle to avoid find/discovery commands.
 
 ## Sandbox (shared via symlink)
-- `dev-ai-interaction -> ../dev-ai-interaction` (separate sandbox git for analysis/plans/paddle-fork tooling)
-- Absolute path for writes: `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/`
-- `dev-ai-interaction/plans/` — designated active plan (user names exact file)
-- `dev-ai-interaction/historical-plans/` — archived plans
-- `dev-ai-interaction/implementation-failure-logs/` — scan on startup / "new planning cycle"
-- `dev-ai-interaction/.planning-agent-prompt.txt` — planner restart prompt from master
-- `dev-ai-interaction/paddle-build/patches-int8/` — Paddle-Lite INT8/u8 fork patches (`apply_int8_patches.sh`, `Dockerfile.int8`)
-- `dev-ai-interaction/paddle-build/Dockerfile.int8` — post-build `patchelf --set-soname libpaddle_lite_jni.so` via `/workspace/set_jni_soname.sh` for arm jni outputs
-- `dev-ai-interaction/scripts/deploy-golden-pump-photos.sh` — push GOLDEN_SUBSET and/or flat pump zips to device
-- `dev-ai-interaction/research/photos/pump/` — pump experiment source photos; `pump-zips/` holds generated flat zips
-- `dev-ai-interaction/research/imagine-icon-candidate/` — launcher icon Imagine source: README with Grok Imagine post URL; masters `app-icon-master-1024.png` / `app-icon-master-512.png`; density export under `android-export/`
-- `dev-ai-interaction/rclone-build/` — **historical only** (see `SUPERSEDED.md`); live pin is `third_party/rclone/`
+- `dev-ai-interaction -> ../@@SANDBOX_PATH@@` (separate sandbox git for analysis/plans/paddle-fork tooling)
+- Absolute path for writes: `@@ORCH_ROOT@@/@@SANDBOX_PATH@@/`
+- `@@SANDBOX_PATH@@/plans/` — designated active plan (user names exact file)
+- `@@SANDBOX_PATH@@/historical-plans/` — archived plans
+- `@@SANDBOX_PATH@@/implementation-failure-logs/` — scan on startup / "new planning cycle"
+- `@@SANDBOX_PATH@@/.planning-agent-prompt.txt` — planner restart prompt from master
+- `@@SANDBOX_PATH@@/paddle-build/patches-int8/` — Paddle-Lite INT8/u8 fork patches (`apply_int8_patches.sh`, `Dockerfile.int8`)
+- `@@SANDBOX_PATH@@/paddle-build/Dockerfile.int8` — post-build `patchelf --set-soname libpaddle_lite_jni.so` via `/workspace/set_jni_soname.sh` for arm jni outputs
+- `@@SANDBOX_PATH@@/scripts/deploy-golden-pump-photos.sh` — push GOLDEN_SUBSET and/or flat pump zips to device
+- `@@SANDBOX_PATH@@/research/photos/pump/` — pump experiment source photos; `pump-zips/` holds generated flat zips
+- `@@SANDBOX_PATH@@/research/imagine-icon-candidate/` — launcher icon Imagine source: README with Grok Imagine post URL; masters `app-icon-master-1024.png` / `app-icon-master-512.png`; density export under `android-export/`
+- `@@SANDBOX_PATH@@/rclone-build/` — **historical only** (see `SUPERSEDED.md`); live pin is `third_party/rclone/`
 - App-relevant durable docs/scripts belong in tracked `docs/` or `app/` — not sandbox-only
 
 ## Tracked documentation (`docs/` in app worktrees)
@@ -45,7 +45,7 @@ Read in full early on startup/new cycle to avoid find/discovery commands.
 ## Application source (stable layout)
 - `app/` (Android root)
 - `app/src/main/AndroidManifest.xml` — `<application android:largeHeap="true">`
-- Package: `app/src/main/java/com/davidlang/vehicleexpensesautomated/`
+- Package: `app/src/main/java/com/davi@@PRIMARY_USER@@/vehicleexpensesautomated/`
 - Compose UI icons: BOM-aligned `androidx.compose.material:material-icons-core` + `material-icons-extended` (required at runtime for `Icons.Default.*`)
 - **UI compatibility (agents):** `docs/reference/UI_COMPATIBILITY.md` — mandatory for Compose UI / unit labels / Lab charts / trip inventory / photo on-demand / Cards+density+theme; bound in `AGENT_MANDATES.md`
 - Shared UI chrome: `ui/components/UiChrome.kt` — `TappableCard` (tappable only), `AdaptiveItemGrid` (**wrap** natural measure → equal cell layout; **no** fillMaxWidth on grid item roots; no dp floor for col count), `EmptyStateText`, `AppDateTimeField`, `AppTextCancel` / `AppOutlinedBack`, `FeatureScreenHeader`, `AppIcon` (Material icons only; **no drawer icons**)
@@ -57,7 +57,7 @@ Read in full early on startup/new cycle to avoid find/discovery commands.
 - Paddle runtime binaries: `app/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86_64}/`, `app/libs/PaddlePredictor.jar`
 - JNI sizing (prod path): arm64-v8a tailored ~1.6MB; x86_64 slim jni + `libpaddle_light_api_shared.so`; armeabi-v7a fat multi-path lib (interim)
 - Volume units: `ui/util/VolumeUnits.kt` — preferred G/L in prefs; `FuelEntry.gallons` stores volume in preferred unit (field name legacy); **display API** `VolumeUnits.formatVolume` / `shortLabel` / `resolvedPreferredVolumeUnit` (space before unit, e.g. `"12.34 L"`); do not invent conversion at display time
-- Economy / distance **labels only**: `ui/util/UnitFormat.kt` (`economyEfficiencyLabel` → `"mpg"`, `costPerDistanceLabel` → `"$/mi"`, `distanceUnitShortLabel` → `"mi"`, `odometerReadingLabel` / `distanceDeltaLabel`); odo is instrument integer (no mi/km conversion yet); language packs / RTL deferred — sandbox notes `dev-ai-interaction/research/i18n-rtl-and-beyond-languages-20260730.md`
+- Economy / distance **labels only**: `ui/util/UnitFormat.kt` (`economyEfficiencyLabel` → `"mpg"`, `costPerDistanceLabel` → `"$/mi"`, `distanceUnitShortLabel` → `"mi"`, `odometerReadingLabel` / `distanceDeltaLabel`); odo is instrument integer (no mi/km conversion yet); language packs / RTL deferred — sandbox notes `@@SANDBOX_PATH@@/research/i18n-rtl-and-beyond-languages-20260730.md`
 - Currency: `ui/util/CurrencyCodes.kt` — symbol/code → ISO 4217 stored form; row `currency` on `FuelEntry` + `ExpenseEntry` (blank = legacy/settings default at display); no offline FX
 - Quick fill UI: `ui/fuel/QuickFillupScreen.kt` — 3-panel A/B/C; portrait **A `weight(0.45f)` / C `0.55f` scroll**; landscape **A weight ≥ C**, C `widthIn(max=280.dp)`; shutter via shared `RoundCaptureButton` (`ui/components/CaptureControls.kt`); page help via top-bar Info (`RegisterPageHelp` / `PageHelp.kt`); multi-photo JSON in `photoUrl` (dash/pump); Notes in C; once-per-screen GPS via `CaptureLocation` + EXIF `PhotoExifWriter` (GPS/orient + DateTime* + GPSHPositioningError); place confirm `LocationConfirmBlock`; location blob on save; non-blocking POI race; currency + notes at save; `CameraPreview` zoom
 - Batch import photo time: `PhotoExifMetaReader` priority EXIF → **generic filename heuristics** (calendar/time/epoch runs, not PXL-only) → sane file mtime → now; shared by dash+pump insert
@@ -77,8 +77,8 @@ Read in full early on startup/new cycle to avoid find/discovery commands.
 - Capture vehicle pickers hide system Unassigned: `forUserPicker()` / `forManageList()` in `data/repository/VehicleRepository.kt` (Expense, QF, Trip, Manage Vehicles, Fuel Edit). Reports may show **Unknown** for `vehicleId==0` when data-bearing (`dataBearingVehicles` / `LabReportData.vehicleName`)
 - Phase-1 missing odo: `FuelOdoSanitizer` enqueues simple `ODO_SUSPECT` when live assigned row has odometer≤0 and dash photo (`missing_odo_dash`)
 - Reports catalog hub (route `reports_lab`, drawer **Reports**): hub all-time summary + catalog; **Time based reports** `reports_lab/time` (`ReportsLabTimeChartsScreen` + binning — one chart, UnitFormat labels, color metric chips, Smooth bins, odo-based trip miles/% incl. Personal, PDF bitmaps+tables); legacy efficiency/cost_trends/monthly deep-link to `time`; other cards: expenses, fills, vehicle_summary, trips; Fuel History + fills = fills only; multi-dest `downloadFuelPhoto`/`downloadExpensePhoto`/`downloadVehicleIfNeeded`; PageHelp generation **clearIf**; top bar ☰+← on report children + expenselist
-- Email receipt offline fixtures: `app/src/main/assets/email-receipt/shell-receipt{1,2}.html`; entry `EmailReceiptFixtureIngest; IMAP `ImapReceiptClient` + encrypted app-password (Shell + Sam's); `ReceiptParsers` autodetect` / Settings “Ingest sample Shell receipts (offline)”; checklist `dev-ai-interaction/email-receipt/MANUAL_TEST.md`
-- Email loyalty receipts: sandbox Track A `dev-ai-interaction/email-receipt/` (Shell HTML parser, Apps Script → sheet `Fuel - Unassigned`); in-app Track B `data/email/` (`ShellReceiptParser`, `FuelReceiptIngest`, `EmailReceiptWorker`, Settings “Email receipts”); vehicleId=0 / odo=0 / Partial Fill false
+- Email receipt offline fixtures: `app/src/main/assets/email-receipt/shell-receipt{1,2}.html`; entry `EmailReceiptFixtureIngest; IMAP `ImapReceiptClient` + encrypted app-password (Shell + Sam's); `ReceiptParsers` autodetect` / Settings “Ingest sample Shell receipts (offline)”; checklist `@@SANDBOX_PATH@@/email-receipt/MANUAL_TEST.md`
+- Email loyalty receipts: sandbox Track A `@@SANDBOX_PATH@@/email-receipt/` (Shell HTML parser, Apps Script → sheet `Fuel - Unassigned`); in-app Track B `data/email/` (`ShellReceiptParser`, `FuelReceiptIngest`, `EmailReceiptWorker`, Settings “Email receipts”); vehicleId=0 / odo=0 / Partial Fill false
 - Batch fuel import (historical photos): `data/batch/BatchFuelImportCoordinator.kt` (Stage A ingest + `applyMerge` + pending answers / manual entry / economy ignore; optional **location enhance with import** — fire-and-forget POI kickoff before OCR when on; `runLocationEnhance` enqueues worker); pure planner `data/batch/FuelRowMergeEngine.kt` (`planMerge`, tank maxFill+5, vehicleId=0 pair; same-stop dual-pump earlier partial / later full); same-stop match `data/batch/FuelStopMatch.kt` (blob place/geo 150m); `FuelEconomyOutliers.kt` (3× MPG detect); photo helpers `PendingPhotoUris.kt` (stem-dedupe) + `ui/import/PendingPhotoPreview.kt` (DNG via OpenCV); pending `BatchImportPending.kt`; Stage C chrome always exposes **Next phase** / **Reset** (not gated on empty pending); **Reorder by odometer** after odo phases (`FuelOdoReorder` A=permute times / B=economyIgnored / C=soft-delete); **ODO_SUSPECT** “These odometers look correct” → durable `merge_acks` kind `ODO_SUSPECT` (not MERGE_EXEMPT); UI `ui/import/ImportOldPicturesScreen.kt` (merge-after-import + location-enhance checkboxes default off, Run merge / Run location enhance); Hilt VM `ui/batch/BatchImportViewModel.kt` (no package name `import`); dash `filesDir/experiment_photos`, pump `externalFiles/pump_photos`
 - Location model (Room **v18**): sole geo/place on fuel + expense is `location` JSON blob (`data/batch/FuelLocationJson.kt` — lat/lon/accuracyM/name/address/confirmed/source/kind/lookedUpAt); **no** lat/lon columns; lookup stack `data/location/` (`LocationLookup`, Overpass/Nominatim clients, `LocationLookupWorker` + `LocationLookupScheduler` — fail-soft, non-blocking for save/OCR/import completion); capture `ui/util/CaptureLocation.kt`, `PhotoExifWriter.kt`, `PhotoExifMeta` accuracy
 - Fuel `economyIgnored` on `FuelEntry` (syncs via tabular **Economy Ignored** column); reports inventory includes ignored rows; MPG/$/mi exclude them; vehicle label `vehicleId==0` → **Unknown**
@@ -118,7 +118,7 @@ Update only with new stable location facts valid for future unrelated work. Curr
 - Pin/build contract: `third_party/README.md` + `docs/reference/THIRD_PARTY_PIN_BUILDS.md`
 - Config file per lib: `third_party/<lib>/libpin.toml`
 - Layout: `third_party/{opencv,rclone,remotetable,extractmail,paddle}/` + `third_party/fetch-deps` + `get-artifacts`
-- Library hosts: `~/git/remotetable`, `~/git/extractmail` (orchestration + `master/` worktree + `sandbox/`); `~/git/rclone` pure upstream (object store); `~/git/opencv` optional
+- Library hosts: `~/git/remotetable`, `~/git/extractmail` (orchestration + `master/` worktree + `@@SANDBOX_PATH@@/`); `~/git/rclone` pure upstream (object store); `~/git/opencv` optional
 - rclone pin: `third_party/rclone/` — `libpin.toml` + `scripts/` (Docker wrapper) + `artifact/librclone.aar`; uses upstream `librclone/gomobile` with build-time backend curation
 - GitHub: `davidelang/remotetable`, `davidelang/extractmail` (public, MIT, SSH remotes)
 - Pull model: libs do not push into VE; bump `libpin.toml` + `artifact/` when app needs update
