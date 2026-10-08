@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
 import java.nio.ByteBuffer
+import kotlin.math.max
 
 /**
  * Standalone high-performance image synchronization and processing utilities.
@@ -81,29 +82,79 @@ object NativeImageUtils {
         val uvMat = Mat(handle.height / 2, handle.width / 2, CvType.CV_8UC2, uvPlane.buffer, uvPlane.rowStride.toLong())
 
         annotations.forEach { ann ->
-            // Map ARGB colors to YUV scalars
-            val (yVal, uVal, vVal) = when (ann.color and 0x00FFFFFF) {
-                0xFF0000 -> Triple(76.0, 84.0, 255.0)   // Red
-                0xFFA500 -> Triple(173.0, 42.0, 191.0)  // Orange
-                0x0000FF -> Triple(29.0, 255.0, 107.0)  // Blue
-                else -> Triple(255.0, 128.0, 128.0)     // Default White
+            val (yVal, uVal, vVal) = when (ann.color) {
+                AnnYuv.RED -> Triple(AnnYuv.RED.y, AnnYuv.RED.u, AnnYuv.RED.v)
+                AnnYuv.ORANGE -> Triple(AnnYuv.ORANGE.y, AnnYuv.ORANGE.u, AnnYuv.ORANGE.v)
+                AnnYuv.BLUE -> Triple(AnnYuv.BLUE.y, AnnYuv.BLUE.u, AnnYuv.BLUE.v)
+                AnnYuv.CYAN -> Triple(AnnYuv.CYAN.y, AnnYuv.CYAN.u, AnnYuv.CYAN.v)
+                AnnYuv.YELLOW -> Triple(AnnYuv.YELLOW.y, AnnYuv.YELLOW.u, AnnYuv.YELLOW.v)
+                AnnYuv.WHITE -> Triple(AnnYuv.WHITE.y, AnnYuv.WHITE.u, AnnYuv.WHITE.v)
             }
 
             val p1 = Point(ann.x1.toDouble(), ann.y1.toDouble())
             val p2 = Point(ann.x2.toDouble(), ann.y2.toDouble())
-            val thickness = ann.strokeWidth
+            val yTh = max(1, ann.strokeWidth)
+            val uvTh = max(1, (ann.strokeWidth + 1) / 2)
 
             if (ann.shape == Shape.RECTANGLE) {
-                Imgproc.rectangle(yMat, p1, p2, Scalar(yVal), thickness)
-                Imgproc.rectangle(uvMat, Point(p1.x / 2.0, p1.y / 2.0), Point(p2.x / 2.0, p2.y / 2.0), Scalar(vVal, uVal), thickness / 2)
+                Imgproc.rectangle(yMat, p1, p2, Scalar(yVal), yTh)
+                Imgproc.rectangle(uvMat, Point(p1.x / 2.0, p1.y / 2.0), Point(p2.x / 2.0, p2.y / 2.0), Scalar(vVal, uVal), uvTh)
             } else {
-                Imgproc.line(yMat, p1, p2, Scalar(yVal), thickness)
-                Imgproc.line(uvMat, Point(p1.x / 2.0, p1.y / 2.0), Point(p2.x / 2.0, p2.y / 2.0), Scalar(vVal, uVal), thickness / 2)
+                Imgproc.line(yMat, p1, p2, Scalar(yVal), yTh)
+                Imgproc.line(uvMat, Point(p1.x / 2.0, p1.y / 2.0), Point(p2.x / 2.0, p2.y / 2.0), Scalar(vVal, uVal), uvTh)
             }
         }
 
         yMat.release()
         uvMat.release()
+    }
+
+    /**
+     * Draw on the Y/UV Mats that JPEG encode uses. Exhaustive [AnnYuv] `when`, no `else`.
+     * Y stroke `max(1,stroke)`; UV `max(1,(stroke+1)/2)`; UV [Scalar] is `(v,u)`.
+     */
+    fun drawYuvAnnotations(yMat: Mat, uvMat: Mat?, annotations: List<SnapshotAnnotation>) {
+        if (annotations.isEmpty() || yMat.empty()) return
+        val uv = if (uvMat != null && !uvMat.empty()) uvMat else null
+        annotations.forEach { ann ->
+            val (yVal, uVal, vVal) = when (ann.color) {
+                AnnYuv.RED -> Triple(AnnYuv.RED.y, AnnYuv.RED.u, AnnYuv.RED.v)
+                AnnYuv.ORANGE -> Triple(AnnYuv.ORANGE.y, AnnYuv.ORANGE.u, AnnYuv.ORANGE.v)
+                AnnYuv.BLUE -> Triple(AnnYuv.BLUE.y, AnnYuv.BLUE.u, AnnYuv.BLUE.v)
+                AnnYuv.CYAN -> Triple(AnnYuv.CYAN.y, AnnYuv.CYAN.u, AnnYuv.CYAN.v)
+                AnnYuv.YELLOW -> Triple(AnnYuv.YELLOW.y, AnnYuv.YELLOW.u, AnnYuv.YELLOW.v)
+                AnnYuv.WHITE -> Triple(AnnYuv.WHITE.y, AnnYuv.WHITE.u, AnnYuv.WHITE.v)
+            }
+
+            val p1 = Point(ann.x1.toDouble(), ann.y1.toDouble())
+            val p2 = Point(ann.x2.toDouble(), ann.y2.toDouble())
+            val yTh = max(1, ann.strokeWidth)
+            val uvTh = max(1, (ann.strokeWidth + 1) / 2)
+
+            if (ann.shape == Shape.RECTANGLE) {
+                Imgproc.rectangle(yMat, p1, p2, Scalar(yVal), yTh)
+                if (uv != null) {
+                    Imgproc.rectangle(
+                        uv,
+                        Point(p1.x / 2.0, p1.y / 2.0),
+                        Point(p2.x / 2.0, p2.y / 2.0),
+                        Scalar(vVal, uVal),
+                        uvTh,
+                    )
+                }
+            } else {
+                Imgproc.line(yMat, p1, p2, Scalar(yVal), yTh)
+                if (uv != null) {
+                    Imgproc.line(
+                        uv,
+                        Point(p1.x / 2.0, p1.y / 2.0),
+                        Point(p2.x / 2.0, p2.y / 2.0),
+                        Scalar(vVal, uVal),
+                        uvTh,
+                    )
+                }
+            }
+        }
     }
 
     /**
@@ -119,6 +170,40 @@ object NativeImageUtils {
             handle.planes[0].rowStride,
             quality
         )
+    }
+
+    /** Packed S×S scale of src Y into dest DirectByteBuffer[0, S²] (inner top-left; rest 0). */
+    fun scalePackedU8(srcY: Mat, destRaw: ByteBuffer, s: Int, innerW: Int, innerH: Int): Boolean {
+        if (srcY.empty() || s < 1) return false
+        destRaw.clear()
+        return nativeScalePackedU8(srcY.nativeObj, destRaw, s, innerW, innerH)
+    }
+
+    /** Header Mat on packed s.raw (S×S, step S). Does not own pixels. */
+    fun wrapPackedU8(destRaw: ByteBuffer, s: Int): Mat {
+        val m = Mat()
+        destRaw.clear()
+        if (!nativeWrapPackedU8(m.nativeObj, destRaw, s)) {
+            m.release()
+            return Mat()
+        }
+        return m
+    }
+
+    /** Scale src Y/UV ROI into dest crop (already sized). No third-plane alloc. */
+    fun scaleYuvRoi(srcY: Mat, srcUv: Mat?, roi: android.graphics.Rect, dstY: Mat, dstUv: Mat): Boolean {
+        if (srcY.empty() || dstY.empty()) return false
+        return nativeScaleYuvRoi(
+            srcY.nativeObj, srcUv?.nativeObj ?: 0L,
+            roi.left, roi.top, roi.right, roi.bottom,
+            dstY.nativeObj, dstUv.nativeObj,
+        )
+    }
+
+    /** JPEG bytes of dest-crop YUV. Native fail → empty. */
+    fun encodeYuvMatJpeg(y: Mat, uv: Mat?, quality: Int): ByteArray {
+        if (y.empty()) return ByteArray(0)
+        return nativeEncodeYuvMatJpeg(y.nativeObj, uv?.nativeObj ?: 0L, quality) ?: ByteArray(0)
     }
 
     /**
@@ -287,10 +372,8 @@ object NativeImageUtils {
     }
 
     /**
-     * Paddle det head operates on 4×4 feed cells. The tensor we threshold is often
-     * already upsampled 1:1 with the feed, so [heatW]/[feedW] cannot reveal that.
-     * One cell outward is this many pixels on that output array (far side of the
-     * 4×4), not 1. Applied in native `packHeatmapBoxes` for every heat→rect path.
+     * One grow cell is 4 pixels on the output heat array (`packHeatmapBoxes` `cell = gc * 4`).
+     * That is one stride-4 det cell. Metadata `heatmap_cell_px` matches that native grow.
      */
     const val PADDLE_DET_HEAT_CELL_PX: Int = 4
 
@@ -323,8 +406,19 @@ object NativeImageUtils {
         maskDilatePasses: Int = 0,
         /** Hard cap on packed boxes after minArea filter (native packHeatmapBoxes). */
         maxBoxes: Int = HEATMAP_MAX_BOXES_DEFAULT,
+        /** 0 = CC AABB as-is; 1 = grow one 4×4 det cell (production default). */
+        growCells: Int = 1,
+        /** A.p Y: mask + CC labels + edges headers. Null = JNI fail (no heap). */
+        scratchY: Mat? = null,
+        /** >0: pack vertices in photo px (max(photo)/max(content)). 0 = heat space. */
+        heatToPhoto: Float = 0f,
+        photoW: Int = 0,
+        photoH: Int = 0,
     ): FloatArray? {
-        return nativeProcessHeatmap(tensor, threshold, minArea, boxMode, maskDilatePasses, maxBoxes)
+        return nativeProcessHeatmap(
+            tensor, threshold, minArea, boxMode, maskDilatePasses, maxBoxes, growCells,
+            scratchY?.nativeObj ?: 0L, heatToPhoto, photoW, photoH,
+        )
     }
 
     /**
@@ -339,9 +433,15 @@ object NativeImageUtils {
         boxMode: Int = HEATMAP_BOX_MIN_AREA_RECT,
         maskDilatePasses: Int = 0,
         maxBoxes: Int = HEATMAP_MAX_BOXES_DEFAULT,
+        growCells: Int = 1,
+        scratchY: Mat? = null,
+        heatToPhoto: Float = 0f,
+        photoW: Int = 0,
+        photoH: Int = 0,
     ): FloatArray? {
         return nativeProcessHeatmapU8(
             heatU8, width, height, threshold, minArea, boxMode, maskDilatePasses, maxBoxes,
+            growCells, scratchY?.nativeObj ?: 0L, heatToPhoto, photoW, photoH,
         )
     }
 
@@ -356,13 +456,19 @@ object NativeImageUtils {
      * Production: Hough lines on thresholded heat (phase-2 GT winner `hough_thr0.2`);
      * falls back to legacy CC + minAreaRect 0.5° buckets if no lines.
      */
-    fun heatmapToAngle(tensor: Any, threshold: Float): Float {
-        return nativeHeatmapToAngle(tensor, threshold)
+    fun heatmapToAngle(tensor: Any, threshold: Float, scratchY: Mat? = null): Float {
+        return nativeHeatmapToAngle(tensor, threshold, scratchY?.nativeObj ?: 0L)
     }
 
     /** Deskew angle from host u8 heat plane (tiled det). thr is float on heat in [0,1] (u8/255). */
-    fun heatmapToAngleU8(heatU8: ByteArray, width: Int, height: Int, threshold: Float): Float {
-        return nativeHeatmapToAngleU8(heatU8, width, height, threshold)
+    fun heatmapToAngleU8(
+        heatU8: ByteArray,
+        width: Int,
+        height: Int,
+        threshold: Float,
+        scratchY: Mat? = null,
+    ): Float {
+        return nativeHeatmapToAngleU8(heatU8, width, height, threshold, scratchY?.nativeObj ?: 0L)
     }
 
     /**
@@ -381,6 +487,10 @@ object NativeImageUtils {
         return nativeHeatmapToUInt8Array(tensor)
     }
 
+    fun veRssSetPath(path: String) {
+        nativeVeRssSetPath(path)
+    }
+
     private external fun nativeSyncMatFromArgb(bitmap: Bitmap, matPtr: Long)
     private external fun nativeSyncMatToArgb(matPtr: Long, bitmap: Bitmap)
     private external fun nativeIngestArgbToYuv(bitmap: Bitmap, handlePtr: Long)
@@ -390,6 +500,16 @@ object NativeImageUtils {
     private external fun nativeIngestDngToYuv(path: String, handlePtr: Long): Boolean
     private external fun nativeDumpDngDevelopStages(path: String, rgbPath: String, yPath: String): String
     private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
+    private external fun nativeScalePackedU8(
+        srcYPtr: Long, dstBuf: ByteBuffer, s: Int, innerW: Int, innerH: Int,
+    ): Boolean
+    private external fun nativeWrapPackedU8(matPtr: Long, buf: ByteBuffer, s: Int): Boolean
+    private external fun nativeScaleYuvRoi(
+        srcYPtr: Long, srcUvPtr: Long,
+        sl: Int, st: Int, sr: Int, sb: Int,
+        dstYPtr: Long, dstUvPtr: Long,
+    ): Boolean
+    private external fun nativeEncodeYuvMatJpeg(yPtr: Long, uvPtr: Long, quality: Int): ByteArray?
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
     private external fun nativeQuantizeMonoHandleToInt8(srcHandle: Long, dstHandle: Long, tensorW: Int, tensorH: Int, srcW: Int, srcH: Int)
     private external fun nativePopulateMonoInt8Xor(srcMatPtr: Long, dstTensor: ByteArray, tensorW: Int, tensorH: Int)
@@ -412,6 +532,9 @@ object NativeImageUtils {
     fun shareTensorInputU8(tensor: Any, data: ByteArray, offset: Int, nbytes: Int): Int =
         nativeShareTensorInputU8(tensor, data, offset, nbytes)
 
+    fun shareTensorInputU8(tensor: Any, data: ByteBuffer, offset: Int, nbytes: Int): Int =
+        nativeShareTensorInputU8Direct(tensor, data, offset, nbytes)
+
     fun releaseSharedTensorInputU8() {
         nativeReleaseSharedTensorInputU8()
     }
@@ -423,23 +546,473 @@ object NativeImageUtils {
         nbytes: Int,
     ): Int
 
+    private external fun nativeShareTensorInputU8Direct(
+        tensor: Any,
+        data: ByteBuffer,
+        offset: Int,
+        nbytes: Int,
+    ): Int
+
     private external fun nativeReleaseSharedTensorInputU8()
     external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     external fun nativeExpandByValleyDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
     private external fun nativeExpandByCharacterAware(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     private external fun nativeExpandByCharacterAwareDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
     private external fun nativeExpandByUniformity(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
-    private external fun nativeExpandOriented(
-        matPtr: Long,
-        seedPts: FloatArray,
-        maxFrac: Float,
-        energyRatio: Float,
-        freezeHorz: Boolean,
-        enableJump: Boolean,
-        jumpFrac: Float,
-        retractClearFrac: Float,
-        vertPadFrac: Float,
+    private external fun nativeChromaMag(yPtr: Long, uvPtr: Long, dstPtr: Long): Boolean
+    fun chromaMagNative(y: Mat, uv: Mat, dst: Mat): Boolean {
+        if (y.empty() || dst.empty()) return false
+        return nativeChromaMag(y.nativeObj, uv.nativeObj, dst.nativeObj)
+    }
+
+    fun fillEnergyLookU8(gray: Mat, dest: Mat): Boolean {
+        if (gray.empty() || dest.empty()) return false
+        return nativeFillEnergyLookU8(gray.nativeObj, dest.nativeObj)
+    }
+
+    private external fun nativeFillEnergyLookU8(grayPtr: Long, destPtr: Long): Boolean
+
+    private external fun nativeProbeSeedInk(
+        grayPtr: Long,
+        uvPtr: Long,
+        l: Int,
+        t: Int,
+        r: Int,
+        b: Int,
+        rotPts: FloatArray?,
+        imgW: Int,
+        wantColor: Boolean,
+        sheetYPtr: Long,
+        whiteYPtr: Long,
+        strokeYPtr: Long,
+        deskewPYPtr: Long,
+        destYPtr: Long,
+        destUvPtr: Long,
+        destW: Int,
+        destH: Int,
+    ): Array<Any>?
+
+    fun probeSeedInk(
+        grayPtr: Long,
+        uvPtr: Long,
+        l: Int,
+        t: Int,
+        r: Int,
+        b: Int,
+        rotPts: FloatArray?,
+        imgW: Int,
+        wantColor: Boolean,
+        sheetYPtr: Long,
+        whiteYPtr: Long,
+        strokeYPtr: Long,
+        deskewPYPtr: Long,
+        destYPtr: Long,
+        destUvPtr: Long,
+        destW: Int,
+        destH: Int,
+    ): Array<Any>? = nativeProbeSeedInk(
+        grayPtr, uvPtr, l, t, r, b, rotPts, imgW, wantColor,
+        sheetYPtr, whiteYPtr, strokeYPtr, deskewPYPtr, destYPtr, destUvPtr, destW, destH,
+    )
+
+    const val SEG7_HIST_BINS: Int = 300
+    const val SEG7_ENERGY_HIST_BINS: Int = 64
+    const val SEG7_ATTEMPT_MAX: Int = 10
+    const val SEG7_ATTEMPT_F: Int = 15
+    const val SEG7_TELE_N: Int =
+        26 + SEG7_ENERGY_HIST_BINS * 2 + 6 + 1 + SEG7_ATTEMPT_MAX * SEG7_ATTEMPT_F + 11
+
+    private external fun nativeEnergyAabbTight(
+        grayPtr: Long, uvPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, scratchPtr: Long,
+    ): IntArray?
+    private external fun nativeEnergyAabbRetract(
+        grayPtr: Long, uvPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, scratchPtr: Long,
+    ): IntArray?
+
+    fun energyAabbTightNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        tele: FloatArray?, sweep: ShortArray?, scratch: Mat?,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        return nativeEnergyAabbTight(
+            gray.nativeObj, uv?.nativeObj ?: 0L, seeds, tele, sweep, scratch?.nativeObj ?: 0L,
+        )
+    }
+    private external fun nativeEnergyOrientTight(
+        grayPtr: Long, seeds: FloatArray, sweepArr: ShortArray?, scratchPtr: Long,
     ): FloatArray?
+
+    fun energyOrientTightNative(
+        gray: Mat, seeds: FloatArray, sweep: ShortArray?, scratch: Mat?,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        return nativeEnergyOrientTight(gray.nativeObj, seeds, sweep, scratch?.nativeObj ?: 0L)
+    }
+    private external fun nativeEnergyOrientRetract(
+        grayPtr: Long, seeds: FloatArray, sweepArr: ShortArray?, scratchPtr: Long,
+    ): FloatArray?
+    fun energyOrientRetractNative(
+        gray: Mat, seeds: FloatArray, sweep: ShortArray?, scratch: Mat?,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        return nativeEnergyOrientRetract(gray.nativeObj, seeds, sweep, scratch?.nativeObj ?: 0L)
+    }
+
+    private external fun nativeEnergyOrientExpand(
+        grayPtr: Long, seeds: FloatArray, sweepArr: ShortArray?, scratchPtr: Long,
+    ): FloatArray?
+
+    fun energyOrientExpandNative(
+        gray: Mat, seeds: FloatArray, sweep: ShortArray?, scratch: Mat?,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        return nativeEnergyOrientExpand(gray.nativeObj, seeds, sweep, scratch?.nativeObj ?: 0L)
+    }
+
+    fun energyAabbRetractNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        tele: FloatArray?, sweep: ShortArray?, scratch: Mat?,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        return nativeEnergyAabbRetract(
+            gray.nativeObj, uv?.nativeObj ?: 0L, seeds, tele, sweep, scratch?.nativeObj ?: 0L,
+        )
+    }
+
+    private external fun nativeEnergyAabbExpand(
+        grayPtr: Long, uvPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, scratchPtr: Long,
+    ): IntArray?
+
+    fun energyAabbExpandNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        tele: FloatArray?, sweep: ShortArray?, scratch: Mat?,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        return nativeEnergyAabbExpand(
+            gray.nativeObj, uv?.nativeObj ?: 0L, seeds, tele, sweep, scratch?.nativeObj ?: 0L,
+        )
+    }
+
+    private fun aabbPtrs(
+        gray: Mat, uv: Mat?, scratch: Mat?, combine: Mat?, overlayY: Mat?, overlayUv: Mat?,
+    ): LongArray = longArrayOf(
+        gray.nativeObj,
+        uv?.nativeObj ?: 0L,
+        scratch?.nativeObj ?: 0L,
+        combine?.nativeObj ?: 0L,
+        overlayY?.nativeObj ?: 0L,
+        overlayUv?.nativeObj ?: 0L,
+    )
+
+    private external fun nativeGrayAabbTight(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        histArr: ShortArray?,
+    ): IntArray?
+    private external fun nativeGrayAabbRetract(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        histArr: ShortArray?,
+    ): IntArray?
+
+    fun grayAabbTightNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        hist: ShortArray? = null,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeGrayAabbTight(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
+    }
+    fun grayAabbRetractNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        hist: ShortArray? = null,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeGrayAabbRetract(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
+    }
+
+    private external fun nativeGrayAabbExpand(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        histArr: ShortArray?,
+    ): IntArray?
+
+    fun grayAabbExpandNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        hist: ShortArray? = null,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeGrayAabbExpand(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
+    }
+
+    private external fun nativeColorAabbTight(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        histArr: ShortArray?,
+    ): IntArray?
+
+    fun colorAabbTightNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        hist: ShortArray? = null,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorAabbTight(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
+    }
+
+    private external fun nativeColorAabbRetract(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        histArr: ShortArray?,
+    ): IntArray?
+
+    fun colorAabbRetractNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        hist: ShortArray? = null,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorAabbRetract(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
+    }
+
+    private external fun nativeColorAabbTightVsp(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        histArr: ShortArray?,
+    ): IntArray?
+
+    fun colorAabbTightVspNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        hist: ShortArray? = null,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorAabbTightVsp(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
+    }
+
+    private external fun nativeColorAabbRetractVsp(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        histArr: ShortArray?,
+    ): IntArray?
+
+    fun colorAabbRetractVspNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        hist: ShortArray? = null,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorAabbRetractVsp(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
+    }
+
+    private external fun nativeColorAabbExpand(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        histArr: ShortArray?,
+    ): IntArray?
+
+    fun colorAabbExpandNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        hist: ShortArray? = null,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorAabbExpand(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
+    }
+
+    private external fun nativeGrayOrientTight(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        histArr: ShortArray?,
+    ): FloatArray?
+    private external fun nativeGrayOrientRetract(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        histArr: ShortArray?,
+    ): FloatArray?
+    private external fun nativeColorOrientTight(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        tintPtr: Long,
+        histArr: ShortArray?,
+    ): FloatArray?
+    private external fun nativeColorOrientRetract(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        tintPtr: Long,
+        histArr: ShortArray?,
+    ): FloatArray?
+
+    private fun orientPtrs(
+        gray: Mat, uv: Mat?, scratch: Mat?, combine: Mat?, overlayY: Mat?, overlayUv: Mat?,
+    ): LongArray = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+
+    fun grayOrientTightNative(
+        gray: Mat, uv: Mat?, seeds: FloatArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        hist: ShortArray? = null,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeGrayOrientTight(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
+    }
+    fun grayOrientRetractNative(
+        gray: Mat, uv: Mat?, seeds: FloatArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        hist: ShortArray? = null,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeGrayOrientRetract(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
+    }
+    fun colorOrientTightNative(
+        gray: Mat, uv: Mat?, seeds: FloatArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        tint: Mat? = null,
+        hist: ShortArray? = null,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorOrientTight(
+            p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats,
+            tint?.nativeObj ?: 0L, hist,
+        )
+    }
+    fun colorOrientRetractNative(
+        gray: Mat, uv: Mat?, seeds: FloatArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        tint: Mat? = null,
+        hist: ShortArray? = null,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorOrientRetract(
+            p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats,
+            tint?.nativeObj ?: 0L, hist,
+        )
+    }
+
+    private external fun nativeColorOrientTightVsp(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        tintPtr: Long,
+        histArr: ShortArray?,
+    ): FloatArray?
+    private external fun nativeColorOrientRetractVsp(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        tintPtr: Long,
+        histArr: ShortArray?,
+    ): FloatArray?
+
+    fun colorOrientTightVspNative(
+        gray: Mat, uv: Mat?, seeds: FloatArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        tint: Mat? = null,
+        hist: ShortArray? = null,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorOrientTightVsp(
+            p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats,
+            tint?.nativeObj ?: 0L, hist,
+        )
+    }
+    fun colorOrientRetractVspNative(
+        gray: Mat, uv: Mat?, seeds: FloatArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        tint: Mat? = null,
+        hist: ShortArray? = null,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorOrientRetractVsp(
+            p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats,
+            tint?.nativeObj ?: 0L, hist,
+        )
+    }
+
+    private external fun nativeGrayOrientExpand(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        histArr: ShortArray?,
+    ): FloatArray?
+    private external fun nativeColorOrientExpand(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        tintPtr: Long,
+        histArr: ShortArray?,
+    ): FloatArray?
+
+    fun grayOrientExpandNative(
+        gray: Mat, uv: Mat?, seeds: FloatArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        hist: ShortArray? = null,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeGrayOrientExpand(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
+    }
+    fun colorOrientExpandNative(
+        gray: Mat, uv: Mat?, seeds: FloatArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        tint: Mat? = null,
+        hist: ShortArray? = null,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorOrientExpand(
+            p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats,
+            tint?.nativeObj ?: 0L, hist,
+        )
+    }
+
+    /** Packed n×8 quads. Jump-retract along ±u. scratch = BufferSet.s. */
     private external fun nativeCountPullbackOriented(
         matPtr: Long,
         seedPts: FloatArray,
@@ -467,31 +1040,6 @@ object NativeImageUtils {
         val base: Float,
         val thr: Float,
     )
-
-    fun expandOrientedNative(
-        gray: Mat,
-        seedPts: FloatArray,
-        maxFrac: Float,
-        energyRatio: Float,
-        freezeHorz: Boolean,
-        enableJump: Boolean,
-        jumpFrac: Float,
-        retractClearFrac: Float,
-        vertPadFrac: Float,
-    ): OrientedExpandNative? {
-        val r = nativeExpandOriented(
-            gray.nativeObj, seedPts, maxFrac, energyRatio,
-            freezeHorz, enableJump, jumpFrac, retractClearFrac, vertPadFrac,
-        ) ?: return null
-        if (r.size < 13) return null
-        return OrientedExpandNative(
-            cx = r[0], cy = r[1], bw = r[2], bh = r[3], angDeg = r[4],
-            stepsVNeg = r[5].toInt(), stepsVPos = r[6].toInt(), padV = r[7].toInt(),
-            hitVertCap = r[8] >= 0.5f,
-            stopEnergyUp = r[9], stopEnergyDown = r[10],
-            base = r[11], thr = r[12],
-        )
-    }
 
     data class OrientedCountNative(
         val pulledTop: Boolean,
@@ -568,6 +1116,11 @@ object NativeImageUtils {
         boxMode: Int,
         maskDilatePasses: Int,
         maxBoxes: Int,
+        growCells: Int,
+        scratchPtr: Long,
+        heatToPhoto: Float,
+        photoW: Int,
+        photoH: Int,
     ): FloatArray?
     private external fun nativeProcessHeatmapU8(
         heatU8: ByteArray,
@@ -578,12 +1131,24 @@ object NativeImageUtils {
         boxMode: Int,
         maskDilatePasses: Int,
         maxBoxes: Int,
+        growCells: Int,
+        scratchPtr: Long,
+        heatToPhoto: Float,
+        photoW: Int,
+        photoH: Int,
     ): FloatArray?
     private external fun nativeLastHeatmapPostPath(): String?
-    private external fun nativeHeatmapToAngle(tensor: Any, threshold: Float): Float
-    private external fun nativeHeatmapToAngleU8(heatU8: ByteArray, width: Int, height: Int, threshold: Float): Float
+    private external fun nativeHeatmapToAngle(tensor: Any, threshold: Float, scratchPtr: Long): Float
+    private external fun nativeHeatmapToAngleU8(
+        heatU8: ByteArray,
+        width: Int,
+        height: Int,
+        threshold: Float,
+        scratchPtr: Long,
+    ): Float
     private external fun nativeHeatmapToFloatArray(tensor: Any): FloatArray?
     private external fun nativeHeatmapToUInt8Array(tensor: Any): ByteArray?
+    private external fun nativeVeRssSetPath(path: String)
 
     // --------------------------------------------------------
     // SET H MODULAR PIPELINE — New granular JNI bindings.

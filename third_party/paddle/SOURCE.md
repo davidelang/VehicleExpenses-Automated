@@ -162,6 +162,8 @@ Rebuild armv7 models: `app/src/main/assets/paddle/scripts/optimize_armv7_prod_u8
 | `third_party/paddle/tailor_models/` | Historical fallback mount (same files; prefer paddle-models) |
 | `app/…/assets/paddle/` | **Runtime** OCR models shipped in the APK |
 
+v4 mobile dets live in `exp_det_ab_unscheduled` and are not in the APK.
+
 ```bash
 ./third_party/fetch-deps ro paddle-models
 # ./build mounts paddle-models/src as /tailor_models when present

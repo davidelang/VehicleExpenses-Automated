@@ -6,12 +6,20 @@ Current heatmap-expand attempts used by the pump experiment. Quick Fill’s gene
 
 Each column = fresh master. H/L/M/N/O/Q parked — `docs/obsolete/EXPERIMENT_PUMP_SETS.md`.
 
-Ten columns: production G-- / G4, P4-jump control, three frozen-width stop A/Bs (with a **single** post-stop height pad from the v0.98-229 167×2 review), then rot / Prod-jump / **Prod-m65** / Prod-rot. **m65 / gx / xycut / P4-rot / Prod-rot / Prod-m65** use G-on-cap verts **0.00 / 0.05 / 0.15**. P4-jump still G4 (0/0.1/0.3); Prod-jump still G--. No 0–0.50 rot sweep. Default energy `maxFrac=0.4`; **Prod-m65 stays 2.5** so a short product-det seed can still grow (v4 vs product expand A/B).
+Only `Set rot-G--` is scheduled. Product det at 224 and 608, vertical factor 0.34, pad p54 (0.54 / 0.55). Quick Fill is a separate copy of that rot-G-- at 0.34 / p54, not G-- and not G4.
+
+| Flow display name | Det | Expand | Notes |
+|-------------------|-----|--------|-------|
+| `Set rot-G--` | product det **224 and 608** | vertical factor **0.34**; pad **p54** (0.54 / 0.55) | The only scheduled column. Quick Fill is a separate copy of this rot-G-- at 0.34 / p54, not G-- and not G4. |
+
+### Retired history: ten-column table
+
+The old ten-column table is retired history. It is not scheduled. Quick Fill is not G-- and not G4.
 
 | Flow display name | Det | Expand | Notes |
 |-------------------|-----|--------|-------|
 | `Set G-- (4 pass, none, calculated)` | product | calculated verts; thr **u8≥1**; horiz **0.5** | Experiment product-det reference + heat dumps |
-| `Set G4 (v4 det, calculated 0.0-2.5)` | **PP-OCRv4_mobile_det** | G-style calculated verts **0.0 / 0.1 / 0.3**; horiz **0.5**; deskew | v4 det A/B vs G--; **Quick Fill live path** |
+| `Set G4 (v4 det, calculated 0.0-2.5)` | **PP-OCRv4_mobile_det** | G-style calculated verts **0.0 / 0.1 / 0.3**; horiz **0.5**; deskew | v4 det A/B vs G--; retired history, not live Quick Fill |
 | `Set P4-jump (v4 + energy + jump, S OCR)` | **PP-OCRv4_mobile_det** | AABB energy **maxFrac=0.4**; if a red **hits the cap**, OCR G4 verts (0/0.1/0.3) on that red instead | Control. `final` = energy-or-G. Jump L/R only. **No extra vert pad** |
 | `Set P4-m65 (v4 + mean0.65 frozen + jump)` | **PP-OCRv4_mobile_det** | Frozen seed width; stop when strip **\|∇\| mean** &lt; **0.65** × seed; then **+0.08×seedH** each tip; L/R jump. If a red **hits the cap**, OCR G verts **0.00 / 0.05 / 0.15** | `final` = energy-or-G |
 | `Set P4-gx (v4 + gx0.55 frozen + jump)` | **PP-OCRv4_mobile_det** | Frozen width; energy = **\|∂I/∂x\|**; stop at **0.55** × seed `gx`; **+0.08×seedH** each tip; L/R jump. Cap → G **0.00 / 0.05 / 0.15** | `final` = energy-or-G |
@@ -44,7 +52,7 @@ Ten columns: production G-- / G4, P4-jump control, three frozen-width stop A/Bs 
 
 Metadata on expand columns: `content_expand_jump` / `content_expand_jump_frac` / `content_expand_ocr_scales` (assembly `ocrScales` / `finalOcrScale`). JSON `scaleVariants[]` has per-S rects/cands/final.
 
-**UI subset button:** **Horiz-affected (76)** still filters photos; columns are the full active set above. Deep link: `vehicleexpenses://experiment/pump?auto=horiz`.
+**UI subset button:** **Horiz-affected (76)** still filters photos; the scheduled column is only `Set rot-G--`. Deep link: `vehicleexpenses://experiment/pump?auto=horiz`.
 
 **Parked** (source, not scheduled): P / P-jump / P4 / P-rot / P4-rot, H* horiz, L/M dilate, N/O/Q content modes, G-dense, K, Set I.
 
@@ -108,7 +116,7 @@ HTML layout: photo id column + scale column + **one cell per det model** (host-s
 
 Removed clusters include: sets A–H / D / E / G / G- columns, binPeak stack, ML discovery. **procI** remains in source but is not scheduled.
 
-**Not modified:** Quick Fill / `OcrHarness` / `SET_G_MINUS_MINUS_VERT_FACTORS` production constants.
+**Quick Fill** is a separate copy of `Set rot-G--` at 0.34 / p54, not G-- and not G4. This multi-scale section does not change that copy.
 
 ## 1. The Tree Architecture (`PumpBranch`)
 

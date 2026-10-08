@@ -7,7 +7,6 @@ import android.graphics.Rect
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.opencv.imgproc.Imgproc
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.abs
@@ -189,23 +188,9 @@ object OcrFunctionalPipeline {
             try {
                 NativeImageUtils.ingestArgbToYuv(input, master.p)
             } catch (t: Throwable) {
-                Log.w(TAG, "ingestArgbToYuv failed, fallback bitmapToMat+cvtColor: ${t.message}")
-                val argb = org.opencv.core.Mat()
-                org.opencv.android.Utils.bitmapToMat(input, argb)
-                val gray = org.opencv.core.Mat()
-                Imgproc.cvtColor(argb, gray, Imgproc.COLOR_RGBA2GRAY)
-                if (gray.cols() != evenW || gray.rows() != evenH) {
-                    val padded = org.opencv.core.Mat(evenH, evenW, gray.type(), org.opencv.core.Scalar(255.0))
-                    gray.copyTo(padded.submat(0, imgH, 0, imgW))
-                    padded.copyTo(master.p.mat)
-                    padded.release()
-                } else {
-                    gray.copyTo(master.p.mat)
-                }
-                argb.release()
-                gray.release()
+                Log.w(TAG, "ingestArgbToYuv failed: ${t.message}")
+                return@withContext fail("ingest_failed", tTotal, t.message ?: "ingestArgbToYuv")
             }
-            master.p.clearChroma()
 
             // 2) Angle from Paddle heatmap (production optimized deskew)
             val tAngle0 = System.currentTimeMillis()
@@ -216,7 +201,7 @@ object OcrFunctionalPipeline {
             // 3) Deskew — same sign as Quick Fill (cameraRotation=0): totalAngle = -optAngle
             val tDeskew0 = System.currentTimeMillis()
             val deskewAngle = -angleDeg
-            OdometerOcrUtils.rotate(master, deskewAngle, evenW, evenH)
+            OdometerOcrUtils.rotate(master, deskewAngle)
             val deskewMs = System.currentTimeMillis() - tDeskew0
             val frameW = master.width
             val frameH = master.height
@@ -277,7 +262,7 @@ object OcrFunctionalPipeline {
                 master.p.mat,
                 crop.left, crop.top, crop.right, crop.bottom,
                 recBuffer,
-                targetH = 48, maxW = 320,
+                targetH = 48,
             )
             val ocr = engine.recognize(recBuffer.c[fed.recCropId])
             recBuffer.c[fed.recCropId].release()

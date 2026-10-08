@@ -2,18 +2,15 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.util.Log
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.google.gson.JsonArray
+import com.google.gson.JsonNull
 import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlin.math.max
 
 data class AutoFillResult(
     val vehicleId: Int? = null,
@@ -35,6 +32,22 @@ data class PumpCostVolResult(
     val debugJson: String? = null
 )
 
+/** Quick Fill detect: original JPEG, discovery JPEG, blue quads (n×8), blue AABBs (n×4). */
+class QfRotGmmDetectOut(
+    @JvmField val originalJpeg: ByteArray,
+    @JvmField val discoveryJpeg: ByteArray,
+    @JvmField val bluePts: FloatArray,
+    @JvmField val blueAabb: IntArray,
+)
+
+/** Quick Fill recognize: one string row per blue. No crop ids. */
+class QfRotGmmRecOut(
+    @JvmField val asis: Array<String>,
+    @JvmField val asisProbs: Array<String>,
+    @JvmField val digits: Array<String>,
+    @JvmField val digitsProbs: Array<String>,
+)
+
 /**
  * Live / production odometer red→orange expand.
  * Alignment experiment: Set J = [CHAR_AWARE], Set V = [VALLEY].
@@ -48,6 +61,51 @@ enum class OdoExpandKind {
  * Orchestrates OCR pipelines for automated data entry.
  */
 object OcrHarness {
+
+    /** Debug dump of the veto call that already ran. Does not re-run or re-decide. */
+    private fun tier1VetoDebugJson(
+        engine: String,
+        forcedVehicleId: Int?,
+        winnerId: Int?,
+        allVehicles: List<Vehicle>,
+        vetoResults: Map<Int, VetoResult>?,
+    ): JsonObject {
+        val obj = JsonObject()
+        obj.addProperty("engine", engine)
+        if (forcedVehicleId != null) obj.addProperty("forced_vehicle_id", forcedVehicleId)
+        else obj.add("forced_vehicle_id", JsonNull.INSTANCE)
+        if (winnerId != null) obj.addProperty("winner_id", winnerId)
+        else obj.add("winner_id", JsonNull.INSTANCE)
+        obj.addProperty("vehicle_count", allVehicles.size)
+        if (forcedVehicleId != null) {
+            obj.addProperty("note", "veto skipped")
+            obj.add("query_words", JsonArray())
+            obj.add("vehicles", JsonArray())
+            return obj
+        }
+        val results = vetoResults ?: emptyMap()
+        val queryWords = JsonArray()
+        (results.values.firstOrNull()?.queryWords ?: emptyList()).forEach { queryWords.add(it) }
+        obj.add("query_words", queryWords)
+        val vehiclesArr = JsonArray()
+        for (v in allVehicles) {
+            val vr = results[v.id]
+            val vo = JsonObject()
+            vo.addProperty("id", v.id)
+            vo.addProperty("name", v.name)
+            vo.addProperty("is_vetoed", vr?.isVetoed ?: false)
+            vo.addProperty("reason_word", vr?.reasonWord ?: "")
+            val man = JsonArray()
+            (vr?.myManifest ?: emptyList()).forEach { man.add(it) }
+            vo.add("my_manifest", man)
+            val pool = JsonArray()
+            (vr?.vetoPool ?: emptyList()).forEach { pool.add(it) }
+            vo.add("veto_pool", pool)
+            vehiclesArr.add(vo)
+        }
+        obj.add("vehicles", vehiclesArr)
+        return obj
+    }
 
     /**
      * Unified entry point for Quick Fill (and Start trip dash OCR).
@@ -86,12 +144,7 @@ object OcrHarness {
             val (optAngle, optTime) = OdometerOcrUtils.calculatePaddleAngleOptimized(masterBuffer.p)
             
             val totalAngle = cameraRotationDegrees.toFloat() - optAngle
-            val imgW = masterBuffer.width
-            val imgH = masterBuffer.height
-            val targetW = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgH else imgW
-            val targetH = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgW else imgH
-            
-            val rotTime = OdometerOcrUtils.rotate(masterBuffer, totalAngle, targetW, targetH)
+            val rotTime = OdometerOcrUtils.rotate(masterBuffer, totalAngle)
             
             jsonDebug?.apply {
                 addProperty("camera_rotation", cameraRotationDegrees)
@@ -123,13 +176,26 @@ object OcrHarness {
             }
 
             // 3. Identification (Tier 1 Veto) — or forced vehicle for batch pending assign
+            val engineName = "ML Kit"
+            var vetoResults: Map<Int, VetoResult>? = null
             val winningVehicle = if (forcedVehicleId != null) {
                 allVehicles.find { it.id == forcedVehicleId && !it.deleted }
             } else {
-                val vetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarks, allVehicles, "ML Kit")
+                vetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarks, allVehicles, engineName)
                 val winnerId = vetoResults.entries.find { !it.value.isVetoed }?.key
                 allVehicles.find { it.id == winnerId }
             }
+
+            jsonDebug?.add(
+                "tier1_veto",
+                tier1VetoDebugJson(
+                    engine = engineName,
+                    forcedVehicleId = forcedVehicleId,
+                    winnerId = winningVehicle?.id,
+                    allVehicles = allVehicles,
+                    vetoResults = vetoResults,
+                ),
+            )
 
             if (winningVehicle == null) {
                 val errorMsg = if (forcedVehicleId != null) {
@@ -204,215 +270,129 @@ object OcrHarness {
         }
     }
 
-    /**
-     * Quick Fill pump extract: experiment G4 verts + dedicated v4 det when the
-     * ABI asset exists (else product det + same verts). Deskew is the caller's job.
-     */
-    private data class QfPumpExtract(
-        val result: CostVolClassifyResult,
-        val detModel: String,
-        val blueRects: List<Rect>,
-    )
-
-    /** Working ARGB for QF pump progress. Publish copies only — never hand [work] to Compose. */
-    private class QfPumpLiveOverlay(base: Bitmap) {
-        private val work: Bitmap = base.copy(Bitmap.Config.ARGB_8888, true)
-        private val canvas = Canvas(work)
-        private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            color = Color.CYAN
-            strokeWidth = 3f
-        }
-        private val tintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.FILL
-            color = 0x66FF8800.toInt()
-        }
-        private val costPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            color = Color.GREEN
-            strokeWidth = 8f
-        }
-        private val volPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            color = Color.YELLOW
-            strokeWidth = 8f
-        }
-        private var lastPostMs = 0L
-
-        fun snapshot(): Bitmap = work.copy(Bitmap.Config.ARGB_8888, false)
-
-        fun outline(rects: List<Rect>) {
-            for (r in rects) canvas.drawRect(r, outlinePaint)
-        }
-
-        fun tint(r: Rect) {
-            canvas.drawRect(r, tintPaint)
-            canvas.drawRect(r, outlinePaint)
-        }
-
-        fun select(cost: Rect?, vol: Rect?) {
-            cost?.let { canvas.drawRect(it, costPaint) }
-            vol?.let { canvas.drawRect(it, volPaint) }
-        }
-
-        fun shouldPostNow(): Boolean {
-            val now = System.currentTimeMillis()
-            if (now - lastPostMs < 100L) return false
-            lastPostMs = now
-            return true
-        }
-    }
-
-    private suspend fun extractQuickFillG4CostVol(
+    private external fun qfRotGmmDetect(
+        buffer: BufferSet,
+        maxRedBoxes: Int,
         context: Context,
-        workspace: BufferSet,
-        paddleEngine: NativePaddleEngine,
-        recBuffer: BufferSet,
-        imgW: Int,
-        imgH: Int,
-        onCropsReady: (suspend (List<Rect>) -> Unit)? = null,
-        onRectOcr: (suspend (Int, Rect) -> Unit)? = null,
-    ): QfPumpExtract {
-        val na = CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
-        val empty = QfPumpExtract(na, "none", emptyList())
+    ): QfRotGmmDetectOut
 
-        val useG4Det = NativePaddleEngine.ensureG4DetTiers(context)
-        val detTiers = if (useG4Det) NativePaddleEngine.g4Tiers else null
-        val detTiersInt8 = if (useG4Det) NativePaddleEngine.g4TiersInt8 else null
-        val detModel = if (useG4Det) NativePaddleEngine.G4_DET_ASSET_BASE else "product_det"
+    private external fun qfRotGmmRecognize(
+        buffer: BufferSet,
+        bluePts: FloatArray,
+    ): QfRotGmmRecOut
 
-        val scales = listOf(224, 608, 1024)
-        val pdHunksRawTotal = mutableListOf<PumpHunk>()
-        val pdHunksExpTotal = mutableListOf<PumpHunk>()
-        val pdHunksMaxTotal = mutableListOf<PumpHunk>()
-
-        scales.forEach { scale ->
-            val srcW = workspace.p.width
-            val srcH = workspace.p.height
-            val currentLongEdge = max(srcW, srcH)
-            val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
-            val targetW = (srcW * scaleFactor).toInt()
-            val targetH = (srcH * scaleFactor).toInt()
-            val (outerId, innerId) = PumpCostVolUtils.prepareScale(workspace, scale)
-            val paddleResults = PumpCostVolUtils.runDiscoveryPaddle(
-                workspace, outerId, paddleEngine, targetW, targetH, scale,
-                hmThresh = HEAT_THR_U8_GE1,
-                detTiers = detTiers,
-                detTiersInt8 = detTiersInt8,
-            )
-            pdHunksRawTotal.addAll(paddleResults[1])
-            pdHunksExpTotal.addAll(paddleResults[2])
-            pdHunksMaxTotal.addAll(paddleResults[3])
-            workspace.c[innerId].release()
-            workspace.c[outerId].release()
-        }
-
-        PumpCostVolUtils.doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
-        PumpCostVolUtils.doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
-        PumpCostVolUtils.doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
-
-        val redPixelList = PumpCostVolUtils.hunksToRects(pdHunksRawTotal).toMutableList()
-        PumpCostVolUtils.pruneRectsToTopN(redPixelList, PumpOcrSettings.maxRedBoxes(context), imgH)
-        pdHunksRawTotal.clear()
-        pdHunksRawTotal.addAll(PumpCostVolUtils.rectsToHunks(redPixelList))
-        if (pdHunksRawTotal.isEmpty()) return empty.copy(detModel = detModel)
-
-        val (customBlueGPre, _) = PumpCostVolUtils.createBlueAndOrangeHunksFromReds(
-            pdHunksRawTotal, imgW, imgH, SET_G4_VERT_FACTORS, SET_G_HORIZ_FACTOR
-        )
-        val customBluePixelG = PumpCostVolUtils.hunksToRects(customBlueGPre)
-        if (customBluePixelG.isEmpty()) return empty.copy(detModel = detModel)
-        onCropsReady?.invoke(customBluePixelG)
-
-        val ocrG = PumpCostVolUtils.ocrPumpRectsAsisAndDigits(
-            workspace, paddleEngine, recBuffer, customBluePixelG, imgW, imgH,
-            onRectDone = onRectOcr,
-        )
-        val gCands = PumpCostVolUtils.buildRedBoxCandidates(
-            customBluePixelG, ocrG.asis, ocrG.digits, ocrG.asisProbs, ocrG.digitsProbs
-        )
-        return QfPumpExtract(
-            PumpCostVolUtils.classifyCostVolFromBoxOcr(context, gCands),
-            detModel,
-            customBluePixelG,
-        )
-    }
+    private external fun qfRotGmmStackJpeg(
+        buffer: BufferSet,
+        costL: Int,
+        costT: Int,
+        costR: Int,
+        costB: Int,
+        volL: Int,
+        volT: Int,
+        volR: Int,
+        volB: Int,
+    ): ByteArray
 
     /**
-     * Quick Fill pump cost/volume: experiment G4 (v4 det + verts 0.0/0.1/0.3).
+     * Quick Fill pump: unrotated-photo rot-G-- copy (v=0.34, pad p54).
+     * Stages are quality-80 YUV JPEGs. Classifier stays in Kotlin.
      */
     suspend fun runPumpCostVolPipeline(
         context: Context,
         masterBuffer: BufferSet,
         debug: Boolean,
-        cameraRotationDegrees: Int = 0,
-        onStage: (suspend (String, Bitmap) -> Unit)? = null
+        onStage: (suspend (String, ByteArray) -> Unit)? = null
     ): PumpCostVolResult {
         val t0 = System.currentTimeMillis()
         try {
-            onStage?.invoke("", masterBuffer.p.toBitmap())
-
-            val (optAngle, _) = OdometerOcrUtils.calculatePaddleAngleOptimized(masterBuffer.p)
-            val totalAngle = cameraRotationDegrees.toFloat() - optAngle
-            val imgW = masterBuffer.width
-            val imgH = masterBuffer.height
-            val targetW = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgH else imgW
-            val targetH = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgW else imgH
-            OdometerOcrUtils.rotate(masterBuffer, totalAngle, targetW, targetH)
-            val deskewBmp = masterBuffer.p.toBitmap()
-            onStage?.invoke("", deskewBmp)
-            val overlay = QfPumpLiveOverlay(deskewBmp)
-
-            val paddleEngine = NativePaddleEngine(context, "Numeric")
-            val recBuffer = NativePaddleEngine.recBufferSet
-            val extracted = extractQuickFillG4CostVol(
-                context,
+            check(NativeImageUtils.longLivedHistMeta.isNotEmpty())
+            val det = qfRotGmmDetect(
                 masterBuffer,
-                paddleEngine,
-                recBuffer,
-                masterBuffer.width,
-                masterBuffer.height,
-                onCropsReady = { rects ->
-                    overlay.outline(rects)
-                    onStage?.invoke("", overlay.snapshot())
-                },
-                onRectOcr = { _, r ->
-                    overlay.tint(r)
-                    if (overlay.shouldPostNow()) onStage?.invoke("", overlay.snapshot())
-                },
+                PumpOcrSettings.maxRedBoxes(context),
+                context,
             )
-            val cv = extracted.result
-            overlay.select(cv.costCand.rect, cv.volCand.rect)
-            onStage?.invoke("final", overlay.snapshot())
-
-            val cost = cv.cost.takeIf { it != "N/A" && it.isNotBlank() }
-            val volume = cv.vol.takeIf { it != "N/A" && it.isNotBlank() }
-
-            if (cost == null && volume == null) {
-                return PumpCostVolResult(error = "Could not read pump display")
+            if (det.originalJpeg.isNotEmpty()) onStage?.invoke("original", det.originalJpeg)
+            if (det.discoveryJpeg.isNotEmpty()) onStage?.invoke("discovery", det.discoveryJpeg)
+            val rec = qfRotGmmRecognize(masterBuffer, det.bluePts)
+            val n = minOf(det.blueAabb.size / 4, rec.asis.size, rec.digits.size)
+            val rects = ArrayList<Rect>(n)
+            for (i in 0 until n) {
+                val o = i * 4
+                rects.add(Rect(det.blueAabb[o], det.blueAabb[o + 1], det.blueAabb[o + 2], det.blueAabb[o + 3]))
             }
+            val cands = PumpCostVolUtils.buildRedBoxCandidates(
+                rects,
+                rec.asis.take(n),
+                rec.digits.take(n),
+                rec.asisProbs.take(n),
+                rec.digitsProbs.take(n),
+            )
+            val quads = ArrayList<ContentExpandUtils.OrientedQuad>(n)
+            for (i in 0 until n) {
+                val o = i * 8
+                quads.add(ContentExpandUtils.OrientedQuad(det.bluePts.copyOfRange(o, o + 8)))
+            }
+            val weighted = QuickFillPumpCostVolChooser.classifyWeighted(
+                cands, quads, masterBuffer.width,
+            )
+            val linear = QuickFillPumpCostVolChooser.classify(cands)
+            fun aabbOrEmpty(text: String, cand: RedBoxOcrCandidate): IntArray {
+                val r = cand.rect
+                if (r == null || text == "N/A" || text.isBlank()) return intArrayOf(-1, -1, -1, -1)
+                return intArrayOf(r.left, r.top, r.right, r.bottom)
+            }
+            val costBox = aabbOrEmpty(weighted.cost, weighted.costCand)
+            val volBox = aabbOrEmpty(weighted.vol, weighted.volCand)
+            val stacked = qfRotGmmStackJpeg(
+                masterBuffer,
+                costBox[0], costBox[1], costBox[2], costBox[3],
+                volBox[0], volBox[1], volBox[2], volBox[3],
+            )
+            if (stacked.isNotEmpty()) onStage?.invoke("final", stacked)
 
+            val cost = weighted.cost.takeIf { it != "N/A" && it.isNotBlank() }
+            val volume = weighted.vol.takeIf { it != "N/A" && it.isNotBlank() }
+            val errorMsg = if (cost == null && volume == null) "Could not read pump display" else null
             val debugJson = if (debug) {
                 JsonObject().apply {
-                    addProperty("cost", cv.cost)
-                    addProperty("volume", cv.vol)
-                    addProperty("pipeline", "G4")
-                    addProperty("det_model", extracted.detModel)
-                    addProperty("vert_factors", SET_G4_VERT_FACTORS.joinToString(","))
+                    addProperty("pipeline", "rot-G--")
+                    addProperty("vert", 0.34)
+                    addProperty("pad", "p54")
+                    addProperty("cost", weighted.cost)
+                    addProperty("volume", weighted.vol)
+                    addProperty("costLinear", linear.cost)
+                    addProperty("volumeLinear", linear.vol)
+                    addProperty("n_blue", n)
+                    addProperty("pipeline_time_ms", System.currentTimeMillis() - t0)
+                    if (errorMsg != null) addProperty("error", errorMsg)
+                }.toString()
+            } else null
+            return PumpCostVolResult(
+                cost = cost,
+                volume = volume,
+                error = errorMsg,
+                debugJson = debugJson,
+            )
+        } catch (e: Exception) {
+            Log.e("OcrHarness", "Pump cost/vol pipeline failed", e)
+            val err = "Pump OCR failed: ${e.message ?: "Unknown error"}"
+            val debugJson = if (debug) {
+                JsonObject().apply {
+                    addProperty("pipeline", "rot-G--")
+                    addProperty("vert", 0.34)
+                    addProperty("pad", "p54")
+                    addProperty("error", err)
+                    addProperty("exception", e.message)
                     addProperty("pipeline_time_ms", System.currentTimeMillis() - t0)
                 }.toString()
             } else null
-
-            return PumpCostVolResult(cost = cost, volume = volume, debugJson = debugJson)
-        } catch (e: Exception) {
-            Log.e("OcrHarness", "Pump cost/vol pipeline failed", e)
-            return PumpCostVolResult(error = "Pump OCR failed: ${e.message ?: "Unknown error"}")
+            return PumpCostVolResult(error = err, debugJson = debugJson)
         }
     }
 
     /**
      * Batch-import pump cost/volume via **Set I** (D+E+G hybrid).
-     * Does not change Quick Fill [runPumpCostVolPipeline] (G4).
+     * Does not change Quick Fill [runPumpCostVolPipeline] (rot-G--, vert 0.34, pad p54).
      * [masterBuffer] must already hold the full photo in primary (after ingest).
      */
     suspend fun runPumpCostVolPipelineSetI(
@@ -458,7 +438,7 @@ object OcrHarness {
 
         val cleanedBlocks = rawResult.textBlocks.map { block ->
             block.copy(text = OdometerOcrUtils.cleanLandmarkString(block.text))
-        }.filter { it.text.length > 1 }
+        }.filter { it.text.isNotEmpty() }
 
         val sanitizedResult = rawResult.copy(
             textBlocks = cleanedBlocks,
@@ -469,9 +449,8 @@ object OcrHarness {
     }
 
     private suspend fun performLandmarkDiscovery(slice: BufferSet.Slice, context: Context): Pair<OcrResult, List<TextBlock>> {
-        val ocr = MlKitEngine().recognize(slice)
-        val cleaned = ocr.textBlocks.map { it.copy(text = OdometerOcrUtils.cleanLandmarkString(it.text)) }.filter { it.text.length > 2 }
-        return Pair(ocr.copy(textBlocks = cleaned), cleaned)
+        val ocr = runDiscovery(slice, context)
+        return Pair(ocr, ocr.textBlocks)
     }
 
     /**
@@ -544,50 +523,52 @@ object OcrHarness {
         )
 
         val odoBuffer = NativePaddleEngine.getOdoBuffer(context, vehicle)
-        val detBuffer = NativePaddleEngine.detBufferSet
         val recBuffer = NativePaddleEngine.recBufferSet
         val paddleEngine = NativePaddleEngine(context, "Numeric")
 
         fun repopulateOdoFromMasterCrop() {
             odoBuffer.p.clear()
             val src = masterBuffer.c[vehicle.id].mat
-            val interp =
-                if (src.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA
-                else org.opencv.imgproc.Imgproc.INTER_LINEAR
-            org.opencv.imgproc.Imgproc.resize(src, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+            RecBufferFeed.scaleCropToFitBuffer(src, odoBuffer.p.mat)
         }
 
         suspend fun detectBoxesOnOdo(): List<TextBlock> {
-            val detSc = kotlin.math.min(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
-            val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
-            val fh = (odoBuffer.p.mat.rows() * detSc).toInt().coerceAtMost(128)
-            detBuffer.p.clear()
-            val dCrId = detBuffer.createCrop(0, 0, fw, fh)
-            org.opencv.imgproc.Imgproc.resize(
-                odoBuffer.p.mat, detBuffer.c[dCrId].mat, detBuffer.c[dCrId].mat.size(),
-                0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA,
+            val dest = NativePaddleEngine.square608
+            val S = dest.width
+            val srcW = odoBuffer.p.mat.cols()
+            val srcH = odoBuffer.p.mat.rows()
+            val currentLong = maxOf(srcW, srcH)
+            val scale = if (currentLong <= S) 1.0f else S.toFloat() / currentLong
+            val innerW = (srcW * scale).toInt().coerceAtLeast(1)
+            val innerH = (srcH * scale).toInt().coerceAtLeast(1)
+            NativeImageUtils.scalePackedU8(
+                odoBuffer.p.mat,
+                (dest.s as BufferSet.Instance).tensorBindRaw(),
+                S,
+                innerW,
+                innerH,
             )
-            val detRes = paddleEngine.detect(detBuffer.p, copyHeatmap = false)
+            val detRes = paddleEngine.detect(dest, S, S, copyHeatmap = false)
             val boxes = if (detRes != null) {
-                val invScale = 1.0f / detSc
+                val invScaleX = srcW.toFloat() / innerW
+                val invScaleY = srcH.toFloat() / innerH
                 detRes.nativeBoxes.map { box ->
                     val points = box.points
                     val minX = Math.floor(
-                        (minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 8.0) * invScale.toDouble(),
+                        (minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 8.0) * invScaleX.toDouble(),
                     ).toInt()
                     val minY = Math.floor(
-                        (minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 8.0) * invScale.toDouble(),
+                        (minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 8.0) * invScaleY.toDouble(),
                     ).toInt()
                     val maxX = Math.ceil(
-                        (maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 8.0) * invScale.toDouble(),
+                        (maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 8.0) * invScaleX.toDouble(),
                     ).toInt()
                     val maxY = Math.ceil(
-                        (maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 8.0) * invScale.toDouble(),
+                        (maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 8.0) * invScaleY.toDouble(),
                     ).toInt()
                     TextBlock("", Rect(minX, minY, maxX, maxY), 0f, confidence = box.confidence)
                 }
             } else emptyList()
-            detBuffer.c[dCrId].release()
             return boxes
         }
 

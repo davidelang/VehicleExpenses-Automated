@@ -179,7 +179,8 @@ extra_flags_for() {
   local arch=$1
   case "$arch" in
     armv8)
-      echo "--with_arm82_fp16=ON"
+      # Per-TU +sve2 (postproject does not rewrite global CMAKE_*_FLAGS).
+      echo "--with_arm82_fp16=ON --with_arm8_sve2=ON"
       ;;
     armv7)
       if [[ "${PADDLE_WITH_ARMV7_FP16:-0}" == "1" ]]; then

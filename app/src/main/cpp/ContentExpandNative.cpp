@@ -1,12 +1,705 @@
+#if defined(VE_IDEAL_MASK_MAIN)
+#include <cstdarg>
+#include <cstdio>
+#ifndef ANDROID_LOG_INFO
+#define ANDROID_LOG_INFO 4
+#define ANDROID_LOG_ERROR 6
+#endif
+static inline int __android_log_print(int, const char*, const char*, ...) { return 0; }
 #include <jni.h>
+#else
+#include <jni.h>
+#include <android/log.h>
+#endif
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <exception>
+#include <mutex>
+#include <unistd.h>
+#include <utility>
 #include <vector>
-#include <android/log.h>
+#include "OrientedQuadOrder.h"
+#include <cstdlib>
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "ContentExpandNative", __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "ContentExpandNative", __VA_ARGS__)
+
+static constexpr size_t kVeAllocCap = 64ull * 1024ull * 1024ull;
+
+static size_t veMatBytes(int rows, int cols, int type) {
+    if (rows < 0 || cols < 0) return kVeAllocCap + 1;
+    return static_cast<size_t>(rows) * static_cast<size_t>(cols) * CV_ELEM_SIZE(type);
+}
+
+static bool veAllocLog(const char* tag, size_t bytes, int rows, int cols, int type) {
+    LOGI("veAllocLog tag=%s bytes=%zu rows=%d cols=%d type=%d", tag, bytes, rows, cols, type);
+    if (bytes > kVeAllocCap) {
+        LOGE("veAllocLog FAIL tag=%s bytes=%zu >64MiB rows=%d cols=%d type=%d",
+             tag, bytes, rows, cols, type);
+        return false;
+    }
+    return true;
+}
+
+static char g_rssPath[512];
+static long g_lastRssKb = -1;
+static std::mutex g_rssMu;
+
+static long veRssKb() {
+    FILE* f = fopen("/proc/self/statm", "r");
+    if (!f) return -1;
+    unsigned long size = 0, rss = 0;
+    const int n = fscanf(f, "%lu %lu", &size, &rss);
+    fclose(f);
+    if (n != 2) return -1;
+    long page = sysconf(_SC_PAGESIZE);
+    if (page < 1) page = 4096;
+    return static_cast<long>(rss * (page / 1024));
+}
+
+static void veRssLog(const char* tag, const char* extra = nullptr) {
+    const long kb = veRssKb();
+    long delta = 0;
+    bool jump = false;
+    {
+        std::lock_guard<std::mutex> lock(g_rssMu);
+        if (g_lastRssKb >= 0 && kb >= 0) delta = kb - g_lastRssKb;
+        jump = delta >= 128 * 1024;
+        if (kb >= 0) g_lastRssKb = kb;
+        if (g_rssPath[0]) {
+            FILE* out = fopen(g_rssPath, "a");
+            if (out) {
+                fprintf(out, "tag=%s rssKb=%ld deltaKb=%ld%s%s\n",
+                        tag ? tag : "?", kb, delta,
+                        extra && extra[0] ? " " : "",
+                        extra && extra[0] ? extra : "");
+                fclose(out);
+            }
+        }
+    }
+    if (jump) {
+        LOGE("veRss JUMP tag=%s rssKb=%ld deltaKb=%ld %s",
+             tag ? tag : "?", kb, delta, extra ? extra : "");
+    } else {
+        LOGI("veRss tag=%s rssKb=%ld deltaKb=%ld %s",
+             tag ? tag : "?", kb, delta, extra ? extra : "");
+    }
+}
+
+extern "C" void* __real_malloc(size_t);
+extern "C" void* __real_calloc(size_t, size_t);
+extern "C" void* __real_realloc(void*, size_t);
+
+static constexpr size_t kVeWrapFail = 512ull * 1024ull * 1024ull;
+
+extern "C" void* __wrap_malloc(size_t n) {
+    if (n >= kVeWrapFail) {
+        LOGE("veMalloc FAIL bytes=%zu >=512MiB", n);
+        return nullptr;
+    }
+    if (n >= 1024ull * 1024ull) LOGI("veMalloc bytes=%zu", n);
+    return __real_malloc(n);
+}
+
+extern "C" void* __wrap_calloc(size_t nmemb, size_t sz) {
+    size_t n = 0;
+    if (sz != 0 && nmemb > kVeWrapFail / sz) {
+        LOGE("veMalloc FAIL calloc nmemb=%zu sz=%zu >=512MiB", nmemb, sz);
+        return nullptr;
+    }
+    n = nmemb * sz;
+    if (n >= kVeWrapFail) {
+        LOGE("veMalloc FAIL bytes=%zu >=512MiB", n);
+        return nullptr;
+    }
+    if (n >= 1024ull * 1024ull) LOGI("veMalloc bytes=%zu", n);
+    return __real_calloc(nmemb, sz);
+}
+
+extern "C" void* __wrap_realloc(void* p, size_t n) {
+    if (n >= kVeWrapFail) {
+        LOGE("veMalloc FAIL realloc bytes=%zu >=512MiB", n);
+        return nullptr;
+    }
+    if (n >= 1024ull * 1024ull) LOGI("veMalloc bytes=%zu", n);
+    return __real_realloc(p, n);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeVeRssSetPath(
+    JNIEnv* env, jobject, jstring path) {
+    std::lock_guard<std::mutex> lock(g_rssMu);
+    if (!path) {
+        g_rssPath[0] = 0;
+        return;
+    }
+    const char* p = env->GetStringUTFChars(path, nullptr);
+    if (!p) {
+        g_rssPath[0] = 0;
+        return;
+    }
+    std::snprintf(g_rssPath, sizeof(g_rssPath), "%s", p);
+    env->ReleaseStringUTFChars(path, p);
+}
+
+static constexpr int kRunHistBins = 300;
+static constexpr int kRunHistLog2Bins = 32;
+static constexpr int kEnergyHistBins = 64;
+static constexpr int kSeg7AttemptMax = 10;
+static constexpr int kHistRawN = 256;
+static constexpr int kValleyPackN = 64;
+static constexpr int kSeg7AttemptF = 30 + kHistRawN + kValleyPackN + kValleyPackN;
+static constexpr int kSeg7TeleN =
+    26 + kEnergyHistBins * 2 + 6 + 1 + kSeg7AttemptMax * kSeg7AttemptF + 11;
+
+struct OverlapHists {
+    uint16_t inkH[kRunHistBins]{};
+    uint16_t inkV[kRunHistBins]{};
+    uint16_t gapH[kRunHistBins]{};
+    uint16_t gapV[kRunHistBins]{};
+};
+
+enum : int {
+    kFlagUnchanged = 0,
+    kFlagNormalExpand = 1,
+    kFlagNormalRetract = 2,
+    kFlagBlocked10pct = 3,
+    kFlagBlockedGap = 4
+};
+
+static constexpr float kVertRetractCapFrac = 0.50f;
+
+struct Seg7Tele {
+    float method = 0.f;
+    float yInk = 0.f;
+    float yBg = 0.f;
+    float dInk = 0.f;
+    float meanChroma = 0.f;
+    float uInkX = 0.f;
+    float uInkY = 0.f;
+    float inkBgDot = 0.f;
+    float otsuThr = 0.f;
+    float sPx = 0.f;
+    float dTop = 0.f;
+    float dBot = 0.f;
+    float dLeft = 0.f;
+    float dRight = 0.f;
+    float fTop = 0.f;
+    float fBot = 0.f;
+    float fLeft = 0.f;
+    float fRight = 0.f;
+    float gapJumpTop = 0.f;
+    float gapJumpBot = 0.f;
+    float landTop = 0.f;
+    float landBot = 0.f;
+    float farL = 0.f;
+    float farR = 0.f;
+    float nInkSeed = 0.f;
+    float nInkBlue = 0.f;
+    float nInkYellow = 0.f;
+    int histH[kEnergyHistBins]{};
+    int histV[kEnergyHistBins]{};
+    OverlapHists overlap{};
+    float nLookBinSeed = 0.f;
+    float nRecoveredSeed = 0.f;
+    float fill = 0.f;
+    float nRetry = 0.f;
+    float retryWhy = 0.f;
+    float nValley = 0.f;
+    float nAttempts = 0.f;
+    float nKeep = 0.f;
+    float nPoison = 0.f;
+    float firstThr = 0.f;
+    float attempts[kSeg7AttemptMax][kSeg7AttemptF]{};
+    float dTop1 = 0.f;
+    float dBot1 = 0.f;
+    float fTop1 = 0.f;
+    float fBot1 = 0.f;
+    float gapJumpBot1 = 0.f;
+    float nDropTall = 0.f;
+    float maxCcH = 0.f;
+    float dispKind = 0.f;
+    float poisonHMul = 0.f;
+    float poisonVMul = 0.f;
+    float gapDriftP90S = 0.f;
+};
+
+static int runLengthBin(int run) {
+    if (run < 1) run = 1;
+    int hi = 2;
+    for (int b = 0; b < kRunHistLog2Bins - 1; ++b) {
+        if (run <= hi) return b;
+        const int next = hi * 2;
+        if (next <= hi) return kRunHistLog2Bins - 1;
+        hi = next;
+    }
+    return kRunHistLog2Bins - 1;
+}
+
+static void addRunHist(int run, int* hist) {
+    if (run <= 0 || !hist) return;
+    hist[runLengthBin(run)] += 1;
+}
+
+static void fillRunHists(
+    const cv::Mat& look, int l, int t, int r, int b, double thr,
+    int* histH, int* histV
+) {
+    for (int i = 0; i < kRunHistLog2Bins; ++i) {
+        histH[i] = 0;
+        histV[i] = 0;
+    }
+    if (look.empty() || look.type() != CV_8UC1) return;
+    if (l < 0) l = 0;
+    if (t < 0) t = 0;
+    if (r > look.cols) r = look.cols;
+    if (b > look.rows) b = look.rows;
+    if (r <= l || b <= t || !histH || !histV) return;
+    const float thrF = static_cast<float>(thr);
+    for (int y = t; y < b; ++y) {
+        const uint8_t* p = look.ptr<uint8_t>(y);
+        int run = 0;
+        for (int x = l; x <= r; ++x) {
+            const bool on = x < r && static_cast<float>(p[x]) >= thrF;
+            if (on) ++run;
+            else if (run > 0) {
+                addRunHist(run, histH);
+                run = 0;
+            }
+        }
+    }
+    for (int x = l; x < r; ++x) {
+        int run = 0;
+        for (int y = t; y <= b; ++y) {
+            const bool on = y < b && static_cast<float>(look.ptr<uint8_t>(y)[x]) >= thrF;
+            if (on) ++run;
+            else if (run > 0) {
+                addRunHist(run, histV);
+                run = 0;
+            }
+        }
+    }
+}
+
+static void packSeg7Tele(const Seg7Tele& t, float* dst) {
+    dst[0] = t.method;
+    dst[1] = t.yInk;
+    dst[2] = t.yBg;
+    dst[3] = t.dInk;
+    dst[4] = t.meanChroma;
+    dst[5] = t.uInkX;
+    dst[6] = t.uInkY;
+    dst[7] = t.otsuThr;
+    dst[8] = t.sPx;
+    dst[9] = t.dTop;
+    dst[10] = t.dBot;
+    dst[11] = t.dLeft;
+    dst[12] = t.dRight;
+    dst[13] = t.fTop;
+    dst[14] = t.fBot;
+    dst[15] = t.fLeft;
+    dst[16] = t.fRight;
+    dst[17] = t.gapJumpTop;
+    dst[18] = t.gapJumpBot;
+    dst[19] = t.landTop;
+    dst[20] = t.landBot;
+    dst[21] = t.farL;
+    dst[22] = t.farR;
+    dst[23] = t.nInkSeed;
+    dst[24] = t.nInkBlue;
+    dst[25] = t.nInkYellow;
+    for (int i = 0; i < kEnergyHistBins; ++i) {
+        dst[26 + i] = static_cast<float>(t.histH[i]);
+        dst[26 + kEnergyHistBins + i] = static_cast<float>(t.histV[i]);
+    }
+    const int histEnd = 26 + kEnergyHistBins * 2;
+    dst[histEnd + 0] = t.nLookBinSeed;
+    dst[histEnd + 1] = t.nRecoveredSeed;
+    dst[histEnd + 2] = t.fill;
+    dst[histEnd + 3] = t.nRetry;
+    dst[histEnd + 4] = t.retryWhy;
+    dst[histEnd + 5] = t.nValley;
+    dst[histEnd + 6] = t.nAttempts;
+    for (int a = 0; a < kSeg7AttemptMax; ++a) {
+        const int b = histEnd + 7 + a * kSeg7AttemptF;
+        for (int f = 0; f < kSeg7AttemptF; ++f) {
+            dst[b + f] = t.attempts[a][f];
+        }
+    }
+    const int tail = histEnd + 7 + kSeg7AttemptMax * kSeg7AttemptF;
+    dst[tail + 0] = t.dTop1;
+    dst[tail + 1] = t.dBot1;
+    dst[tail + 2] = t.fTop1;
+    dst[tail + 3] = t.fBot1;
+    dst[tail + 4] = t.gapJumpBot1;
+    dst[tail + 5] = t.nDropTall;
+    dst[tail + 6] = t.maxCcH;
+    dst[tail + 7] = t.dispKind;
+    dst[tail + 8] = t.poisonHMul;
+    dst[tail + 9] = t.poisonVMul;
+    dst[tail + 10] = t.gapDriftP90S;
+}
+
+static int countInkU8(const cv::Mat& m, int l, int t, int r, int b) {
+    if (m.empty() || m.type() != CV_8UC1) return 0;
+    if (l < 0) l = 0;
+    if (t < 0) t = 0;
+    if (r > m.cols) r = m.cols;
+    if (b > m.rows) b = m.rows;
+    if (r <= l || b <= t) return 0;
+    int n = 0;
+    for (int y = t; y < b; ++y) {
+        const uint8_t* p = m.ptr<uint8_t>(y);
+        for (int x = l; x < r; ++x) if (p[x]) ++n;
+    }
+    return n;
+}
+
+struct SeedFillAttempt {
+    int kind = 0;
+    float firstThr = 0.f;
+    float thr = 0.f;
+    int dark = 0;
+    int flip = 0;
+    int nLookBin = 0;
+    int nRecovered = 0;
+    float fill = 0.f;
+    int nKeep = 0;
+    int nValley = 0;
+    int nPoison = 0;
+    int sPx = 0;
+    int acceptedSpx = 0;
+    int inBand = 0;
+    int kept = 0;
+    float inkFracDark = 0.f;
+    int inverted = 0;
+    int cleanDark = 0;
+    float cleanInkFrac = 0.f;
+    int vSW = 0;
+    float strokeShare = 0.f;
+    float maxRunOverW = 0.f;
+    int needVsw = 0;
+    int needInkFrac = 0;
+    int needShare = 0;
+    int needMaxRun = 0;
+    int histRaw[kHistRawN]{};
+    int histRawTail = 0;
+    int nValleysPack = 0;
+    int valleys[kValleyPackN]{};
+    int nSkippedPack = 0;
+    int skipped[kValleyPackN]{};
+    int stop = 0;
+};
+
+struct SeedFillGate {
+    int nLookBin = 0;
+    int nRecovered = 0;
+    float fill = 0.f;
+    int nRetry = 0;
+    int retryWhy = 0;
+    int nValley = 0;
+    int nKeep = 0;
+    int nPoison = 0;
+    float firstThr = 0.f;
+    int nAttempts = 0;
+    SeedFillAttempt attempts[kSeg7AttemptMax]{};
+};
+
+static void copyFillGateChosen(const SeedFillGate& src, SeedFillGate* dst) {
+    if (!dst) return;
+    dst->nLookBin = src.nLookBin;
+    dst->nRecovered = src.nRecovered;
+    dst->fill = src.fill;
+    dst->nRetry = src.nRetry;
+    dst->retryWhy = src.retryWhy;
+    dst->nValley = src.nValley;
+    dst->nKeep = src.nKeep;
+    dst->nPoison = src.nPoison;
+    dst->firstThr = src.firstThr;
+}
+
+static void packFillAttempts(const SeedFillGate& g, Seg7Tele* t) {
+    if (!t) return;
+    t->nAttempts = static_cast<float>(g.nAttempts);
+    t->nKeep = static_cast<float>(g.nKeep);
+    t->nPoison = static_cast<float>(g.nPoison);
+    t->firstThr = g.firstThr;
+    for (int i = 0; i < kSeg7AttemptMax; ++i) {
+        for (int f = 0; f < kSeg7AttemptF; ++f) t->attempts[i][f] = 0.f;
+        if (i >= g.nAttempts) continue;
+        const SeedFillAttempt& a = g.attempts[i];
+        t->attempts[i][0] = static_cast<float>(a.kind);
+        t->attempts[i][1] = a.firstThr;
+        t->attempts[i][2] = a.thr;
+        t->attempts[i][3] = static_cast<float>(a.dark);
+        t->attempts[i][4] = static_cast<float>(a.flip);
+        t->attempts[i][5] = static_cast<float>(a.nLookBin);
+        t->attempts[i][6] = static_cast<float>(a.nRecovered);
+        t->attempts[i][7] = a.fill;
+        t->attempts[i][8] = static_cast<float>(a.nKeep);
+        t->attempts[i][9] = static_cast<float>(a.nValley);
+        t->attempts[i][10] = static_cast<float>(a.nPoison);
+        t->attempts[i][11] = static_cast<float>(a.sPx);
+        t->attempts[i][12] = static_cast<float>(a.acceptedSpx);
+        t->attempts[i][13] = static_cast<float>(a.inBand);
+        t->attempts[i][14] = static_cast<float>(a.kept);
+        t->attempts[i][15] = a.inkFracDark;
+        t->attempts[i][16] = static_cast<float>(a.inverted);
+        t->attempts[i][17] = static_cast<float>(a.cleanDark);
+        t->attempts[i][18] = a.cleanInkFrac;
+        t->attempts[i][19] = static_cast<float>(a.vSW);
+        t->attempts[i][20] = a.strokeShare;
+        t->attempts[i][21] = a.maxRunOverW;
+        t->attempts[i][22] = static_cast<float>(a.needVsw);
+        t->attempts[i][23] = static_cast<float>(a.needInkFrac);
+        t->attempts[i][24] = static_cast<float>(a.needShare);
+        t->attempts[i][25] = static_cast<float>(a.needMaxRun);
+        t->attempts[i][26] = static_cast<float>(a.histRawTail);
+        t->attempts[i][27] = static_cast<float>(a.stop);
+        t->attempts[i][28] = static_cast<float>(a.nValleysPack);
+        t->attempts[i][29] = static_cast<float>(a.nSkippedPack);
+        for (int h = 0; h < kHistRawN; ++h)
+            t->attempts[i][30 + h] = static_cast<float>(a.histRaw[h]);
+        for (int v = 0; v < kValleyPackN; ++v)
+            t->attempts[i][30 + kHistRawN + v] = static_cast<float>(a.valleys[v]);
+        for (int s = 0; s < kValleyPackN; ++s) {
+            t->attempts[i][30 + kHistRawN + kValleyPackN + s] =
+                static_cast<float>(a.skipped[s]);
+        }
+    }
+}
+
+static uint8_t lookInkAtY(
+    const cv::Mat& src, int y, int x,
+    bool srcIsBin, bool inverted, bool cleanDark, double cleanThr
+) {
+    if (src.empty() || y < 0 || x < 0 || y >= src.rows || x >= src.cols) return 0;
+    const uint8_t v = src.ptr<uint8_t>(y)[x];
+    if (srcIsBin) {
+        return inverted ? static_cast<uint8_t>(255 - v) : v;
+    }
+    const bool ink = cleanDark ? (static_cast<double>(v) <= cleanThr)
+                               : (static_cast<double>(v) > cleanThr);
+    return ink ? 255 : 0;
+}
+
+static void countSeedFillGate(
+    const cv::Mat& seedBin, const cv::Mat& poison,
+    const cv::Mat& src, int xSeed0, int ySeed0,
+    bool srcIsBin, bool inverted, bool cleanDark, double cleanThr,
+    SeedFillGate* out
+) {
+    if (!out) return;
+    out->nLookBin = 0;
+    out->nRecovered = 0;
+    out->fill = 0.f;
+    const int seedH = seedBin.rows, seedW = seedBin.cols;
+    if (seedH < 1 || seedW < 1 || seedBin.type() != CV_8UC1) return;
+    const int area = seedH * seedW;
+    std::vector<uint8_t> vis(static_cast<size_t>(area), 0);
+    std::vector<int> q;
+    q.reserve(static_cast<size_t>(area));
+    for (int yy = 0; yy < seedH; ++yy) {
+        const uint8_t* bp = seedBin.ptr<uint8_t>(yy);
+        for (int xx = 0; xx < seedW; ++xx) {
+            if (!bp[xx]) continue;
+            ++out->nLookBin;
+            vis[static_cast<size_t>(yy * seedW + xx)] = 1;
+            q.push_back(yy * seedW + xx);
+        }
+    }
+    static const int kDy[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+    static const int kDx[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+    size_t qi = 0;
+    while (qi < q.size()) {
+        const int idx = q[qi++];
+        const int cy = idx / seedW;
+        const int cx = idx % seedW;
+        for (int k = 0; k < 8; ++k) {
+            const int ny = cy + kDy[k];
+            const int nx = cx + kDx[k];
+            if (ny < 0 || nx < 0 || ny >= seedH || nx >= seedW) continue;
+            const int ni = ny * seedW + nx;
+            if (vis[static_cast<size_t>(ni)]) continue;
+            if (poison.empty() || ny >= poison.rows || nx >= poison.cols) continue;
+            if (!poison.ptr<uint8_t>(ny)[nx]) continue;
+            const int sy = ny + ySeed0;
+            const int sx = nx + xSeed0;
+            if (!lookInkAtY(src, sy, sx, srcIsBin, inverted, cleanDark, cleanThr)) {
+                continue;
+            }
+            vis[static_cast<size_t>(ni)] = 1;
+            ++out->nRecovered;
+            q.push_back(ni);
+        }
+    }
+    out->fill = static_cast<float>(out->nLookBin) /
+        static_cast<float>(std::max(1, area));
+}
+
+/** OR 8-connected recovered poison ink into seed look-bin (same BFS as count). */
+static void orRecoveredIntoBin(
+    cv::Mat* seedBin, const cv::Mat& poison,
+    const cv::Mat& src, int xSeed0, int ySeed0,
+    bool srcIsBin, bool inverted, bool cleanDark, double cleanThr
+) {
+    if (!seedBin || seedBin->empty() || seedBin->type() != CV_8UC1) return;
+    const int seedH = seedBin->rows, seedW = seedBin->cols;
+    if (seedH < 1 || seedW < 1) return;
+    const int area = seedH * seedW;
+    std::vector<uint8_t> vis(static_cast<size_t>(area), 0);
+    std::vector<int> q;
+    q.reserve(static_cast<size_t>(area));
+    for (int yy = 0; yy < seedH; ++yy) {
+        const uint8_t* bp = seedBin->ptr<uint8_t>(yy);
+        for (int xx = 0; xx < seedW; ++xx) {
+            if (!bp[xx]) continue;
+            vis[static_cast<size_t>(yy * seedW + xx)] = 1;
+            q.push_back(yy * seedW + xx);
+        }
+    }
+    static const int kDy[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+    static const int kDx[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+    size_t qi = 0;
+    while (qi < q.size()) {
+        const int idx = q[qi++];
+        const int cy = idx / seedW;
+        const int cx = idx % seedW;
+        for (int k = 0; k < 8; ++k) {
+            const int ny = cy + kDy[k];
+            const int nx = cx + kDx[k];
+            if (ny < 0 || nx < 0 || ny >= seedH || nx >= seedW) continue;
+            const int ni = ny * seedW + nx;
+            if (vis[static_cast<size_t>(ni)]) continue;
+            if (poison.empty() || ny >= poison.rows || nx >= poison.cols) continue;
+            if (!poison.ptr<uint8_t>(ny)[nx]) continue;
+            const int sy = ny + ySeed0;
+            const int sx = nx + xSeed0;
+            if (!lookInkAtY(src, sy, sx, srcIsBin, inverted, cleanDark, cleanThr)) {
+                continue;
+            }
+            vis[static_cast<size_t>(ni)] = 1;
+            seedBin->ptr<uint8_t>(ny)[nx] = 255;
+            q.push_back(ni);
+        }
+    }
+}
+
+/** 64-bin local-min midpoints; 3-bin smooth; rise both sides. Port of findValleyMidpoints. */
+static void findValleyMidpoints64(const float bins[64], int* out, int* nOut) {
+    if (!out || !nOut) return;
+    *nOut = 0;
+    if (!bins) return;
+    float smoothed[64];
+    for (int i = 0; i < 64; ++i) {
+        const int start = std::max(0, i - 1);
+        const int end = std::min(63, i + 1);
+        float s = 0.f;
+        int n = 0;
+        for (int j = start; j <= end; ++j) {
+            s += bins[j];
+            ++n;
+        }
+        smoothed[i] = s / static_cast<float>(std::max(1, n));
+    }
+    int seen[64];
+    int nSeen = 0;
+    int i = 1;
+    while (i < 63) {
+        if (smoothed[i] <= smoothed[i - 1] && smoothed[i] <= smoothed[i + 1]) {
+            const int startIdx = i;
+            while (i < 63 && smoothed[i + 1] == smoothed[startIdx]) ++i;
+            const int endIdx = i;
+            const bool risesLeft = smoothed[startIdx - 1] > smoothed[startIdx];
+            const bool risesRight =
+                endIdx < 63 && smoothed[endIdx + 1] > smoothed[endIdx];
+            if (risesLeft && risesRight) {
+                const int mid = (startIdx + endIdx) / 2;
+                bool dup = false;
+                for (int k = 0; k < nSeen; ++k) {
+                    if (seen[k] == mid) { dup = true; break; }
+                }
+                if (!dup && *nOut < 64) {
+                    seen[nSeen++] = mid;
+                    out[(*nOut)++] = mid;
+                }
+            }
+        }
+        ++i;
+    }
+}
+
+static void storeTeleArr(JNIEnv* env, jfloatArray teleArr, int i, const Seg7Tele& t) {
+    if (!teleArr) return;
+    const jint n = env->GetArrayLength(teleArr);
+    const int off = i * kSeg7TeleN;
+    if (off < 0 || off + kSeg7TeleN > n) return;
+    float buf[kSeg7TeleN];
+    packSeg7Tele(t, buf);
+    env->SetFloatArrayRegion(teleArr, off, kSeg7TeleN, buf);
+}
+
+static void writeOverlapHistArr(JNIEnv* env, jshortArray arr, int i, const OverlapHists& h) {
+    if (!arr) return;
+    const jint n = env->GetArrayLength(arr);
+    const int span = kRunHistBins * 4;
+    const int off = i * span;
+    if (off < 0 || off + span > n) return;
+    env->SetShortArrayRegion(
+        arr, off, span, reinterpret_cast<const jshort*>(&h));
+}
+
+static void fillYInkBg(
+    const cv::Mat& y, const cv::Mat& seedBin, int sl, int st, int sPx,
+    float* yInkOut, float* yBgOut
+) {
+    const int h = y.rows, w = y.cols;
+    float yInkSum = 0.f;
+    int nInk = 0;
+    for (int yy = 0; yy < seedBin.rows; ++yy) {
+        const uint8_t* bp = seedBin.ptr<uint8_t>(yy);
+        const uint8_t* yp = y.ptr<uint8_t>(st + yy);
+        for (int xx = 0; xx < seedBin.cols; ++xx) {
+            if (!bp[xx]) continue;
+            yInkSum += yp[sl + xx];
+            ++nInk;
+        }
+    }
+    const float yInk = nInk > 0 ? yInkSum / static_cast<float>(nInk) : 0.f;
+    const int d = std::max(1, sPx);
+    double yBgSum = 0.0;
+    int nBg = 0;
+    auto tryBg = [&](int gx, int gy) {
+        if (gx < 0 || gy < 0 || gx >= w || gy >= h) return;
+        const int lx = gx - sl, ly = gy - st;
+        if (lx >= 0 && ly >= 0 && lx < seedBin.cols && ly < seedBin.rows &&
+            seedBin.ptr<uint8_t>(ly)[lx]) {
+            return;
+        }
+        yBgSum += y.ptr<uint8_t>(gy)[gx];
+        ++nBg;
+    };
+    for (int yy = 0; yy < seedBin.rows; ++yy) {
+        const uint8_t* bp = seedBin.ptr<uint8_t>(yy);
+        for (int xx = 0; xx < seedBin.cols; ++xx) {
+            if (!bp[xx]) continue;
+            const int gx = sl + xx, gy = st + yy;
+            tryBg(gx - d, gy);
+            tryBg(gx + d, gy);
+            tryBg(gx, gy - d);
+            tryBg(gx, gy + d);
+        }
+    }
+    *yInkOut = yInk;
+    *yBgOut = nBg > 0 ? static_cast<float>(yBgSum / nBg)
+        : (yInk < 128.f ? 200.f : 40.f);
+}
 
 namespace {
 
@@ -42,6 +735,7 @@ static bool frameFromQuad(const float* pts, Frame* f) {
 }
 
 static inline float magAt(const cv::Mat& mag, int x, int y) {
+    if (mag.type() == CV_8UC1) return static_cast<float>(mag.ptr<uint8_t>(y)[x]);
     return mag.ptr<float>(y)[x];
 }
 
@@ -150,184 +844,179 @@ static void padCountTip(
 
 }  // namespace
 
-extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpandOriented(
-    JNIEnv* env, jobject /*thiz*/,
-    jlong grayPtr,
-    jfloatArray seedPts,
-    jfloat maxFrac, jfloat energyRatio,
-    jboolean freezeHorz, jboolean enableJump,
-    jfloat jumpFrac, jfloat retractClearFrac, jfloat vertPadFrac
-) {
-    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
-    if (!gray || gray->empty() || gray->type() != CV_8UC1) return nullptr;
-    if (!seedPts || env->GetArrayLength(seedPts) < 8) return nullptr;
-    jfloat pts[8];
-    env->GetFloatArrayRegion(seedPts, 0, 8, pts);
+struct InkSweepPack {
+    float thr = 0.f;
+    float sPx = 0.f;
+    float energyRatio = 0.f;
+    int minRun = 0;
+    int vOrigin = 0;
+    int hOrigin = 0;
+    int v0 = 0;
+    int v1 = 0;
+    int h0 = 0;
+    int h1 = 0;
+    std::vector<int> vScores;
+    std::vector<int> hScores;
+    std::vector<uint8_t> threshJpeg;
+};
 
-    Frame fr{};
-    if (!frameFromQuad(pts, &fr)) return nullptr;
-    fr.imgW = gray->cols;
-    fr.imgH = gray->rows;
+struct PoisonCcPack {
+    int x = 0, y = 0, w = 0, h = 0, noPeak = 1, thr = 0, nInk = 0;
+};
+struct PoisonStats {
+    int bandTop = 0, bandBot = 0, bandH = 0;
+    int inkLo = 0, nextNonInk = 0, seedIndex = 0, nSeeds = 0, classChange = 0;
+    char phase[40]{};
+    std::vector<PoisonCcPack> ccs;
+    int vspStroke = 0;
+    int vspDisp = 0;
+    int vspBarT = 0;
+    int vspBarB = 0;
+    int vspJumpL = 0;
+    int vspJumpR = 0;
+};
 
-    cv::Mat gx, gy, mag;
-    cv::Sobel(*gray, gx, CV_32F, 1, 0, 3);
-    cv::Sobel(*gray, gy, CV_32F, 0, 1, 3);
-    cv::magnitude(gx, gy, mag);
-    gx.release();
-    gy.release();
-
-    float cx = fr.cx, cy = fr.cy, bw = fr.bw, bh = fr.bh;
-
-    double baseSum = 0.0;
-    int baseN = 0;
-    const int nu = std::max(4, static_cast<int>(std::lround(bw * 0.6f)));
-    const int nv = std::max(3, static_cast<int>(std::lround(bh * 0.6f)));
-    for (int iu = 0; iu < nu; ++iu) {
-        for (int iv = 0; iv < nv; ++iv) {
-            const float u = ((iu + 0.5f) / nu - 0.5f) * bw * 0.7f;
-            const float v = ((iv + 0.5f) / nv - 0.5f) * bh * 0.7f;
-            const float px = cx + u * fr.ux + v * fr.vx;
-            const float py = cy + u * fr.uy + v * fr.vy;
-            if (px < 0 || py < 0 || px >= fr.imgW || py >= fr.imgH) continue;
-            baseSum += sampleEnergy(mag, px, py, fr.imgW, fr.imgH);
-            ++baseN;
+static void writePoisonArr(JNIEnv* env, jintArray arr, const std::vector<PoisonStats>& packs) {
+    if (!env || !arr) return;
+    const jint cap = env->GetArrayLength(arr);
+    if (cap < 1) return;
+    std::vector<jint> buf;
+    buf.push_back(static_cast<jint>(packs.size()));
+    for (const auto& s : packs) {
+        buf.push_back(s.bandTop);
+        buf.push_back(s.bandBot);
+        buf.push_back(s.bandH);
+        buf.push_back(static_cast<jint>(s.ccs.size()));
+        for (const auto& c : s.ccs) {
+            buf.push_back(c.x);
+            buf.push_back(c.y);
+            buf.push_back(c.w);
+            buf.push_back(c.h);
+            buf.push_back(c.noPeak);
+            buf.push_back(c.thr);
+            buf.push_back(c.nInk);
         }
     }
-    const double base = baseSum / std::max(baseN, 1);
-    const double thr = energyRatio * std::max(base, 1e-3);
-    const float seedBh = bh;
-    const int cap = std::max(1, static_cast<int>(std::lround(maxFrac * seedBh)));
-    int stepsVNeg = 0;
-    int stepsVPos = 0;
-
-    auto strip = [&](float du, float dv, bool alongU) {
-        return stripEnergy(mag, fr, cx, cy, bw, bh, du, dv, alongU);
-    };
-
-    for (int step = 0; step < cap; ++step) {
-        bool grew = false;
-        if (!freezeHorz) {
-            if (strip(-1.f, 0.f, true) >= thr) {
-                cx -= 0.5f * fr.ux;
-                cy -= 0.5f * fr.uy;
-                bw += 1.f;
-                grew = true;
-            }
-            if (strip(+1.f, 0.f, true) >= thr) {
-                cx += 0.5f * fr.ux;
-                cy += 0.5f * fr.uy;
-                bw += 1.f;
-                grew = true;
-            }
-        }
-        if (strip(0.f, -1.f, false) >= thr) {
-            cx -= 0.5f * fr.vx;
-            cy -= 0.5f * fr.vy;
-            bh += 1.f;
-            ++stepsVNeg;
-            grew = true;
-        }
-        if (strip(0.f, +1.f, false) >= thr) {
-            cx += 0.5f * fr.vx;
-            cy += 0.5f * fr.vy;
-            bh += 1.f;
-            ++stepsVPos;
-            grew = true;
-        }
-        if (!grew) break;
-    }
-
-    int padV = 0;
-    if (vertPadFrac > 0.f) {
-        padV = std::max(1, static_cast<int>(std::lround(vertPadFrac * seedBh)));
-        bh += 2.f * padV;
-    }
-
-    if (enableJump) {
-        const float floorBw = bw;
-        const float floorCx = cx;
-        const float floorCy = cy;
-        const float j = std::max(1.f, jumpFrac * bh);
-        bw += 2.f * j;
-        const bool stillText =
-            strip(-1.f, 0.f, true) >= thr || strip(+1.f, 0.f, true) >= thr;
-        if (stillText) {
-            for (int step = 0; step < cap; ++step) {
-                bool grew = false;
-                if (strip(-1.f, 0.f, true) >= thr) {
-                    cx -= 0.5f * fr.ux;
-                    cy -= 0.5f * fr.uy;
-                    bw += 1.f;
-                    grew = true;
-                }
-                if (strip(+1.f, 0.f, true) >= thr) {
-                    cx += 0.5f * fr.ux;
-                    cy += 0.5f * fr.uy;
-                    bw += 1.f;
-                    grew = true;
-                }
-                if (!grew) break;
-            }
-        } else {
-            while (bw > floorBw + 0.5f && strip(-1.f, 0.f, true) < thr) {
-                cx += 0.5f * fr.ux;
-                cy += 0.5f * fr.uy;
-                bw -= 1.f;
-            }
-            while (bw > floorBw + 0.5f && strip(+1.f, 0.f, true) < thr) {
-                cx -= 0.5f * fr.ux;
-                cy -= 0.5f * fr.uy;
-                bw -= 1.f;
-            }
-            if (bw < floorBw) {
-                bw = floorBw;
-                cx = floorCx;
-                cy = floorCy;
-            }
-            const float clear = std::max(1.f, retractClearFrac * bh);
-            bw += 2.f * clear;
-        }
-    }
-
-    const int hitVertCap =
-        (stepsVNeg + padV >= cap || stepsVPos + padV >= cap) ? 1 : 0;
-    const float halfSeed = seedBh * 0.5f;
-    const float stopEnergyUp = static_cast<float>(
-        stripEnergy(mag, fr, cx, cy, bw, bh, 0.f, -1.f, false));
-    // Match Kotlin stopEnergy via seed-centered v, not the grown box edge.
-    auto stripAtSeedV = [&](float offsetFromCenterV) {
-        const int n = std::max(4, static_cast<int>(std::lround(fr.bw)));
-        double sum = 0.0;
-        int cnt = 0;
-        for (int i = 0; i < n; ++i) {
-            const float t = (i + 0.5f) / n - 0.5f;
-            const float u = t * fr.bw;
-            const float px = fr.cx + u * fr.ux + offsetFromCenterV * fr.vx;
-            const float py = fr.cy + u * fr.uy + offsetFromCenterV * fr.vy;
-            if (px < 0 || py < 0 || px >= fr.imgW || py >= fr.imgH) continue;
-            sum += sampleEnergy(mag, px, py, fr.imgW, fr.imgH);
-            ++cnt;
-        }
-        return cnt > 0 ? sum / cnt : 0.0;
-    };
-    const float stopUpE = static_cast<float>(
-        stripAtSeedV(-halfSeed - stepsVNeg - 1.f));
-    const float stopDownE = static_cast<float>(
-        stripAtSeedV(halfSeed + stepsVPos + 1.f));
-    (void)stopEnergyUp;
-
-    jfloat out[13] = {
-        cx, cy, bw, bh, fr.angDeg,
-        static_cast<jfloat>(stepsVNeg), static_cast<jfloat>(stepsVPos),
-        static_cast<jfloat>(padV), static_cast<jfloat>(hitVertCap),
-        stopUpE, stopDownE, static_cast<jfloat>(base), static_cast<jfloat>(thr),
-    };
-    jfloatArray arr = env->NewFloatArray(13);
-    if (!arr) return nullptr;
-    env->SetFloatArrayRegion(arr, 0, 13, out);
-    return arr;
+    const jint n = std::min(cap, static_cast<jint>(buf.size()));
+    env->SetIntArrayRegion(arr, 0, n, buf.data());
 }
+
+static void writeSweepArr(JNIEnv* env, jshortArray arr, const std::vector<InkSweepPack>& packs) {
+    if (!env || !arr) return;
+    const jsize cap = env->GetArrayLength(arr);
+    if (cap < 1) return;
+    std::vector<jshort> buf;
+    buf.push_back(static_cast<jshort>(packs.size()));
+    for (const auto& p : packs) {
+        const int nV = static_cast<int>(p.vScores.size());
+        const int nH = static_cast<int>(p.hScores.size());
+        buf.push_back(static_cast<jshort>(std::lround(p.thr * 1000.f)));
+        buf.push_back(static_cast<jshort>(std::lround(p.sPx)));
+        buf.push_back(static_cast<jshort>(p.minRun));
+        buf.push_back(static_cast<jshort>(std::lround(p.energyRatio * 1000.f)));
+        buf.push_back(static_cast<jshort>(p.vOrigin));
+        buf.push_back(static_cast<jshort>(p.hOrigin));
+        buf.push_back(static_cast<jshort>(p.v0));
+        buf.push_back(static_cast<jshort>(p.v1));
+        buf.push_back(static_cast<jshort>(nV));
+        buf.push_back(static_cast<jshort>(p.h0));
+        buf.push_back(static_cast<jshort>(p.h1));
+        buf.push_back(static_cast<jshort>(nH));
+        for (int s : p.vScores) buf.push_back(static_cast<jshort>(s));
+        for (int s : p.hScores) buf.push_back(static_cast<jshort>(s));
+        const int nJ = static_cast<int>(p.threshJpeg.size());
+        buf.push_back(static_cast<jshort>(nJ));
+        for (uint8_t b : p.threshJpeg) buf.push_back(static_cast<jshort>(b));
+    }
+    const jsize n = std::min(cap, static_cast<jsize>(buf.size()));
+    env->SetShortArrayRegion(arr, 0, n, buf.data());
+}
+
+static cv::Mat g_packJpegU8;
+
+static cv::Mat packJpegScratch(int w, int h) {
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
+    if (g_packJpegU8.empty() || g_packJpegU8.type() != CV_8UC1 ||
+        g_packJpegU8.rows < h || g_packJpegU8.cols < w) {
+        const int nr = std::max(h, g_packJpegU8.rows);
+        const int nc = std::max(w, g_packJpegU8.cols);
+        if (!veAllocLog("packJpegScratch", veMatBytes(nr, nc, CV_8UC1), nr, nc, CV_8UC1)) {
+            return cv::Mat();
+        }
+        g_packJpegU8.create(nr, nc, CV_8UC1);
+    }
+    if (!g_packJpegU8.data) return cv::Mat();
+    return cv::Mat(h, w, CV_8UC1, g_packJpegU8.data);
+}
+
+extern "C" bool veEncodeGrayJpegU8(const cv::Mat& u8, std::vector<uint8_t>* out);
+extern "C" bool veEncodeYuvMatJpeg(const cv::Mat& y, const cv::Mat& uv, std::vector<uint8_t>* out);
+
+static void packSeedBinJpeg(const cv::Mat& bin, InkSweepPack* out) {
+    if (!out || bin.empty() || bin.type() != CV_8UC1) return;
+    try {
+        const int w = bin.cols;
+        const int h = bin.rows;
+        if (w < 1 || h < 1) return;
+        int nw = w;
+        int nh = h;
+        const int longSide = std::max(w, h);
+        if (longSide > 400) {
+            const double sc = 400.0 / static_cast<double>(longSide);
+            const int64_t nw64 = std::llround(static_cast<double>(w) * sc);
+            const int64_t nh64 = std::llround(static_cast<double>(h) * sc);
+            if (nw64 < 1 || nh64 < 1 || nw64 > 65000 || nh64 > 65000) return;
+            nw = std::max(2, (static_cast<int>(nw64) + 1) / 2 * 2);
+            nh = std::max(2, (static_cast<int>(nh64) + 1) / 2 * 2);
+        }
+        cv::Mat dest = packJpegScratch(nw, nh);
+        if (dest.empty() || dest.rows < nh || dest.cols < nw) return;
+        for (int y = 0; y < nh; ++y) {
+            const int sy = std::min(h - 1, y * h / nh);
+            const uint8_t* sp = bin.ptr<uint8_t>(sy);
+            uint8_t* dp = dest.ptr<uint8_t>(y);
+            for (int x = 0; x < nw; ++x) {
+                const int sx = std::min(w - 1, x * w / nw);
+                dp[x] = sp[sx];
+            }
+        }
+        std::vector<uint8_t> jpg;
+        if (veEncodeGrayJpegU8(dest, &jpg) && !jpg.empty() && jpg.size() <= 16000) {
+            out->threshJpeg = std::move(jpg);
+        }
+    } catch (const cv::Exception&) {
+    } catch (const std::exception&) {
+    }
+}
+
+static void packSeedLookRows(
+    const cv::Mat& lookBin, int y0, int y1, int x0, int x1, InkSweepPack* out
+) {
+    if (!out || lookBin.empty() || lookBin.type() != CV_8UC1) return;
+    y0 = std::max(0, y0);
+    y1 = std::min(lookBin.rows, y1);
+    x0 = std::max(0, x0);
+    x1 = std::min(lookBin.cols, x1);
+    if (y1 <= y0 || x1 <= x0) return;
+    packSeedBinJpeg(lookBin(cv::Range(y0, y1), cv::Range(x0, x1)), out);
+}
+
+static void fillOrientedEnergySweep(
+    const cv::Mat& mag, const Frame& fr,
+    float seedCx, float seedCy, float seedBw, float seedBh,
+    int walkedH, float energyRatio, double thr, float jumpFrac,
+    InkSweepPack* out
+);
+static bool fillEnergyLookU8(const cv::Mat& gray, cv::Mat* dst);
+static cv::Mat* energyLookAs(jlong scratchPtr, const cv::Mat& gray);
+static void sobelGxGyU8(const cv::Mat& gray, int x, int y, int* gx, int* gy);
+static void countPullYFromU8Gray(
+    const cv::Mat& look, int sl, int st, int sr, int sb,
+    int el, int et, int er, int eb,
+    int imgW, int imgH, bool stopUpEnergy, bool stopDownEnergy,
+    int* ct, int* cb, int* pulledT, int* pulledB
+);
 
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCountPullbackOriented(
@@ -382,9 +1071,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCount
     const float vExistNeg = eV0;
     const float vExistPos = eV1;
 
-    cv::Mat gx, gy;
-    cv::Sobel(*gray, gx, CV_32F, 1, 0, 3);
-    cv::Sobel(*gray, gy, CV_32F, 0, 1, 3);
     auto duAbs = [&](float px, float py) -> float {
         int x = static_cast<int>(std::lround(px));
         int y = static_cast<int>(std::lround(py));
@@ -392,9 +1078,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCount
         if (y < 0) y = 0;
         if (x >= seedFr.imgW) x = seedFr.imgW - 1;
         if (y >= seedFr.imgH) y = seedFr.imgH - 1;
-        const float gxv = gx.ptr<float>(y)[x];
-        const float gyv = gy.ptr<float>(y)[x];
-        return std::fabs(gxv * ux + gyv * uy);
+        int gxi = 0, gyi = 0;
+        sobelGxGyU8(*gray, x, y, &gxi, &gyi);
+        return std::fabs(static_cast<float>(gxi) * ux + static_cast<float>(gyi) * uy);
     };
 
     const int nU = std::max(4, static_cast<int>(std::lround(seedBw)));
@@ -431,8 +1117,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCount
         }
         raw[i] = static_cast<double>(runCount(row, static_cast<float>(gxThr)));
     }
-    gx.release();
-    gy.release();
 
     const int sh = std::max(1, static_cast<int>(std::lround(seedBh)));
     std::vector<double> sm;
@@ -533,3 +1217,8845 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCount
     env->SetFloatArrayRegion(arr, 0, nOut, out.data());
     return arr;
 }
+
+namespace {
+
+static bool scratchFits(const cv::Mat* s, int w, int h) {
+    return s && !s->empty() && s->type() == CV_8UC1 && s->rows >= h && s->cols >= w;
+}
+
+enum : uint8_t {
+    kKindNone = 0,
+    kKindInk = 1,
+    kKindPoisonFat = 2,
+    kKindPoisonNoPeak = 3,
+    kKindLookBg = 4,
+    kKindPepper = 5
+};
+
+enum : int {
+    kDisp7seg = 0,
+    kDispNot = 1,
+    kDispUnknown = 2
+};
+
+struct ObjPack {
+    uint8_t nextInk = 255;
+    uint8_t nextNon = 1;
+    uint8_t inkLo = 255;
+    uint8_t lookNextInk = 253;
+    uint8_t lookNextNon = 1;
+    bool abort = false;
+    int abortSeed = -1;
+    int classChange = 0;
+    uint8_t kind[256]{};
+    uint8_t seedOf[256]{};
+    int seenInk = 0;
+    int seenNon = 0;
+    char phase[40]{};
+};
+
+static bool objAlloc(
+    ObjPack* p, bool ink, int seedIndex, uint8_t kind, uint8_t* idOut
+) {
+    if (!p || !idOut) return false;
+    if (p->abort) return false;
+    if (ink) {
+        if (p->nextInk <= p->nextNon) {
+            p->abort = true;
+            p->abortSeed = seedIndex;
+            std::snprintf(p->phase, sizeof(p->phase), "ink");
+            return false;
+        }
+        *idOut = p->nextInk--;
+        p->inkLo = *idOut;
+        p->seenInk = 1;
+    } else {
+        if (p->nextNon >= p->nextInk) {
+            p->abort = true;
+            p->abortSeed = seedIndex;
+            std::snprintf(p->phase, sizeof(p->phase), "non-ink");
+            return false;
+        }
+        *idOut = p->nextNon++;
+        p->seenNon = 1;
+    }
+    p->kind[*idOut] = kind;
+    p->seedOf[*idOut] = static_cast<uint8_t>(std::max(0, seedIndex) & 255);
+    return true;
+}
+
+/** Look-plane ids only: ink 253--, poison 1++. 255 is default ink. Alloc still starts at 253. */
+static bool lookAlloc(
+    ObjPack* p, bool ink, int seedIndex, uint8_t kind, uint8_t* idOut
+) {
+    if (!p || !idOut) return false;
+    if (p->abort) return false;
+    if (ink) {
+        if (p->lookNextInk <= p->lookNextNon) {
+            p->abort = true;
+            p->abortSeed = seedIndex;
+            std::snprintf(p->phase, sizeof(p->phase), "ink");
+            return false;
+        }
+        *idOut = p->lookNextInk--;
+    } else {
+        if (p->lookNextNon >= p->lookNextInk) {
+            p->abort = true;
+            p->abortSeed = seedIndex;
+            std::snprintf(p->phase, sizeof(p->phase), "non-ink");
+            return false;
+        }
+        *idOut = p->lookNextNon++;
+    }
+    p->kind[*idOut] = kind;
+    p->seedOf[*idOut] = static_cast<uint8_t>(std::max(0, seedIndex) & 255);
+    return true;
+}
+
+static bool isLookInkId(uint8_t v, const ObjPack* pack = nullptr) {
+    if (v >= 254) return true;
+    if (v == 0) return false;
+    return pack && pack->kind[v] == kKindInk;
+}
+
+static void objPut(
+    cv::Mat* plane, int x, int y, uint8_t id, ObjPack* pack
+) {
+    if (!plane || plane->empty() || plane->type() != CV_8UC1) return;
+    if (y < 0 || x < 0 || y >= plane->rows || x >= plane->cols) return;
+    uint8_t& dst = plane->ptr<uint8_t>(y)[x];
+    if (pack && dst != 0) {
+        const bool oldInk = dst >= pack->inkLo;
+        const bool newInk = id >= pack->inkLo;
+        if (oldInk != newInk) pack->classChange = 1;
+    }
+    dst = id;
+}
+
+static int objPhaseCode(const char* p) {
+    if (!p || !p[0]) return 0;
+    if (std::strcmp(p, "ink") == 0) return 1;
+    if (std::strcmp(p, "non-ink") == 0) return 2;
+    if (std::strcmp(p, "plus-ROI") == 0) return 3;
+    if (std::strcmp(p, "poison") == 0) return 4;
+    if (std::strcmp(p, "walk") == 0) return 5;
+    if (std::strcmp(p, "scratch") == 0) return 6;
+    return 7;
+}
+
+static void appendObjMeta(PoisonStats* s, const ObjPack& p, int seedIndex, int nSeeds) {
+    if (!s) return;
+    s->inkLo = p.inkLo;
+    s->nextNonInk = p.nextNon;
+    s->seedIndex = seedIndex;
+    s->nSeeds = nSeeds;
+    s->classChange = p.classChange;
+    std::snprintf(s->phase, sizeof(s->phase), "%s", p.phase);
+    PoisonCcPack c;
+    c.x = -1;
+    c.y = static_cast<int>(p.inkLo);
+    c.w = static_cast<int>(p.nextNon);
+    c.h = seedIndex;
+    c.noPeak = nSeeds;
+    c.thr = p.classChange;
+    c.nInk = objPhaseCode(p.phase);
+    s->ccs.push_back(c);
+    if (s->vspStroke || s->vspDisp || s->vspBarT || s->vspBarB ||
+        s->vspJumpL || s->vspJumpR) {
+        PoisonCcPack v;
+        v.x = -2;
+        v.y = s->vspStroke | (s->vspDisp << 4) | (s->vspBarT << 8) |
+            (s->vspBarB << 12) | (s->vspJumpL << 16) | (s->vspJumpR << 20);
+        s->ccs.push_back(v);
+    }
+}
+
+static bool rowHasInkId(
+    const cv::Mat& plane, int y, int x0, int x1, uint8_t inkLo, int minRun, int glareW
+) {
+    if (y < 0 || y >= plane.rows || plane.type() != CV_8UC1) return false;
+    const uint8_t* p = plane.ptr<uint8_t>(y);
+    const int xa = std::max(0, x0);
+    const int xb = std::min(plane.cols, x1);
+    int run = 0;
+    for (int x = xa; x <= xb; ++x) {
+        const bool on = x < xb && p[x] >= inkLo;
+        if (on) ++run;
+        else if (run > 0) {
+            if (run >= minRun && run <= glareW) return true;
+            run = 0;
+        }
+    }
+    return false;
+}
+
+/** 8UC1 ROI of [plane] at (x,y). Empty if it does not fit. */
+static cv::Mat planeView8u(cv::Mat* plane, int x, int y, int w, int h) {
+    if (!plane || plane->empty() || plane->type() != CV_8UC1 || w < 1 || h < 1) {
+        return cv::Mat();
+    }
+    if (x < 0 || y < 0 || x + w > plane->cols || y + h > plane->rows) {
+        return cv::Mat();
+    }
+    return (*plane)(cv::Rect(x, y, w, h));
+}
+
+/** Zeroed 8UC1 ROI of [plane] at (x,y). Empty if it does not fit. */
+static cv::Mat planeRoi8u(cv::Mat* plane, int x, int y, int w, int h) {
+    cv::Mat r = planeView8u(plane, x, y, w, h);
+    if (!r.empty()) r.setTo(0);
+    return r;
+}
+
+/** 8UC1 header, else null. Type check only — not a pointer compare. */
+static cv::Mat* asU8(cv::Mat* m) {
+    return (m && !m->empty() && m->type() == CV_8UC1) ? m : nullptr;
+}
+
+/** 8UC2 UV header, else null. Type check only — not a pointer compare. */
+static cv::Mat* asUV(cv::Mat* m) {
+    return (m && !m->empty() && m->type() == CV_8UC2) ? m : nullptr;
+}
+
+/** NV21 UV view of a packed full-frame Y plane (BufferSet Instance layout). */
+static cv::Mat* asUvFromY(cv::Mat* y, cv::Mat* storage) {
+    if (!storage || !y || y->empty() || y->type() != CV_8UC1) return nullptr;
+    if ((y->rows & 1) || (y->cols & 1)) return nullptr;
+    if (y->step[0] != static_cast<size_t>(y->cols)) return nullptr;
+    *storage = cv::Mat(
+        y->rows / 2, y->cols / 2, CV_8UC2,
+        y->data + static_cast<size_t>(y->rows) * static_cast<size_t>(y->cols),
+        static_cast<size_t>(y->cols));
+    return asUV(storage);
+}
+
+/** Prefix of poison IntArray: nextInk, nextNon, inkLo. Zeros keep defaults. */
+static void loadObjPack(JNIEnv* env, jintArray arr, ObjPack* p) {
+    if (!env || !arr || !p) return;
+    const jint cap = env->GetArrayLength(arr);
+    if (cap < 3) return;
+    jint v[3] = {0, 0, 0};
+    env->GetIntArrayRegion(arr, 0, 3, v);
+    if (v[0] == 0 && v[1] == 0 && v[2] == 0) return;
+    if (v[0] >= 0 && v[0] <= 255) p->nextInk = static_cast<uint8_t>(v[0]);
+    if (v[1] >= 0 && v[1] <= 255) p->nextNon = static_cast<uint8_t>(v[1]);
+    if (v[2] >= 0 && v[2] <= 255) p->inkLo = static_cast<uint8_t>(v[2]);
+}
+
+/** Tail of poison IntArray: nextInk, nextNon, inkLo for the next seed. */
+static void storeObjPack(JNIEnv* env, jintArray arr, const ObjPack& p) {
+    if (!env || !arr) return;
+    const jint cap = env->GetArrayLength(arr);
+    if (cap < 3) return;
+    jint v[3] = {
+        static_cast<jint>(p.nextInk),
+        static_cast<jint>(p.nextNon),
+        static_cast<jint>(p.inkLo)
+    };
+    env->SetIntArrayRegion(arr, cap - 3, 3, v);
+}
+
+static bool fillChromaMag(const cv::Mat& y, const cv::Mat& uv, cv::Mat* dst) {
+    if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
+    const int h = y.rows, w = y.cols;
+    if (!scratchFits(dst, w, h)) return false;
+    if (uv.empty() || uv.type() != CV_8UC2 || uv.rows <= 0 || uv.cols <= 0) {
+        (*dst)(cv::Rect(0, 0, w, h)).setTo(0);
+        return true;
+    }
+    const int uvH = uv.rows, uvW = uv.cols;
+    const bool half = uvW * 2 <= w + 1;
+    for (int ly = 0; ly < h; ++ly) {
+        int uy = half ? ly / 2 : (ly & ~1);
+        if (uy < 0) uy = 0;
+        if (uy >= uvH) uy = uvH - 1;
+        const cv::Vec2b* uvp = uv.ptr<cv::Vec2b>(uy);
+        uint8_t* op = dst->ptr<uint8_t>(ly);
+        for (int lx = 0; lx < w; ++lx) {
+            int ux = half ? lx / 2 : (lx & ~1);
+            if (ux < 0) ux = 0;
+            if (ux >= uvW) ux = uvW - 1;
+            const int du = static_cast<int>(uvp[ux][0]) - 128;
+            const int dv = static_cast<int>(uvp[ux][1]) - 128;
+            int m = static_cast<int>(std::lround(std::hypot(static_cast<double>(du),
+                                                            static_cast<double>(dv))));
+            if (m > 255) m = 255;
+            op[lx] = static_cast<uint8_t>(m);
+        }
+    }
+    return true;
+}
+
+static double meanRectF(const cv::Mat& e, int l, int t, int r, int b, int W, int H) {
+    if (l < 0) l = 0;
+    if (t < 0) t = 0;
+    if (r > W) r = W;
+    if (b > H) b = H;
+    if (r <= l || b <= t || e.empty()) return 0.0;
+    double s = 0.0;
+    int n = 0;
+    if (e.type() == CV_8UC1) {
+        for (int y = t; y < b; ++y) {
+            const uint8_t* p = e.ptr<uint8_t>(y);
+            for (int x = l; x < r; ++x) {
+                s += p[x];
+                ++n;
+            }
+        }
+    } else if (e.type() == CV_32F) {
+        for (int y = t; y < b; ++y) {
+            const float* p = e.ptr<float>(y);
+            for (int x = l; x < r; ++x) {
+                s += p[x];
+                ++n;
+            }
+        }
+    }
+    return n > 0 ? s / n : 0.0;
+}
+
+static constexpr int kJumpMax = 4;
+
+static bool vspSkipRun(int run, int lead, int gapMax);
+
+static int maxInkRunCol(
+    const cv::Mat& bin, int x, int y0, int y1, const ObjPack* pack = nullptr,
+    bool virtSp = false, int imgW = 0);
+static int maxBlobRunH(std::vector<int>& pix, int w);
+static int maxBlobRunV(std::vector<int>& pix, int w);
+static bool keepCcIsPlausibleStroke(
+    const cv::Mat& bin, int y0, int y1, const ObjPack* pack, int sPx,
+    const std::vector<int>& starts);
+
+static void recoverStrokeNearInk(
+    const cv::Mat& src, cv::Mat* look, int sPx, int y0, int y1, ObjPack* pack, int seedIndex,
+    int lookL, int lookT, int lookR, int lookB,
+    int dispKind = 0, int hMul = 7, int vMul = 16);
+
+static void jumpRetractH(
+    const cv::Mat& eng, int* l, int t, int* r, int b,
+    int imgW, int imgH, double thr, int capPx, float jumpFrac, float retractClearFrac,
+    int seedH = 0,
+    int* farL = nullptr, int* farR = nullptr,
+    cv::Mat* lookBin = nullptr, int seedT = 0, int seedB = 0, int minRun = 0,
+    int lookOx = 0, int lookOy = 0, ObjPack* lookPack = nullptr,
+    const cv::Mat* recSrc = nullptr, int recSPx = 0, int recSeedIndex = 0,
+    int recDispKind = 0, int recHMul = 7, int recVMul = 16,
+    bool virtSp = false
+) {
+    (void)capPx;
+    (void)retractClearFrac;
+    (void)seedT;
+    (void)seedB;
+    const int hgt = std::max(1, b - t);
+    const int jx = std::max(1, static_cast<int>(std::lround(jumpFrac * hgt)));
+    const int coreH = seedH > 0 ? seedH : hgt;
+    int coreT = (t + b) / 2 - coreH / 2;
+    int coreB = coreT + coreH;
+    if (coreT < t) coreT = t;
+    if (coreB > b) coreB = b;
+    if (coreB <= coreT + 1) {
+        coreT = t;
+        coreB = b;
+    }
+    const bool useInk = lookBin && !lookBin->empty() && lookBin->type() == CV_8UC1 && minRun > 0;
+    const int inkT = t;
+    const int inkB = b;
+    auto colHas = [&](int x) -> bool {
+        if (x < 0 || x >= imgW) return false;
+        if (useInk) {
+            return maxInkRunCol(
+                *lookBin, x - lookOx, inkT - lookOy, inkB - lookOy, lookPack,
+                virtSp, imgW) >= minRun;
+        }
+        return meanRectF(eng, x, coreT, x + 1, coreB, imgW, imgH) >= thr;
+    };
+    auto recoverHop = [&](int x0, int x1) {
+        if (!useInk || !recSrc || recSPx < 1 || !lookPack) return;
+        const int xl = std::min(x0, x1) - lookOx;
+        const int xr = std::max(x0, x1) - lookOx;
+        const int yt = t - lookOy;
+        const int yb = b - lookOy;
+        recoverStrokeNearInk(
+            *recSrc, lookBin, recSPx, yt, yb, lookPack, recSeedIndex, xl, yt, xr, yb,
+            recDispKind, recHMul, recVMul);
+    };
+    const int seedL0 = *l;
+    const int seedR0 = *r;
+    int probeL = *l;
+    int probeR = *r;
+    int jumpsL = 0;
+    while (*l > 0 && jumpsL < kJumpMax) {
+        const int nextL = std::max(0, *l - jx);
+        if (nextL >= *l) break;
+        probeL = nextL;
+        recoverHop(nextL, *l);
+        if (colHas(nextL)) {
+            *l = nextL;
+            ++jumpsL;
+            continue;
+        }
+        int foundL = *l;
+        bool hitL = false;
+        for (int cur = nextL + 1; cur < *l; ++cur) {
+            if (colHas(cur)) {
+                foundL = cur;
+                hitL = true;
+                break;
+            }
+        }
+        if (useInk && hitL) {
+            *l = foundL;
+            ++jumpsL;
+            continue;
+        }
+        if (hitL) *l = foundL;
+        break;
+    }
+    int jumpsR = 0;
+    while (*r < imgW && jumpsR < kJumpMax) {
+        const int nextR = std::min(imgW, *r + jx);
+        if (nextR <= *r) break;
+        probeR = nextR;
+        recoverHop(*r, nextR);
+        if (colHas(nextR - 1)) {
+            *r = nextR;
+            ++jumpsR;
+            continue;
+        }
+        int newR = *r;
+        bool hitR = false;
+        for (int cur = nextR - 2; cur >= *r; --cur) {
+            if (colHas(cur)) {
+                newR = cur + 1;
+                hitR = true;
+                break;
+            }
+        }
+        if (useInk && hitR) {
+            *r = newR;
+            ++jumpsR;
+            continue;
+        }
+        if (hitR) *r = newR;
+        break;
+    }
+    if (farL) *farL = probeL;
+    if (farR) *farR = probeR;
+    if (useInk && recSPx > 0 && lookBin) {
+        auto edgeIsStroke = [&](int x) -> bool {
+            const int lx = x - lookOx;
+            const int ya = inkT - lookOy;
+            const int yb = inkB - lookOy;
+            if (lx < 0 || lx >= lookBin->cols) return false;
+            const int ya2 = std::max(0, ya);
+            const int yb2 = std::min(lookBin->rows, yb);
+            std::vector<int> starts;
+            starts.reserve(static_cast<size_t>(std::max(0, yb2 - ya2)));
+            for (int y = ya2; y < yb2; ++y) {
+                if (isLookInkId(lookBin->ptr<uint8_t>(y)[lx], lookPack)) {
+                    starts.push_back(y * lookBin->cols + lx);
+                }
+            }
+            return keepCcIsPlausibleStroke(*lookBin, ya, yb, lookPack, recSPx, starts);
+        };
+        while (*l < seedL0 && !edgeIsStroke(*l)) ++*l;
+        while (*r > seedR0 && !edgeIsStroke(*r - 1)) --*r;
+        if (*r > seedR0) --*r;
+        if (*l >= *r) {
+            *l = seedL0;
+            *r = seedR0;
+        }
+    }
+}
+
+static void extrema1d(
+    const std::vector<double>& a, double prominence, int minDist, bool maxima,
+    std::vector<int>* out
+) {
+    const double sign = maxima ? 1.0 : -1.0;
+    std::vector<int> cand;
+    if (a.size() < 3) {
+        out->clear();
+        return;
+    }
+    for (int i = 1; i + 1 < static_cast<int>(a.size()); ++i) {
+        const double v = sign * a[i];
+        if (v < sign * a[i - 1] || v < sign * a[i + 1]) continue;
+        double leftMin = v;
+        int j = i - 1;
+        while (j >= 0 && sign * a[j] <= v + 1e-12) {
+            leftMin = std::min(leftMin, sign * a[j]);
+            --j;
+        }
+        double rightMin = v;
+        j = i + 1;
+        while (j < static_cast<int>(a.size()) && sign * a[j] <= v + 1e-12) {
+            rightMin = std::min(rightMin, sign * a[j]);
+            ++j;
+        }
+        const double prom = v - std::max(leftMin, rightMin);
+        if (prom + 1e-12 >= prominence) cand.push_back(i);
+    }
+    std::vector<int> order = cand;
+    std::sort(order.begin(), order.end(), [&](int i, int j) {
+        return sign * a[i] > sign * a[j];
+    });
+    std::vector<int> kept;
+    for (int i : order) {
+        bool ok = true;
+        for (int k : kept) {
+            if (std::abs(k - i) < minDist) { ok = false; break; }
+        }
+        if (ok) kept.push_back(i);
+    }
+    std::sort(kept.begin(), kept.end());
+    *out = std::move(kept);
+}
+
+static void xycutOnProfile(
+    const cv::Mat& eng, int l, int seedT, int r, int seedB,
+    int imgW, int imgH, int look, int* top, int* bot
+) {
+    const int y0 = std::max(0, seedT - look);
+    const int y1 = std::min(imgH, seedB + look);
+    if (y1 - y0 < 4 || r <= l) {
+        *top = seedT;
+        *bot = seedB;
+        return;
+    }
+    const int n = y1 - y0;
+    std::vector<double> raw(n, 0.0);
+    for (int i = 0; i < n; ++i) {
+        raw[i] = meanRectF(eng, l, y0 + i, r, y0 + i + 1, imgW, imgH);
+    }
+    const int sh = std::max(1, seedB - seedT);
+    std::vector<double> sm;
+    smooth1d(raw, std::max(1.0, 0.04 * sh), &sm);
+    int st = seedT - y0;
+    int sb = seedB - y0;
+    if (st < 0) st = 0;
+    if (st > n - 1) st = n - 1;
+    if (sb < st + 1) sb = st + 1;
+    if (sb > n) sb = n;
+    double seedMin = sm[st], seedMax = sm[st];
+    for (int i = st; i < sb; ++i) {
+        if (sm[i] < seedMin) seedMin = sm[i];
+        if (sm[i] > seedMax) seedMax = sm[i];
+    }
+    const double prom = std::max(1e-8, 0.12 * (seedMax - seedMin + 1e-6));
+    const int minDist = std::max(3, sh / 6);
+    std::vector<int> peaks, valleys;
+    extrema1d(sm, prom, minDist, true, &peaks);
+    extrema1d(sm, prom, std::max(2, sh / 10), false, &valleys);
+    const double mid = 0.5 * (st + sb);
+    int own = st;
+    if (!peaks.empty()) {
+        own = peaks[0];
+        double best = std::abs(peaks[0] - mid);
+        for (int p : peaks) {
+            const double d = std::abs(p - mid);
+            if (d < best) { best = d; own = p; }
+        }
+    } else {
+        double bestV = sm[st];
+        for (int i = st; i < sb; ++i) {
+            if (sm[i] > bestV) { bestV = sm[i]; own = i; }
+        }
+    }
+    int tp = y0, bt = y1;
+    for (int vi = static_cast<int>(valleys.size()) - 1; vi >= 0; --vi) {
+        if (valleys[vi] < own) { tp = y0 + valleys[vi]; break; }
+    }
+    for (int v : valleys) {
+        if (v > own) { bt = y0 + v; break; }
+    }
+    tp = std::min(tp, seedT);
+    bt = std::max(bt, seedB);
+    *top = std::max(0, tp);
+    *bot = std::min(imgH, bt);
+}
+
+static double medianVec(std::vector<double> v) {
+    if (v.empty()) return 1.0;
+    std::sort(v.begin(), v.end());
+    const int n = static_cast<int>(v.size());
+    if (n % 2 == 1) return v[n / 2];
+    return 0.5 * (v[n / 2 - 1] + v[n / 2]);
+}
+
+static void chi2Walk(
+    const cv::Mat& g8, int sl, int st, int sr, int sb,
+    int imgW, int imgH, int capPx, float chi2K,
+    int* top, int* bot
+) {
+    *top = st;
+    *bot = sb;
+    if (sr <= sl || sb <= st || g8.empty() || g8.type() != CV_8UC1) return;
+    const int w = sr - sl;
+    const int bins = 16;
+    auto fillOh = [&](int y, float* oh) {
+        for (int i = 0; i < bins; ++i) oh[i] = 0.f;
+        if (y < 0 || y >= imgH) return;
+        const uint8_t* p = g8.ptr<uint8_t>(y);
+        for (int x = sl; x < sr; ++x) {
+            int b = p[x] / 16;
+            if (b > 15) b = 15;
+            oh[b] += 1.f;
+        }
+        const float inv = 1.f / std::max(1, w);
+        for (int i = 0; i < bins; ++i) oh[i] *= inv;
+    };
+    float seedHist[16] = {};
+    float oh[16];
+    for (int y = st; y < sb; ++y) {
+        fillOh(y, oh);
+        for (int i = 0; i < bins; ++i) seedHist[i] += oh[i];
+    }
+    const float nSeed = static_cast<float>(std::max(1, sb - st));
+    float histSum = 0.f;
+    for (int i = 0; i < bins; ++i) {
+        seedHist[i] /= nSeed;
+        histSum += seedHist[i];
+    }
+    if (histSum > 1e-6f) {
+        const float inv = 1.f / histSum;
+        for (int i = 0; i < bins; ++i) seedHist[i] *= inv;
+    }
+    auto chi2At = [&](int y) {
+        fillOh(y, oh);
+        double s = 0.0;
+        for (int i = 0; i < bins; ++i) {
+            const double d = static_cast<double>(oh[i] - seedHist[i]);
+            s += d * d / (seedHist[i] + 1e-3);
+        }
+        return s;
+    };
+    std::vector<double> seedScores;
+    seedScores.reserve(sb - st);
+    for (int y = st; y < sb; ++y) seedScores.push_back(chi2At(y));
+    const double seedChi2 = std::max(medianVec(seedScores), 1e-6);
+    const double thr = chi2K * seedChi2;
+    auto walk = [&](int start, int step) {
+        int y = start, streak = 0, steps = 0;
+        while (true) {
+            const int ny = y + step;
+            if (ny < 0 || ny >= imgH) return y;
+            if (steps >= capPx) return y;
+            if (chi2At(ny) > thr) {
+                ++streak;
+                if (streak >= 2) return y;
+            } else {
+                streak = 0;
+                y = ny;
+                ++steps;
+            }
+        }
+    };
+    const int tp = walk(st, -1);
+    const int last = walk(sb - 1, +1);
+    *top = std::min(tp, st);
+    *bot = std::max(last + 1, sb);
+}
+
+static int runCountRow(const float* row, int n, float thr, int minRun = 3) {
+    int cnt = 0, run = 0;
+    for (int i = 0; i < n; ++i) {
+        if (row[i] >= thr) ++run;
+        else {
+            if (run >= minRun) ++cnt;
+            run = 0;
+        }
+    }
+    if (run >= minRun) ++cnt;
+    return cnt;
+}
+
+static void countPullY(
+    const cv::Mat& gxAbs, int sl, int st, int sr, int sb,
+    int el, int et, int er, int eb,
+    int imgW, int imgH, bool stopUpEnergy, bool stopDownEnergy,
+    int* ct, int* cb, int* pulledT, int* pulledB
+) {
+    *ct = et;
+    *cb = eb;
+    *pulledT = 0;
+    *pulledB = 0;
+    if (sr <= sl || sb <= st) return;
+    const int sw = sr - sl;
+    std::vector<float> buf;
+    buf.reserve(std::max(1, (sb - st) * sw));
+    for (int y = st; y < sb; ++y) {
+        const float* p = gxAbs.ptr<float>(y);
+        for (int x = sl; x < sr; ++x) buf.push_back(p[x]);
+    }
+    double p90 = 8.0;
+    if (buf.size() >= 2) {
+        std::vector<float> s = buf;
+        std::sort(s.begin(), s.end());
+        const int idx = static_cast<int>((s.size() - 1) * 0.90);
+        p90 = s[std::max(0, std::min(idx, static_cast<int>(s.size()) - 1))];
+    }
+    const double gxThr = std::max(8.0, 0.55 * p90);
+    const int y0 = std::max(0, std::min(st, et));
+    const int y1 = std::min(imgH, std::max(sb, eb));
+    const int n = std::max(1, y1 - y0);
+    std::vector<double> raw(n, 0.0);
+    std::vector<float> row(sw);
+    for (int i = 0; i < n; ++i) {
+        const int y = y0 + i;
+        const float* p = gxAbs.ptr<float>(y);
+        for (int x = 0; x < sw; ++x) row[x] = p[sl + x];
+        raw[i] = runCountRow(row.data(), sw, static_cast<float>(gxThr));
+    }
+    const int sh = std::max(1, sb - st);
+    std::vector<double> sm;
+    smooth1d(raw, std::max(1.0, 0.04 * sh), &sm);
+    int sti = st - y0;
+    int sbi = sb - y0;
+    if (sti < 0) sti = 0;
+    if (sti > n - 2) sti = std::max(0, n - 2);
+    if (sbi < sti + 1) sbi = sti + 1;
+    if (sbi > n) sbi = n;
+    std::vector<double> seedVals(sm.begin() + sti, sm.begin() + sbi);
+    std::sort(seedVals.begin(), seedVals.end());
+    const double cSeed = seedVals[seedVals.size() / 2];
+    int te = et - y0;
+    int be = eb - y0;
+    if (te < 0) te = 0;
+    if (te > sti) te = sti;
+    if (be < sbi) be = sbi;
+    if (be > n) be = n;
+    int top = te, bot = be;
+    int pT = 0, pB = 0;
+    if (cSeed >= 1.0) {
+        const double cThr = 0.45 * cSeed;
+        for (int i = sti - 1; i >= te; --i) {
+            const double left = (i == 0) ? sm[i] : sm[i - 1];
+            const double right = (i == n - 1) ? sm[i] : sm[i + 1];
+            if (sm[i] < cThr && sm[i] <= left && sm[i] <= right) {
+                top = i;
+                pT = 1;
+                break;
+            }
+        }
+        for (int i = sbi; i < be; ++i) {
+            const double left = (i == 0) ? sm[i] : sm[i - 1];
+            const double right = (i == n - 1) ? sm[i] : sm[i + 1];
+            if (sm[i] < cThr && sm[i] <= left && sm[i] <= right) {
+                bot = i;
+                pB = 1;
+                break;
+            }
+        }
+    }
+    top = std::min(top, sti);
+    bot = std::max(bot, sbi);
+    const double cThr = 0.45 * cSeed;
+    const int clearSteps = std::max(1, static_cast<int>(std::lround(0.10 * sh)));
+    const int growSteps = std::max(1, static_cast<int>(std::lround(0.08 * sh)));
+    const bool allowGrow = (eb - et) <= 2.4f * sh;
+    const double tipTop = (te >= 0 && te < n) ? sm[te] : 0.0;
+    double tipBot = 0.0;
+    if (be - 1 >= 0 && be - 1 < n) tipBot = sm[be - 1];
+    else if (be >= 0 && be < n) tipBot = sm[be];
+    const int idxLo = std::min(0, te - growSteps);
+    const int idxHi = std::max(n, be + growSteps);
+    int topPad = top, botPad = bot;
+    bool grewT = false, grewB = false;
+    padCountTip(pT != 0, stopUpEnergy, tipTop, cThr, te, top, sti, false,
+                clearSteps, growSteps, idxLo, idxHi, allowGrow, &topPad, &grewT);
+    padCountTip(pB != 0, stopDownEnergy, tipBot, cThr, be, bot, sbi, true,
+                clearSteps, growSteps, idxLo, idxHi, allowGrow, &botPad, &grewB);
+    top = std::min(topPad, sti);
+    bot = std::max(botPad, sbi);
+    if (bot < top + 1) bot = std::max(top + 1, sbi);
+    *ct = std::max(0, std::min(imgH, y0 + top));
+    *cb = std::max(*ct + 1, std::min(imgH, y0 + bot));
+    *pulledT = pT;
+    *pulledB = pB;
+    (void)el;
+    (void)er;
+}
+
+}  // namespace
+
+static void fillOrientedEnergySweep(
+    const cv::Mat& mag, const Frame& fr,
+    float seedCx, float seedCy, float seedBw, float seedBh,
+    int walkedH, float energyRatio, double thr, float jumpFrac,
+    InkSweepPack* out
+) {
+    if (!out || mag.empty()) return;
+    const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * std::max(1.f, seedBh))));
+    const int xPad = std::max(1, static_cast<int>(std::lround(
+        jumpFrac * static_cast<float>(std::max(1, walkedH)) * (kJumpMax + 1))));
+    const int v0s = static_cast<int>(std::lround(-0.5f * seedBh));
+    const int v1s = static_cast<int>(std::lround(0.5f * seedBh));
+    const int u0s = static_cast<int>(std::lround(-0.5f * seedBw));
+    const int u1s = static_cast<int>(std::lround(0.5f * seedBw));
+    const int vStart = v0s - capPx;
+    const int vEnd = v1s + capPx;
+    const int uStart = u0s - xPad;
+    const int uEnd = u1s + xPad;
+    if (vEnd <= vStart) return;
+    out->thr = static_cast<float>(thr);
+    out->energyRatio = energyRatio;
+    out->sPx = static_cast<float>(std::max(1, static_cast<int>(seedBh) / 12));
+    out->minRun = 0;
+    out->vOrigin = vStart;
+    out->hOrigin = uStart;
+    out->v0 = v0s - vStart;
+    out->v1 = v1s - vStart;
+    out->h0 = u0s - uStart;
+    out->h1 = u1s - uStart;
+    const int nu = std::max(4, static_cast<int>(std::lround(seedBw)));
+    const int nv = std::max(4, static_cast<int>(std::lround(seedBh)));
+    out->vScores.reserve(static_cast<size_t>(vEnd - vStart));
+    for (int v = vStart; v < vEnd; ++v) {
+        double s = 0.0;
+        int c = 0;
+        for (int i = 0; i < nu; ++i) {
+            const float uu = ((i + 0.5f) / nu - 0.5f) * seedBw;
+            const float px = seedCx + uu * fr.ux + static_cast<float>(v) * fr.vx;
+            const float py = seedCy + uu * fr.uy + static_cast<float>(v) * fr.vy;
+            if (px < 0 || py < 0 || px >= fr.imgW || py >= fr.imgH) continue;
+            s += sampleEnergy(mag, px, py, fr.imgW, fr.imgH);
+            ++c;
+        }
+        out->vScores.push_back(static_cast<int>(std::lround(c > 0 ? s / c : 0.0)));
+    }
+    if (uEnd <= uStart) return;
+    out->hScores.reserve(static_cast<size_t>(uEnd - uStart));
+    for (int u = uStart; u < uEnd; ++u) {
+        double s = 0.0;
+        int c = 0;
+        for (int i = 0; i < nv; ++i) {
+            const float vv = ((i + 0.5f) / nv - 0.5f) * seedBh;
+            const float px = seedCx + static_cast<float>(u) * fr.ux + vv * fr.vx;
+            const float py = seedCy + static_cast<float>(u) * fr.uy + vv * fr.vy;
+            if (px < 0 || py < 0 || px >= fr.imgW || py >= fr.imgH) continue;
+            s += sampleEnergy(mag, px, py, fr.imgW, fr.imgH);
+            ++c;
+        }
+        out->hScores.push_back(static_cast<int>(std::lround(c > 0 ? s / c : 0.0)));
+    }
+}
+
+static void fillAabbEnergySweep(
+    const cv::Mat& vertEng, const cv::Mat& magY,
+    int sl, int st, int sr, int sb,
+    int walkedH, int imgW, int imgH,
+    float energyRatio, double thr, float jumpFrac,
+    InkSweepPack* out
+) {
+    if (!out) return;
+    if (sl < 0) sl = 0;
+    if (st < 0) st = 0;
+    if (sr > imgW) sr = imgW;
+    if (sb > imgH) sb = imgH;
+    if (sr <= sl || sb <= st) return;
+    const int seedH = std::max(1, sb - st);
+    const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
+    const int hgt = std::max(1, walkedH);
+    const int xPad = std::max(1, static_cast<int>(std::lround(jumpFrac * hgt * (kJumpMax + 1))));
+    const int y0 = std::max(0, st - capPx);
+    const int y1 = std::min(imgH, sb + capPx);
+    const int x0 = std::max(0, sl - xPad);
+    const int x1 = std::min(imgW, sr + xPad);
+    if (y1 <= y0 || x1 <= x0) return;
+    out->thr = static_cast<float>(thr);
+    out->energyRatio = energyRatio;
+    out->sPx = static_cast<float>(std::max(1, seedH / 12));
+    out->minRun = 0;
+    out->vOrigin = y0;
+    out->hOrigin = x0;
+    out->v0 = st - y0;
+    out->v1 = sb - y0;
+    out->h0 = sl - x0;
+    out->h1 = sr - x0;
+    out->vScores.reserve(static_cast<size_t>(y1 - y0));
+    for (int y = y0; y < y1; ++y) {
+        out->vScores.push_back(static_cast<int>(
+            std::lround(meanRectF(vertEng, sl, y, sr, y + 1, imgW, imgH))));
+    }
+    const cv::Mat& hEng = magY.empty() ? vertEng : magY;
+    out->hScores.reserve(static_cast<size_t>(x1 - x0));
+    for (int x = x0; x < x1; ++x) {
+        out->hScores.push_back(static_cast<int>(
+            std::lround(meanRectF(hEng, x, st, x + 1, sb, imgW, imgH))));
+    }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeChromaMag(
+    JNIEnv* /*env*/, jobject /*thiz*/,
+    jlong yPtr, jlong uvPtr, jlong dstPtr
+) {
+    auto* y = reinterpret_cast<cv::Mat*>(yPtr);
+    auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
+    auto* dst = reinterpret_cast<cv::Mat*>(dstPtr);
+    if (!y || !dst) return JNI_FALSE;
+    if (!uv) {
+        cv::Mat empty;
+        return fillChromaMag(*y, empty, dst) ? JNI_TRUE : JNI_FALSE;
+    }
+    return fillChromaMag(*y, *uv, dst) ? JNI_TRUE : JNI_FALSE;
+}
+
+/** 3×3 Sobel weights (ksize=3) at one pixel; gx/gy in registers (about ±1020). */
+static void sobelGxGyU8(const cv::Mat& gray, int x, int y, int* gx, int* gy) {
+    const int h = gray.rows, w = gray.cols;
+    auto at = [&](int yy, int xx) -> int {
+        if (xx < 0) xx = 0;
+        if (yy < 0) yy = 0;
+        if (xx >= w) xx = w - 1;
+        if (yy >= h) yy = h - 1;
+        return gray.ptr<uint8_t>(yy)[xx];
+    };
+    const int p00 = at(y - 1, x - 1), p01 = at(y - 1, x), p02 = at(y - 1, x + 1);
+    const int p10 = at(y, x - 1), p12 = at(y, x + 1);
+    const int p20 = at(y + 1, x - 1), p21 = at(y + 1, x), p22 = at(y + 1, x + 1);
+    *gx = -p00 + p02 - 2 * p10 + 2 * p12 - p20 + p22;
+    *gy = -p00 - 2 * p01 - p02 + p20 + 2 * p21 + p22;
+}
+
+/** Energy look: min(255, (|gx|+|gy|) >> 3) into dst (A.s). No float mag, no dest create. */
+static bool fillEnergyLookU8(const cv::Mat& gray, cv::Mat* dst) {
+    if (gray.empty() || gray.type() != CV_8UC1 || !dst) return false;
+    const int h = gray.rows, w = gray.cols;
+    if (dst->empty() || dst->type() != CV_8UC1 || dst->rows < h || dst->cols < w) {
+        return false;
+    }
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* r0 = gray.ptr<uint8_t>(y > 0 ? y - 1 : 0);
+        const uint8_t* r1 = gray.ptr<uint8_t>(y);
+        const uint8_t* r2 = gray.ptr<uint8_t>(y + 1 < h ? y + 1 : h - 1);
+        uint8_t* d = dst->ptr<uint8_t>(y);
+        for (int x = 0; x < w; ++x) {
+            const int xm = x > 0 ? x - 1 : 0;
+            const int xp = x + 1 < w ? x + 1 : w - 1;
+            const int gx = -r0[xm] + r0[xp] - 2 * r1[xm] + 2 * r1[xp] - r2[xm] + r2[xp];
+            const int gy = -r0[xm] - 2 * r0[x] - r0[xp] + r2[xm] + 2 * r2[x] + r2[xp];
+            const int mag = (gx < 0 ? -gx : gx) + (gy < 0 ? -gy : gy);
+            d[x] = static_cast<uint8_t>(std::min(255, mag >> 3));
+        }
+    }
+    return true;
+}
+
+static cv::Mat* energyLookAs(jlong scratchPtr, const cv::Mat& gray) {
+    auto* s = reinterpret_cast<cv::Mat*>(scratchPtr);
+    const int h = gray.rows, w = gray.cols;
+    if (s && !s->empty() && s->type() == CV_8UC1 && s->rows >= h && s->cols >= w) return s;
+    return nullptr;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeFillEnergyLookU8(
+    JNIEnv* /*env*/, jobject /*thiz*/,
+    jlong grayPtr, jlong destPtr
+) {
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    auto* dest = reinterpret_cast<cv::Mat*>(destPtr);
+    if (!gray || !dest) return JNI_FALSE;
+    return fillEnergyLookU8(*gray, dest) ? JNI_TRUE : JNI_FALSE;
+}
+
+static void countPullYFromU8Gray(
+    const cv::Mat& look, int sl, int st, int sr, int sb,
+    int el, int et, int er, int eb,
+    int imgW, int imgH, bool stopUpEnergy, bool stopDownEnergy,
+    int* ct, int* cb, int* pulledT, int* pulledB
+) {
+    *ct = et;
+    *cb = eb;
+    *pulledT = 0;
+    *pulledB = 0;
+    if (sr <= sl || sb <= st || look.empty() || look.type() != CV_8UC1) return;
+    int hist[256] = {};
+    int nPix = 0;
+    for (int y = st; y < sb; ++y) {
+        const uint8_t* p = look.ptr<uint8_t>(y);
+        for (int x = sl; x < sr; ++x) {
+            hist[p[x]]++;
+            ++nPix;
+        }
+    }
+    double p90 = 1.0;
+    if (nPix >= 2) {
+        const int target = static_cast<int>((nPix - 1) * 0.90);
+        int acc = 0;
+        p90 = 255.0;
+        for (int v = 0; v < 256; ++v) {
+            acc += hist[v];
+            if (acc > target) {
+                p90 = static_cast<double>(v);
+                break;
+            }
+        }
+    }
+    const int thr = std::max(1, static_cast<int>(0.55 * p90));
+    const int y0 = std::max(0, std::min(st, et));
+    const int y1 = std::min(imgH, std::max(sb, eb));
+    const int n = std::max(1, y1 - y0);
+    std::vector<double> raw(static_cast<size_t>(n), 0.0);
+    constexpr int minRun = 3;
+    for (int i = 0; i < n; ++i) {
+        const int y = y0 + i;
+        const uint8_t* p = look.ptr<uint8_t>(y);
+        int cnt = 0, run = 0;
+        for (int x = sl; x < sr; ++x) {
+            if (p[x] >= thr) ++run;
+            else {
+                if (run >= minRun) ++cnt;
+                run = 0;
+            }
+        }
+        if (run >= minRun) ++cnt;
+        raw[static_cast<size_t>(i)] = static_cast<double>(cnt);
+    }
+    const int sh = std::max(1, sb - st);
+    std::vector<double> sm;
+    smooth1d(raw, std::max(1.0, 0.04 * sh), &sm);
+    int sti = st - y0;
+    int sbi = sb - y0;
+    if (sti < 0) sti = 0;
+    if (sti > n - 2) sti = std::max(0, n - 2);
+    if (sbi < sti + 1) sbi = sti + 1;
+    if (sbi > n) sbi = n;
+    std::vector<double> seedVals(sm.begin() + sti, sm.begin() + sbi);
+    std::sort(seedVals.begin(), seedVals.end());
+    const double cSeed = seedVals[seedVals.size() / 2];
+    int te = et - y0;
+    int be = eb - y0;
+    if (te < 0) te = 0;
+    if (te > sti) te = sti;
+    if (be < sbi) be = sbi;
+    if (be > n) be = n;
+    int top = te, bot = be;
+    int pT = 0, pB = 0;
+    if (cSeed >= 1.0) {
+        const double cThr = 0.45 * cSeed;
+        for (int i = sti - 1; i >= te; --i) {
+            const double left = (i == 0) ? sm[static_cast<size_t>(i)] : sm[static_cast<size_t>(i - 1)];
+            const double right = (i == n - 1) ? sm[static_cast<size_t>(i)] : sm[static_cast<size_t>(i + 1)];
+            if (sm[static_cast<size_t>(i)] < cThr && sm[static_cast<size_t>(i)] <= left &&
+                sm[static_cast<size_t>(i)] <= right) {
+                top = i;
+                pT = 1;
+                break;
+            }
+        }
+        for (int i = sbi; i < be; ++i) {
+            const double left = (i == 0) ? sm[static_cast<size_t>(i)] : sm[static_cast<size_t>(i - 1)];
+            const double right = (i == n - 1) ? sm[static_cast<size_t>(i)] : sm[static_cast<size_t>(i + 1)];
+            if (sm[static_cast<size_t>(i)] < cThr && sm[static_cast<size_t>(i)] <= left &&
+                sm[static_cast<size_t>(i)] <= right) {
+                bot = i;
+                pB = 1;
+                break;
+            }
+        }
+    }
+    top = std::min(top, sti);
+    bot = std::max(bot, sbi);
+    const double cThr = 0.45 * cSeed;
+    const int clearSteps = std::max(1, static_cast<int>(std::lround(0.10 * sh)));
+    const int growSteps = std::max(1, static_cast<int>(std::lround(0.08 * sh)));
+    const bool allowGrow = (eb - et) <= 2.4f * sh;
+    const double tipTop = (te >= 0 && te < n) ? sm[static_cast<size_t>(te)] : 0.0;
+    double tipBot = 0.0;
+    if (be - 1 >= 0 && be - 1 < n) tipBot = sm[static_cast<size_t>(be - 1)];
+    else if (be >= 0 && be < n) tipBot = sm[static_cast<size_t>(be)];
+    const int idxLo = std::min(0, te - growSteps);
+    const int idxHi = std::max(n, be + growSteps);
+    int topPad = top, botPad = bot;
+    bool grewT = false, grewB = false;
+    padCountTip(pT != 0, stopUpEnergy, tipTop, cThr, te, top, sti, false,
+                clearSteps, growSteps, idxLo, idxHi, allowGrow, &topPad, &grewT);
+    padCountTip(pB != 0, stopDownEnergy, tipBot, cThr, be, bot, sbi, true,
+                clearSteps, growSteps, idxLo, idxHi, allowGrow, &botPad, &grewB);
+    top = std::min(topPad, sti);
+    bot = std::max(botPad, sbi);
+    if (bot < top + 1) bot = std::max(top + 1, sbi);
+    *ct = std::max(0, std::min(imgH, y0 + top));
+    *cb = std::max(*ct + 1, std::min(imgH, y0 + bot));
+    *pulledT = pT;
+    *pulledB = pB;
+    (void)el;
+    (void)er;
+}
+
+static jintArray aabbEnergySeedsOut(JNIEnv* env, const std::vector<jint>& seeds) {
+    const int n = static_cast<int>(seeds.size()) / 4;
+    if (n <= 0) return env->NewIntArray(0);
+    std::vector<jint> out(static_cast<size_t>(n) * 11, 0);
+    for (int i = 0; i < n; ++i) {
+        const int o = i * 11;
+        const int sl = seeds[static_cast<size_t>(i) * 4];
+        const int st = seeds[static_cast<size_t>(i) * 4 + 1];
+        const int sr = seeds[static_cast<size_t>(i) * 4 + 2];
+        const int sb = seeds[static_cast<size_t>(i) * 4 + 3];
+        out[static_cast<size_t>(o)] = sl;
+        out[static_cast<size_t>(o) + 1] = st;
+        out[static_cast<size_t>(o) + 2] = sr;
+        out[static_cast<size_t>(o) + 3] = sb;
+        out[static_cast<size_t>(o) + 4] = sl;
+        out[static_cast<size_t>(o) + 5] = st;
+        out[static_cast<size_t>(o) + 6] = sr;
+        out[static_cast<size_t>(o) + 7] = sb;
+    }
+    jintArray arr = env->NewIntArray(static_cast<jint>(out.size()));
+    if (!arr) return env->NewIntArray(0);
+    env->SetIntArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
+    return arr;
+}
+
+static void walkEnergyExpand(
+    const cv::Mat& look, int imgW, int imgH, int cap, double thr, bool freezeHorz,
+    int seedL, int seedT, int seedR, int seedB,
+    int* l, int* t, int* r, int* b, bool* allowUp, bool* allowDown,
+    int* fTop, int* fBot
+) {
+    (void)seedL; (void)seedR;
+    *allowUp = *t > 0 && meanRectF(look, *l, *t - 1, *r, *t, imgW, imgH) >= thr;
+    *allowDown = *b < imgH && meanRectF(look, *l, *b, *r, *b + 1, imgW, imgH) >= thr;
+    for (int k = 0; k < cap; ++k) {
+        bool grew = false;
+        if (*allowUp && *t > 0 &&
+            meanRectF(look, *l, *t - 1, *r, *t, imgW, imgH) >= thr) {
+            --*t;
+            grew = true;
+        }
+        if (*allowDown && *b < imgH &&
+            meanRectF(look, *l, *b, *r, *b + 1, imgW, imgH) >= thr) {
+            ++*b;
+            grew = true;
+        }
+        if (!freezeHorz) {
+            if (*l > 0 && meanRectF(look, *l - 1, *t, *l, *b, imgW, imgH) >= thr) {
+                --*l;
+                grew = true;
+            }
+            if (*r < imgW && meanRectF(look, *r, *t, *r + 1, *b, imgW, imgH) >= thr) {
+                ++*r;
+                grew = true;
+            }
+        }
+        if (!grew) break;
+    }
+    *fTop = (*t < seedT) ? kFlagNormalExpand : kFlagBlockedGap;
+    *fBot = (*b > seedB) ? kFlagNormalExpand : kFlagBlockedGap;
+}
+
+static void walkEnergyRetract(
+    const cv::Mat& look, int imgW, int imgH, int cap, double thr, bool freezeHorz,
+    int seedL, int seedT, int seedR, int seedB,
+    int* l, int* t, int* r, int* b, bool* allowUp, bool* allowDown,
+    int* fTop, int* fBot
+) {
+    (void)freezeHorz;
+    (void)seedL;
+    (void)seedR;
+    const int seedH = std::max(1, seedB - seedT);
+    const int maxRetractPx = std::max(1, static_cast<int>(std::lround(kVertRetractCapFrac * seedH)));
+    auto edgeInk = [&](int sl, int st, int sr, int sb) {
+        return meanRectF(look, sl, st, sr, sb, imgW, imgH) >= thr;
+    };
+    if (edgeInk(*l, *t, *r, *t + 1)) {
+        while (*t > 0 && seedT - (*t - 1) <= cap && edgeInk(*l, *t - 1, *r, *t)) --*t;
+        *fTop = *t < seedT ? kFlagNormalExpand : kFlagUnchanged;
+    } else {
+        while (*t < *b - 1 && (*t - seedT) < maxRetractPx && !edgeInk(*l, *t, *r, *t + 1)) ++*t;
+        if (*t > seedT && edgeInk(*l, *t, *r, *t + 1)) *fTop = kFlagNormalRetract;
+        else if (*t - seedT >= maxRetractPx) *fTop = kFlagBlocked10pct;
+        else *fTop = kFlagNormalRetract;
+    }
+    if (edgeInk(*l, *b - 1, *r, *b)) {
+        while (*b < imgH && *b - seedB < cap && edgeInk(*l, *b, *r, *b + 1)) ++*b;
+        *fBot = *b > seedB ? kFlagNormalExpand : kFlagUnchanged;
+    } else {
+        while (*b > *t + 1 && (seedB - *b) < maxRetractPx && !edgeInk(*l, *b - 1, *r, *b)) --*b;
+        if (*b < seedB && edgeInk(*l, *b - 1, *r, *b)) *fBot = kFlagNormalRetract;
+        else if (seedB - *b >= maxRetractPx) *fBot = kFlagBlocked10pct;
+        else *fBot = kFlagNormalRetract;
+    }
+    *allowUp = *t < seedT;
+    *allowDown = *b > seedB;
+}
+
+using WalkEnergyFn = void (*)(
+    const cv::Mat&, int, int, int, double, bool,
+    int, int, int, int,
+    int*, int*, int*, int*, bool*, bool*, int*, int*);
+
+static void walkEnergyHorz(
+    const cv::Mat& look, int imgW, int imgH, int cap, double thr,
+    int* l, int* t, int* r, int* b
+) {
+    for (int k = 0; k < cap; ++k) {
+        bool grew = false;
+        if (*l > 0 && meanRectF(look, *l - 1, *t, *l, *b, imgW, imgH) >= thr) {
+            --*l;
+            grew = true;
+        }
+        if (*r < imgW && meanRectF(look, *r, *t, *r + 1, *b, imgW, imgH) >= thr) {
+            ++*r;
+            grew = true;
+        }
+        if (!grew) break;
+    }
+}
+
+static jintArray energyAabbOnLook(
+    JNIEnv* env,
+    jlong grayPtr, jlong uvPtr,
+    jintArray seedsArr,
+    WalkEnergyFn walk,
+    jfloat maxFrac, jfloat energyRatio,
+    jfloat jumpFrac, jfloat retractClearFrac,
+    jfloatArray teleArr, jshortArray sweepArr,
+    jlong scratchPtr,
+    jboolean freezeHorz = JNI_FALSE
+) {
+    const jfloat vertPadFrac = 0.f;
+    (void)uvPtr;
+    if (!seedsArr) return env->NewIntArray(0);
+    const jint n4 = env->GetArrayLength(seedsArr);
+    if (n4 <= 0 || n4 % 4 != 0) {
+        return env->NewIntArray(0);
+    }
+    const int n = n4 / 4;
+    std::vector<jint> seeds(static_cast<size_t>(n4));
+    env->GetIntArrayRegion(seedsArr, 0, n4, seeds.data());
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    if (!gray || gray->empty() || gray->type() != CV_8UC1) {
+        return aabbEnergySeedsOut(env, seeds);
+    }
+    try {
+    const int imgW = gray->cols, imgH = gray->rows;
+
+    cv::Mat* look = energyLookAs(scratchPtr, *gray);
+    if (!look || !fillEnergyLookU8(*gray, look)) return aabbEnergySeedsOut(env, seeds);
+    const cv::Mat& vertEng = *look;
+    std::vector<jint> out(static_cast<size_t>(n) * 11, 0);
+    std::vector<InkSweepPack> sweeps;
+    sweeps.resize(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        int l = seeds[static_cast<size_t>(i) * 4 + 0];
+        int t = seeds[static_cast<size_t>(i) * 4 + 1];
+        int r = seeds[static_cast<size_t>(i) * 4 + 2];
+        int b = seeds[static_cast<size_t>(i) * 4 + 3];
+        if (l < 0) l = 0;
+        if (t < 0) t = 0;
+        if (r > imgW) r = imgW;
+        if (b > imgH) b = imgH;
+        if (r <= l) r = std::min(imgW, l + 1);
+        if (b <= t) b = std::min(imgH, t + 1);
+        const int seedL = l, seedT = t, seedR = r, seedB = b;
+        const int seedH = std::max(1, b - t);
+        const int seedW = std::max(1, r - l);
+        if (seedH < 4 || seedW < 4) {
+            const int o = i * 11;
+            out[static_cast<size_t>(o) + 0] = seedL;
+            out[static_cast<size_t>(o) + 1] = seedT;
+            out[static_cast<size_t>(o) + 2] = seedR;
+            out[static_cast<size_t>(o) + 3] = seedB;
+            out[static_cast<size_t>(o) + 4] = seedL;
+            out[static_cast<size_t>(o) + 5] = seedT;
+            out[static_cast<size_t>(o) + 6] = seedR;
+            out[static_cast<size_t>(o) + 7] = seedB;
+            continue;
+        }
+        const int cap = std::max(1, static_cast<int>(std::lround(maxFrac * seedH)));
+        const int il = l + 2, it = t + 2, ir = r - 2, ib = b - 2;
+        const double base = (ir > il && ib > it)
+            ? meanRectF(vertEng, il, it, ir, ib, imgW, imgH)
+            : meanRectF(vertEng, l, t, r, b, imgW, imgH);
+        const double thr = energyRatio * std::max(base, 1e-3);
+        const double jumpThr = thr;
+        bool allowUp = false, allowDown = false;
+        int walkT = 0, walkB = 0;
+        int fTop = kFlagUnchanged, fBot = kFlagUnchanged;
+        walk(vertEng, imgW, imgH, cap, thr, freezeHorz == JNI_TRUE,
+            seedL, seedT, seedR, seedB,
+            &l, &t, &r, &b, &allowUp, &allowDown, &fTop, &fBot);
+        walkT = seedT - t;
+        walkB = b - seedB;
+        if (vertPadFrac > 0.f) {
+            const int extra = std::max(1, static_cast<int>(std::lround(vertPadFrac * seedH)));
+            if (allowUp) t = std::max(0, t - extra);
+            if (allowDown) b = std::min(imgH, b + extra);
+        }
+        const int hit = (walkT >= cap || walkB >= cap) ? 1 : 0;
+        const bool stopUpE = walkT < cap;
+        const bool stopDownE = walkB < cap;
+        if (freezeHorz == JNI_TRUE) {
+            walkEnergyHorz(vertEng, imgW, imgH, cap, thr, &l, &t, &r, &b);
+        }
+        int farL = l, farR = r;
+        jumpRetractH(vertEng, &l, t, &r, b, imgW, imgH, jumpThr, cap,
+                     jumpFrac, retractClearFrac, seedH, &farL, &farR);
+        if (l < 0) l = 0;
+        if (t < 0) t = 0;
+        if (r > imgW) r = imgW;
+        if (b > imgH) b = imgH;
+        if (r <= l) r = std::min(imgW, l + 1);
+        if (b <= t) b = std::min(imgH, t + 1);
+        int ct = t, cb = b, pT = 0, pB = 0;
+        countPullYFromU8Gray(*look, seedL, seedT, seedR, seedB, l, t, r, b,
+                   imgW, imgH, stopUpE, stopDownE, &ct, &cb, &pT, &pB);
+        const int o = i * 11;
+        out[static_cast<size_t>(o) + 0] = l;
+        out[static_cast<size_t>(o) + 1] = t;
+        out[static_cast<size_t>(o) + 2] = r;
+        out[static_cast<size_t>(o) + 3] = b;
+        out[static_cast<size_t>(o) + 4] = l;
+        out[static_cast<size_t>(o) + 5] = ct;
+        out[static_cast<size_t>(o) + 6] = r;
+        out[static_cast<size_t>(o) + 7] = cb;
+        out[static_cast<size_t>(o) + 8] = hit;
+        out[static_cast<size_t>(o) + 9] = pT;
+        out[static_cast<size_t>(o) + 10] = pB;
+        (void)fTop;
+        (void)fBot;
+        Seg7Tele tele{};
+        tele.method = 1.f;
+        tele.yInk = static_cast<float>(
+            meanRectF(*gray, seedL, seedT, seedR, seedB, imgW, imgH));
+        const double yBgT = meanRectF(*gray, seedL, std::max(0, seedT - 1), seedR, seedT, imgW, imgH);
+        const double yBgB = meanRectF(*gray, seedL, seedB, seedR, std::min(imgH, seedB + 1), imgW, imgH);
+        tele.yBg = static_cast<float>(0.5 * (yBgT + yBgB));
+        tele.dInk = tele.yInk - tele.yBg;
+        tele.sPx = static_cast<float>(std::max(1, seedH / 12));
+        tele.dTop = static_cast<float>(t - seedT);
+        tele.dBot = static_cast<float>(b - seedB);
+        tele.dLeft = static_cast<float>(l - seedL);
+        tele.dRight = static_cast<float>(r - seedR);
+        tele.fTop = static_cast<float>(fTop);
+        tele.fBot = static_cast<float>(fBot);
+        tele.fLeft = static_cast<float>(kFlagUnchanged);
+        tele.fRight = static_cast<float>(kFlagUnchanged);
+        tele.farL = static_cast<float>(farL);
+        tele.farR = static_cast<float>(farR);
+        const int ht = std::max(0, t - 2), hb = std::min(imgH, b + 2);
+        const int hl = std::max(0, l), hr = std::min(imgW, r);
+        if (hb > ht && hr > hl && !vertEng.empty() && vertEng.type() == CV_8UC1) {
+            fillRunHists(vertEng, hl, ht, hr, hb, thr, tele.histH, tele.histV);
+        }
+        storeTeleArr(env, teleArr, i, tele);
+        fillAabbEnergySweep(
+            vertEng, vertEng, seedL, seedT, seedR, seedB,
+            std::max(1, b - t), imgW, imgH, energyRatio, thr, jumpFrac,
+            &sweeps[static_cast<size_t>(i)]);
+    }
+    writeSweepArr(env, sweepArr, sweeps);
+    jintArray arr = env->NewIntArray(static_cast<jint>(out.size()));
+    if (!arr) return aabbEnergySeedsOut(env, seeds);
+    env->SetIntArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
+    return arr;
+    } catch (const cv::Exception&) {
+        return aabbEnergySeedsOut(env, seeds);
+    } catch (const std::exception&) {
+        return aabbEnergySeedsOut(env, seeds);
+    }
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyAabbTight(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jintArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong scratchPtr
+) {
+    return energyAabbOnLook(env, grayPtr, uvPtr, seedsArr, walkEnergyExpand, 0.4f, 0.65f, 0.40f, 0.30f, teleArr, sweepArr, scratchPtr, JNI_TRUE);
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyAabbRetract(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jintArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong scratchPtr
+) {
+    return energyAabbOnLook(env, grayPtr, uvPtr, seedsArr, walkEnergyRetract, 0.4f, 0.65f, 0.40f, 0.30f, teleArr, sweepArr, scratchPtr, JNI_TRUE);
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyAabbExpand(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jintArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong scratchPtr
+) {
+    return energyAabbOnLook(env, grayPtr, uvPtr, seedsArr, walkEnergyExpand, 0.4f, 0.65f, 0.40f, 0.30f, teleArr, sweepArr, scratchPtr);
+}
+
+static jfloatArray energyOrientSeedOut(JNIEnv* env, const jfloat pts[8]) {
+    Frame fr{};
+    if (!frameFromQuad(pts, &fr)) return env->NewFloatArray(0);
+    jfloat out[13] = {
+        fr.cx, fr.cy, fr.bw, fr.bh, fr.angDeg,
+        0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+    };
+    jfloatArray arr = env->NewFloatArray(13);
+    if (!arr) return env->NewFloatArray(0);
+    env->SetFloatArrayRegion(arr, 0, 13, out);
+    return arr;
+}
+
+static void walkEnergyOrientExpand(
+    const cv::Mat& mag, const Frame& fr,
+    int cap, double thr, bool freezeHorz,
+    float* cx, float* cy, float* bw, float* bh,
+    int* stepsVNeg, int* stepsVPos,
+    bool* allowVNeg, bool* allowVPos
+) {
+    auto strip = [&](float du, float dv, bool alongU) {
+        return stripEnergy(mag, fr, *cx, *cy, *bw, *bh, du, dv, alongU);
+    };
+    *allowVNeg = strip(0.f, -1.f, false) >= thr;
+    *allowVPos = strip(0.f, +1.f, false) >= thr;
+    *stepsVNeg = 0;
+    *stepsVPos = 0;
+    for (int step = 0; step < cap; ++step) {
+        bool grew = false;
+        if (!freezeHorz) {
+            if (strip(-1.f, 0.f, true) >= thr) {
+                *cx -= 0.5f * fr.ux; *cy -= 0.5f * fr.uy; *bw += 1.f; grew = true;
+            }
+            if (strip(+1.f, 0.f, true) >= thr) {
+                *cx += 0.5f * fr.ux; *cy += 0.5f * fr.uy; *bw += 1.f; grew = true;
+            }
+        }
+        if (*allowVNeg && strip(0.f, -1.f, false) >= thr) {
+            *cx -= 0.5f * fr.vx; *cy -= 0.5f * fr.vy; *bh += 1.f; ++*stepsVNeg; grew = true;
+        }
+        if (*allowVPos && strip(0.f, +1.f, false) >= thr) {
+            *cx += 0.5f * fr.vx; *cy += 0.5f * fr.vy; *bh += 1.f; ++*stepsVPos; grew = true;
+        }
+        if (!grew) break;
+    }
+}
+
+static void walkEnergyOrientRetract(
+    const cv::Mat& mag, const Frame& fr,
+    int cap, double thr, bool /*freezeHorz*/,
+    float* cx, float* cy, float* bw, float* bh,
+    int* stepsVNeg, int* stepsVPos,
+    bool* allowVNeg, bool* allowVPos
+) {
+    auto strip = [&](float du, float dv, bool alongU) {
+        return stripEnergy(mag, fr, *cx, *cy, *bw, *bh, du, dv, alongU);
+    };
+    auto onEdgeV = [&](float dvSign) {
+        return stripEnergy(mag, fr, *cx, *cy, *bw, std::max(2.f, *bh - 1.f),
+            0.f, dvSign, false);
+    };
+    const float seedBh = *bh;
+    *stepsVNeg = 0;
+    *stepsVPos = 0;
+    if (onEdgeV(-1.f) >= thr) {
+        while (*stepsVNeg < cap && strip(0.f, -1.f, false) >= thr) {
+            *cx -= 0.5f * fr.vx; *cy -= 0.5f * fr.vy; *bh += 1.f; ++*stepsVNeg;
+        }
+        *allowVNeg = *stepsVNeg > 0;
+    } else {
+        const int maxRetractPx = std::max(1, static_cast<int>(std::lround(kVertRetractCapFrac * seedBh)));
+        int nRetr = 0;
+        while (*bh > 2.f && nRetr < maxRetractPx && onEdgeV(-1.f) < thr) {
+            *cx += 0.5f * fr.vx; *cy += 0.5f * fr.vy; *bh -= 1.f; ++nRetr;
+        }
+        *allowVNeg = false;
+    }
+    if (onEdgeV(+1.f) >= thr) {
+        while (*stepsVPos < cap && strip(0.f, +1.f, false) >= thr) {
+            *cx += 0.5f * fr.vx; *cy += 0.5f * fr.vy; *bh += 1.f; ++*stepsVPos;
+        }
+        *allowVPos = *stepsVPos > 0;
+    } else {
+        const int maxRetractPx = std::max(1, static_cast<int>(std::lround(kVertRetractCapFrac * seedBh)));
+        int nRetr = 0;
+        while (*bh > 2.f && nRetr < maxRetractPx && onEdgeV(+1.f) < thr) {
+            *cx -= 0.5f * fr.vx; *cy -= 0.5f * fr.vy; *bh -= 1.f; ++nRetr;
+        }
+        *allowVPos = false;
+    }
+}
+
+using WalkEnergyOrientFn = void (*)(
+    const cv::Mat&, const Frame&,
+    int, double, bool,
+    float*, float*, float*, float*,
+    int*, int*, bool*, bool*);
+
+static jfloatArray runEnergyOrientOne(
+    JNIEnv* env, jlong grayPtr, jfloatArray seedPts, WalkEnergyOrientFn walk,
+    jshortArray sweepArr, jlong scratchPtr, bool freezeHorz
+) {
+    const jfloat maxFrac = 0.4f;
+    const jfloat energyRatio = 0.65f;
+    const jfloat jumpFrac = 0.40f;
+    const jfloat retractClearFrac = 0.30f;
+    const jfloat vertPadFrac = 0.f;
+    if (!seedPts || env->GetArrayLength(seedPts) < 8) return env->NewFloatArray(0);
+    jfloat pts[8];
+    env->GetFloatArrayRegion(seedPts, 0, 8, pts);
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    if (!gray || gray->empty() || gray->type() != CV_8UC1) {
+        return energyOrientSeedOut(env, pts);
+    }
+    try {
+    Frame fr{};
+    if (!frameFromQuad(pts, &fr)) return energyOrientSeedOut(env, pts);
+    fr.imgW = gray->cols;
+    fr.imgH = gray->rows;
+    cv::Mat* look = energyLookAs(scratchPtr, *gray);
+    if (!look) return energyOrientSeedOut(env, pts);
+    const cv::Mat& mag = *look;
+    float cx = fr.cx, cy = fr.cy, bw = fr.bw, bh = fr.bh;
+    const float seedCx = cx, seedCy = cy, seedBw = bw, seedBh0 = bh;
+    if (bw < 4.f || bh < 4.f) {
+        jfloat out[13] = { cx, cy, bw, bh, fr.angDeg, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f };
+        jfloatArray arr = env->NewFloatArray(13);
+        if (!arr) return energyOrientSeedOut(env, pts);
+        env->SetFloatArrayRegion(arr, 0, 13, out);
+        return arr;
+    }
+    double baseSum = 0.0;
+    int baseN = 0;
+    const int nu = std::max(4, static_cast<int>(std::lround(bw * 0.6f)));
+    const int nv = std::max(3, static_cast<int>(std::lround(bh * 0.6f)));
+    for (int iu = 0; iu < nu; ++iu) {
+        for (int iv = 0; iv < nv; ++iv) {
+            const float u = ((iu + 0.5f) / nu - 0.5f) * bw * 0.7f;
+            const float v = ((iv + 0.5f) / nv - 0.5f) * bh * 0.7f;
+            const float px = cx + u * fr.ux + v * fr.vx;
+            const float py = cy + u * fr.uy + v * fr.vy;
+            if (px < 0 || py < 0 || px >= fr.imgW || py >= fr.imgH) continue;
+            baseSum += sampleEnergy(mag, px, py, fr.imgW, fr.imgH);
+            ++baseN;
+        }
+    }
+    const double base = baseSum / std::max(baseN, 1);
+    const double thr = energyRatio * std::max(base, 1e-3);
+    const float seedBh = bh;
+    const int cap = std::max(1, static_cast<int>(std::lround(maxFrac * seedBh)));
+    int stepsVNeg = 0, stepsVPos = 0;
+    bool allowVNeg = false, allowVPos = false;
+    if (walk) {
+        walk(mag, fr, cap, thr, freezeHorz,
+            &cx, &cy, &bw, &bh, &stepsVNeg, &stepsVPos, &allowVNeg, &allowVPos);
+    }
+    auto strip = [&](float du, float dv, bool alongU) {
+        return stripEnergy(mag, fr, cx, cy, bw, bh, du, dv, alongU);
+    };
+    int padV = 0;
+    if (vertPadFrac > 0.f) {
+        padV = std::max(1, static_cast<int>(std::lround(vertPadFrac * seedBh)));
+        if (allowVNeg) { cx -= 0.5f * fr.vx * padV; cy -= 0.5f * fr.vy * padV; bh += static_cast<float>(padV); }
+        if (allowVPos) { cx += 0.5f * fr.vx * padV; cy += 0.5f * fr.vy * padV; bh += static_cast<float>(padV); }
+    }
+    {
+        const float floorBw = bw, floorCx = cx, floorCy = cy;
+        const float j = std::max(1.f, jumpFrac * bh);
+        bw += 2.f * j;
+        const bool stillText = strip(-1.f, 0.f, true) >= thr || strip(+1.f, 0.f, true) >= thr;
+        if (stillText) {
+            for (int step = 0; step < cap; ++step) {
+                bool grew = false;
+                if (strip(-1.f, 0.f, true) >= thr) { cx -= 0.5f * fr.ux; cy -= 0.5f * fr.uy; bw += 1.f; grew = true; }
+                if (strip(+1.f, 0.f, true) >= thr) { cx += 0.5f * fr.ux; cy += 0.5f * fr.uy; bw += 1.f; grew = true; }
+                if (!grew) break;
+            }
+        } else {
+            while (bw > floorBw + 0.5f && strip(-1.f, 0.f, true) < thr) { cx += 0.5f * fr.ux; cy += 0.5f * fr.uy; bw -= 1.f; }
+            while (bw > floorBw + 0.5f && strip(+1.f, 0.f, true) < thr) { cx -= 0.5f * fr.ux; cy -= 0.5f * fr.uy; bw -= 1.f; }
+            if (bw < floorBw) { bw = floorBw; cx = floorCx; cy = floorCy; }
+            const float clear = std::max(1.f, retractClearFrac * bh);
+            bw += 2.f * clear;
+        }
+    }
+    const int hitVertCap = (stepsVNeg >= cap || stepsVPos >= cap) ? 1 : 0;
+    const float halfSeed = seedBh * 0.5f;
+    auto stripAtSeedV = [&](float offsetFromCenterV) {
+        const int n = std::max(4, static_cast<int>(std::lround(fr.bw)));
+        double sum = 0.0; int cnt = 0;
+        for (int i = 0; i < n; ++i) {
+            const float t = (i + 0.5f) / n - 0.5f;
+            const float u = t * fr.bw;
+            const float px = fr.cx + u * fr.ux + offsetFromCenterV * fr.vx;
+            const float py = fr.cy + u * fr.uy + offsetFromCenterV * fr.vy;
+            if (px < 0 || py < 0 || px >= fr.imgW || py >= fr.imgH) continue;
+            sum += sampleEnergy(mag, px, py, fr.imgW, fr.imgH);
+            ++cnt;
+        }
+        return cnt > 0 ? sum / cnt : 0.0;
+    };
+    const float stopUpE = static_cast<float>(stripAtSeedV(-halfSeed - stepsVNeg - 1.f));
+    const float stopDownE = static_cast<float>(stripAtSeedV(halfSeed + stepsVPos + 1.f));
+    jfloat out[13] = {
+        cx, cy, bw, bh, fr.angDeg,
+        static_cast<jfloat>(stepsVNeg), static_cast<jfloat>(stepsVPos),
+        static_cast<jfloat>(padV), static_cast<jfloat>(hitVertCap),
+        stopUpE, stopDownE, static_cast<jfloat>(base), static_cast<jfloat>(thr),
+    };
+    try {
+        InkSweepPack pack;
+        fillOrientedEnergySweep(
+            mag, fr, seedCx, seedCy, seedBw, seedBh0,
+            std::max(1, static_cast<int>(std::lround(bh))),
+            energyRatio, thr, jumpFrac, &pack);
+        std::vector<InkSweepPack> packs;
+        packs.push_back(std::move(pack));
+        writeSweepArr(env, sweepArr, packs);
+    } catch (const cv::Exception&) {
+    }
+    jfloatArray arr = env->NewFloatArray(13);
+    if (!arr) return energyOrientSeedOut(env, pts);
+    env->SetFloatArrayRegion(arr, 0, 13, out);
+    return arr;
+    } catch (const cv::Exception&) {
+        return energyOrientSeedOut(env, pts);
+    } catch (const std::exception&) {
+        return energyOrientSeedOut(env, pts);
+    }
+}
+
+static jfloatArray energyOrientOnLook(
+    JNIEnv* env, jlong grayPtr, jfloatArray seedsArr, WalkEnergyOrientFn walk, jshortArray sweepArr,
+    jlong scratchPtr, bool freezeHorz = false
+) {
+    if (!seedsArr) return env->NewFloatArray(0);
+    const jint n8 = env->GetArrayLength(seedsArr);
+    if (n8 <= 0 || n8 % 8 != 0) return env->NewFloatArray(0);
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    if (!gray || gray->empty() || gray->type() != CV_8UC1) return env->NewFloatArray(0);
+    cv::Mat* look = energyLookAs(scratchPtr, *gray);
+    if (!look || !fillEnergyLookU8(*gray, look)) return env->NewFloatArray(0);
+    const int n = n8 / 8;
+    std::vector<jfloat> all(static_cast<size_t>(n) * 13, 0.f);
+    for (int i = 0; i < n; ++i) {
+        jfloat one[8];
+        env->GetFloatArrayRegion(seedsArr, i * 8, 8, one);
+        jfloatArray oneArr = env->NewFloatArray(8);
+        if (!oneArr) continue;
+        env->SetFloatArrayRegion(oneArr, 0, 8, one);
+        jfloatArray r = runEnergyOrientOne(
+            env, grayPtr, oneArr, walk, i == 0 ? sweepArr : nullptr, scratchPtr, freezeHorz);
+        if (r && env->GetArrayLength(r) >= 13) {
+            env->GetFloatArrayRegion(r, 0, 13, all.data() + i * 13);
+        } else {
+            Frame fr{};
+            if (frameFromQuad(one, &fr)) {
+                jfloat* d = all.data() + static_cast<size_t>(i) * 13;
+                d[0] = fr.cx; d[1] = fr.cy; d[2] = fr.bw; d[3] = fr.bh; d[4] = fr.angDeg;
+            }
+        }
+    }
+    jfloatArray out = env->NewFloatArray(static_cast<jint>(all.size()));
+    if (!out) return env->NewFloatArray(0);
+    env->SetFloatArrayRegion(out, 0, static_cast<jint>(all.size()), all.data());
+    return out;
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyOrientTight(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jfloatArray seedsArr, jshortArray sweepArr, jlong scratchPtr
+) {
+    return energyOrientOnLook(
+        env, grayPtr, seedsArr, walkEnergyOrientExpand, sweepArr, scratchPtr, true);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyOrientRetract(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jfloatArray seedsArr, jshortArray sweepArr, jlong scratchPtr
+) {
+    return energyOrientOnLook(
+        env, grayPtr, seedsArr, walkEnergyOrientRetract, sweepArr, scratchPtr, true);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyOrientExpand(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jfloatArray seedsArr, jshortArray sweepArr, jlong scratchPtr
+) {
+    return energyOrientOnLook(env, grayPtr, seedsArr, walkEnergyOrientExpand, sweepArr, scratchPtr);
+}
+
+namespace {
+
+static int saltPepperGapMax(int imgW) {
+    return imgW < 2000 ? 2 : 6;
+}
+
+static int overlapMinK(int imgW) {
+    return imgW < 2000 ? 4 : 14;
+}
+
+static int overlapStep(int imgW) {
+    return imgW < 2000 ? 2 : 4;
+}
+
+static int overlapCenter0(int imgW) {
+    return imgW < 2000 ? 6 : 16;
+}
+
+static int overlapHalf(int imgW) {
+    return imgW < 2000 ? 2 : 3;
+}
+
+static void overlapBinRange(int i, int imgW, int* lo, int* hi) {
+    const int step = overlapStep(imgW);
+    const int c0 = overlapCenter0(imgW);
+    const int half = overlapHalf(imgW);
+    if (lo) *lo = c0 - half + step * i;
+    if (hi) *hi = (i == kRunHistBins - 1) ? 1000000 : (c0 + half + step * i);
+}
+
+static void addOverlapVotes(int k, int n, int* bins, int imgW) {
+    const int minK = overlapMinK(imgW);
+    if (k < minK || n <= 0 || !bins) return;
+    for (int i = 0; i < kRunHistBins; ++i) {
+        int lo = 0, hi = 0;
+        overlapBinRange(i, imgW, &lo, &hi);
+        if (k >= lo && k <= hi) bins[i] += n;
+    }
+}
+
+static void addOverlapVotesU16(int k, int n, uint16_t* bins, int imgW) {
+    const int minK = overlapMinK(imgW);
+    if (k < minK || n <= 0 || !bins) return;
+    for (int i = 0; i < kRunHistBins; ++i) {
+        int lo = 0, hi = 0;
+        overlapBinRange(i, imgW, &lo, &hi);
+        if (k >= lo && k <= hi) {
+            const int a = static_cast<int>(bins[i]);
+            bins[i] = static_cast<uint16_t>(a + n > 65535 ? 65535 : a + n);
+        }
+    }
+}
+
+static void fillOverlapLine(
+    const uint8_t* p, int n, int stride, int fullSpan,
+    uint16_t* inkBins, uint16_t* gapBins, int imgW
+) {
+    if (!p || n < 1 || stride < 1 || !inkBins || !gapBins) return;
+    bool seenInk = false;
+    int i = 0;
+    while (i < n) {
+        if (p[i * stride] != 0) {
+            int run = 0;
+            while (i < n && p[i * stride] != 0) {
+                ++run;
+                ++i;
+            }
+            if (run != fullSpan) addOverlapVotesU16(run, 1, inkBins, imgW);
+            seenInk = true;
+        } else {
+            int run = 0;
+            while (i < n && p[i * stride] == 0) {
+                ++run;
+                ++i;
+            }
+            if (seenInk && i < n) addOverlapVotesU16(run, 1, gapBins, imgW);
+        }
+    }
+}
+
+static void fillOverlapHists(
+    const cv::Mat& bin, int seedW, int seedH, OverlapHists* out, int imgW
+) {
+    if (!out) return;
+    *out = OverlapHists{};
+    if (bin.empty() || bin.type() != CV_8UC1) return;
+    const int h = bin.rows, w = bin.cols;
+    if (h < 1 || w < 1) return;
+    const int spanW = seedW > 0 ? seedW : w;
+    const int spanH = seedH > 0 ? seedH : h;
+    for (int y = 0; y < h; ++y) {
+        fillOverlapLine(bin.ptr<uint8_t>(y), w, 1, spanW, out->inkH, out->gapH, imgW);
+    }
+    const int rowStep = static_cast<int>(bin.step[0]);
+    for (int x = 0; x < w; ++x) {
+        fillOverlapLine(bin.ptr<uint8_t>(0) + x, h, rowStep, spanH, out->inkV, out->gapV, imgW);
+    }
+}
+
+static void votesOverlap(const std::vector<int>& raw, int* bins, int imgW) {
+    if (!bins) return;
+    for (int i = 0; i < kRunHistBins; ++i) bins[i] = 0;
+    for (int k = 1; k < static_cast<int>(raw.size()); ++k) {
+        if (raw[k] > 0) addOverlapVotes(k, raw[k], bins, imgW);
+    }
+}
+
+static int peakFromOverlapBins(const int* bins, int minK, int maxK, int imgW) {
+    if (!bins) return 0;
+    const int step = overlapStep(imgW);
+    const int c0 = overlapCenter0(imgW);
+    int bestI = -1, bestV = 0;
+    for (int i = 0; i < kRunHistBins; ++i) {
+        int lo = 0, hi = 0;
+        overlapBinRange(i, imgW, &lo, &hi);
+        if (hi < minK || lo > maxK) continue;
+        if (bins[i] > bestV) {
+            bestV = bins[i];
+            bestI = i;
+        }
+    }
+    return (bestV > 0 && bestI >= 0) ? (c0 + step * bestI) : 0;
+}
+
+static int peakCapped(const std::vector<int>& hist, int minK, int maxK, int imgW) {
+    int ov[kRunHistBins];
+    votesOverlap(hist, ov, imgW);
+    return peakFromOverlapBins(ov, minK, maxK, imgW);
+}
+
+static int maxInkRunRow(
+    const cv::Mat& bin, int y, int x0, int x1, const ObjPack* pack = nullptr
+) {
+    if (y < 0 || y >= bin.rows) return 0;
+    const uint8_t* p = bin.ptr<uint8_t>(y);
+    int best = 0, run = 0;
+    const int r = std::min(x1, bin.cols);
+    for (int x = std::max(0, x0); x < r; ++x) {
+        if (isLookInkId(p[x], pack)) {
+            ++run;
+            if (run > best) best = run;
+        } else {
+            run = 0;
+        }
+    }
+    return best;
+}
+
+static int maxInkRunCol(
+    const cv::Mat& bin, int x, int y0, int y1, const ObjPack* pack,
+    bool virtSp, int imgW
+) {
+    if (x < 0 || x >= bin.cols) return 0;
+    int best = 0;
+    const int yEnd = std::min(y1, bin.rows);
+    int y = std::max(0, y0);
+    const int gapMax = saltPepperGapMax(imgW);
+    while (y < yEnd) {
+        if (!isLookInkId(bin.ptr<uint8_t>(y)[x], pack)) {
+            ++y;
+            continue;
+        }
+        int run = 0;
+        while (true) {
+            while (y < yEnd && isLookInkId(bin.ptr<uint8_t>(y)[x], pack)) {
+                ++run;
+                ++y;
+            }
+            if (!virtSp || y >= yEnd) break;
+            const int gapStart = y;
+            while (y < yEnd && !isLookInkId(bin.ptr<uint8_t>(y)[x], pack)) ++y;
+            const int g = y - gapStart;
+            if (y < yEnd && vspSkipRun(g, run, gapMax)) {
+                run += g;
+                continue;
+            }
+            y = gapStart;
+            break;
+        }
+        if (run > best) best = run;
+    }
+    return best;
+}
+
+/** Keep-CC at probe starts: 4-way keep flood, no virtSp. minH and minV are both max(1, sPx / 2). A component is a stroke when maxH >= minH and maxV >= minV. */
+static bool keepCcIsPlausibleStroke(
+    const cv::Mat& bin, int y0, int y1, const ObjPack* pack, int sPx,
+    const std::vector<int>& starts
+) {
+    if (sPx < 1 || bin.empty() || bin.type() != CV_8UC1 || starts.empty()) return false;
+    const int minH = std::max(1, sPx / 2);
+    const int minV = std::max(1, sPx / 2);
+    const int w = bin.cols, h = bin.rows;
+    if (w < 1 || h < 1) return false;
+    const int ya = std::max(0, y0);
+    const int yb = std::min(h, y1);
+    if (yb <= ya) return false;
+    const int bandH = yb - ya;
+    std::vector<uint8_t> vis(static_cast<size_t>(w) * static_cast<size_t>(bandH), 0);
+    std::vector<int> st;
+    std::vector<int> pix;
+    st.reserve(256);
+    pix.reserve(256);
+    auto visAt = [&](int x, int y) -> uint8_t& {
+        return vis[static_cast<size_t>(y - ya) * static_cast<size_t>(w) + static_cast<size_t>(x)];
+    };
+    for (int s : starts) {
+        const int sy = s / w, sx = s - sy * w;
+        if (sx < 0 || sy < ya || sx >= w || sy >= yb) continue;
+        if (!isLookInkId(bin.ptr<uint8_t>(sy)[sx], pack)) continue;
+        if (visAt(sx, sy)) continue;
+        st.clear();
+        pix.clear();
+        st.push_back(sy * w + sx);
+        visAt(sx, sy) = 1;
+        while (!st.empty()) {
+            const int i = st.back();
+            st.pop_back();
+            pix.push_back(i);
+            const int cy = i / w, cx = i - cy * w;
+            static const int k4dx[4] = { -1, 1, 0, 0 };
+            static const int k4dy[4] = { 0, 0, -1, 1 };
+            for (int k = 0; k < 4; ++k) {
+                const int ny = cy + k4dy[k], nx = cx + k4dx[k];
+                if (ny < ya || nx < 0 || ny >= yb || nx >= w) continue;
+                if (visAt(nx, ny)) continue;
+                if (!isLookInkId(bin.ptr<uint8_t>(ny)[nx], pack)) continue;
+                visAt(nx, ny) = 1;
+                st.push_back(ny * w + nx);
+            }
+        }
+        if (pix.empty()) continue;
+        std::vector<int> runPix = pix;
+        const int maxH = maxBlobRunH(runPix, w);
+        runPix = pix;
+        const int maxV = maxBlobRunV(runPix, w);
+        if (maxH >= minH && maxV >= minV) return true;
+    }
+    return false;
+}
+
+/** Counted-run floor: half of sPx. Glare cap is hMul×sPx at the call. */
+static int usedMinRun(int sPx) {
+    return std::max(1, static_cast<int>(std::lround(0.5f * static_cast<float>(sPx))));
+}
+
+static void fillRunHists(
+    const cv::Mat& lookBin, int lookL, int lookT, int lookR, int lookB,
+    const ObjPack* pack, int* histH, int* histV
+) {
+    for (int i = 0; i < kRunHistLog2Bins; ++i) {
+        histH[i] = 0;
+        histV[i] = 0;
+    }
+    if (lookBin.empty() || lookBin.type() != CV_8UC1 || !histH || !histV) return;
+    if (lookL < 0) lookL = 0;
+    if (lookT < 0) lookT = 0;
+    if (lookR < 0 || lookR > lookBin.cols) lookR = lookBin.cols;
+    if (lookB < 0 || lookB > lookBin.rows) lookB = lookBin.rows;
+    if (lookR <= lookL || lookB <= lookT) return;
+    for (int y = lookT; y < lookB; ++y) {
+        const uint8_t* p = lookBin.ptr<uint8_t>(y);
+        int run = 0;
+        for (int x = lookL; x <= lookR; ++x) {
+            const bool on = x < lookR && isLookInkId(p[x], pack);
+            if (on) ++run;
+            else if (run > 0) {
+                addRunHist(run, histH);
+                run = 0;
+            }
+        }
+    }
+    for (int x = lookL; x < lookR; ++x) {
+        int run = 0;
+        for (int y = lookT; y <= lookB; ++y) {
+            const bool on = y < lookB && isLookInkId(lookBin.ptr<uint8_t>(y)[x], pack);
+            if (on) ++run;
+            else if (run > 0) {
+                addRunHist(run, histV);
+                run = 0;
+            }
+        }
+    }
+}
+
+static void fillSaltPepper(cv::Mat* bin, int imgW);
+static bool rowHasStrokeBar(
+    const cv::Mat& bin, int y, int minRun, int glareW, const ObjPack* pack = nullptr,
+    int x0 = 0, int x1 = -1, bool virtSp = false, int imgW = 0);
+static int fillPoisonLookRaster(
+    const cv::Mat& src, cv::Mat* lookBin,
+    int sl, int st, int sr, int sb,
+    int lookL, int lookT, int lookR, int lookB,
+    bool srcIsBin, int glareMult, int fallback,
+    cv::Mat* overlayY = nullptr, cv::Mat* overlayUv = nullptr,
+    int ovX = 0, int ovY = 0, PoisonStats* statsOut = nullptr,
+    cv::Mat* scratch = nullptr,
+    cv::Mat* objPlane = nullptr, ObjPack* objPack = nullptr, int seedIndex = 0,
+    bool overlayUvMap = false,
+    float ovCx = 0.f, float ovCy = 0.f,
+    float ovUx = 0.f, float ovUy = 0.f,
+    float ovVx = 0.f, float ovVy = 0.f,
+    float ovU0 = 0.f, float ovU1 = 0.f, float ovLookV0 = 0.f,
+    cv::Mat* lookPoisonOut = nullptr, bool paintOverlay = true,
+    cv::Mat* poisonPlane = nullptr,
+    cv::Mat* lookInkAtOut = nullptr,
+    SeedFillGate* fillGateOut = nullptr,
+    OverlapHists* histOut = nullptr,
+    Seg7Tele* teleOut = nullptr,
+    bool virtSp = false);
+static void aabbJumpOnLook(
+    cv::Mat* look, int* l, int t, int* r, int b,
+    int imgW, int imgH, int seedT, int seedB, int seedL, int seedR, int sPx,
+    int lookOx = 0, int lookOy = 0, int* farL = nullptr, int* farR = nullptr,
+    ObjPack* pack = nullptr, const cv::Mat* src = nullptr, int seedIndex = 0,
+    int dispKind = 0, int hMul = 7, int vMul = 16, bool virtSp = false);
+static void paintLookOverlay(
+    const cv::Mat& lookBin, const cv::Mat& lookPoison,
+    cv::Mat* overlayY, cv::Mat* overlayUv,
+    bool overlayUvMap, int ovX, int ovY,
+    float ovCx, float ovCy, float ovUx, float ovUy,
+    float ovVx, float ovVy, float ovU0, float ovU1, float ovLookV0,
+    bool clipToSeed = false,
+    float clipCx = 0.f, float clipCy = 0.f,
+    float clipUx = 0.f, float clipUy = 0.f,
+    float clipVx = 0.f, float clipVy = 0.f,
+    float clipU0 = 0.f, float clipU1 = 0.f,
+    float clipV0 = 0.f, float clipV1 = 0.f,
+    const ObjPack* pack = nullptr,
+    int winL = 0, int winT = 0, int winR = -1, int winB = -1);
+
+static void fillAabbLookSweep(
+    const cv::Mat& src, bool srcIsBin, double otsu, bool darkInk, int glareW,
+    const cv::Mat& lookBin,
+    int sl, int st, int sr, int sb,
+    int walkedT, int walkedB,
+    int imgW, int imgH, int minRun, float sPx,
+    InkSweepPack* out,
+    int lookL, int lookR, const ObjPack* pack
+) {
+    if (!out || src.empty()) return;
+    veRssLog("sweep", "enter");
+    if (sl < 0) sl = 0;
+    if (st < 0) st = 0;
+    if (sr > imgW) sr = imgW;
+    if (sb > imgH) sb = imgH;
+    if (sr <= sl || sb <= st) return;
+    const int seedH = std::max(1, sb - st);
+    const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
+    const int walkedH = std::max(1, walkedB - walkedT);
+    const int xPad = std::max(1, static_cast<int>(std::lround(0.60f * walkedH * (kJumpMax + 1))));
+    const int y0 = std::max(0, st - capPx);
+    const int y1 = std::min(imgH, sb + capPx);
+    const int x0 = std::max(0, sl - xPad);
+    const int x1 = std::min(imgW, sr + xPad);
+    if (y1 <= y0) return;
+    out->thr = static_cast<float>(minRun);
+    out->sPx = sPx;
+    out->energyRatio = 0.f;
+    out->minRun = minRun;
+    out->vOrigin = y0;
+    out->hOrigin = x0;
+    out->v0 = st - y0;
+    out->v1 = sb - y0;
+    out->h0 = sl - x0;
+    out->h1 = sr - x0;
+    out->vScores.reserve(static_cast<size_t>(y1 - y0));
+    for (int y = y0; y < y1; ++y) {
+        int sc = 0;
+        if (!lookBin.empty() && y >= 0 && y < lookBin.rows) {
+            sc = maxInkRunRow(lookBin, y, lookL, lookR, pack);
+        }
+        out->vScores.push_back(sc);
+    }
+    packSeedLookRows(lookBin, st, sb, lookL, lookR, out);
+    veRssLog("sweep", "after packSeedLookRows");
+    if (x1 <= x0) return;
+    auto pixInk = [&](int y, int x) -> bool {
+        if (y < 0 || y >= src.rows || x < 0 || x >= src.cols) return false;
+        const uint8_t v = src.ptr<uint8_t>(y)[x];
+        if (srcIsBin) return v != 0;
+        return darkInk
+            ? (static_cast<double>(v) <= otsu)
+            : (static_cast<double>(v) > otsu);
+    };
+    out->hScores.reserve(static_cast<size_t>(x1 - x0));
+    for (int x = x0; x < x1; ++x) {
+        int best = 0, run = 0;
+        for (int y = st; y < sb; ++y) {
+            bool on = pixInk(y, x);
+            if (on && glareW > 0) {
+                int xl = x, xr = x + 1;
+                while (xl > x0 && pixInk(y, xl - 1)) --xl;
+                while (xr < x1 && pixInk(y, xr)) ++xr;
+                if (xr - xl > glareW) on = false;
+            }
+            if (on) {
+                ++run;
+                if (run > best) best = run;
+            } else {
+                run = 0;
+            }
+        }
+        out->hScores.push_back(best);
+    }
+}
+
+struct HorizSW {
+    int peak = 4;
+    int maxRun = 0;
+    int nNonSpan = 0;
+    std::vector<int> hist;
+};
+
+static bool vspSkipRun(int run, int lead, int gapMax) {
+    return run > 0 && run <= gapMax && 2 * run <= lead;
+}
+
+static HorizSW horizPeakSW(
+    const cv::Mat& bin, int seedH, int seedW, bool virtSp, int imgW
+) {
+    HorizSW out;
+    out.hist.assign(std::max(seedW + 1, 36), 0);
+    const int gapMax = saltPepperGapMax(imgW);
+    for (int y = 0; y < bin.rows; ++y) {
+        const uint8_t* p = bin.ptr<uint8_t>(y);
+        int x = 0;
+        while (x < bin.cols) {
+            if (p[x] == 0) {
+                ++x;
+                continue;
+            }
+            int run = 0;
+            while (true) {
+                while (x < bin.cols && p[x] != 0) {
+                    ++run;
+                    ++x;
+                }
+                if (!virtSp || x >= bin.cols) break;
+                const int gapStart = x;
+                while (x < bin.cols && p[x] == 0) ++x;
+                const int g = x - gapStart;
+                if (x < bin.cols && vspSkipRun(g, run, gapMax)) {
+                    run += g;
+                    continue;
+                }
+                x = gapStart;
+                break;
+            }
+            if (run > 0 && run != seedW) {
+                if (run < static_cast<int>(out.hist.size())) out.hist[run]++;
+                ++out.nNonSpan;
+                if (run > out.maxRun) out.maxRun = run;
+            }
+        }
+    }
+    const int maxV = std::max(35, static_cast<int>(seedH * 0.50f));
+    out.peak = peakCapped(out.hist, overlapMinK(imgW), maxV, imgW);
+    return out;
+}
+
+static int vertPeakSW(
+    const cv::Mat& bin, int seedH, const ObjPack* pack, int imgW
+) {
+    const int h = bin.rows;
+    std::vector<int> hist(std::max(h + 1, 21), 0);
+    for (int x = 0; x < bin.cols; ++x) {
+        int run = 0;
+        for (int y = 0; y <= h; ++y) {
+            const bool on = y < h && isLookInkId(bin.ptr<uint8_t>(y)[x], pack);
+            if (on) ++run;
+            else if (run > 0) {
+                if (run != h && run < static_cast<int>(hist.size())) hist[run]++;
+                run = 0;
+            }
+        }
+    }
+    const int maxH = std::max(20, static_cast<int>(seedH * 0.40f));
+    return peakCapped(hist, overlapMinK(imgW), maxH, imgW);
+}
+
+/** H-only. Fill interior 0-runs in 255; suppress interior 255-runs in 0.
+ *  Same gapMax / 2×gap≤lead. No iterate. */
+static void fillSaltPepperLine(uint8_t* p, int n, int stride, int gapMax) {
+    int i = 0;
+    while (i < n) {
+        if (p[i * stride] == 0) {
+            ++i;
+            continue;
+        }
+        const int leadStart = i;
+        while (i < n && p[i * stride] != 0) ++i;
+        const int lead = i - leadStart;
+        if (i >= n) break;
+        const int gapStart = i;
+        while (i < n && p[i * stride] == 0) ++i;
+        const int gap = i - gapStart;
+        if (i >= n) break;
+        if (gap > 0 && gap <= gapMax && 2 * gap <= lead) {
+            for (int k = gapStart; k < gapStart + gap; ++k) p[k * stride] = 255;
+        }
+    }
+    i = 0;
+    while (i < n) {
+        if (p[i * stride] != 0) {
+            ++i;
+            continue;
+        }
+        const int leadStart = i;
+        while (i < n && p[i * stride] == 0) ++i;
+        const int lead = i - leadStart;
+        if (i >= n) break;
+        const int gapStart = i;
+        while (i < n && p[i * stride] != 0) ++i;
+        const int gap = i - gapStart;
+        if (i >= n) break;
+        if (gap > 0 && gap <= gapMax && 2 * gap <= lead) {
+            for (int k = gapStart; k < gapStart + gap; ++k) p[k * stride] = 0;
+        }
+    }
+}
+
+static void fillSaltPepper(cv::Mat* bin, int imgW) {
+    if (!bin || bin->empty() || bin->type() != CV_8UC1) return;
+    const int h = bin->rows, w = bin->cols;
+    if (h < 1 || w < 1) return;
+    const int gapMax = saltPepperGapMax(imgW);
+    for (int y = 0; y < h; ++y) {
+        fillSaltPepperLine(bin->ptr<uint8_t>(y), w, 1, gapMax);
+    }
+}
+
+static void fillSaltPepperSeed(cv::Mat* bin, int imgW) {
+    fillSaltPepper(bin, imgW);
+}
+
+static int maxBlobRunH(std::vector<int>& pix, int w) {
+    if (pix.empty()) return 0;
+    std::sort(pix.begin(), pix.end());
+    int best = 1, run = 1;
+    for (size_t i = 1; i < pix.size(); ++i) {
+        const int py = pix[i - 1] / w, px = pix[i - 1] % w;
+        const int y = pix[i] / w, x = pix[i] % w;
+        if (y == py && x == px + 1) ++run;
+        else run = 1;
+        if (run > best) best = run;
+    }
+    return best;
+}
+
+static int maxBlobRunV(std::vector<int>& pix, int w) {
+    if (pix.empty()) return 0;
+    std::sort(pix.begin(), pix.end(), [w](int a, int b) {
+        const int xa = a % w, xb = b % w;
+        if (xa != xb) return xa < xb;
+        return a / w < b / w;
+    });
+    int best = 1, run = 1;
+    for (size_t i = 1; i < pix.size(); ++i) {
+        const int px = pix[i - 1] % w, py = pix[i - 1] / w;
+        const int x = pix[i] % w, y = pix[i] / w;
+        if (x == px && y == py + 1) ++run;
+        else run = 1;
+        if (run > best) best = run;
+    }
+    return best;
+}
+
+static void flood255LookIds(
+    cv::Mat* look, int sPx, ObjPack* pack, int seedIndex,
+    int lookL = 0, int lookT = 0, int lookR = -1, int lookB = -1,
+    PoisonStats* stats = nullptr,
+    int hMul = 7, int vMul = 16,
+    int dispKind = 0,
+    int imgW = 0
+) {
+    if (!look || look->empty() || look->type() != CV_8UC1 || sPx < 1) return;
+    (void)imgW;
+    const int h = look->rows, w = look->cols;
+    if (lookR < 0 || lookR > w) lookR = w;
+    if (lookB < 0 || lookB > h) lookB = h;
+    if (lookL < 0) lookL = 0;
+    if (lookT < 0) lookT = 0;
+    if (lookR <= lookL || lookB <= lookT) return;
+    const int minWh = std::max(1, sPx / 2);
+    const int runH = hMul * sPx;
+    const int runV = vMul * sPx;
+    const int solidSide = 3 * sPx;
+    constexpr uint8_t kScan = 253;
+    std::vector<uint32_t> st;
+    st.reserve(256);
+    std::vector<uint32_t> pix;
+    pix.reserve(256);
+    auto packXY = [](int x, int y) -> uint32_t {
+        return (static_cast<uint32_t>(static_cast<uint16_t>(y)) << 16) |
+            static_cast<uint32_t>(static_cast<uint16_t>(x));
+    };
+    auto writePix = [&](uint8_t v) {
+        for (uint32_t i : pix) {
+            const uint16_t cy = static_cast<uint16_t>(i >> 16);
+            const uint16_t cx = static_cast<uint16_t>(i & 0xffffu);
+            look->ptr<uint8_t>(cy)[cx] = v;
+        }
+    };
+    for (int y = lookT; y < lookB; ++y) {
+        uint8_t* row = look->ptr<uint8_t>(y);
+        for (int x = lookL; x < lookR; ++x) {
+            if (row[x] != 255) continue;
+            st.clear();
+            pix.clear();
+            st.push_back(packXY(x, y));
+            row[x] = kScan;
+            int x0 = x, x1 = x + 1, y0 = y, y1 = y + 1;
+            while (!st.empty()) {
+                const uint32_t i = st.back();
+                st.pop_back();
+                const uint16_t cy = static_cast<uint16_t>(i >> 16);
+                const uint16_t cx = static_cast<uint16_t>(i & 0xffffu);
+                pix.push_back(i);
+                if (cx < x0) x0 = cx;
+                if (static_cast<int>(cx) + 1 > x1) x1 = static_cast<int>(cx) + 1;
+                if (cy < y0) y0 = cy;
+                if (static_cast<int>(cy) + 1 > y1) y1 = static_cast<int>(cy) + 1;
+                static const int k4dx[4] = { -1, 1, 0, 0 };
+                static const int k4dy[4] = { 0, 0, -1, 1 };
+                for (int k = 0; k < 4; ++k) {
+                    const int ny = static_cast<int>(cy) + k4dy[k];
+                    const int nx = static_cast<int>(cx) + k4dx[k];
+                    if (ny < lookT || nx < lookL || ny >= lookB || nx >= lookR) continue;
+                    if (look->ptr<uint8_t>(ny)[nx] != 255) continue;
+                    look->ptr<uint8_t>(ny)[nx] = kScan;
+                    st.push_back(packXY(nx, ny));
+                }
+            }
+            const uint16_t bw = static_cast<uint16_t>(x1 - x0);
+            const uint16_t bh = static_cast<uint16_t>(y1 - y0);
+            if (bw < minWh && bh < minWh) {
+                writePix(0);
+                continue;
+            }
+            bool poison = false;
+            uint16_t trigH = 0, trigV = 0;
+            for (int yy = y0; yy < y1 && !poison; ++yy) {
+                const uint8_t* rp = look->ptr<uint8_t>(yy);
+                int xx = x0;
+                while (xx < x1) {
+                    if (rp[xx] != kScan) {
+                        ++xx;
+                        continue;
+                    }
+                    int run = 0;
+                    while (xx < x1 && rp[xx] == kScan) {
+                        ++run;
+                        ++xx;
+                    }
+                    if (run > runH) {
+                        trigH = static_cast<uint16_t>(std::min(run, 65535));
+                        poison = true;
+                        break;
+                    }
+                }
+            }
+            for (int xx = x0; xx < x1 && !poison; ++xx) {
+                int yy = y0;
+                while (yy < y1) {
+                    if (look->ptr<uint8_t>(yy)[xx] != kScan) {
+                        ++yy;
+                        continue;
+                    }
+                    int run = 0;
+                    while (yy < y1 && look->ptr<uint8_t>(yy)[xx] == kScan) {
+                        ++run;
+                        ++yy;
+                    }
+                    if (run > runV) {
+                        trigV = static_cast<uint16_t>(std::min(run, 65535));
+                        poison = true;
+                        break;
+                    }
+                }
+            }
+            if (!poison && dispKind == kDisp7seg &&
+                bw > solidSide && bh > solidSide) {
+                poison = true;
+            }
+            if (!poison && dispKind == kDispNot &&
+                bw > solidSide && bh > solidSide) {
+                const int need = solidSide + 1;
+                if (static_cast<int>(pix.size()) >= need * need) {
+                    const int iiW = static_cast<int>(bw) + 1;
+                    std::vector<int> ii(static_cast<size_t>(
+                        (static_cast<int>(bh) + 1) * iiW), 0);
+                    for (int iy = 0; iy < static_cast<int>(bh); ++iy) {
+                        const uint8_t* rp = look->ptr<uint8_t>(y0 + iy);
+                        for (int ix = 0; ix < static_cast<int>(bw); ++ix) {
+                            const int add = (rp[x0 + ix] == kScan) ? 1 : 0;
+                            ii[static_cast<size_t>((iy + 1) * iiW + (ix + 1))] =
+                                ii[static_cast<size_t>(iy * iiW + (ix + 1))] +
+                                ii[static_cast<size_t>((iy + 1) * iiW + ix)] -
+                                ii[static_cast<size_t>(iy * iiW + ix)] + add;
+                        }
+                    }
+                    const int area = need * need;
+                    for (int iy = 0; iy + need <= static_cast<int>(bh) && !poison; ++iy) {
+                        for (int ix = 0; ix + need <= static_cast<int>(bw); ++ix) {
+                            const int sum =
+                                ii[static_cast<size_t>((iy + need) * iiW + (ix + need))] -
+                                ii[static_cast<size_t>(iy * iiW + (ix + need))] -
+                                ii[static_cast<size_t>((iy + need) * iiW + ix)] +
+                                ii[static_cast<size_t>(iy * iiW + ix)];
+                            if (sum >= area) {
+                                poison = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if (!poison) {
+                writePix(254);
+                continue;
+            }
+            if (stats && stats->ccs.size() < 16) {
+                PoisonCcPack cc;
+                cc.x = x0;
+                cc.y = y0;
+                cc.w = x1 - x0;
+                cc.h = y1 - y0;
+                cc.noPeak = 0;
+                cc.thr = trigH;
+                cc.nInk = trigV;
+                stats->ccs.push_back(cc);
+            }
+            uint8_t id = 0;
+            if (!lookAlloc(pack, false, seedIndex, kKindPoisonFat, &id)) {
+                writePix(255);
+                return;
+            }
+            writePix(id);
+        }
+    }
+}
+
+static bool strokeNeedFb(const HorizSW& hh, int vSW, int seedW, float inkFrac);
+static bool strokesAgree(int a, int b);
+static double otsuThrFromHist(const int hist[256], int n);
+
+/** Peak/valley vs panel on large poison CCs; 0-promote bbox. Whole-CC Otsu is not the keeper. */
+static bool retryPoisonChunkInk(
+    const cv::Mat& src, const std::vector<int>& pix, int lookW,
+    int bx0, int by0, int bw, int bh, int seedSPx, cv::Mat* inkBin
+) {
+    if (!inkBin || pix.size() < 2 || bw < 1 || bh < 1 || seedSPx < 1) return false;
+    const int imgW = src.cols;
+    const bool large = bw > 3 * seedSPx || bh > 3 * seedSPx;
+    int hist[256] = {};
+    int n = 0;
+    if (large) {
+        for (int yy = 0; yy < bh; ++yy) {
+            const int y = by0 + yy;
+            if (y < 0 || y >= src.rows) continue;
+            const uint8_t* row = src.ptr<uint8_t>(y);
+            for (int xx = 0; xx < bw; ++xx) {
+                const int x = bx0 + xx;
+                if (x < 0 || x >= src.cols) continue;
+                hist[row[x]]++;
+                ++n;
+            }
+        }
+    } else {
+        for (int i : pix) {
+            const int y = i / lookW, x = i - y * lookW;
+            if (y < 0 || x < 0 || y >= src.rows || x >= src.cols) continue;
+            hist[src.ptr<uint8_t>(y)[x]]++;
+            ++n;
+        }
+    }
+    if (n < 2) return false;
+    float hist64[64] = {};
+    for (int g = 0; g < 256; ++g) hist64[g / 4] += static_cast<float>(hist[g]);
+    int panelBin = 0;
+    float panelMass = hist64[0];
+    for (int b = 1; b < 64; ++b) {
+        if (hist64[b] > panelMass) {
+            panelMass = hist64[b];
+            panelBin = b;
+        }
+    }
+    int valleys[64];
+    int nValley = 0;
+    findValleyMidpoints64(hist64, valleys, &nValley);
+    int peaks[64];
+    int nPeak = 0;
+    for (int b = 1; b < 63 && nPeak < 64; ++b) {
+        if (hist64[b] > hist64[b - 1] && hist64[b] >= hist64[b + 1] && hist64[b] > 0.f) {
+            peaks[nPeak++] = b;
+        }
+    }
+    std::vector<int> cands;
+    auto addThr = [&](int thr) {
+        if (thr < 0 || thr > 255) return;
+        for (int t : cands) {
+            if (t == thr) return;
+        }
+        cands.push_back(thr);
+    };
+    for (int v = 0; v < nValley; ++v) addThr(valleys[v] * 4 + 2);
+    int inkGuess = panelBin;
+    float inkMass = -1.f;
+    for (int p = 0; p < nPeak; ++p) {
+        if (peaks[p] == panelBin) continue;
+        if (hist64[peaks[p]] > inkMass) {
+            inkMass = hist64[peaks[p]];
+            inkGuess = peaks[p];
+        }
+        addThr(((peaks[p] + panelBin) / 2) * 4 + 2);
+    }
+    if (cands.empty()) return false;
+    const int prefer = ((inkGuess + panelBin) / 2) * 4 + 2;
+    std::sort(cands.begin(), cands.end(), [&](int a, int b) {
+        const int da = std::abs(a - prefer);
+        const int db = std::abs(b - prefer);
+        if (da != db) return da < db;
+        return a < b;
+    });
+    cv::Mat bin(bh, bw, CV_8UC1);
+    const int bboxArea = std::max(1, bw * bh);
+    const float fillHi = 0.45f;
+    auto applyPix = [&](int ith, bool d) {
+        bin.setTo(0);
+        for (int i : pix) {
+            const int y = i / lookW, x = i - y * lookW;
+            if (y < 0 || x < 0 || y >= src.rows || x >= src.cols) continue;
+            const int yy = y - by0, xx = x - bx0;
+            if (yy < 0 || xx < 0 || yy >= bh || xx >= bw) continue;
+            const int yv = static_cast<int>(src.ptr<uint8_t>(y)[x]);
+            const bool ink = d ? (yv <= ith) : (yv > ith);
+            if (ink) bin.ptr<uint8_t>(yy)[xx] = 255;
+        }
+    };
+    auto promote0 = [&](int peakLo, int peakHi, int ith, bool d) {
+        for (int yy = 0; yy < bh; ++yy) {
+            const int y = by0 + yy;
+            if (y < 0 || y >= src.rows) continue;
+            const uint8_t* row = src.ptr<uint8_t>(y);
+            uint8_t* bo = bin.ptr<uint8_t>(yy);
+            for (int xx = 0; xx < bw; ++xx) {
+                if (bo[xx]) continue;
+                const int x = bx0 + xx;
+                if (x < 0 || x >= src.cols) continue;
+                const int yv = static_cast<int>(row[x]);
+                if (yv < peakLo || yv > peakHi) continue;
+                const bool ink = d ? (yv <= ith) : (yv > ith);
+                if (ink) bo[xx] = 255;
+            }
+        }
+    };
+    int nAttempts = 0;
+    for (int thr : cands) {
+        if (nAttempts >= kSeg7AttemptMax) break;
+        ++nAttempts;
+        const int vBin = thr / 4;
+        if (panelBin == vBin) continue;
+        const bool dark = panelBin > vBin;
+        int lo = dark ? 0 : vBin;
+        int hi = dark ? vBin : 63;
+        int inkPeak = lo;
+        float best = -1.f;
+        for (int b = lo; b <= hi; ++b) {
+            if (hist64[b] > best) {
+                best = hist64[b];
+                inkPeak = b;
+            }
+        }
+        const int peakLo = std::max(0, (inkPeak - 1) * 4);
+        const int peakHi = std::min(255, (inkPeak + 1) * 4 + 3);
+        applyPix(thr, dark);
+        promote0(peakLo, peakHi, thr, dark);
+        const int nInk = cv::countNonZero(bin);
+        if (nInk < 2) continue;
+        if (nInk / static_cast<float>(bboxArea) > fillHi) continue;
+        const HorizSW hh = horizPeakSW(bin, bh, bw, false, imgW);
+        if (!strokesAgree(hh.peak, seedSPx)) continue;
+        *inkBin = bin;
+        return true;
+    }
+    return false;
+}
+
+static void recoverStrokeNearInk(
+    const cv::Mat& src, cv::Mat* look, int sPx, int y0, int y1, ObjPack* pack, int seedIndex,
+    int lookL, int lookT, int lookR, int lookB,
+    int dispKind, int hMul, int vMul
+) {
+    if (!look || look->empty() || sPx < 1 || !pack) return;
+    if (src.empty() || src.type() != CV_8UC1) return;
+    const int h = look->rows, w = look->cols;
+    if (lookR < 0 || lookR > w) lookR = w;
+    if (lookB < 0 || lookB > h) lookB = h;
+    if (lookL < 0) lookL = 0;
+    if (lookT < 0) lookT = 0;
+    if (y0 < lookT) y0 = lookT;
+    if (y1 > lookB) y1 = lookB;
+    if (y1 <= y0 || lookR <= lookL) return;
+    if (hMul < 1) hMul = 7;
+    if (vMul < 1) vMul = 16;
+    auto isPoison = [&](uint8_t v) {
+        return v >= 1 && v < pack->lookNextNon;
+    };
+    auto solidPlate = [&](int n, int cw, int ch) {
+        return dispKind == kDispNot && cw > 3 * sPx && ch > 3 * sPx && n >= cw * ch;
+    };
+    auto edgePoison = [&](std::vector<int>& p) {
+        if (p.empty()) return false;
+        const int maxHrun = maxBlobRunH(p, w);
+        const int maxVrun = maxBlobRunV(p, w);
+        if (maxHrun > 3 * sPx && maxVrun > 3 * sPx) return true;
+        if (maxHrun > hMul * sPx || maxVrun > vMul * sPx) return true;
+        return false;
+    };
+    const int bandW = lookR - lookL;
+    std::vector<uint8_t> vis(static_cast<size_t>(bandW * (y1 - y0)), 0);
+    std::vector<int> st;
+    std::vector<int> pix;
+    st.reserve(256);
+    pix.reserve(256);
+    for (int y = y0; y < y1; ++y) {
+        uint8_t* pr = look->ptr<uint8_t>(y);
+        for (int x = lookL; x < lookR; ++x) {
+            if (!isPoison(pr[x])) continue;
+            const int vi = (y - y0) * bandW + (x - lookL);
+            if (vis[static_cast<size_t>(vi)]) continue;
+            st.clear();
+            pix.clear();
+            st.push_back(y * w + x);
+            vis[static_cast<size_t>(vi)] = 1;
+            int x0 = x, x1 = x + 1, cy0 = y, cy1 = y + 1;
+            while (!st.empty()) {
+                const int i = st.back();
+                st.pop_back();
+                pix.push_back(i);
+                const int cy = i / w, cx = i - cy * w;
+                if (cx < x0) x0 = cx;
+                if (cx + 1 > x1) x1 = cx + 1;
+                if (cy < cy0) cy0 = cy;
+                if (cy + 1 > cy1) cy1 = cy + 1;
+                static const int k4dx[4] = { -1, 1, 0, 0 };
+                static const int k4dy[4] = { 0, 0, -1, 1 };
+                for (int k = 0; k < 4; ++k) {
+                    const int ny = cy + k4dy[k], nx = cx + k4dx[k];
+                    if (ny < y0 || nx < lookL || ny >= y1 || nx >= lookR) continue;
+                    if (!isPoison(look->ptr<uint8_t>(ny)[nx])) continue;
+                    const int nvi = (ny - y0) * bandW + (nx - lookL);
+                    if (vis[static_cast<size_t>(nvi)]) continue;
+                    vis[static_cast<size_t>(nvi)] = 1;
+                    st.push_back(ny * w + nx);
+                }
+            }
+            bool tL = false, tR = false, tT = false, tB = false;
+            for (int i : pix) {
+                const int cy = i / w, cx = i - cy * w;
+                if (cx == lookL) tL = true;
+                if (cx == lookR - 1) tR = true;
+                if (cy == y0) tT = true;
+                if (cy == y1 - 1) tB = true;
+            }
+            if (lookL <= 0) tL = false;
+            if (lookR >= w) tR = false;
+            if (y0 <= 0) tT = false;
+            if (y1 >= h) tB = false;
+            if (tL || tR || tT || tB) {
+                const int growCap = 3 * sPx;
+                bool reject = false;
+                std::vector<int> grown = pix;
+                int gx0 = x0, gx1 = x1, gy0 = cy0, gy1 = cy1;
+                for (int extra = sPx; extra <= growCap; extra += sPx) {
+                    const int gL = tL ? std::max(0, lookL - extra) : lookL;
+                    const int gR = tR ? std::min(w, lookR + extra) : lookR;
+                    const int gT = tT ? std::max(0, y0 - extra) : y0;
+                    const int gB = tB ? std::min(h, y1 + extra) : y1;
+                    const int gw = gR - gL, gh = gB - gT;
+                    if (gw < 1 || gh < 1) break;
+                    std::vector<uint8_t> gvis(static_cast<size_t>(gw * gh), 0);
+                    std::vector<int> gst;
+                    gst.reserve(grown.size());
+                    grown.clear();
+                    auto gpush = [&](int nx, int ny) {
+                        if (ny < gT || nx < gL || ny >= gB || nx >= gR) return;
+                        if (!isPoison(look->ptr<uint8_t>(ny)[nx])) return;
+                        const int nvi = (ny - gT) * gw + (nx - gL);
+                        if (gvis[static_cast<size_t>(nvi)]) return;
+                        gvis[static_cast<size_t>(nvi)] = 1;
+                        gst.push_back(ny * w + nx);
+                    };
+                    for (int i : pix) gpush(i - (i / w) * w, i / w);
+                    gx0 = w; gx1 = 0; gy0 = h; gy1 = 0;
+                    while (!gst.empty()) {
+                        const int i = gst.back();
+                        gst.pop_back();
+                        grown.push_back(i);
+                        const int cy = i / w, cx = i - cy * w;
+                        if (cx < gx0) gx0 = cx;
+                        if (cx + 1 > gx1) gx1 = cx + 1;
+                        if (cy < gy0) gy0 = cy;
+                        if (cy + 1 > gy1) gy1 = cy + 1;
+                        static const int k4dx[4] = { -1, 1, 0, 0 };
+                        static const int k4dy[4] = { 0, 0, -1, 1 };
+                        for (int k = 0; k < 4; ++k) {
+                            gpush(cx + k4dx[k], cy + k4dy[k]);
+                        }
+                    }
+                    if (gx1 <= gx0) { gx0 = x0; gx1 = x1; gy0 = cy0; gy1 = cy1; }
+                    const int gcw = gx1 - gx0, gch = gy1 - gy0;
+                    const bool added = static_cast<int>(grown.size()) >
+                            static_cast<int>(pix.size()) ||
+                        gx0 < x0 || gx1 > x1 || gy0 < cy0 || gy1 > cy1;
+                    if (added) {
+                        std::vector<int> probe = grown;
+                        if (edgePoison(probe) || solidPlate(
+                                static_cast<int>(grown.size()), gcw, gch)) {
+                            reject = true;
+                            break;
+                        }
+                    }
+                }
+                if (!reject) {
+                    pix.swap(grown);
+                    x0 = gx0;
+                    x1 = gx1;
+                    cy0 = gy0;
+                    cy1 = gy1;
+                }
+            }
+            const int cw = x1 - x0, ch = cy1 - cy0;
+            if (solidPlate(static_cast<int>(pix.size()), cw, ch)) continue;
+            cv::Mat inkBin;
+            if (!retryPoisonChunkInk(src, pix, w, x0, cy0, cw, ch, sPx, &inkBin)) {
+                continue;
+            }
+            uint8_t id = 0;
+            if (!lookAlloc(pack, true, seedIndex, kKindInk, &id)) return;
+            for (int yy = 0; yy < inkBin.rows; ++yy) {
+                const uint8_t* br = inkBin.ptr<uint8_t>(yy);
+                for (int xx = 0; xx < inkBin.cols; ++xx) {
+                    if (!br[xx]) continue;
+                    const int py = cy0 + yy, px = x0 + xx;
+                    if (py < 0 || px < 0 || py >= h || px >= w) continue;
+                    uint8_t& lv = look->ptr<uint8_t>(py)[px];
+                    if (lv == 0 || isPoison(lv)) lv = id;
+                }
+            }
+        }
+    }
+}
+
+static int longestVertRun254(const cv::Mat& look, int sl, int st, int sr, int sb) {
+    if (look.empty() || look.type() != CV_8UC1) return 0;
+    if (sl < 0) sl = 0;
+    if (st < 0) st = 0;
+    if (sr > look.cols) sr = look.cols;
+    if (sb > look.rows) sb = look.rows;
+    int best = 0;
+    for (int x = sl; x < sr; ++x) {
+        int run = 0;
+        for (int y = st; y < sb; ++y) {
+            if (look.ptr<uint8_t>(y)[x] == 254) {
+                ++run;
+                if (run > best) best = run;
+            } else {
+                run = 0;
+            }
+        }
+    }
+    return best;
+}
+
+static void seg7One(
+    const cv::Mat& src, int sl, int st, int sr, int sb,
+    int imgW, int imgH,
+    int* ol, int* ot, int* oright, int* ob, int* sPxOut, int* vSWOut, int* hSWOut, int* usedFb,
+    bool srcIsBin = false,
+    float gapFrac = 0.5f,
+    float minSeedHsToFreeze = 0.f,
+    int glareMult = 8,
+    int boundStrategy = 0,
+    int tightInsetPx = 16,
+    Seg7Tele* tele = nullptr,
+    bool keepColorStats = false,
+    InkSweepPack* sweepOut = nullptr,
+    cv::Mat* inkDump = nullptr,
+    cv::Mat* overlayY = nullptr,
+    cv::Mat* overlayUv = nullptr,
+    PoisonStats* poisonStats = nullptr,
+    cv::Mat* scratch = nullptr,
+    ObjPack* objPack = nullptr,
+    int seedIndex = 0,
+    cv::Mat* poisonPlane = nullptr,
+    bool virtSp = false
+#if defined(VE_IDEAL_MASK_MAIN)
+    , bool presetLook254 = false
+#endif
+) {
+    (void)tightInsetPx;
+    *ol = sl; *ot = st; *oright = sr; *ob = sb;
+    const int seedH = std::max(1, sb - st);
+    const int seedW = std::max(1, sr - sl);
+    LOGI("veAllocLog tag=seg7One seedW=%d seedH=%d imgW=%d imgH=%d",
+         seedW, seedH, imgW, imgH);
+    if (!veAllocLog("seg7One", veMatBytes(imgH, imgW, CV_8UC1), imgH, imgW, CV_8UC1)) {
+        return;
+    }
+    *sPxOut = 0;
+    *vSWOut = 0;
+    *hSWOut = 0;
+    *usedFb = 0;
+    if (sr <= sl || sb <= st || src.empty() || src.type() != CV_8UC1) return;
+    const int gm = glareMult > 0 ? glareMult : 8;
+    const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
+    const int vLook = capPx + 2;
+    const int nt = std::max(0, st - vLook);
+    const int nb = std::min(imgH, sb + vLook);
+    if (nb <= nt) return;
+    const int lookH = nb - nt;
+    const int xPad = std::max(1, static_cast<int>(std::lround(2.5f * static_cast<float>(lookH))));
+    const int lookL = std::max(0, sl - xPad);
+    const int lookR = std::min(imgW, sr + xPad);
+    if (lookR <= lookL) return;
+    const int lookW = lookR - lookL;
+    LOGI("veAllocLog tag=seg7One lookW=%d lookH=%d seedW=%d seedH=%d imgW=%d imgH=%d",
+         lookW, lookH, seedW, seedH, imgW, imgH);
+    if (!veAllocLog("seg7One_look", veMatBytes(imgH, imgW, CV_8UC1), imgH, imgW, CV_8UC1)) {
+        return;
+    }
+    cv::Mat lookBin;
+    cv::Mat* lookPlane = asU8(scratch);
+#if defined(VE_IDEAL_MASK_MAIN)
+    if (presetLook254) {
+        lookBin = src;
+    } else
+#endif
+    if (lookPlane) {
+        (void)planeRoi8u(lookPlane, lookL, nt, lookW, lookH);
+        lookBin = planeView8u(lookPlane, 0, 0, imgW, imgH);
+    }
+    PoisonStats stLocal;
+    cv::Mat* objPlane = asU8(inkDump);
+    if (objPlane && (objPlane->cols < imgW || objPlane->rows < imgH)) objPlane = nullptr;
+    cv::Mat lookPoison;
+    cv::Mat lookInkAtPlane;
+    SeedFillGate fillGate;
+    cv::Mat* overlayY8 = asU8(overlayY);
+    cv::Mat* overlayUv2 = asUV(overlayUv);
+    cv::Mat* pois = asU8(poisonPlane);
+    {
+        char extra[256];
+        std::snprintf(extra, sizeof extra,
+            "lookW=%d lookH=%d seedW=%d seedH=%d imgW=%d imgH=%d lookBin=%dx%d t=%d step=%zu scratch=%dx%d t=%d poisonPlane=%dx%d",
+            lookW, lookH, seedW, seedH, imgW, imgH,
+            lookBin.rows, lookBin.cols, lookBin.type(), lookBin.empty() ? 0 : lookBin.step[0],
+            lookPlane ? lookPlane->rows : -1, lookPlane ? lookPlane->cols : -1,
+            lookPlane ? lookPlane->type() : -1,
+            pois ? pois->rows : -1, pois ? pois->cols : -1);
+        veRssLog("seg7_look", extra);
+    }
+    int sPx = 0;
+#if defined(VE_IDEAL_MASK_MAIN)
+    if (presetLook254) {
+        sPx = horizPeakSW(lookBin, lookBin.rows, lookBin.cols, false, imgW).peak;
+    } else
+#endif
+    {
+        sPx = fillPoisonLookRaster(
+            src, &lookBin, sl, st, sr, sb, lookL, nt, lookR, nb, srcIsBin, gm, 0,
+            overlayY8, overlayUv2, 0, 0, poisonStats ? &stLocal : nullptr, lookPlane,
+            objPlane, objPack, seedIndex, false,
+            0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, &lookPoison, false,
+            pois, &lookInkAtPlane, &fillGate, tele ? &tele->overlap : nullptr, tele, virtSp);
+    }
+    if (poisonStats) *poisonStats = stLocal;
+    const int hMul = (tele && tele->poisonHMul > 0.f)
+        ? static_cast<int>(std::lround(tele->poisonHMul)) : 7;
+    const int glareW = hMul * std::max(sPx, 1);
+    const int vSW = sPx;
+    const int hSW = (!lookBin.empty() && lookBin.rows >= nb && lookBin.cols >= lookR)
+        ? vertPeakSW(lookBin(cv::Range(nt, nb), cv::Range(lookL, lookR)), seedH, objPack, imgW)
+        : vertPeakSW(lookBin, seedH, objPack, imgW);
+    *sPxOut = sPx;
+    *vSWOut = vSW;
+    *hSWOut = hSW;
+    *usedFb = (sPx < 1) ? 1 : 0;
+    if (sPx < 1) {
+        if (tele) {
+            if (!keepColorStats) {
+                float yi = 0.f, yb = 0.f;
+                const int y0s = std::max(0, st);
+                const int y1s = std::min(lookBin.rows, sb);
+                if (y1s > y0s) {
+                    const int x0s = std::max(0, sl);
+                    const int x1s = std::min(lookBin.cols, sr);
+                    if (x1s > x0s) {
+                        cv::Mat seedInk = lookBin(cv::Range(y0s, y1s), cv::Range(x0s, x1s));
+                        fillYInkBg(src, seedInk, sl, st, std::max(sPx, 0), &yi, &yb);
+                    }
+                }
+                tele->yInk = yi;
+                tele->yBg = yb;
+                tele->dInk = yi - yb;
+                tele->otsuThr = 0.f;
+            }
+            tele->sPx = static_cast<float>(sPx);
+            tele->dTop = 0.f;
+            tele->dBot = 0.f;
+            tele->dLeft = 0.f;
+            tele->dRight = 0.f;
+            tele->nInkSeed = static_cast<float>(
+                countInkU8(lookInkAtPlane, sl, st, sr, sb));
+            tele->nInkBlue = tele->nInkSeed;
+            tele->nInkYellow = tele->nInkSeed;
+            tele->nLookBinSeed = static_cast<float>(fillGate.nLookBin);
+            tele->nRecoveredSeed = static_cast<float>(fillGate.nRecovered);
+            tele->fill = fillGate.fill;
+            tele->nRetry = static_cast<float>(fillGate.nRetry);
+            tele->retryWhy = static_cast<float>(fillGate.retryWhy);
+            tele->nValley = static_cast<float>(fillGate.nValley);
+            packFillAttempts(fillGate, tele);
+        }
+        paintLookOverlay(
+            lookBin, lookPoison, overlayY8, overlayUv2, false, 0, 0,
+            0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+            false, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, objPack,
+            lookL, nt, lookR, nb);
+        return;
+    }
+    const float gf = gapFrac > 0.f ? gapFrac : 0.5f;
+    const int gapStop = std::max(1, static_cast<int>(std::lround(gf * sPx)));
+    const int minRun = usedMinRun(sPx);
+    auto hasBarRaw = [&](int y) {
+        return rowHasStrokeBar(lookBin, y, minRun, glareW, objPack, sl, sr, false, imgW);
+    };
+    const int recDisp = tele ? static_cast<int>(std::lround(tele->dispKind)) : kDisp7seg;
+    const int recHm = (tele && tele->poisonHMul > 0.f)
+        ? static_cast<int>(std::lround(tele->poisonHMul)) : 7;
+    const int recVm = (tele && tele->poisonVMul > 0.f)
+        ? static_cast<int>(std::lround(tele->poisonVMul)) : 16;
+    int band0 = std::max(nt, st - 4 * sPx);
+    int band1 = std::min(nb, sb + 4 * sPx);
+#if defined(VE_IDEAL_MASK_MAIN)
+    if (!presetLook254)
+#endif
+    recoverStrokeNearInk(
+        src, &lookBin, sPx, band0, band1, objPack, seedIndex, sl, nt, sr, nb,
+        recDisp, recHm, recVm);
+    auto ensureBand = [&](int y) {
+        if (y < nt || y >= nb) return;
+        if (y >= band0 && y < band1) return;
+        const int ov = sPx;
+        int n0 = band0, n1 = band1;
+        if (y < band0) {
+            n0 = y;
+            n1 = std::min(nb, band0 + ov);
+        } else {
+            n0 = std::max(nt, band1 - ov);
+            n1 = std::min(nb, y + 1);
+        }
+#if defined(VE_IDEAL_MASK_MAIN)
+        if (!presetLook254)
+#endif
+        recoverStrokeNearInk(
+            src, &lookBin, sPx, n0, n1, objPack, seedIndex, sl, nt, sr, nb,
+            recDisp, recHm, recVm);
+        if (n0 < band0) band0 = n0;
+        if (n1 > band1) band1 = n1;
+    };
+    auto hasBar = [&](int y) {
+#if defined(VE_IDEAL_MASK_MAIN)
+        if (!presetLook254)
+#endif
+        ensureBand(y);
+        return hasBarRaw(y);
+    };
+    int t = st, b = sb;
+    const int maxRetractPx = std::max(1, static_cast<int>(std::lround(kVertRetractCapFrac * seedH)));
+    int fTop = kFlagUnchanged, fBot = kFlagUnchanged;
+    int gapJumpTop = 0, gapJumpBot = 0;
+    int landTop = -1, landBot = -1;
+    auto expandTopOneShot = [&]() {
+        bool usedGap = false;
+        while (t > nt && st - (t - 1) <= capPx && hasBar(t - 1)) --t;
+        if (t < st) fTop = kFlagNormalExpand;
+        if (!usedGap && t > nt && st - (t - 1) <= capPx && !hasBar(t - 1)) {
+            int y = t - 1;
+            int n = 0;
+            while (n < gapStop && y >= nt && st - y <= capPx) {
+                if (hasBar(y)) {
+                    t = y;
+                    usedGap = true;
+                    gapJumpTop = 1;
+                    landTop = y;
+                    fTop = kFlagNormalExpand;
+                    while (t > nt && st - (t - 1) <= capPx && hasBar(t - 1)) --t;
+                    break;
+                }
+                --y;
+                ++n;
+            }
+        }
+        if (fTop == kFlagUnchanged) fTop = kFlagBlockedGap;
+    };
+    auto expandBotOneShot = [&]() {
+        bool usedGap = false;
+        while (b < nb && b - sb < capPx && hasBar(b)) ++b;
+        if (b > sb) fBot = kFlagNormalExpand;
+        if (!usedGap && b < nb && b - sb < capPx && !hasBar(b)) {
+            int y = b;
+            int n = 0;
+            while (n < gapStop && y < nb && y - sb < capPx) {
+                if (hasBar(y)) {
+                    b = y + 1;
+                    usedGap = true;
+                    gapJumpBot = 1;
+                    landBot = y;
+                    fBot = kFlagNormalExpand;
+                    while (b < nb && b - sb < capPx && hasBar(b)) ++b;
+                    break;
+                }
+                ++y;
+                ++n;
+            }
+        }
+        if (fBot == kFlagUnchanged) fBot = kFlagBlockedGap;
+    };
+    auto walkV = [&]() {
+        t = st;
+        b = sb;
+        fTop = kFlagUnchanged;
+        fBot = kFlagUnchanged;
+        gapJumpTop = 0;
+        gapJumpBot = 0;
+        landTop = -1;
+        landBot = -1;
+        if (boundStrategy == 2) {
+            if (hasBar(st)) {
+                expandTopOneShot();
+            } else {
+                while (t < b - 1 && (t - st) < maxRetractPx && !hasBar(t)) ++t;
+                if (t > st && hasBar(t)) fTop = kFlagNormalRetract;
+                else if (t - st >= maxRetractPx) fTop = kFlagBlocked10pct;
+                else fTop = kFlagNormalRetract;
+            }
+            if (sb > 0 && hasBar(sb - 1)) {
+                expandBotOneShot();
+            } else {
+                while (b > t + 1 && (sb - b) < maxRetractPx && !hasBar(b - 1)) --b;
+                if (b < sb && sb > 0 && hasBar(b - 1)) fBot = kFlagNormalRetract;
+                else if (sb - b >= maxRetractPx) fBot = kFlagBlocked10pct;
+                else fBot = kFlagNormalRetract;
+            }
+        } else {
+            expandTopOneShot();
+            expandBotOneShot();
+        }
+        if (b > t && !hasBar(b) && hasBar(b - 1)) --b;
+        if (b <= t) b = std::min(t + 1, nb);
+    };
+    walkV();
+    if (tele) {
+        tele->dTop1 = static_cast<float>(t - st);
+        tele->dBot1 = static_cast<float>(b - sb);
+        tele->fTop1 = static_cast<float>(fTop);
+        tele->fBot1 = static_cast<float>(fBot);
+        tele->gapJumpBot1 = gapJumpBot ? 1.f : 0.f;
+    }
+    *ol = sl;
+    *ot = t;
+    *oright = sr;
+    *ob = b;
+    if (*ot < 0) *ot = 0;
+    if (*ob > imgH) *ob = imgH;
+    if (*ob <= *ot) *ob = std::min(imgH, *ot + 1);
+    int farL = *ol, farR = *oright;
+    const cv::Mat* recSrc = &src;
+#if defined(VE_IDEAL_MASK_MAIN)
+    if (presetLook254) recSrc = nullptr;
+#endif
+    aabbJumpOnLook(
+        &lookBin, ol, *ot, oright, *ob, imgW, imgH,
+        st, sb, sl, sr, sPx, 0, 0, &farL, &farR, objPack, recSrc, seedIndex,
+        recDisp, recHm, recVm, virtSp);
+    if (virtSp && poisonStats) {
+        const bool skipT = rowHasStrokeBar(
+            lookBin, st, minRun, glareW, objPack, lookL, lookR, true, imgW);
+        const bool rawT = rowHasStrokeBar(
+            lookBin, st, minRun, glareW, objPack, lookL, lookR, false, imgW);
+        if (skipT != rawT) poisonStats->vspBarT = skipT ? 1 : 2;
+        const int yBot = sb > st ? sb - 1 : st;
+        const bool skipB = rowHasStrokeBar(
+            lookBin, yBot, minRun, glareW, objPack, lookL, lookR, true, imgW);
+        const bool rawB = rowHasStrokeBar(
+            lookBin, yBot, minRun, glareW, objPack, lookL, lookR, false, imgW);
+        if (skipB != rawB) poisonStats->vspBarB = skipB ? 1 : 2;
+        const bool skipL = maxInkRunCol(
+            lookBin, farL, st, sb, objPack, true, imgW) >= minRun;
+        const bool rawL = maxInkRunCol(
+            lookBin, farL, st, sb, objPack, false, imgW) >= minRun;
+        if (skipL != rawL) poisonStats->vspJumpL = skipL ? 1 : 2;
+        const int xR = farR > 0 ? farR - 1 : farR;
+        const bool skipR = maxInkRunCol(
+            lookBin, xR, st, sb, objPack, true, imgW) >= minRun;
+        const bool rawR = maxInkRunCol(
+            lookBin, xR, st, sb, objPack, false, imgW) >= minRun;
+        if (skipR != rawR) poisonStats->vspJumpR = skipR ? 1 : 2;
+    }
+    {
+        int wt = *ot, wb = *ob;
+        if (wb < wt) std::swap(wt, wb);
+#if defined(VE_IDEAL_MASK_MAIN)
+        if (!presetLook254)
+#endif
+        recoverStrokeNearInk(
+            src, &lookBin, sPx, std::max(nt, wt), std::min(nb, wb),
+            objPack, seedIndex, lookL, nt, lookR, nb,
+            recDisp, recHm, recVm);
+    }
+    veRssLog("walk_paint", nullptr);
+    if (*ol < 0) *ol = 0;
+    if (*oright > imgW) *oright = imgW;
+    if (*oright <= *ol) *oright = std::min(imgW, *ol + 1);
+    if (tele) {
+        if (!keepColorStats) {
+            float yi = 0.f, yb = 0.f;
+            const int y0s = std::max(0, st);
+            const int y1s = std::min(lookBin.rows, sb);
+            if (y1s > y0s) {
+                const int x0s = std::max(0, sl);
+                const int x1s = std::min(lookBin.cols, sr);
+                if (x1s > x0s) {
+                    cv::Mat seedInk = lookBin(cv::Range(y0s, y1s), cv::Range(x0s, x1s));
+                    fillYInkBg(src, seedInk, sl, st, sPx, &yi, &yb);
+                }
+            }
+            tele->yInk = yi;
+            tele->yBg = yb;
+            tele->dInk = yi - yb;
+            tele->otsuThr = 0.f;
+        }
+        tele->sPx = static_cast<float>(sPx);
+        tele->dTop = static_cast<float>(*ot - st);
+        tele->dBot = static_cast<float>(*ob - sb);
+        tele->dLeft = static_cast<float>(*ol - sl);
+        tele->dRight = static_cast<float>(*oright - sr);
+        tele->fTop = static_cast<float>(fTop);
+        tele->fBot = static_cast<float>(fBot);
+        int fLeft = kFlagUnchanged, fRight = kFlagUnchanged;
+        if (*ol < sl) fLeft = kFlagNormalExpand;
+        else if (farL < *ol) fLeft = kFlagNormalRetract;
+        if (*oright > sr) fRight = kFlagNormalExpand;
+        else if (farR > *oright) fRight = kFlagNormalRetract;
+        tele->fLeft = static_cast<float>(fLeft);
+        tele->fRight = static_cast<float>(fRight);
+        tele->gapJumpTop = gapJumpTop ? 1.f : 0.f;
+        tele->gapJumpBot = gapJumpBot ? 1.f : 0.f;
+        tele->landTop = landTop >= 0 ? static_cast<float>(landTop) : 0.f;
+        tele->landBot = landBot >= 0 ? static_cast<float>(landBot) : 0.f;
+        tele->farL = static_cast<float>(farL);
+        tele->farR = static_cast<float>(farR);
+        tele->nInkSeed = static_cast<float>(
+            countInkU8(lookInkAtPlane, sl, st, sr, sb));
+        tele->nInkBlue = static_cast<float>(
+            countInkU8(lookInkAtPlane, *ol, *ot, *oright, *ob));
+        tele->nInkYellow = static_cast<float>(
+            countInkU8(
+                lookInkAtPlane, farL, std::min(st, *ot),
+                farR, std::max(sb, *ob)));
+        tele->nLookBinSeed = static_cast<float>(fillGate.nLookBin);
+        tele->nRecoveredSeed = static_cast<float>(fillGate.nRecovered);
+        tele->fill = fillGate.fill;
+        tele->nRetry = static_cast<float>(fillGate.nRetry);
+        tele->retryWhy = static_cast<float>(fillGate.retryWhy);
+        tele->nValley = static_cast<float>(fillGate.nValley);
+        packFillAttempts(fillGate, tele);
+    }
+    if (sweepOut && !lookBin.empty()) {
+        fillAabbLookSweep(
+            src, true, 0.0, true, 0, lookBin,
+            sl, st, sr, sb, *ot, *ob, imgW, imgH, minRun,
+            static_cast<float>(sPx), sweepOut, lookL, lookR, objPack);
+    }
+    paintLookOverlay(
+        lookBin, lookPoison, overlayY8, overlayUv2, false, 0, 0,
+        0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+        false, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, objPack,
+        lookL, nt, lookR, nb);
+}
+
+static constexpr float kTintDotThr = 0.5f;
+static constexpr float kTintChromaEps = 8.0f;
+
+static bool skipTintWalk(bool adaptive, const Seg7Tele& tele) {
+    return adaptive && (tele.meanChroma < 12.f || tele.inkBgDot >= kTintDotThr);
+}
+
+static void uvAt(const cv::Mat& uv, int imgW, int x, int y, int* u, int* v) {
+    if (uv.empty() || uv.type() != CV_8UC2 || uv.rows <= 0 || uv.cols <= 0) {
+        *u = 128;
+        *v = 128;
+        return;
+    }
+    const int uvH = uv.rows, uvW = uv.cols;
+    const bool half = uvW * 2 <= imgW + 1;
+    int uy = half ? y / 2 : (y & ~1);
+    int ux = half ? x / 2 : (x & ~1);
+    if (uy < 0) uy = 0;
+    if (uy >= uvH) uy = uvH - 1;
+    if (ux < 0) ux = 0;
+    if (ux >= uvW) ux = uvW - 1;
+    const cv::Vec2b p = uv.ptr<cv::Vec2b>(uy)[ux];
+    *u = p[0];
+    *v = p[1];
+}
+
+static void strokeFbMetrics(
+    const HorizSW& hh, int vSW, int seedW,
+    float* shareOut, float* maxRunOverWOut
+) {
+    const int lo = std::max(1, static_cast<int>(std::lround(0.7f * static_cast<float>(vSW))));
+    const int hi = std::max(lo, static_cast<int>(std::lround(1.3f * static_cast<float>(vSW))));
+    int band = 0;
+    const int hiClamp = std::min(hi, static_cast<int>(hh.hist.size()) - 1);
+    for (int k = lo; k <= hiClamp; ++k) band += hh.hist[k];
+    if (shareOut) {
+        *shareOut = hh.nNonSpan > 0
+            ? band / static_cast<float>(hh.nNonSpan) : 0.f;
+    }
+    if (maxRunOverWOut) {
+        *maxRunOverWOut = hh.maxRun / static_cast<float>(std::max(1, seedW));
+    }
+}
+
+static bool strokeNeedFb(const HorizSW& hh, int vSW, int seedW, float inkFrac) {
+    (void)hh;
+    (void)seedW;
+    return vSW <= 4 || inkFrac >= 0.45f;
+}
+
+static bool strokesAgree(int a, int b) {
+    if (a <= 4 || b <= 4) return false;
+    const float fa = static_cast<float>(a), fb = static_cast<float>(b);
+    return fa >= 0.7f * fb && fa <= 1.3f * fb && fb >= 0.7f * fa && fb <= 1.3f * fa;
+}
+
+static void fillPoisonMask(
+    const cv::Mat& bin, int v0, bool needFb, int seedW, int glareMult, cv::Mat* poison
+) {
+    const int h = bin.rows, w = bin.cols;
+    if (!poison) return;
+    if (poison->empty() || poison->rows != h || poison->cols != w || poison->type() != CV_8UC1) {
+        return;
+    }
+    poison->setTo(0);
+    const int vRef = std::max(v0, 4);
+    const int fat = 3 * vRef;
+    const int longH = (glareMult > 0 ? glareMult : 8) * vRef;
+    const int thinW = std::max(1, static_cast<int>(std::lround(0.25f * static_cast<float>(seedW))));
+    const bool weak = v0 <= 4 || needFb;
+    // 0 clean, 1 H-candidate, 255 poison. longH/weak mark 1 (not 255).
+    // Fat V promotes 1→255. Thin scratch: H>longH and V<vRef → 255. Leftover 1→0.
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* bp = bin.ptr<uint8_t>(y);
+        uint8_t* pp = poison->ptr<uint8_t>(y);
+        int x = 0;
+        while (x < w) {
+            if (!bp[x]) { ++x; continue; }
+            const int x0 = x;
+            while (x < w && bp[x]) ++x;
+            const int len = x - x0;
+            uint8_t mark = 0;
+            if (len > longH || (weak && len > thinW) || len > fat) mark = 1;
+            if (mark) {
+                for (int k = x0; k < x; ++k) pp[k] = mark;
+            }
+        }
+    }
+    for (int x = 0; x < w; ++x) {
+        int y = 0;
+        while (y < h) {
+            if (!bin.ptr<uint8_t>(y)[x]) { ++y; continue; }
+            const int y0 = y;
+            while (y < h && bin.ptr<uint8_t>(y)[x]) ++y;
+            const int len = y - y0;
+            if (len > fat) {
+                for (int k = y0; k < y; ++k) {
+                    uint8_t* pp = poison->ptr<uint8_t>(k);
+                    if (pp[x] == 1) pp[x] = 255;
+                }
+            }
+        }
+    }
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* bp = bin.ptr<uint8_t>(y);
+        uint8_t* pp = poison->ptr<uint8_t>(y);
+        int x = 0;
+        while (x < w) {
+            if (!bp[x]) { ++x; continue; }
+            const int x0 = x;
+            while (x < w && bp[x]) ++x;
+            const int hlen = x - x0;
+            if (hlen <= longH) continue;
+            for (int k = x0; k < x; ++k) {
+                int yt = y;
+                int yb = y;
+                while (yt > 0 && bin.ptr<uint8_t>(yt - 1)[k]) --yt;
+                while (yb + 1 < h && bin.ptr<uint8_t>(yb + 1)[k]) ++yb;
+                if (yb - yt + 1 < vRef) pp[k] = 255;
+            }
+        }
+    }
+    for (int y = 0; y < h; ++y) {
+        uint8_t* pp = poison->ptr<uint8_t>(y);
+        for (int x = 0; x < w; ++x) {
+            if (pp[x] == 1) pp[x] = 0;
+        }
+    }
+}
+
+static double otsuThrFromHist(const int hist[256], int n) {
+    if (n < 2) return 0.0;
+    double sum = 0.0;
+    for (int i = 0; i < 256; ++i) sum += static_cast<double>(i) * hist[i];
+    double sumB = 0.0;
+    int wB = 0;
+    double maxVar = -1.0;
+    int thr = 0;
+    for (int t = 0; t < 256; ++t) {
+        wB += hist[t];
+        if (wB == 0) continue;
+        const int wF = n - wB;
+        if (wF == 0) break;
+        sumB += static_cast<double>(t) * hist[t];
+        const double mB = sumB / wB;
+        const double mF = (sum - sumB) / wF;
+        const double d = mB - mF;
+        const double var = static_cast<double>(wB) * static_cast<double>(wF) * d * d;
+        if (var >= maxVar) {
+            maxVar = var;
+            thr = t;
+        }
+    }
+    return static_cast<double>(thr);
+}
+
+static bool otsuHistOnKeep(
+    const cv::Mat& y, const cv::Mat& mask, bool keepIfMaskOn, double yCeil,
+    double* thr, bool* dark, float* inkFrac
+) {
+    int hist[256] = {};
+    int n = 0;
+    const int kh = std::min(y.rows, mask.rows);
+    const int kw = std::min(y.cols, mask.cols);
+    if (kh < 1 || kw < 1) return false;
+    for (int yy = 0; yy < kh; ++yy) {
+        const uint8_t* yp = y.ptr<uint8_t>(yy);
+        const uint8_t* mp = mask.ptr<uint8_t>(yy);
+        for (int xx = 0; xx < kw; ++xx) {
+            if (keepIfMaskOn) {
+                if (!mp[xx]) continue;
+            } else {
+                if (mp[xx]) continue;
+            }
+            if (yCeil >= 0.0 && static_cast<double>(yp[xx]) > yCeil) continue;
+            hist[yp[xx]]++;
+            ++n;
+        }
+    }
+    if (n < 2) return false;
+    *thr = otsuThrFromHist(hist, n);
+    const int ti = static_cast<int>(*thr);
+    int nz = 0;
+    for (int i = 0; i <= ti && i < 256; ++i) nz += hist[i];
+    *inkFrac = nz / static_cast<float>(n);
+    *dark = true;
+    if (*inkFrac >= 0.45f) {
+        *dark = false;
+        nz = n - nz;
+        *inkFrac = nz / static_cast<float>(n);
+    }
+    return true;
+}
+
+static bool otsuKeep(
+    const cv::Mat& y, const cv::Mat& keep, double* thr, bool* dark, float* inkFrac
+) {
+    return otsuHistOnKeep(y, keep, true, -1.0, thr, dark, inkFrac);
+}
+
+static void applyThrKeep(
+    const cv::Mat& y, const cv::Mat& keep, double thr, bool dark, cv::Mat* out
+) {
+    if (!out) return;
+    const int h = y.rows, w = y.cols;
+    if (out->empty() || out->rows != h || out->cols != w || out->type() != CV_8UC1) {
+        return;
+    }
+    out->setTo(0);
+    const int kh = std::min(h, keep.rows);
+    const int kw = std::min(w, keep.cols);
+    for (int yy = 0; yy < kh; ++yy) {
+        const uint8_t* yp = y.ptr<uint8_t>(yy);
+        const uint8_t* kp = keep.ptr<uint8_t>(yy);
+        uint8_t* op = out->ptr<uint8_t>(yy);
+        for (int xx = 0; xx < kw; ++xx) {
+            if (!kp[xx]) continue;
+            const bool ink = dark ? (static_cast<double>(yp[xx]) <= thr)
+                                  : (static_cast<double>(yp[xx]) > thr);
+            if (ink) op[xx] = 255;
+        }
+    }
+}
+
+/** Keep = poison==0. Optional yCeil>=0 also requires y<=yCeil. */
+static bool otsuKeepPoison0(
+    const cv::Mat& y, const cv::Mat& poison, double* thr, bool* dark, float* inkFrac,
+    double yCeil = -1.0
+) {
+    return otsuHistOnKeep(y, poison, false, yCeil, thr, dark, inkFrac);
+}
+
+static void applyThrKeepPoison0(
+    const cv::Mat& y, const cv::Mat& poison, double thr, bool dark, cv::Mat* out,
+    double yCeil = -1.0
+) {
+    if (!out) return;
+    const int h = y.rows, w = y.cols;
+    if (out->empty() || out->rows != h || out->cols != w || out->type() != CV_8UC1) {
+        return;
+    }
+    out->setTo(0);
+    const int kh = std::min(h, poison.rows);
+    const int kw = std::min(w, poison.cols);
+    for (int yy = 0; yy < kh; ++yy) {
+        const uint8_t* yp = y.ptr<uint8_t>(yy);
+        const uint8_t* pp = poison.ptr<uint8_t>(yy);
+        uint8_t* op = out->ptr<uint8_t>(yy);
+        for (int xx = 0; xx < kw; ++xx) {
+            if (pp[xx]) continue;
+            if (yCeil >= 0.0 && static_cast<double>(yp[xx]) > yCeil) continue;
+            const bool ink = dark ? (static_cast<double>(yp[xx]) <= thr)
+                                  : (static_cast<double>(yp[xx]) > thr);
+            if (ink) op[xx] = 255;
+        }
+    }
+}
+
+static float dInkFromBin(const cv::Mat& y, const cv::Mat& bin) {
+    double sI = 0.0, sB = 0.0;
+    int nI = 0, nB = 0;
+    for (int yy = 0; yy < y.rows; ++yy) {
+        const uint8_t* yp = y.ptr<uint8_t>(yy);
+        const uint8_t* bp = bin.ptr<uint8_t>(yy);
+        for (int xx = 0; xx < y.cols; ++xx) {
+            if (bp[xx]) { sI += yp[xx]; ++nI; }
+            else { sB += yp[xx]; ++nB; }
+        }
+    }
+    if (nI <= 0 || nB <= 0) return 0.f;
+    return static_cast<float>(sI / nI - sB / nB);
+}
+
+#if 0
+// Median-band poison paint is parked. Restore point: the two orBrightBands
+// calls removed from seedCombine255 (after the first fillPoisonMask, and
+// after the valley-retry fillPoisonMask).
+static float p50YRows(const cv::Mat& y, int y0, int y1) {
+    if (y.empty() || y1 <= y0) return 0.f;
+    y0 = std::max(0, y0);
+    y1 = std::min(y.rows, y1);
+    std::vector<uint8_t> vals;
+    vals.reserve(static_cast<size_t>(std::max(0, y1 - y0) * y.cols));
+    for (int yy = y0; yy < y1; ++yy) {
+        const uint8_t* p = y.ptr<uint8_t>(yy);
+        for (int xx = 0; xx < y.cols; ++xx) vals.push_back(p[xx]);
+    }
+    if (vals.empty()) return 0.f;
+    std::sort(vals.begin(), vals.end());
+    return static_cast<float>(vals[vals.size() / 2]);
+}
+
+static void orBrightBands(const cv::Mat& y, const cv::Mat& firstBin, int sPx, cv::Mat* poison,
+    bool* topOut = nullptr, bool* botOut = nullptr, int* hOut = nullptr) {
+    if (topOut) *topOut = false;
+    if (botOut) *botOut = false;
+    if (hOut) *hOut = 0;
+    if (!poison || y.empty() || firstBin.empty()) return;
+    const int h = y.rows, w = y.cols;
+    const int bandH = std::max(sPx, static_cast<int>(std::lround(0.12f * static_cast<float>(h))));
+    if (hOut) *hOut = bandH;
+    if (bandH < 1 || h < bandH * 3) return;
+    const float lim = std::max(16.f, 0.5f * std::fabs(dInkFromBin(y, firstBin)));
+    const float medI = p50YRows(y, bandH, h - bandH);
+    const float medT = p50YRows(y, 0, bandH);
+    const float medB = p50YRows(y, h - bandH, h);
+    auto paint = [&](int y0, int y1) {
+        for (int yy = y0; yy < y1; ++yy) {
+            uint8_t* op = poison->ptr<uint8_t>(yy);
+            for (int xx = 0; xx < w; ++xx) op[xx] = 255;
+        }
+    };
+    if (std::fabs(medT - medI) >= lim) {
+        paint(0, bandH);
+        if (topOut) *topOut = true;
+    }
+    if (std::fabs(medB - medI) >= lim) {
+        paint(h - bandH, h);
+        if (botOut) *botOut = true;
+    }
+}
+#endif
+
+static void orBin(cv::Mat* dst, const cv::Mat& src) {
+    if (!dst || dst->empty() || src.empty() || dst->size() != src.size()) return;
+    cv::bitwise_or(*dst, src, *dst);
+}
+
+struct SeedCombine {
+    cv::Mat bin;
+    cv::Mat poison;
+    int sPx = 0;
+    bool inverted = false;
+    bool cleanDark = true;
+    double cleanThr = 0.0;
+    bool haveClean = false;
+    float cleanInkFrac = 0.f;
+    int v0Clean = 0;
+    bool useSample = false;
+    bool bandTop = false;
+    bool bandBot = false;
+    int bandH = 0;
+    SeedFillGate fillGate;
+    OverlapHists overlap{};
+};
+
+static int combineArgmaxRun(const int* hist, int histN, int lo, int hi) {
+    int bestL = 0, bestC = 0;
+    const int last = std::min(hi, histN - 1);
+    if (!hist || last < lo) return 0;
+    for (int len = lo; len <= last; ++len) {
+        const int c = hist[len];
+        if (c > bestC) {
+            bestC = c;
+            bestL = len;
+        }
+    }
+    return bestC > 0 ? bestL : 0;
+}
+
+/** Modal non-span H-run of Y>t and Y<=t in [lo,hi]. */
+static int combineBothPolHRunSPx(const cv::Mat& y, int t, int lo, int hi) {
+    if (y.empty() || y.type() != CV_8UC1) return 0;
+    const int h = y.rows, w = y.cols;
+    if (h < 1 || w < 1) return 0;
+    std::vector<int> bothH(static_cast<size_t>(w) + 1, 0);
+    for (int pol = 0; pol < 2; ++pol) {
+        for (int yy = 0; yy < h; ++yy) {
+            const uint8_t* p = y.ptr<uint8_t>(yy);
+            int run = 0;
+            for (int xx = 0; xx <= w; ++xx) {
+                const bool light = xx < w && static_cast<int>(p[xx]) > t;
+                const bool on = pol == 0 ? light : (xx < w && !light);
+                if (on) ++run;
+                else if (run > 0) {
+                    if (run != w && run <= w) bothH[static_cast<size_t>(run)]++;
+                    run = 0;
+                }
+            }
+        }
+    }
+    return combineArgmaxRun(bothH.data(), static_cast<int>(bothH.size()), lo, hi);
+}
+
+struct CombineLightWin {
+    bool have = false;
+    int nStroke = -1;
+    int sPx = 0;
+    int t = 0;
+};
+
+static bool combineLightWins(
+    const CombineLightWin& b, int nStroke, int sPx, int t, int seedH
+) {
+    if (!b.have) return true;
+    if (nStroke != b.nStroke) return nStroke > b.nStroke;
+    const int tgt = static_cast<int>(std::lround(0.22 * static_cast<double>(seedH)));
+    const int da = std::abs(sPx - tgt);
+    const int db = std::abs(b.sPx - tgt);
+    if (da != db) return da < db;
+    return t < b.t;
+}
+
+static void combineMarkLightCores(
+    const cv::Mat& y, int t, int sPx, std::vector<uint8_t>* stroke,
+    bool* hasH, bool* hasV
+) {
+    if (!stroke || !hasH || !hasV) return;
+    const int h = y.rows, w = y.cols;
+    const float plo = 0.7f * static_cast<float>(sPx);
+    const float phi = 1.3f * static_cast<float>(sPx);
+    for (int pol = 0; pol < 2; ++pol) {
+        for (int yy = 0; yy < h; ++yy) {
+            const uint8_t* p = y.ptr<uint8_t>(yy);
+            int run = 0, x0 = 0;
+            for (int xx = 0; xx <= w; ++xx) {
+                const bool light = xx < w && static_cast<int>(p[xx]) > t;
+                const bool on = pol == 0 ? light : (xx < w && !light);
+                if (on) {
+                    if (run == 0) x0 = xx;
+                    ++run;
+                } else if (run > 0) {
+                    if (run != w) {
+                        const float fl = static_cast<float>(run);
+                        if (fl >= plo && fl <= phi) {
+                            *hasH = true;
+                            for (int x = x0; x < x0 + run; ++x)
+                                (*stroke)[static_cast<size_t>(yy * w + x)] = 1;
+                        }
+                    }
+                    run = 0;
+                }
+            }
+        }
+        for (int xx = 0; xx < w; ++xx) {
+            int run = 0, y0 = 0;
+            for (int yy = 0; yy <= h; ++yy) {
+                const bool light = yy < h &&
+                    static_cast<int>(y.ptr<uint8_t>(yy)[xx]) > t;
+                const bool on = pol == 0 ? light : (yy < h && !light);
+                if (on) {
+                    if (run == 0) y0 = yy;
+                    ++run;
+                } else if (run > 0) {
+                    if (run != h) {
+                        const float fl = static_cast<float>(run);
+                        if (fl >= plo && fl <= phi) {
+                            *hasV = true;
+                            for (int r = y0; r < y0 + run; ++r)
+                                (*stroke)[static_cast<size_t>(r * w + xx)] = 1;
+                        }
+                    }
+                    run = 0;
+                }
+            }
+        }
+    }
+}
+
+/** Valley Y>t Lights. Digit-scale + HV cores + nStroke + white-cap. Rank like seedPickWins. */
+static bool combinePickValleyLight(
+    const cv::Mat& y, int loSw, int hiSw, int* tOut, int* sPxOut
+) {
+    if (!tOut || !sPxOut || y.empty() || y.type() != CV_8UC1) return false;
+    const int h = y.rows, w = y.cols;
+    if (h < 1 || w < 1) return false;
+    const int nPix = h * w;
+    int hist[256] = {};
+    for (int yy = 0; yy < h; ++yy) {
+        const uint8_t* p = y.ptr<uint8_t>(yy);
+        for (int xx = 0; xx < w; ++xx) hist[p[xx]]++;
+    }
+    float hist64[64] = {};
+    for (int i = 0; i < 256; ++i) hist64[i / 4] += static_cast<float>(hist[i]);
+    int valleys[64];
+    int nValley = 0;
+    findValleyMidpoints64(hist64, valleys, &nValley);
+    const int dLo = static_cast<int>(std::lround(0.12 * static_cast<double>(h)));
+    const int dHi = static_cast<int>(std::lround(0.40 * static_cast<double>(h)));
+    const int strokeCap = nPix / 4;
+    CombineLightWin best;
+    std::vector<uint8_t> stroke(static_cast<size_t>(nPix), 0);
+    int seenT[64];
+    int nSeen = 0;
+    for (int v = 0; v < nValley; ++v) {
+        int t = valleys[v] * 4 + 2;
+        if (t < 0) t = 0;
+        if (t > 255) t = 255;
+        bool dup = false;
+        for (int s = 0; s < nSeen; ++s) {
+            if (seenT[s] == t) { dup = true; break; }
+        }
+        if (dup) continue;
+        if (nSeen < 64) seenT[nSeen++] = t;
+        const int sPx = combineBothPolHRunSPx(y, t, loSw, hiSw);
+        if (sPx < 1 || sPx < dLo || sPx > dHi) continue;
+        std::memset(stroke.data(), 0, static_cast<size_t>(nPix));
+        bool hasH = false, hasV = false;
+        combineMarkLightCores(y, t, sPx, &stroke, &hasH, &hasV);
+        if (!hasH || !hasV) continue;
+        int nStroke = 0, nWhite = 0;
+        for (int yy = 0; yy < h; ++yy) {
+            const uint8_t* p = y.ptr<uint8_t>(yy);
+            for (int xx = 0; xx < w; ++xx) {
+                if (static_cast<int>(p[xx]) > t) ++nWhite;
+                if (stroke[static_cast<size_t>(yy * w + xx)]) ++nStroke;
+            }
+        }
+        if (nStroke < 1 || nStroke > strokeCap) continue;
+        if (static_cast<double>(nWhite) > 0.85 * static_cast<double>(nPix)) continue;
+        if (!combineLightWins(best, nStroke, sPx, t, h)) continue;
+        best.have = true;
+        best.nStroke = nStroke;
+        best.sPx = sPx;
+        best.t = t;
+    }
+    if (!best.have || best.sPx <= loSw) return false;
+    *tOut = best.t;
+    *sPxOut = best.sPx;
+    return true;
+}
+
+/** Seed-sized 255/0 combined + poison mask. Does not write lookBin. */
+static int seedCombine255(
+    const cv::Mat& src, int sl, int st, int sr, int sb,
+    bool srcIsBin, int glareMult, int fallback,
+    SeedCombine* out, int seedIndex = 0, bool virtSp = false
+) {
+    if (!out || src.empty() || src.type() != CV_8UC1) return fallback;
+    if (sl < 0) sl = 0;
+    if (st < 0) st = 0;
+    if (sr > src.cols) sr = src.cols;
+    if (sb > src.rows) sb = src.rows;
+    if (sr <= sl || sb <= st) return fallback;
+    cv::Mat seedY = src(cv::Range(st, sb), cv::Range(sl, sr));
+    const int seedH = seedY.rows, seedW = seedY.cols;
+    const int imgW = src.cols;
+    if (seedH < 1 || seedW < 1) return fallback;
+    const int ySeed0 = st, xSeed0 = sl;
+    cv::Mat bin(seedH, seedW, CV_8UC1);
+    bin.setTo(0);
+    double otsu = 0.0;
+    bool inverted = false;
+    float inkFrac = 0.f;
+    float inkFracDark = 0.f;
+    const int bh = std::min(seedY.rows, bin.rows);
+    const int bw = std::min(seedY.cols, bin.cols);
+    if (srcIsBin) {
+        int nz = 0;
+        const int nPix = std::max(1, seedH * seedW);
+        for (int yy = 0; yy < bh; ++yy) {
+            const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+            uint8_t* op = bin.ptr<uint8_t>(yy);
+            for (int xx = 0; xx < bw; ++xx) {
+                op[xx] = yp[xx];
+                if (op[xx]) ++nz;
+            }
+        }
+        inkFrac = nz / static_cast<float>(nPix);
+        inkFracDark = inkFrac;
+        if (inkFrac >= 0.45f) {
+            inverted = true;
+            nz = 0;
+            for (int yy = 0; yy < bh; ++yy) {
+                uint8_t* op = bin.ptr<uint8_t>(yy);
+                for (int xx = 0; xx < bw; ++xx) {
+                    op[xx] = static_cast<uint8_t>(255 - op[xx]);
+                    if (op[xx]) ++nz;
+                }
+            }
+            inkFrac = nz / static_cast<float>(nPix);
+        }
+    } else {
+        int hist[256] = {};
+        int n = 0;
+        for (int yy = 0; yy < bh; ++yy) {
+            const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+            for (int xx = 0; xx < bw; ++xx) {
+                hist[yp[xx]]++;
+                ++n;
+            }
+        }
+        const int nPix = std::max(1, n);
+        otsu = n >= 2 ? otsuThrFromHist(hist, n) : 0.0;
+        const int ti = static_cast<int>(otsu);
+        int nz = 0;
+        for (int i = 0; i <= ti && i < 256; ++i) nz += hist[i];
+        inkFrac = nz / static_cast<float>(nPix);
+        inkFracDark = inkFrac;
+        bool dark = true;
+        if (inkFrac >= 0.45f) {
+            inverted = true;
+            dark = false;
+            nz = nPix - nz;
+            inkFrac = nz / static_cast<float>(nPix);
+        }
+        for (int yy = 0; yy < bh; ++yy) {
+            const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+            uint8_t* op = bin.ptr<uint8_t>(yy);
+            for (int xx = 0; xx < bw; ++xx) {
+                const bool ink = dark
+                    ? (static_cast<int>(yp[xx]) <= ti)
+                    : (static_cast<int>(yp[xx]) > ti);
+                op[xx] = ink ? 255 : 0;
+            }
+        }
+    }
+    if (!virtSp) fillSaltPepperSeed(&bin, imgW);
+    HorizSW hh0 = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
+    int v0 = hh0.peak;
+    bool needFb0 = strokeNeedFb(hh0, v0, seedW, inkFrac);
+    int sPx0 = (v0 > 4 && !needFb0) ? v0 : fallback;
+    if (!srcIsBin && inverted) {
+        const int loSw = imgW >= 2000 ? 16 : 4;
+        const int hiSw = std::max(35, seedH / 2);
+        const int lightSPx = combineBothPolHRunSPx(
+            seedY, static_cast<int>(otsu), loSw, hiSw);
+        if (sPx0 == loSw || lightSPx == loSw) {
+            int tStar = 0, sPxL = 0;
+            if (combinePickValleyLight(seedY, loSw, hiSw, &tStar, &sPxL)) {
+                inverted = true;
+                otsu = static_cast<double>(tStar);
+                sPx0 = sPxL;
+                v0 = sPxL;
+                int nzL = 0;
+                const int nPixL = std::max(1, seedH * seedW);
+                for (int yy = 0; yy < bh; ++yy) {
+                    const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+                    uint8_t* op = bin.ptr<uint8_t>(yy);
+                    for (int xx = 0; xx < bw; ++xx) {
+                        const bool ink = static_cast<int>(yp[xx]) > tStar;
+                        op[xx] = ink ? 255 : 0;
+                        if (ink) ++nzL;
+                    }
+                }
+                inkFrac = nzL / static_cast<float>(nPixL);
+                needFb0 = strokeNeedFb(hh0, v0, seedW, inkFrac);
+                if (!virtSp) fillSaltPepperSeed(&bin, imgW);
+            }
+        }
+    }
+    cv::Mat poison(seedH, seedW, CV_8UC1);
+    poison.setTo(0);
+    fillPoisonMask(bin, v0, needFb0, seedW, glareMult, &poison);
+    veRssLog("poison_mask", nullptr);
+    bool bandTop = false, bandBot = false;
+    int bandH = 0;
+    double cleanThr = otsu;
+    bool cleanDark = !inverted;
+    float cleanInkFrac = 0.f;
+    bool haveClean = false;
+    const int nFirst = cv::countNonZero(bin);
+    if (srcIsBin) {
+        for (int yy = 0; yy < seedH; ++yy) {
+            const uint8_t* pp = poison.ptr<uint8_t>(yy);
+            uint8_t* sp = bin.ptr<uint8_t>(yy);
+            for (int xx = 0; xx < seedW; ++xx) if (pp[xx]) sp[xx] = 0;
+        }
+        haveClean = cv::countNonZero(bin) > 0;
+        cleanDark = !inverted;
+        cleanThr = 127.0;
+    } else {
+        haveClean = otsuKeepPoison0(seedY, poison, &cleanThr, &cleanDark, &cleanInkFrac);
+        if (haveClean) {
+            applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
+            if (!virtSp) fillSaltPepperSeed(&bin, imgW);
+        } else {
+            bin.setTo(0);
+        }
+    }
+    HorizSW hhC = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
+    int v0Clean = hhC.peak;
+    bool needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, srcIsBin
+        ? (cv::countNonZero(bin) / static_cast<float>(std::max(1, seedH * seedW)))
+        : cleanInkFrac);
+    int sPx = (v0Clean > 4 && !needFbClean) ? v0Clean : fallback;
+    if (!srcIsBin && inverted && haveClean && !cleanDark) {
+        if (nFirst > 0 &&
+            cv::countNonZero(poison) >= static_cast<int>(0.60f * static_cast<float>(nFirst))) {
+            double thr2 = 0.0;
+            bool dark2 = true;
+            float frac2 = 0.f;
+            if (otsuKeepPoison0(seedY, poison, &thr2, &dark2, &frac2, cleanThr)) {
+                applyThrKeepPoison0(seedY, poison, thr2, dark2, &bin, cleanThr);
+                if (!virtSp) fillSaltPepperSeed(&bin, imgW);
+                if (dark2 && frac2 >= 0.05f && frac2 <= 0.42f) {
+                    cleanThr = thr2;
+                    cleanDark = dark2;
+                    cleanInkFrac = frac2;
+                    hhC = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
+                    v0Clean = hhC.peak;
+                    needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, cleanInkFrac);
+                    sPx = (v0Clean > 4 && !needFbClean) ? v0Clean : fallback;
+                } else {
+                    applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
+                    if (!virtSp) fillSaltPepperSeed(&bin, imgW);
+                }
+            }
+        }
+    }
+    bool useSample = v0Clean > 4;
+    if (!useSample && !srcIsBin && haveClean && cleanDark &&
+        cleanInkFrac >= 0.05f && cleanInkFrac <= 0.40f &&
+        dInkFromBin(seedY, bin) <= -10.f) {
+        useSample = true;
+    }
+    if (!srcIsBin && cv::countNonZero(bin) == 0 && haveClean && cleanDark &&
+        cleanInkFrac >= 0.05f && cleanInkFrac <= 0.40f) {
+        applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
+    }
+    auto lookInkAt = [&](int y, int x) -> uint8_t {
+        return lookInkAtY(src, y, x, srcIsBin, inverted, cleanDark, cleanThr);
+    };
+    auto countSeedLookInk = [&]() -> int {
+        int n = 0;
+        for (int yy = 0; yy < seedH; ++yy) {
+            const int sy = yy + ySeed0;
+            if (sy < 0 || sy >= src.rows) continue;
+            for (int xx = 0; xx < seedW; ++xx) {
+                const int sx = xx + xSeed0;
+                if (sx < 0 || sx >= src.cols) continue;
+                if (lookInkAt(sy, sx)) ++n;
+            }
+        }
+        return n;
+    };
+    int nInkSeed = countSeedLookInk();
+    bool flipped = false;
+    if (nInkSeed == 0 && !srcIsBin) {
+        flipped = true;
+        cleanDark = !cleanDark;
+        applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
+        if (!virtSp) fillSaltPepperSeed(&bin, imgW);
+        hhC = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
+        v0Clean = hhC.peak;
+        needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, cleanInkFrac);
+        sPx = (v0Clean > 4 && !needFbClean) ? v0Clean : fallback;
+        nInkSeed = countSeedLookInk();
+        if (nInkSeed > 0) {
+            useSample = true;
+        }
+    }
+    SeedFillGate fillGate;
+    countSeedFillGate(
+        bin, poison, src, xSeed0, ySeed0,
+        srcIsBin, inverted, cleanDark, cleanThr, &fillGate);
+    double poisonFirstThr = srcIsBin ? 127.0 : otsu;
+    const float fillLo = 0.05f;
+    const float fillHi = 0.45f;
+    const int kh = std::min(seedH, std::min(seedY.rows, poison.rows));
+    const int kw = std::min(seedW, std::min(seedY.cols, poison.cols));
+    int nKeep = 0;
+    int nPoison = 0;
+    int nValley = 0;
+    int huntValleys[kValleyPackN] = {};
+    int nHuntValleys = 0;
+    int huntSkipped[kValleyPackN] = {};
+    int nHuntSkipped = 0;
+    auto packHuntValleys = [&](const int* mids, int nMids) {
+        nHuntValleys = 0;
+        if (!mids) return;
+        for (int v = 0; v < nMids && nHuntValleys < kValleyPackN; ++v) {
+            const int thr = mids[v] * 4 + 2;
+            if (thr < 0 || thr > 255) continue;
+            huntValleys[nHuntValleys++] = thr;
+        }
+    };
+    auto countPoisonKeep = [&]() {
+        nKeep = 0;
+        nPoison = 0;
+        for (int yy = 0; yy < kh; ++yy) {
+            const uint8_t* pp = poison.ptr<uint8_t>(yy);
+            for (int xx = 0; xx < kw; ++xx) {
+                if (pp[xx]) ++nPoison;
+                else ++nKeep;
+            }
+        }
+    };
+    auto recordAttempt = [&](int kind) {
+        if (fillGate.nAttempts >= kSeg7AttemptMax) return;
+        SeedFillAttempt& a = fillGate.attempts[fillGate.nAttempts];
+        a.kind = kind;
+        a.firstThr = static_cast<float>(poisonFirstThr);
+        a.thr = static_cast<float>(cleanThr);
+        a.dark = cleanDark ? 1 : 0;
+        a.flip = flipped ? 1 : 0;
+        a.nLookBin = fillGate.nLookBin;
+        a.nRecovered = fillGate.nRecovered;
+        a.fill = fillGate.fill;
+        a.nKeep = nKeep;
+        a.nValley = nValley;
+        a.nPoison = nPoison;
+        const HorizSW hhA = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
+        a.sPx = hhA.peak;
+        const float fracA = srcIsBin
+            ? (cv::countNonZero(bin) /
+                static_cast<float>(std::max(1, seedH * seedW)))
+            : cleanInkFrac;
+        a.acceptedSpx = (hhA.peak > 4 && !strokeNeedFb(hhA, hhA.peak, seedW, fracA)) ? 1 : 0;
+        a.inBand = (fillGate.fill >= fillLo && fillGate.fill <= fillHi) ? 1 : 0;
+        a.kept = 0;
+        a.inkFracDark = inkFracDark;
+        a.inverted = inverted ? 1 : 0;
+        a.cleanDark = cleanDark ? 1 : 0;
+        a.cleanInkFrac = fracA;
+        a.vSW = hhA.peak;
+        strokeFbMetrics(hhA, hhA.peak, seedW, &a.strokeShare, &a.maxRunOverW);
+        a.needVsw = hhA.peak <= 4 ? 1 : 0;
+        a.needInkFrac = fracA >= 0.45f ? 1 : 0;
+        a.needShare = 0;
+        a.needMaxRun = 0;
+        for (int k = 0; k < kHistRawN; ++k) {
+            const int run = k + 1;
+            a.histRaw[k] = (run < static_cast<int>(hhA.hist.size())) ? hhA.hist[run] : 0;
+        }
+        int tail = 0;
+        for (int k = kHistRawN + 1; k < static_cast<int>(hhA.hist.size()); ++k)
+            tail += hhA.hist[k];
+        a.histRawTail = tail;
+        a.nValleysPack = nHuntValleys;
+        for (int v = 0; v < kValleyPackN; ++v)
+            a.valleys[v] = (v < nHuntValleys) ? huntValleys[v] : 0;
+        a.nSkippedPack = nHuntSkipped;
+        for (int s = 0; s < kValleyPackN; ++s)
+            a.skipped[s] = (s < nHuntSkipped) ? huntSkipped[s] : 0;
+        a.stop = 0;
+        ++fillGate.nAttempts;
+        fillGate.nKeep = nKeep;
+        fillGate.nPoison = nPoison;
+        fillGate.firstThr = static_cast<float>(poisonFirstThr);
+        fillGate.nValley = nValley;
+    };
+    if (!srcIsBin) {
+        auto fillKeepHist = [&](float hist64[64], int* nKeepOut, int* nValleyOut,
+            int valleys[64]) {
+            for (int i = 0; i < 64; ++i) hist64[i] = 0.f;
+            int keep = 0;
+            nPoison = 0;
+            for (int yy = 0; yy < kh; ++yy) {
+                const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+                const uint8_t* pp = poison.ptr<uint8_t>(yy);
+                for (int xx = 0; xx < kw; ++xx) {
+                    if (pp[xx]) {
+                        ++nPoison;
+                        continue;
+                    }
+                    ++keep;
+                    int b = static_cast<int>(yp[xx]) / 4;
+                    if (b < 0) b = 0;
+                    if (b > 63) b = 63;
+                    hist64[b] += 1.f;
+                }
+            }
+            int nv = 0;
+            findValleyMidpoints64(hist64, valleys, &nv);
+            if (nKeepOut) *nKeepOut = keep;
+            if (nValleyOut) *nValleyOut = nv;
+        };
+        float hist64[64] = {};
+        int valleys[64];
+        fillKeepHist(hist64, &nKeep, &nValley, valleys);
+        fillGate.nValley = nValley;
+        packHuntValleys(valleys, nValley);
+        recordAttempt(0);
+        const bool highFill = fillGate.fill > fillHi;
+        const bool lowFill = fillGate.fill < fillLo || fillGate.nLookBin == 0;
+        const bool swDiscarded = v0Clean <= 4 || needFbClean;
+        const int retryWhyWant = highFill ? 2 : (lowFill ? 1 : (swDiscarded ? 3 : 0));
+        if (retryWhyWant != 0) {
+            fillGate.retryWhy = retryWhyWant;
+            fillGate.nRetry = 0;
+            const int nLookBin0 = fillGate.nLookBin;
+            std::vector<int> tried;
+            tried.push_back(static_cast<int>(std::lround(cleanThr)));
+            cv::Mat commitBin;
+            cv::Mat commitPoison;
+            double commitThr = cleanThr;
+            bool commitDark = cleanDark;
+            bool commitHave = haveClean;
+            float commitFrac = cleanInkFrac;
+            double commitFirstThr = poisonFirstThr;
+            SeedFillGate commitGate;
+            bool haveCommit = false;
+            int extras = 0;
+            auto noteAttempt = [&](int kind) -> bool {
+                fillGate.nRetry = extras;
+                fillGate.retryWhy = retryWhyWant;
+                fillGate.nValley = nValley;
+                recordAttempt(kind);
+                const bool inBandNow =
+                    fillGate.fill >= fillLo && fillGate.fill <= fillHi;
+                const HorizSW hhNow = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
+                const int vNow = hhNow.peak;
+                const float fracNow = srcIsBin
+                    ? (cv::countNonZero(bin) /
+                        static_cast<float>(std::max(1, seedH * seedW)))
+                    : cleanInkFrac;
+                const bool acceptedSpx =
+                    vNow > 4 && !strokeNeedFb(hhNow, vNow, seedW, fracNow);
+                bool take = false;
+                bool stop = false;
+                if (retryWhyWant == 3) {
+                    take = inBandNow && acceptedSpx;
+                    stop = take;
+                } else if (retryWhyWant == 2) {
+                    take = inBandNow && acceptedSpx;
+                    stop = take;
+                } else {
+                    take = inBandNow && acceptedSpx;
+                    stop = take;
+                }
+                if (take) {
+                    haveCommit = true;
+                    bin.copyTo(commitBin);
+                    poison.copyTo(commitPoison);
+                    commitThr = cleanThr;
+                    commitDark = cleanDark;
+                    commitHave = haveClean;
+                    commitFrac = cleanInkFrac;
+                    commitFirstThr = poisonFirstThr;
+                    copyFillGateChosen(fillGate, &commitGate);
+                    for (int i = 0; i < fillGate.nAttempts; ++i)
+                        fillGate.attempts[i].kept = 0;
+                    if (fillGate.nAttempts > 0) {
+                        fillGate.attempts[fillGate.nAttempts - 1].kept = 1;
+                        fillGate.attempts[fillGate.nAttempts - 1].stop = 1;
+                    }
+                    if (stop) return true;
+                }
+                return false;
+            };
+            bool inBand = false;
+            if (retryWhyWant == 1 && (nKeep < 2 || nLookBin0 == 0) && extras < 3) {
+                float histAll[64] = {};
+                for (int yy = 0; yy < kh; ++yy) {
+                    const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+                    for (int xx = 0; xx < kw; ++xx) {
+                        int b = static_cast<int>(yp[xx]) / 4;
+                        if (b < 0) b = 0;
+                        if (b > 63) b = 63;
+                        histAll[b] += 1.f;
+                    }
+                }
+                int vAll[64];
+                int nVA = 0;
+                findValleyMidpoints64(histAll, vAll, &nVA);
+                const int usedFirst = static_cast<int>(std::lround(otsu));
+                int firstThr = -1;
+                for (int v = 0; v < nVA; ++v) {
+                    const int thr = vAll[v] * 4 + 2;
+                    if (thr < 0 || thr > 255) continue;
+                    if (thr == usedFirst) continue;
+                    firstThr = thr;
+                    break;
+                }
+                if (firstThr >= 0) {
+                    int nz = 0, nPix = 0;
+                    for (int yy = 0; yy < kh; ++yy) {
+                        const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+                        for (int xx = 0; xx < kw; ++xx) {
+                            ++nPix;
+                            if (static_cast<int>(yp[xx]) <= firstThr) ++nz;
+                        }
+                    }
+                    float frac = nz / static_cast<float>(std::max(1, nPix));
+                    inkFracDark = frac;
+                    bool dark = true;
+                    inverted = false;
+                    if (frac >= 0.45f) {
+                        inverted = true;
+                        dark = false;
+                        frac = 1.f - frac;
+                    }
+                    inkFrac = frac;
+                    for (int yy = 0; yy < bh; ++yy) {
+                        const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+                        uint8_t* op = bin.ptr<uint8_t>(yy);
+                        for (int xx = 0; xx < bw; ++xx) {
+                            const bool ink = dark
+                                ? (static_cast<int>(yp[xx]) <= firstThr)
+                                : (static_cast<int>(yp[xx]) > firstThr);
+                            op[xx] = ink ? 255 : 0;
+                        }
+                    }
+                    if (!virtSp) fillSaltPepperSeed(&bin, imgW);
+                    HorizSW hhR = horizPeakSW(bin, seedH, seedW, virtSp, imgW);
+                    int v0R = hhR.peak;
+                    bool needFbR = strokeNeedFb(hhR, v0R, seedW, inkFrac);
+                    int sPxR = (v0R > 4 && !needFbR) ? v0R : fallback;
+                    fillPoisonMask(bin, v0R, needFbR, seedW, glareMult, &poison);
+                    haveClean = otsuKeepPoison0(
+                        seedY, poison, &cleanThr, &cleanDark, &cleanInkFrac);
+                    if (haveClean) {
+                        applyThrKeepPoison0(
+                            seedY, poison, cleanThr, cleanDark, &bin);
+                        if (!virtSp) fillSaltPepperSeed(&bin, imgW);
+                    } else {
+                        bin.setTo(0);
+                    }
+                    ++extras;
+                    tried.push_back(static_cast<int>(std::lround(cleanThr)));
+                    poisonFirstThr = static_cast<double>(firstThr);
+                    countSeedFillGate(
+                        bin, poison, src, xSeed0, ySeed0,
+                        srcIsBin, inverted, cleanDark, cleanThr, &fillGate);
+                    fillKeepHist(hist64, &nKeep, &nValley, valleys);
+                    packHuntValleys(valleys, nValley);
+                    inBand = noteAttempt(2);
+                }
+            }
+            if (!inBand) {
+                const int usedKeep = static_cast<int>(std::lround(cleanThr));
+                std::vector<int> cands;
+                cands.reserve(static_cast<size_t>(nValley));
+                for (int v = 0; v < nValley; ++v) {
+                    const int thr = valleys[v] * 4 + 2;
+                    if (thr < 0 || thr > 255) continue;
+                    bool seen = false;
+                    for (int t : tried) {
+                        if (t == thr) { seen = true; break; }
+                    }
+                    if (seen) continue;
+                    const bool moreInk = cleanDark ? (thr > usedKeep) : (thr < usedKeep);
+                    const bool lessInk = cleanDark ? (thr < usedKeep) : (thr > usedKeep);
+                    if (retryWhyWant == 1) {
+                        if (nLookBin0 != 0 && !moreInk) {
+                            if (nHuntSkipped < kValleyPackN)
+                                huntSkipped[nHuntSkipped++] = thr;
+                            continue;
+                        }
+                    } else if (retryWhyWant == 2) {
+                        if (!lessInk) {
+                            if (nHuntSkipped < kValleyPackN)
+                                huntSkipped[nHuntSkipped++] = thr;
+                            continue;
+                        }
+                    }
+                    cands.push_back(thr);
+                }
+                std::sort(cands.begin(), cands.end(), [&](int a, int b) {
+                    const int da = std::abs(a - usedKeep);
+                    const int db = std::abs(b - usedKeep);
+                    if (da != db) return da < db;
+                    return a < b;
+                });
+                for (int thr : cands) {
+                    if (fillGate.nAttempts >= kSeg7AttemptMax) break;
+                    applyThrKeepPoison0(
+                        seedY, poison, static_cast<double>(thr), cleanDark, &bin);
+                    if (!virtSp) fillSaltPepperSeed(&bin, imgW);
+                    ++extras;
+                    tried.push_back(thr);
+                    cleanThr = static_cast<double>(thr);
+                    countSeedFillGate(
+                        bin, poison, src, xSeed0, ySeed0,
+                        srcIsBin, inverted, cleanDark, cleanThr, &fillGate);
+                    if (noteAttempt(1)) {
+                        inBand = true;
+                        break;
+                    }
+                }
+                int huntStop = 0;
+                if (inBand) huntStop = 1;
+                else if (fillGate.nAttempts >= kSeg7AttemptMax) huntStop = 3;
+                else huntStop = 2;
+                if (fillGate.nAttempts > 0 &&
+                    fillGate.attempts[fillGate.nAttempts - 1].stop == 0) {
+                    fillGate.attempts[fillGate.nAttempts - 1].stop = huntStop;
+                }
+            }
+            if (!inBand) {
+                if (haveCommit) {
+                    commitBin.copyTo(bin);
+                    commitPoison.copyTo(poison);
+                    cleanThr = commitThr;
+                    cleanDark = commitDark;
+                    haveClean = commitHave;
+                    cleanInkFrac = commitFrac;
+                    poisonFirstThr = commitFirstThr;
+                    copyFillGateChosen(commitGate, &fillGate);
+                }
+                fillGate.nRetry = extras;
+                fillGate.retryWhy = retryWhyWant;
+                fillGate.nValley = nValley;
+            }
+        } else if (fillGate.nAttempts > 0) {
+            fillGate.attempts[0].kept = 1;
+            fillGate.attempts[0].stop = 1;
+        }
+    } else {
+        countPoisonKeep();
+        recordAttempt(0);
+        if (fillGate.nAttempts > 0) {
+            fillGate.attempts[0].kept = 1;
+            fillGate.attempts[0].stop = 1;
+        }
+    }
+    if (fillGate.nRetry > 0 || fillGate.fill < fillLo || fillGate.fill > fillHi) {
+        for (int i = 0; i < fillGate.nAttempts; ++i) {
+            const SeedFillAttempt& a = fillGate.attempts[i];
+            LOGI("fill_retry seed=%d i=%d kind=%d firstThr=%d thr=%d dark=%d flip=%d "
+                 "fill=%.3f nLook=%d nRec=%d nKeep=%d nVal=%d nPoi=%d sPx=%d why=%d",
+                seedIndex, i, a.kind,
+                static_cast<int>(std::lround(a.firstThr)),
+                static_cast<int>(std::lround(a.thr)),
+                a.dark, a.flip, a.fill, a.nLookBin, a.nRecovered,
+                a.nKeep, a.nValley, a.nPoison, a.sPx, fillGate.retryWhy);
+        }
+    }
+    countSeedFillGate(
+        bin, poison, src, xSeed0, ySeed0,
+        srcIsBin, inverted, cleanDark, cleanThr, &fillGate);
+    cv::Mat combined;
+    bin.copyTo(combined);
+    hhC = horizPeakSW(combined, seedH, seedW, virtSp, imgW);
+    v0Clean = hhC.peak;
+    needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, srcIsBin
+        ? (cv::countNonZero(combined) / static_cast<float>(std::max(1, seedH * seedW)))
+        : cleanInkFrac);
+    sPx = (v0Clean > 4 && !needFbClean) ? v0Clean : fallback;
+    useSample = v0Clean > 4;
+    if (!useSample && !srcIsBin && haveClean && cleanDark &&
+        cleanInkFrac >= 0.05f && cleanInkFrac <= 0.40f &&
+        dInkFromBin(seedY, combined) <= -10.f) {
+        useSample = true;
+    }
+    if (!out) return sPx;
+    out->bin = combined;
+    out->poison = poison;
+    out->sPx = sPx;
+    out->inverted = inverted;
+    out->cleanDark = cleanDark;
+    out->cleanThr = cleanThr;
+    out->haveClean = haveClean;
+    out->cleanInkFrac = cleanInkFrac;
+    out->v0Clean = v0Clean;
+    out->useSample = useSample;
+    out->bandTop = bandTop;
+    out->bandBot = bandBot;
+    out->bandH = bandH;
+    out->fillGate = fillGate;
+    fillOverlapHists(combined, seedW, seedH, &out->overlap, imgW);
+    return sPx;
+}
+
+/** Seed-ROI Y Otsu + poison map; chroma samples clean + agreeing poison ink. */
+static int seedInkBinY(
+    const cv::Mat& y, int sl, int st, int sr, int sb, cv::Mat* binOut,
+    int glareMult = 8,
+    double* otsuOut = nullptr,
+    bool* invertedOut = nullptr
+) {
+    if (y.empty()) {
+        const int fallback = 2;
+        return fallback;
+    }
+    const int w = y.cols, h = y.rows;
+    if (sl < 0) sl = 0;
+    if (st < 0) st = 0;
+    if (sr > w) sr = w;
+    if (sb > h) sb = h;
+    const int seedH = std::max(1, sb - st);
+    const int seedW = std::max(1, sr - sl);
+    if (sr <= sl || sb <= st) return 0;
+    if (!binOut || binOut->empty() || binOut->type() != CV_8UC1 ||
+        binOut->rows != seedH || binOut->cols != seedW) {
+        return 0;
+    }
+    SeedCombine sc;
+    const int sPx = seedCombine255(
+        y, sl, st, sr, sb, false, glareMult, 0, &sc, 0);
+    if (sc.bin.empty() || sc.bin.type() != CV_8UC1 ||
+        sc.bin.rows != seedH || sc.bin.cols != seedW) {
+        return 0;
+    }
+    sc.bin.copyTo(*binOut);
+    if (otsuOut) *otsuOut = 0.0;
+    if (invertedOut) *invertedOut = false;
+    return sPx;
+}
+
+struct PoisonReg {
+    int x0 = 0, x1 = 0, y0 = 0, y1 = 0;
+    double thr = 0.0;
+    bool dark = true;
+    bool noPeak = true;
+    int nInk = 0;
+};
+
+static bool rowHasStrokeBar(
+    const cv::Mat& bin, int y, int minRun, int glareW, const ObjPack* pack,
+    int x0, int x1, bool virtSp, int imgW
+) {
+    if (y < 0 || y >= bin.rows) return false;
+    const uint8_t* p = bin.ptr<uint8_t>(y);
+    if (x0 < 0) x0 = 0;
+    if (x1 < 0 || x1 > bin.cols) x1 = bin.cols;
+    if (x1 <= x0) return false;
+    int x = x0;
+    const int gapMax = saltPepperGapMax(imgW);
+    while (x < x1) {
+        if (!isLookInkId(p[x], pack)) {
+            ++x;
+            continue;
+        }
+        int run = 0;
+        while (true) {
+            while (x < x1 && isLookInkId(p[x], pack)) {
+                ++run;
+                ++x;
+            }
+            if (!virtSp || x >= x1) break;
+            const int gapStart = x;
+            while (x < x1 && !isLookInkId(p[x], pack)) ++x;
+            const int g = x - gapStart;
+            if (x < x1 && vspSkipRun(g, run, gapMax)) {
+                run += g;
+                continue;
+            }
+            x = gapStart;
+            break;
+        }
+        if (run >= minRun && run <= glareW) return true;
+    }
+    return false;
+}
+
+static void yuvPut(
+    cv::Mat* yPlane, cv::Mat* uvPlane, int x, int y,
+    uint8_t Y, uint8_t U, uint8_t V
+) {
+    if (yPlane && y >= 0 && y < yPlane->rows && x >= 0 && x < yPlane->cols) {
+        yPlane->ptr<uint8_t>(y)[x] = Y;
+    }
+    if (uvPlane && uvPlane->type() == CV_8UC2 && uvPlane->rows > 0 && uvPlane->cols > 0) {
+        int uy = y / 2;
+        int ux = x / 2;
+        if (uy < 0) uy = 0;
+        if (ux < 0) ux = 0;
+        if (uy >= uvPlane->rows) uy = uvPlane->rows - 1;
+        if (ux >= uvPlane->cols) ux = uvPlane->cols - 1;
+        uvPlane->ptr<cv::Vec2b>(uy)[ux] = cv::Vec2b(U, V);
+    }
+}
+
+static void stampPoisonFlood(
+    cv::Mat& pois, cv::Mat* obj, int ox, int oy, int sPx, int seedIndex, ObjPack* pack,
+    bool mapUv = false,
+    float ovCx = 0.f, float ovCy = 0.f,
+    float ovUx = 0.f, float ovUy = 0.f,
+    float ovVx = 0.f, float ovVy = 0.f,
+    float ovU0 = 0.f, float ovU1 = 0.f, float ovLookV0 = 0.f,
+    int xSeed0 = 0, int ySeed0 = 0, int lw = 1
+) {
+    if (!pack || pois.empty()) return;
+    const int h = pois.rows, w = pois.cols;
+    const int minWh = std::max(1, sPx / 2);
+    uint8_t pepperId = 0;
+    bool havePepper = false;
+    std::vector<int> st;
+    st.reserve(256);
+    for (int y = 0; y < h; ++y) {
+        uint8_t* pp = pois.ptr<uint8_t>(y);
+        for (int x = 0; x < w; ++x) {
+            if (pp[x] != 255) continue;
+            st.clear();
+            st.push_back(y * w + x);
+            pp[x] = 128;
+            int x0 = x, x1 = x + 1, y0 = y, y1 = y + 1, n = 0;
+            while (!st.empty()) {
+                const int i = st.back();
+                st.pop_back();
+                const int cy = i / w, cx = i - cy * w;
+                ++n;
+                if (cx < x0) x0 = cx;
+                if (cx + 1 > x1) x1 = cx + 1;
+                if (cy < y0) y0 = cy;
+                if (cy + 1 > y1) y1 = cy + 1;
+                static const int k4dx[4] = { -1, 1, 0, 0 };
+                static const int k4dy[4] = { 0, 0, -1, 1 };
+                for (int k = 0; k < 4; ++k) {
+                    const int ny = cy + k4dy[k], nx = cx + k4dx[k];
+                    if (ny < 0 || nx < 0 || ny >= h || nx >= w) continue;
+                    if (pois.ptr<uint8_t>(ny)[nx] != 255) continue;
+                    pois.ptr<uint8_t>(ny)[nx] = 128;
+                    st.push_back(ny * w + nx);
+                }
+            }
+            const int cw = x1 - x0, ch = y1 - y0;
+            if (cw < minWh && ch < minWh) continue;
+            uint8_t id = 0;
+            const bool tiny = cw <= minWh * 2 && ch <= minWh * 2;
+            if (tiny) {
+                if (!havePepper) {
+                    if (!objAlloc(pack, false, seedIndex, kKindPepper, &pepperId)) return;
+                    havePepper = true;
+                    std::snprintf(pack->phase, sizeof(pack->phase), "plus-ROI");
+                }
+                id = pepperId;
+            } else {
+                if (!objAlloc(pack, false, seedIndex, kKindPoisonFat, &id)) return;
+                std::snprintf(pack->phase, sizeof(pack->phase), "poison");
+            }
+            for (int yy = y0; yy < y1; ++yy) {
+                uint8_t* row = pois.ptr<uint8_t>(yy);
+                for (int xx = x0; xx < x1; ++xx) {
+                    if (row[xx] != 128) continue;
+                    row[xx] = 64;
+                    int ix = ox + xx, iy = oy + yy;
+                    if (mapUv) {
+                        const float u = ovU0 + (xSeed0 + xx + 0.5f) /
+                            static_cast<float>(std::max(1, lw)) * (ovU1 - ovU0);
+                        const float v = ovLookV0 + (ySeed0 + yy + 0.5f);
+                        ix = static_cast<int>(std::lround(ovCx + u * ovUx + v * ovVx));
+                        iy = static_cast<int>(std::lround(ovCy + u * ovUy + v * ovVy));
+                    }
+                    objPut(obj, ix, iy, id, pack);
+                }
+            }
+        }
+    }
+}
+
+static void paintLookOverlay(
+    const cv::Mat& lookBin, const cv::Mat& lookPoison,
+    cv::Mat* overlayY, cv::Mat* overlayUv,
+    bool overlayUvMap, int ovX, int ovY,
+    float ovCx, float ovCy, float ovUx, float ovUy,
+    float ovVx, float ovVy, float ovU0, float ovU1, float ovLookV0,
+    bool clipToSeed,
+    float clipCx, float clipCy,
+    float clipUx, float clipUy,
+    float clipVx, float clipVy,
+    float clipU0, float clipU1,
+    float clipV0, float clipV1,
+    const ObjPack* pack,
+    int winL, int winT, int winR, int winB
+) {
+    if (!overlayY || overlayY->empty() || overlayY->type() != CV_8UC1) return;
+    const int lh = lookBin.rows, lw = lookBin.cols;
+    if (lh < 1 || lw < 1) return;
+    if (winL < 0) winL = 0;
+    if (winT < 0) winT = 0;
+    if (winR < 0 || winR > lw) winR = lw;
+    if (winB < 0 || winB > lh) winB = lh;
+    if (winR <= winL || winB <= winT) return;
+    auto overlayXY = [&](int x, int y, int* ix, int* iy) {
+        if (overlayUvMap) {
+            const float u = ovU0 + (x + 0.5f) / static_cast<float>(std::max(1, lw)) * (ovU1 - ovU0);
+            const float v = ovLookV0 + (y + 0.5f);
+            *ix = static_cast<int>(std::lround(ovCx + u * ovUx + v * ovVx));
+            *iy = static_cast<int>(std::lround(ovCy + u * ovUy + v * ovVy));
+        } else {
+            *ix = ovX + x;
+            *iy = ovY + y;
+        }
+    };
+    auto inWalkSeed = [&](int ix, int iy) {
+        if (!clipToSeed) return true;
+        const float dx = (ix + 0.5f) - clipCx;
+        const float dy = (iy + 0.5f) - clipCy;
+        const float u = dx * clipUx + dy * clipUy;
+        const float v = dx * clipVx + dy * clipVy;
+        return u >= clipU0 && u <= clipU1 && v >= clipV0 && v <= clipV1;
+    };
+    (void)lookPoison;
+    auto destIsInk = [&](int ix, int iy) -> bool {
+        const uint8_t Y = overlayY->ptr<uint8_t>(iy)[ix];
+        if (Y == 255) return true;
+        if (Y != 150) return false;
+        if (!overlayUv || overlayUv->empty() || overlayUv->type() != CV_8UC2) return true;
+        int uy = iy / 2;
+        int ux = ix / 2;
+        if (uy < 0) uy = 0;
+        if (ux < 0) ux = 0;
+        if (uy >= overlayUv->rows) uy = overlayUv->rows - 1;
+        if (ux >= overlayUv->cols) ux = overlayUv->cols - 1;
+        const cv::Vec2b uv = overlayUv->ptr<cv::Vec2b>(uy)[ux];
+        return uv[0] == 44 && uv[1] == 21;
+    };
+    for (int y = winT; y < winB; ++y) {
+        const uint8_t* ids = lookBin.ptr<uint8_t>(y);
+        for (int x = winL; x < winR; ++x) {
+            const uint8_t v = ids[x];
+            if (v == 0 || isLookInkId(v, pack)) continue;
+            int ix = 0, iy = 0;
+            overlayXY(x, y, &ix, &iy);
+            if (iy < 0 || iy >= overlayY->rows || ix < 0 || ix >= overlayY->cols) continue;
+            if (!inWalkSeed(ix, iy)) continue;
+            if (destIsInk(ix, iy)) continue;
+            yuvPut(overlayY, overlayUv, ix, iy, 105, 202, 255);
+        }
+    }
+    for (int y = winT; y < winB; ++y) {
+        const uint8_t* ids = lookBin.ptr<uint8_t>(y);
+        for (int x = winL; x < winR; ++x) {
+            const uint8_t v = ids[x];
+            if (!isLookInkId(v, pack)) continue;
+            int ix = 0, iy = 0;
+            overlayXY(x, y, &ix, &iy);
+            if (iy < 0 || iy >= overlayY->rows || ix < 0 || ix >= overlayY->cols) continue;
+            if (!inWalkSeed(ix, iy)) continue;
+            if (v >= 254) yuvPut(overlayY, overlayUv, ix, iy, 255, 128, 128);
+            else yuvPut(overlayY, overlayUv, ix, iy, 150, 44, 21);
+        }
+    }
+}
+
+struct SeedDispClass {
+    int kind = kDisp7seg;
+    int hMul = 7;
+    int vMul = 16;
+    float gapDriftP90S = 0.f;
+};
+
+struct SeedGapSpan {
+    int x0 = 0, x1 = 0;
+    int chain = -1;
+    int len() const { return x1 - x0; }
+    float cx() const { return 0.5f * static_cast<float>(x0 + x1); }
+};
+
+struct SeedGapChain {
+    int y0 = 0, y1 = 0;
+    int minW = 0, maxW = 0;
+    std::vector<int> widths;
+    int nRows() const { return static_cast<int>(widths.size()); }
+    int span() const { return maxW - minW; }
+};
+
+static void collectSeedRowGaps(const uint8_t* p, int n, std::vector<SeedGapSpan>* out,
+    bool virtSp = false, int imgW = 0) {
+    if (!out) return;
+    out->clear();
+    if (!p || n < 1) return;
+    bool seenInk = false;
+    int i = 0;
+    const int gapMax = saltPepperGapMax(imgW);
+    while (i < n) {
+        if (p[i] != 0) {
+            while (i < n && p[i] != 0) ++i;
+            seenInk = true;
+        } else {
+            const int a = i;
+            while (i < n && p[i] == 0) ++i;
+            if (virtSp) {
+                while (i < n && p[i] != 0) {
+                    const int ink0 = i;
+                    while (i < n && p[i] != 0) ++i;
+                    const int s = i - ink0;
+                    const int leadGap = ink0 - a;
+                    int after = i;
+                    while (after < n && p[after] == 0) ++after;
+                    if (after > i && vspSkipRun(s, leadGap, gapMax)) {
+                        i = after;
+                        continue;
+                    }
+                    i = ink0;
+                    break;
+                }
+            }
+            if (seenInk && i < n) {
+                SeedGapSpan g;
+                g.x0 = a;
+                g.x1 = i;
+                out->push_back(g);
+            }
+        }
+    }
+}
+
+static int longestInkRun(const uint8_t* p, int n) {
+    if (!p || n < 1) return 0;
+    int longest = 0, run = 0;
+    for (int i = 0; i < n; ++i) {
+        if (p[i] != 0) {
+            ++run;
+            if (run > longest) longest = run;
+        } else {
+            run = 0;
+        }
+    }
+    return longest;
+}
+
+static SeedDispClass classifySeedGapDisp(
+    const cv::Mat& combined, int sPx, bool virtSp = false, int imgW = 0
+) {
+    SeedDispClass out;
+    out.kind = kDisp7seg;
+    out.hMul = 7;
+    out.vMul = 16;
+    if (sPx < 8 || combined.empty() || combined.type() != CV_8UC1) return out;
+    const int h = combined.rows, w = combined.cols;
+    if (h < 1 || w < 1) return out;
+    const float Sf = static_cast<float>(sPx);
+    const float twoSf = 2.f * Sf;
+    const int twoS = sPx + sPx;
+    const int minBarH = std::max(2, sPx / 4);
+    const int edgeM = sPx / 4;
+    std::vector<char> isBarRow(static_cast<size_t>(h), 0);
+    for (int y = 0; y < h; ++y) {
+        if (longestInkRun(combined.ptr<uint8_t>(y), w) >= twoS) {
+            isBarRow[static_cast<size_t>(y)] = 1;
+        }
+    }
+    struct Bar { int y0 = 0, y1 = 0; };
+    std::vector<Bar> bars;
+    int yb = 0;
+    while (yb < h) {
+        if (!isBarRow[static_cast<size_t>(yb)]) {
+            ++yb;
+            continue;
+        }
+        const int y0 = yb;
+        while (yb < h && isBarRow[static_cast<size_t>(yb)]) ++yb;
+        if (yb - y0 >= minBarH) {
+            Bar b;
+            b.y0 = y0;
+            b.y1 = yb;
+            bars.push_back(b);
+        }
+    }
+    struct Band { int y0 = 0, y1 = 0; };
+    std::vector<Band> bands;
+    auto addBand = [&](int y0, int y1) {
+        if (y0 < 0) y0 = 0;
+        if (y1 > h) y1 = h;
+        if (y1 > y0) {
+            Band b;
+            b.y0 = y0;
+            b.y1 = y1;
+            bands.push_back(b);
+        }
+    };
+    const int nBar = static_cast<int>(bars.size());
+    if (nBar == 0) {
+        addBand(sPx, h - sPx);
+    } else if (nBar == 1) {
+        addBand(sPx, bars[0].y0);
+        addBand(bars[0].y1, h - sPx);
+    } else if (nBar == 2) {
+        addBand(bars[0].y1, bars[1].y0);
+        const int above0 = sPx;
+        const int above1 = bars[0].y0;
+        const int below0 = bars[1].y1;
+        const int below1 = h - sPx;
+        const int aboveN = std::max(0, above1 - above0);
+        const int belowN = std::max(0, below1 - below0);
+        if (belowN >= aboveN) addBand(below0, below1);
+        else addBand(above0, above1);
+    } else {
+        for (int i = 0; i + 1 < nBar; ++i) {
+            addBand(bars[static_cast<size_t>(i)].y1, bars[static_cast<size_t>(i + 1)].y0);
+        }
+    }
+    bool anyNot = false;
+    float maxSpanS = 0.f;
+    std::vector<int> stableMeds;
+    for (const Band& band : bands) {
+        const int by0 = band.y0, by1 = band.y1;
+        const int bh = by1 - by0;
+        std::vector<int> nGaps(static_cast<size_t>(bh), 0);
+        std::vector<SeedGapChain> chains;
+        std::vector<SeedGapSpan> prev;
+        std::vector<SeedGapSpan> cur;
+        for (int y = by0; y < by1; ++y) {
+            if (isBarRow[static_cast<size_t>(y)]) {
+                prev.clear();
+                continue;
+            }
+            collectSeedRowGaps(combined.ptr<uint8_t>(y), w, &cur, virtSp, imgW);
+            nGaps[static_cast<size_t>(y - by0)] = static_cast<int>(cur.size());
+            std::vector<char> usedP(prev.size(), 0);
+            std::vector<char> usedC(cur.size(), 0);
+            struct Cand { int pi; int ci; float ddx; };
+            std::vector<Cand> cands;
+            for (int ci = 0; ci < static_cast<int>(cur.size()); ++ci) {
+                const float ccx = cur[static_cast<size_t>(ci)].cx();
+                for (int pi = 0; pi < static_cast<int>(prev.size()); ++pi) {
+                    const SeedGapSpan& pg = prev[static_cast<size_t>(pi)];
+                    const SeedGapSpan& cg = cur[static_cast<size_t>(ci)];
+                    if (cg.x0 >= pg.x1 || pg.x0 >= cg.x1) continue;
+                    const float ddx = std::fabs(ccx - pg.cx());
+                    if (ddx > twoSf) continue;
+                    Cand c;
+                    c.pi = pi;
+                    c.ci = ci;
+                    c.ddx = ddx;
+                    cands.push_back(c);
+                }
+            }
+            std::sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) {
+                if (a.ddx != b.ddx) return a.ddx < b.ddx;
+                if (a.pi != b.pi) return a.pi < b.pi;
+                return a.ci < b.ci;
+            });
+            for (const Cand& c : cands) {
+                if (usedP[static_cast<size_t>(c.pi)] || usedC[static_cast<size_t>(c.ci)]) continue;
+                usedP[static_cast<size_t>(c.pi)] = 1;
+                usedC[static_cast<size_t>(c.ci)] = 1;
+                SeedGapSpan& pg = prev[static_cast<size_t>(c.pi)];
+                SeedGapSpan& cg = cur[static_cast<size_t>(c.ci)];
+                if (pg.chain < 0 || pg.chain >= static_cast<int>(chains.size())) continue;
+                SeedGapChain& ch = chains[static_cast<size_t>(pg.chain)];
+                const int gw = cg.len();
+                ch.widths.push_back(gw);
+                if (gw < ch.minW) ch.minW = gw;
+                if (gw > ch.maxW) ch.maxW = gw;
+                ch.y1 = y;
+                cg.chain = pg.chain;
+            }
+            for (int ci = 0; ci < static_cast<int>(cur.size()); ++ci) {
+                if (usedC[static_cast<size_t>(ci)]) continue;
+                SeedGapSpan& cg = cur[static_cast<size_t>(ci)];
+                SeedGapChain ch;
+                ch.y0 = y;
+                ch.y1 = y;
+                ch.minW = cg.len();
+                ch.maxW = ch.minW;
+                ch.widths.push_back(ch.minW);
+                cg.chain = static_cast<int>(chains.size());
+                chains.push_back(ch);
+            }
+            prev.swap(cur);
+        }
+        for (const SeedGapChain& ch : chains) {
+            const int sp = ch.span();
+            const float spS = static_cast<float>(sp) / Sf;
+            if (spS > maxSpanS) maxSpanS = spS;
+            if (sp > sPx) {
+                anyNot = true;
+                continue;
+            }
+            if (ch.widths.empty()) continue;
+            std::vector<int> sortedW = ch.widths;
+            std::sort(sortedW.begin(), sortedW.end());
+            const int nw = static_cast<int>(sortedW.size());
+            const int med = ((nw & 1) != 0)
+                ? sortedW[static_cast<size_t>(nw / 2)]
+                : (sortedW[static_cast<size_t>(nw / 2 - 1)] +
+                    sortedW[static_cast<size_t>(nw / 2)]) / 2;
+            stableMeds.push_back(med);
+        }
+        int gMin = 0, gMax = 0;
+        bool haveG = false;
+        for (int y = by0; y < by1; ++y) {
+            if (isBarRow[static_cast<size_t>(y)]) continue;
+            if (y - by0 < edgeM || (by1 - 1) - y < edgeM) continue;
+            const int ng = nGaps[static_cast<size_t>(y - by0)];
+            if (!haveG) {
+                gMin = ng;
+                gMax = ng;
+                haveG = true;
+            } else {
+                if (ng < gMin) gMin = ng;
+                if (ng > gMax) gMax = ng;
+            }
+        }
+        if (haveG && gMax - gMin >= 2) anyNot = true;
+    }
+    if (static_cast<int>(stableMeds.size()) < 2) {
+        anyNot = true;
+    } else {
+        std::sort(stableMeds.begin(), stableMeds.end());
+        const int nMed = static_cast<int>(stableMeds.size());
+        int bestN = 1;
+        int j = 0;
+        for (int i = 0; i < nMed; ++i) {
+            while (j < nMed &&
+                stableMeds[static_cast<size_t>(j)] -
+                    stableMeds[static_cast<size_t>(i)] <= sPx) {
+                ++j;
+            }
+            if (j - i > bestN) bestN = j - i;
+        }
+        if (bestN < 2 || bestN < nMed) anyNot = true;
+    }
+    out.gapDriftP90S = maxSpanS;
+    if (anyNot) {
+        out.kind = kDispNot;
+        out.hMul = 10;
+        out.vMul = 20;
+    } else {
+        out.kind = kDisp7seg;
+        out.hMul = 7;
+        out.vMul = 16;
+    }
+    return out;
+}
+
+/** One look raster: clean vs per-poison rule; runs ignore region edges. Returns sPx. */
+static int fillPoisonLookRaster(
+    const cv::Mat& src, cv::Mat* lookBin,
+    int sl, int st, int sr, int sb,
+    int lookL, int lookT, int lookR, int lookB,
+    bool srcIsBin, int glareMult, int fallback,
+    cv::Mat* overlayY, cv::Mat* overlayUv, int ovX, int ovY, PoisonStats* statsOut,
+    cv::Mat* scratch,
+    cv::Mat* objPlane, ObjPack* objPack, int seedIndex,
+    bool overlayUvMap,
+    float ovCx, float ovCy,
+    float ovUx, float ovUy,
+    float ovVx, float ovVy,
+    float ovU0, float ovU1, float ovLookV0,
+    cv::Mat* lookPoisonOut, bool paintOverlay,
+    cv::Mat* poisonPlane,
+    cv::Mat* lookInkAtOut,
+    SeedFillGate* fillGateOut,
+    OverlapHists* histOut,
+    Seg7Tele* teleOut,
+    bool virtSp
+) {
+    if (!lookBin || src.empty() || src.type() != CV_8UC1) return fallback;
+    if (sl < 0) sl = 0;
+    if (st < 0) st = 0;
+    if (sr > src.cols) sr = src.cols;
+    if (sb > src.rows) sb = src.rows;
+    if (lookL < 0) lookL = 0;
+    if (lookT < 0) lookT = 0;
+    if (lookR > src.cols) lookR = src.cols;
+    if (lookB > src.rows) lookB = src.rows;
+    if (sr <= sl || sb <= st || lookR <= lookL || lookB <= lookT) return fallback;
+    const int seedH = sb - st, seedW = sr - sl;
+    const int imgW = src.cols;
+    const int ySeed0 = st, xSeed0 = sl;
+    if (lookBin->empty() || lookBin->rows < lookB || lookBin->cols < lookR ||
+        lookBin->type() != CV_8UC1) {
+        cv::Mat placed = planeView8u(scratch, 0, 0, src.cols, src.rows);
+        if (placed.empty() || placed.rows < lookB || placed.cols < lookR) {
+            if (objPack) {
+                objPack->abort = true;
+                objPack->abortSeed = seedIndex;
+                std::snprintf(objPack->phase, sizeof(objPack->phase), "scratch");
+            }
+            return fallback;
+        }
+        *lookBin = placed;
+    }
+    (*lookBin)(cv::Rect(lookL, lookT, lookR - lookL, lookB - lookT)).setTo(0);
+    if (seedH < 1 || seedW < 1) return fallback;
+    const int lh = lookBin->rows, lw = lookBin->cols;
+    cv::Mat lookPoison;
+    cv::Mat* poisHost = asU8(poisonPlane);
+    if (poisHost && poisHost->rows >= lh && poisHost->cols >= lw) {
+        lookPoison = planeView8u(poisHost, 0, 0, lw, lh);
+        if (!lookPoison.empty()) {
+            lookPoison(cv::Rect(lookL, lookT, lookR - lookL, lookB - lookT)).setTo(0);
+        }
+    }
+    if (lookPoison.empty()) {
+        lookPoison.create(lh, lw, CV_8UC1);
+        lookPoison.setTo(0);
+    }
+    {
+        char extra[160];
+        std::snprintf(extra, sizeof extra,
+            "lookBin=%dx%d t=%d lookPoison=%dx%d t=%d lw=%d lh=%d",
+            lookBin->rows, lookBin->cols, lookBin->type(),
+            lookPoison.rows, lookPoison.cols, lookPoison.type(), lw, lh);
+        veRssLog("poison_placed", extra);
+    }
+    SeedCombine sc;
+    const int sPx = seedCombine255(
+        src, sl, st, sr, sb, srcIsBin, glareMult, fallback, &sc, seedIndex, virtSp);
+    cv::Mat& combined = sc.bin;
+    cv::Mat& poison = sc.poison;
+    const bool inverted = sc.inverted;
+    const bool cleanDark = sc.cleanDark;
+    const double cleanThr = sc.cleanThr;
+    const int v0Clean = sc.v0Clean;
+    auto lookInkAt = [&](int y, int x) -> uint8_t {
+        return lookInkAtY(src, y, x, srcIsBin, inverted, cleanDark, cleanThr);
+    };
+
+    if (sPx >= 1 && objPack && objPlane && !combined.empty()) {
+        uint8_t inkId = 0;
+        if (objAlloc(objPack, true, seedIndex, kKindInk, &inkId)) {
+            std::snprintf(objPack->phase, sizeof(objPack->phase), "walk");
+            for (int yy = 0; yy < seedH; ++yy) {
+                const uint8_t* cp = combined.ptr<uint8_t>(yy);
+                for (int xx = 0; xx < seedW; ++xx) {
+                    if (cp[xx]) {
+                        int ix = ovX + xSeed0 + xx, iy = ovY + ySeed0 + yy;
+                        if (overlayUvMap) {
+                            const float u = ovU0 + (xSeed0 + xx + 0.5f) /
+                                static_cast<float>(std::max(1, src.cols)) * (ovU1 - ovU0);
+                            const float v = ovLookV0 + (ySeed0 + yy + 0.5f);
+                            ix = static_cast<int>(std::lround(ovCx + u * ovUx + v * ovVx));
+                            iy = static_cast<int>(std::lround(ovCy + u * ovUy + v * ovVy));
+                        }
+                        objPut(objPlane, ix, iy, inkId, objPack);
+                    }
+                }
+            }
+        }
+        stampPoisonFlood(
+            poison, objPlane, ovX + xSeed0, ovY + ySeed0, sPx, seedIndex, objPack,
+            overlayUvMap, ovCx, ovCy, ovUx, ovUy, ovVx, ovVy, ovU0, ovU1, ovLookV0,
+            xSeed0, ySeed0, src.cols);
+        veRssLog("poison_flood", nullptr);
+    }
+    if (sPx >= 1 && !lookPoison.empty()) {
+        for (int yy = 0; yy < seedH; ++yy) {
+            const int sy = yy + ySeed0;
+            if (sy < 0 || sy >= lh) continue;
+            const uint8_t* pp = poison.ptr<uint8_t>(yy);
+            uint8_t* lp = lookPoison.ptr<uint8_t>(sy);
+            for (int xx = 0; xx < seedW; ++xx) {
+                const int sx = xx + xSeed0;
+                if (sx < 0 || sx >= lw) continue;
+                lp[sx] = pp[xx];
+            }
+        }
+    }
+    if (fillGateOut) *fillGateOut = sc.fillGate;
+    if (histOut) *histOut = sc.overlap;
+    const SeedDispClass disp = classifySeedGapDisp(combined, sPx, virtSp, imgW);
+    if (virtSp && statsOut) {
+        HorizSW rawSw = horizPeakSW(combined, seedH, seedW, false, imgW);
+        HorizSW skipSw = horizPeakSW(combined, seedH, seedW, true, imgW);
+        const float frac = srcIsBin
+            ? (cv::countNonZero(combined) /
+                static_cast<float>(std::max(1, seedH * seedW)))
+            : sc.cleanInkFrac;
+        const bool skipKeep = skipSw.peak > 4 &&
+            !strokeNeedFb(skipSw, skipSw.peak, seedW, frac);
+        const bool rawKeep = rawSw.peak > 4 &&
+            !strokeNeedFb(rawSw, rawSw.peak, seedW, frac);
+        if (skipKeep != rawKeep) statsOut->vspStroke = skipKeep ? 1 : 2;
+        const SeedDispClass rawDisp = classifySeedGapDisp(combined, sPx, false, imgW);
+        if (disp.kind != rawDisp.kind) {
+            statsOut->vspDisp = (disp.kind == kDisp7seg) ? 1 : 2;
+        }
+    }
+    if (teleOut) {
+        teleOut->dispKind = static_cast<float>(disp.kind);
+        teleOut->poisonHMul = static_cast<float>(disp.hMul);
+        teleOut->poisonVMul = static_cast<float>(disp.vMul);
+        teleOut->gapDriftP90S = disp.gapDriftP90S;
+    }
+    if (!combined.empty()) {
+        for (int y = lookT; y < lookB; ++y) {
+            uint8_t* op = lookBin->ptr<uint8_t>(y);
+            const int sy = y - ySeed0;
+            const bool seedRow = sy >= 0 && sy < seedH;
+            for (int x = lookL; x < lookR; ++x) {
+                const int sx = x - xSeed0;
+                if (seedRow && sx >= 0 && sx < seedW) {
+                    op[x] = combined.ptr<uint8_t>(sy)[sx];
+                    continue;
+                }
+                if (sc.haveClean || v0Clean > 4) op[x] = lookInkAt(y, x);
+                else op[x] = 0;
+            }
+        }
+        for (int y = lookT; y < lookB; ++y) {
+            uint8_t* op = lookBin->ptr<uint8_t>(y);
+            for (int x = lookL; x < lookR; ++x) {
+                if (op[x]) op[x] = 255;
+            }
+        }
+        if (sPx >= 1) {
+            flood255LookIds(
+                lookBin, sPx, objPack, seedIndex, lookL, lookT, lookR, lookB, statsOut,
+                disp.hMul, disp.vMul, disp.kind, imgW);
+        }
+    }
+    if (lookPoisonOut) {
+        lookPoison.create(lh, lw, CV_8UC1);
+        lookPoison.setTo(0);
+        for (int y = lookT; y < lookB; ++y) {
+            const uint8_t* ip = lookBin->ptr<uint8_t>(y);
+            uint8_t* pp = lookPoison.ptr<uint8_t>(y);
+            for (int x = lookL; x < lookR; ++x) {
+                if (ip[x] >= 1 && ip[x] <= 127) pp[x] = 255;
+            }
+        }
+        *lookPoisonOut = lookPoison;
+    }
+    if (paintOverlay) {
+        paintLookOverlay(
+            *lookBin, lookPoison, overlayY, overlayUv, overlayUvMap, ovX, ovY,
+            ovCx, ovCy, ovUx, ovUy, ovVx, ovVy, ovU0, ovU1, ovLookV0,
+            false, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, objPack,
+            lookL, lookT, lookR, lookB);
+    }
+    if (statsOut) {
+        statsOut->bandTop = sc.bandTop ? 1 : 0;
+        statsOut->bandBot = sc.bandBot ? 1 : 0;
+        statsOut->bandH = sc.bandH;
+    }
+    if (lookInkAtOut) {
+        lookInkAtOut->create(lh, lw, CV_8UC1);
+        lookInkAtOut->setTo(0);
+        for (int y = lookT; y < lookB; ++y) {
+            uint8_t* op = lookInkAtOut->ptr<uint8_t>(y);
+            for (int x = lookL; x < lookR; ++x) op[x] = lookInkAt(y, x);
+        }
+    }
+    return sPx;
+}
+
+/** Gray Otsu look-strip on seed T/B, x padded for jump. Full-image U8 dst. */
+static bool fillGrayJumpLook(
+    const cv::Mat& y, int sl, int st, int sr, int sb, int xPad, cv::Mat* dst
+) {
+    if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
+    const int h = y.rows, w = y.cols;
+    if (sl < 0) sl = 0;
+    if (st < 0) st = 0;
+    if (sr > w) sr = w;
+    if (sb > h) sb = h;
+    if (sr <= sl || sb <= st) return false;
+    if (!scratchFits(dst, w, h)) return false;
+    dst->setTo(0);
+    const int xl = std::max(0, sl - std::max(0, xPad));
+    const int xr = std::min(w, sr + std::max(0, xPad));
+    if (xr <= xl) return false;
+    fillPoisonLookRaster(
+        y, dst, sl, st, sr, sb, xl, st, xr, sb, false, 8, 0,
+        nullptr, nullptr, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, false,
+        0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, nullptr, true,
+        nullptr, nullptr, nullptr, nullptr, nullptr, false);
+    return true;
+}
+
+/**
+ * Per-seed shadow-invariant tint mask: 255 = ink, 0 = blackout.
+ * Samples stroke chromaticity inside seed ink runs; background at ±s_px
+ * outside those edges; classifies look-strip pixels by u_p·u_ink (or Y
+ * polarity when chroma is near zero). Chromatic pixels: color2 dot≥0.50.
+ * Local c²<eps² → Y contrast. Caller skips tint walk when meanChromaInk<12
+ * or (chromaMode 4 and uInk·uBg ≥ kTintDotThr). Else panel-hue veto
+ * (cos(u_pix, uBg) ≥ kTintDotThr is not ink); else Y-near or ink-hue.
+ */
+static bool fillChromaTintMask(
+    const cv::Mat& y, const cv::Mat& uv,
+    int sl, int st, int sr, int sb,
+    cv::Mat* dst,
+    int glareMult = 8,
+    int xPad = 0,
+    bool adaptive = false,
+    Seg7Tele* tele = nullptr,
+    int walkL = -1, int walkT = -1, int walkR = -1, int walkB = -1
+) {
+    if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
+    const int h = y.rows, w = y.cols;
+    const bool reuse = scratchFits(dst, w, h);
+    if (!reuse) return false;
+    if (sl < 0) sl = 0;
+    if (st < 0) st = 0;
+    if (sr > w) sr = w;
+    if (sb > h) sb = h;
+    if (sr <= sl || sb <= st) return false;
+    cv::Mat seedBin = (*dst)(cv::Range(st, sb), cv::Range(sl, sr));
+    if (seedBin.empty() || seedBin.type() != CV_8UC1) return false;
+    double otsuY = 0.0;
+    const int sPx = seedInkBinY(y, sl, st, sr, sb, &seedBin, glareMult, &otsuY);
+    if (seedBin.empty()) return false;
+
+    float su = 0.f, sv = 0.f, yInkSum = 0.f, chromaInkSum = 0.f;
+    int nInk = 0;
+    const bool uvOk = !uv.empty() && uv.type() == CV_8UC2 && uv.rows > 0 && uv.cols > 0;
+    const int uvH = uvOk ? uv.rows : 0, uvW = uvOk ? uv.cols : 0;
+    const bool uvHalf = uvOk && uvW * 2 <= w + 1;
+    for (int yy = 0; yy < seedBin.rows; ++yy) {
+        const uint8_t* bp = seedBin.ptr<uint8_t>(yy);
+        const uint8_t* yp = y.ptr<uint8_t>(st + yy);
+        const cv::Vec2b* uvp = nullptr;
+        if (uvOk) {
+            int uy = uvHalf ? (st + yy) / 2 : ((st + yy) & ~1);
+            if (uy < 0) uy = 0;
+            if (uy >= uvH) uy = uvH - 1;
+            uvp = uv.ptr<cv::Vec2b>(uy);
+        }
+        for (int xx = 0; xx < seedBin.cols; ++xx) {
+            if (!bp[xx]) continue;
+            int u = 128, v = 128;
+            if (uvp) {
+                int ux = uvHalf ? (sl + xx) / 2 : ((sl + xx) & ~1);
+                if (ux < 0) ux = 0;
+                if (ux >= uvW) ux = uvW - 1;
+                u = uvp[ux][0];
+                v = uvp[ux][1];
+            }
+            const float du = static_cast<float>(u) - 128.f;
+            const float dv = static_cast<float>(v) - 128.f;
+            const float n2 = du * du + dv * dv;
+            if (n2 >= 1.f) {
+                const float inv = 1.f / std::sqrt(n2);
+                su += du * inv;
+                sv += dv * inv;
+                chromaInkSum += std::sqrt(n2);
+            }
+            yInkSum += yp[sl + xx];
+            ++nInk;
+        }
+    }
+    if (nInk <= 0) return false;
+    float uInkX = su / static_cast<float>(nInk);
+    float uInkY = sv / static_cast<float>(nInk);
+    const float nrm2 = uInkX * uInkX + uInkY * uInkY;
+    if (nrm2 > 1e-12f) {
+        const float inv = 1.f / std::sqrt(nrm2);
+        uInkX *= inv;
+        uInkY *= inv;
+    }
+    const float yInk = yInkSum / static_cast<float>(nInk);
+    const float meanChromaInk = chromaInkSum / static_cast<float>(nInk);
+    const bool inkHasChroma = meanChromaInk >= kTintChromaEps && nrm2 > 1e-12f;
+
+    const int d = std::max(1, sPx);
+    double yBgSum = 0.0;
+    float suBg = 0.f, svBg = 0.f, chromaBgSum = 0.f;
+    int nBg = 0;
+    auto tryBg = [&](int gx, int gy) {
+        if (gx < 0 || gy < 0 || gx >= w || gy >= h) return;
+        const int lx = gx - sl, ly = gy - st;
+        if (lx >= 0 && ly >= 0 && lx < seedBin.cols && ly < seedBin.rows &&
+            seedBin.ptr<uint8_t>(ly)[lx]) {
+            return;
+        }
+        yBgSum += y.ptr<uint8_t>(gy)[gx];
+        if (uvOk) {
+            int u = 128, v = 128;
+            uvAt(uv, w, gx, gy, &u, &v);
+            const float du = static_cast<float>(u) - 128.f;
+            const float dv = static_cast<float>(v) - 128.f;
+            const float n2 = du * du + dv * dv;
+            if (n2 >= 1.f) {
+                const float inv = 1.f / std::sqrt(n2);
+                suBg += du * inv;
+                svBg += dv * inv;
+                chromaBgSum += std::sqrt(n2);
+            }
+        }
+        ++nBg;
+    };
+    for (int yy = 0; yy < seedBin.rows; ++yy) {
+        const uint8_t* bp = seedBin.ptr<uint8_t>(yy);
+        for (int xx = 0; xx < seedBin.cols; ++xx) {
+            if (!bp[xx]) continue;
+            const int gx = sl + xx, gy = st + yy;
+            tryBg(gx - d, gy);
+            tryBg(gx + d, gy);
+            tryBg(gx, gy - d);
+            tryBg(gx, gy + d);
+        }
+    }
+    const float yBg = nBg > 0 ? static_cast<float>(yBgSum / nBg)
+        : (yInk < 128.f ? 200.f : 40.f);
+    float uBgX = 0.f, uBgY = 0.f;
+    float meanChromaBg = 0.f;
+    float nrmBg2 = 0.f;
+    if (nBg > 0) {
+        uBgX = suBg / static_cast<float>(nBg);
+        uBgY = svBg / static_cast<float>(nBg);
+        nrmBg2 = uBgX * uBgX + uBgY * uBgY;
+        if (nrmBg2 > 1e-12f) {
+            const float inv = 1.f / std::sqrt(nrmBg2);
+            uBgX *= inv;
+            uBgY *= inv;
+        }
+        meanChromaBg = chromaBgSum / static_cast<float>(nBg);
+    }
+    const bool bgHasChroma = meanChromaBg >= kTintChromaEps && nrmBg2 > 1e-12f;
+    const float inkBgDot = (inkHasChroma && bgHasChroma)
+        ? (uInkX * uBgX + uInkY * uBgY) : 0.f;
+    const bool panelVeto = adaptive && meanChromaInk >= 12.f && bgHasChroma;
+    const float dInk = yInk - yBg;
+    const float eps2 = kTintChromaEps * kTintChromaEps;
+    const float dotThr2 = kTintDotThr * kTintDotThr;
+
+    int xl, xr, nt, nb;
+    if (walkR > walkL && walkB > walkT) {
+        xl = std::max(0, walkL);
+        nt = std::max(0, walkT);
+        xr = std::min(w, walkR);
+        nb = std::min(h, walkB);
+    } else {
+        const int seedH = std::max(1, sb - st);
+        const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
+        const int vLook = capPx + 2;
+        nt = std::max(0, st - vLook);
+        nb = std::min(h, sb + vLook);
+        xl = std::max(0, sl - std::max(0, xPad));
+        xr = std::min(w, sr + std::max(0, xPad));
+    }
+    if (reuse && xr > xl && nb > nt) {
+        (*dst)(cv::Rect(xl, nt, xr - xl, nb - nt)).setTo(0);
+    }
+    for (int gy = nt; gy < nb; ++gy) {
+        const uint8_t* yp = y.ptr<uint8_t>(gy);
+        uint8_t* op = dst->ptr<uint8_t>(gy);
+        const cv::Vec2b* uvp = nullptr;
+        if (uvOk) {
+            int uy = uvHalf ? gy / 2 : (gy & ~1);
+            if (uy < 0) uy = 0;
+            if (uy >= uvH) uy = uvH - 1;
+            uvp = uv.ptr<cv::Vec2b>(uy);
+        }
+        for (int gx = xl; gx < xr; ++gx) {
+            const float Y = static_cast<float>(yp[gx]);
+            int u = 128, v = 128;
+            if (uvp) {
+                int ux = uvHalf ? gx / 2 : (gx & ~1);
+                if (ux < 0) ux = 0;
+                if (ux >= uvW) ux = uvW - 1;
+                u = uvp[ux][0];
+                v = uvp[ux][1];
+            }
+            const float du = static_cast<float>(u) - 128.f;
+            const float dv = static_cast<float>(v) - 128.f;
+            const float c2 = du * du + dv * dv;
+            const float dPix = Y - yBg;
+            const bool polOk = dInk * dPix >= 0.f;
+            const bool nearY = std::fabs(Y - yInk) <= std::fabs(Y - yBg);
+            const float leftInk = du * uInkX + dv * uInkY;
+            const bool inkHue = c2 >= eps2 && leftInk > 0.f &&
+                leftInk * leftInk >= dotThr2 * c2;
+            bool isInk;
+            if (panelVeto) {
+                const float leftBg = du * uBgX + dv * uBgY;
+                const bool bgHue = c2 >= eps2 && leftBg > 0.f &&
+                    leftBg * leftBg >= dotThr2 * c2;
+                isInk = polOk && !bgHue && (nearY || inkHue);
+            } else if (!inkHasChroma || c2 < eps2) {
+                isInk = polOk && nearY;
+            } else {
+                isInk = polOk && inkHue;
+            }
+            op[gx] = isInk ? 255 : 0;
+        }
+    }
+    if (tele) {
+        tele->yInk = yInk;
+        tele->yBg = yBg;
+        tele->dInk = dInk;
+        tele->meanChroma = meanChromaInk;
+        tele->uInkX = uInkX;
+        tele->uInkY = uInkY;
+        tele->inkBgDot = inkBgDot;
+        tele->sPx = static_cast<float>(sPx);
+        tele->otsuThr = static_cast<float>(otsuY);
+    }
+    return true;
+}
+
+static double medianU8Rect(const cv::Mat& m, int l, int t, int r, int b) {
+    if (r <= l || b <= t || m.empty()) return 0.0;
+    std::vector<int> vals;
+    vals.reserve((r - l) * (b - t));
+    for (int y = t; y < b; ++y) {
+        const uint8_t* p = m.ptr<uint8_t>(y);
+        for (int x = l; x < r; ++x) vals.push_back(p[x]);
+    }
+    if (vals.empty()) return 0.0;
+    std::sort(vals.begin(), vals.end());
+    const int n = static_cast<int>(vals.size());
+    if (n % 2 == 1) return vals[n / 2];
+    return 0.5 * (vals[n / 2 - 1] + vals[n / 2]);
+}
+
+static void aabbJumpOnLook(
+    cv::Mat* look, int* l, int t, int* r, int b,
+    int imgW, int imgH, int seedT, int seedB, int seedL, int seedR, int sPx,
+    int lookOx, int lookOy, int* farL, int* farR, ObjPack* pack,
+    const cv::Mat* src, int seedIndex,
+    int dispKind, int hMul, int vMul,
+    bool virtSp
+) {
+    if (!look || look->empty() || look->type() != CV_8UC1 || sPx < 1) return;
+    const int minRun = usedMinRun(sPx);
+    if (minRun < 1) return;
+    jumpRetractH(
+        *look, l, t, r, b, imgW, imgH, 0.0, 1, 0.60f, 0.30f,
+        std::max(1, seedB - seedT), farL, farR, look, seedT, seedB, minRun, lookOx, lookOy, pack,
+        src, sPx, seedIndex, dispKind, hMul, vMul, virtSp);
+}
+
+}  // namespace
+
+/** 12 ints/seed: l0,t0,r0,b0, l1,t1,r1,b1, sPx, vSW, hSW, flags. l1..b1 = 0.2H, same t/b. */
+static void packAabb12(
+    std::vector<jint>& out, int i,
+    int l0, int t0, int r0, int b0,
+    int sPx, int vSW, int hSW, int flags,
+    int imgW, int imgH
+) {
+    if (l0 < 0) l0 = 0;
+    if (t0 < 0) t0 = 0;
+    if (r0 > imgW) r0 = imgW;
+    if (b0 > imgH) b0 = imgH;
+    const int o = i * 12;
+    out[static_cast<size_t>(o)] = l0;
+    out[static_cast<size_t>(o) + 1] = t0;
+    out[static_cast<size_t>(o) + 2] = r0;
+    out[static_cast<size_t>(o) + 3] = b0;
+    const int h = std::max(1, b0 - t0);
+    const int hp = static_cast<int>(std::lround(0.05f * static_cast<float>(h)));
+    int l1 = l0 - hp;
+    int r1 = r0 + hp;
+    if (l1 < 0) l1 = 0;
+    if (r1 > imgW) r1 = imgW;
+    if (r1 <= l1) r1 = std::min(imgW, l1 + 1);
+    out[static_cast<size_t>(o) + 4] = l1;
+    out[static_cast<size_t>(o) + 5] = t0;
+    out[static_cast<size_t>(o) + 6] = r1;
+    out[static_cast<size_t>(o) + 7] = b0;
+    out[static_cast<size_t>(o) + 8] = sPx;
+    out[static_cast<size_t>(o) + 9] = vSW;
+    out[static_cast<size_t>(o) + 10] = hSW;
+    out[static_cast<size_t>(o) + 11] = flags;
+}
+
+static jintArray aabb7segSeedsOut(JNIEnv* env, const std::vector<jint>& seeds) {
+    const int n = static_cast<int>(seeds.size()) / 4;
+    std::vector<jint> out(static_cast<size_t>(n) * 12, 0);
+    for (int i = 0; i < n; ++i) {
+        const int l = seeds[static_cast<size_t>(i) * 4];
+        const int t = seeds[static_cast<size_t>(i) * 4 + 1];
+        const int r = seeds[static_cast<size_t>(i) * 4 + 2];
+        const int b = seeds[static_cast<size_t>(i) * 4 + 3];
+        const int o = i * 12;
+        out[static_cast<size_t>(o)] = l;
+        out[static_cast<size_t>(o) + 1] = t;
+        out[static_cast<size_t>(o) + 2] = r;
+        out[static_cast<size_t>(o) + 3] = b;
+        out[static_cast<size_t>(o) + 4] = l;
+        out[static_cast<size_t>(o) + 5] = t;
+        out[static_cast<size_t>(o) + 6] = r;
+        out[static_cast<size_t>(o) + 7] = b;
+        out[static_cast<size_t>(o) + 8] = 2;
+        out[static_cast<size_t>(o) + 9] = 4;
+        out[static_cast<size_t>(o) + 10] = 4;
+        out[static_cast<size_t>(o) + 11] = 0;
+    }
+    jintArray arr = env->NewIntArray(static_cast<jint>(out.size()));
+    if (!arr) return env->NewIntArray(0);
+    env->SetIntArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
+    return arr;
+}
+
+static jintArray aabbGrayMany(
+    JNIEnv* env,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
+    jint boundStrategy, jint tightInsetPx,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr = nullptr
+) {
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) {
+        return env->NewIntArray(0);
+    }
+    const jint n4 = env->GetArrayLength(seedsArr);
+    if (n4 <= 0 || n4 % 4 != 0) return env->NewIntArray(0);
+    std::vector<jint> seeds(static_cast<size_t>(n4));
+    env->GetIntArrayRegion(seedsArr, 0, n4, seeds.data());
+    try {
+    const int imgW = gray->cols, imgH = gray->rows;
+    const int n = n4 / 4;
+    {
+        char extra[96];
+        std::snprintf(extra, sizeof extra, "imgW=%d imgH=%d nSeeds=%d", imgW, imgH, n);
+        veRssLog("aabb_enter", extra);
+    }
+    const jfloat gapFrac = 0.5f;
+    const jfloat minSeedHsToFreeze = 0.f;
+    auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
+    auto* inkDump = reinterpret_cast<cv::Mat*>(dumpPtr);
+    auto* overlayY = reinterpret_cast<cv::Mat*>(overlayYPtr);
+    auto* overlayUv = reinterpret_cast<cv::Mat*>(overlayUvPtr);
+    auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
+    cv::Mat* poisonPlane = asU8(uv);
+    cv::Mat* ovUv = asUV(overlayUv);
+    std::vector<PoisonStats> poisonPacks;
+    poisonPacks.resize(static_cast<size_t>(n));
+    std::vector<jint> out(static_cast<size_t>(n) * 12, 0);
+    std::vector<InkSweepPack> sweeps;
+    sweeps.resize(static_cast<size_t>(n));
+    ObjPack objPack;
+    loadObjPack(env, poisonArr, &objPack);
+    for (int i = 0; i < n; ++i) {
+        objPack.abort = false;
+        objPack.lookNextInk = 253;
+        objPack.lookNextNon = 1;
+        objPack.classChange = 0;
+        objPack.seenInk = 0;
+        objPack.seenNon = 0;
+        objPack.phase[0] = '\0';
+        int l = seeds[static_cast<size_t>(i) * 4], t = seeds[static_cast<size_t>(i) * 4 + 1];
+        int r = seeds[static_cast<size_t>(i) * 4 + 2], b = seeds[static_cast<size_t>(i) * 4 + 3];
+        if (l < 0) l = 0;
+        if (t < 0) t = 0;
+        if (r > imgW) r = imgW;
+        if (b > imgH) b = imgH;
+        if (r <= l || b <= t) continue;
+        int ol, ot, orr, ob, sPx, vSW, hSW, fb;
+        Seg7Tele tele{};
+        tele.method = 0.f;
+        seg7One(*gray, l, t, r, b, imgW, imgH, &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb,
+            false, gapFrac, minSeedHsToFreeze, 8, boundStrategy, tightInsetPx, &tele, false,
+            &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
+            &poisonPacks[static_cast<size_t>(i)], scratch, &objPack, i, poisonPlane);
+        {
+            char extra[64];
+            std::snprintf(extra, sizeof extra, "seed=%d", i);
+            veRssLog("seed_done", extra);
+        }
+        if (objPack.abort) {
+            poisonPacks[static_cast<size_t>(i)].bandH = -1;
+        }
+        appendObjMeta(&poisonPacks[static_cast<size_t>(i)], objPack, i, n);
+        packAabb12(out, i, ol, ot, orr, ob, sPx, vSW, hSW, objPack.abort ? 1 : 0, imgW, imgH);
+        (void)fb;
+        storeTeleArr(env, teleArr, i, tele);
+        writeOverlapHistArr(env, histArr, i, tele.overlap);
+    }
+    writeSweepArr(env, sweepArr, sweeps);
+    writePoisonArr(env, poisonArr, poisonPacks);
+    storeObjPack(env, poisonArr, objPack);
+    jintArray arr = env->NewIntArray(static_cast<jint>(out.size()));
+    if (!arr) return aabb7segSeedsOut(env, seeds);
+    env->SetIntArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
+    return arr;
+    } catch (const cv::Exception&) {
+        return aabb7segSeedsOut(env, seeds);
+    } catch (const std::exception&) {
+        return aabb7segSeedsOut(env, seeds);
+    }
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayAabbTight(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
+) {
+    return aabbGrayMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, histArr);
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayAabbRetract(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
+) {
+    return aabbGrayMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 2, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, histArr);
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayAabbExpand(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
+) {
+    return aabbGrayMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, histArr);
+}
+
+static jintArray aabbColorMany(
+    JNIEnv* env,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
+    jint boundStrategy, jint tightInsetPx,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr = nullptr,
+    bool virtSp = false
+) {
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) {
+        return env->NewIntArray(0);
+    }
+    const jint n4 = env->GetArrayLength(seedsArr);
+    if (n4 <= 0 || n4 % 4 != 0) return env->NewIntArray(0);
+    std::vector<jint> seeds(static_cast<size_t>(n4));
+    env->GetIntArrayRegion(seedsArr, 0, n4, seeds.data());
+    try {
+    const int imgW = gray->cols, imgH = gray->rows;
+    const int n = n4 / 4;
+    const int glareMult = 8;
+    const jfloat gapFrac = 0.5f;
+    const jfloat minSeedHsToFreeze = 0.f;
+    auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
+    auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
+    auto* inkDump = reinterpret_cast<cv::Mat*>(dumpPtr);
+    auto* overlayY = reinterpret_cast<cv::Mat*>(overlayYPtr);
+    auto* overlayUv = reinterpret_cast<cv::Mat*>(overlayUvPtr);
+    cv::Mat* lookPlane = asU8(scratch);
+    if (!lookPlane) lookPlane = asU8(overlayUv);
+    cv::Mat* poisonPlane = asU8(overlayUv);
+    if (poisonPlane && lookPlane && poisonPlane->data == lookPlane->data) {
+        poisonPlane = nullptr;
+    }
+    cv::Mat yUv;
+    cv::Mat* ovUv = asUV(overlayUv);
+    if (!ovUv) ovUv = asUvFromY(overlayY, &yUv);
+    std::vector<PoisonStats> poisonPacks;
+    poisonPacks.resize(static_cast<size_t>(n));
+    std::vector<jint> out(static_cast<size_t>(n) * 12, 0);
+    std::vector<InkSweepPack> sweeps;
+    sweeps.resize(static_cast<size_t>(n));
+    ObjPack objPack;
+    loadObjPack(env, poisonArr, &objPack);
+    for (int i = 0; i < n; ++i) {
+        objPack.abort = false;
+        objPack.lookNextInk = 253;
+        objPack.lookNextNon = 1;
+        objPack.classChange = 0;
+        objPack.seenInk = 0;
+        objPack.seenNon = 0;
+        objPack.phase[0] = '\0';
+        int l = seeds[static_cast<size_t>(i) * 4], t = seeds[static_cast<size_t>(i) * 4 + 1];
+        int r = seeds[static_cast<size_t>(i) * 4 + 2], b = seeds[static_cast<size_t>(i) * 4 + 3];
+        if (l < 0) l = 0;
+        if (t < 0) t = 0;
+        if (r > imgW) r = imgW;
+        if (b > imgH) b = imgH;
+        if (r <= l || b <= t) continue;
+        int ol, ot, orr, ob, sPx, vSW, hSW, fb;
+        Seg7Tele tele{};
+        tele.method = 4.f;
+        const int seedH = std::max(1, b - t);
+        const int xPadGuess = std::max(1, static_cast<int>(std::lround(
+            0.60f * 2.5f * static_cast<float>(seedH) * static_cast<float>(kJumpMax + 1))));
+        cv::Mat* tintDst = asU8(scratch);
+        const bool ok = uv && fillChromaTintMask(
+            *gray, *uv, l, t, r, b, tintDst, glareMult, xPadGuess, true, &tele);
+        if (ok && tintDst && !tintDst->empty() && !skipTintWalk(true, tele)) {
+            seg7One(*tintDst, l, t, r, b, imgW, imgH,
+                &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, true,
+                gapFrac, minSeedHsToFreeze, glareMult, boundStrategy, tightInsetPx, &tele, true,
+                &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
+                &poisonPacks[static_cast<size_t>(i)], lookPlane, &objPack, i, poisonPlane,
+                virtSp);
+            if (tele.nLookBinSeed == 0.f && !objPack.abort) {
+                tele.method = 0.f;
+                seg7One(*gray, l, t, r, b, imgW, imgH,
+                    &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
+                    gapFrac, minSeedHsToFreeze, 8, boundStrategy, tightInsetPx, &tele, true,
+                    &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
+                    &poisonPacks[static_cast<size_t>(i)], lookPlane, &objPack, i, poisonPlane,
+                    virtSp);
+            }
+        } else {
+            if (ok && skipTintWalk(true, tele)) tele.method = 0.f;
+            seg7One(*gray, l, t, r, b, imgW, imgH,
+                &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
+                gapFrac, minSeedHsToFreeze, 8, boundStrategy, tightInsetPx, &tele, ok,
+                &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
+                &poisonPacks[static_cast<size_t>(i)], lookPlane, &objPack, i, poisonPlane,
+                virtSp);
+        }
+        if (objPack.abort) {
+            poisonPacks[static_cast<size_t>(i)].bandH = -1;
+        }
+        appendObjMeta(&poisonPacks[static_cast<size_t>(i)], objPack, i, n);
+        packAabb12(out, i, ol, ot, orr, ob, sPx, vSW, hSW, objPack.abort ? 1 : 0, imgW, imgH);
+        (void)fb;
+        storeTeleArr(env, teleArr, i, tele);
+        writeOverlapHistArr(env, histArr, i, tele.overlap);
+    }
+    writeSweepArr(env, sweepArr, sweeps);
+    writePoisonArr(env, poisonArr, poisonPacks);
+    storeObjPack(env, poisonArr, objPack);
+    jintArray arr = env->NewIntArray(static_cast<jint>(out.size()));
+    if (!arr) return aabb7segSeedsOut(env, seeds);
+    env->SetIntArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
+    return arr;
+    } catch (const cv::Exception&) {
+        return aabb7segSeedsOut(env, seeds);
+    } catch (const std::exception&) {
+        return aabb7segSeedsOut(env, seeds);
+    }
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbTight(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
+) {
+    return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, histArr);
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbRetract(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
+) {
+    return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 2, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, histArr);
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbTightVsp(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
+) {
+    return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, histArr, true);
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbRetractVsp(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
+) {
+    return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 2, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, histArr, true);
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbExpand(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
+) {
+    return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, histArr);
+}
+
+namespace {
+
+static void oriExtentsInFrame(const OriBox& frame, const float* p,
+    float* u0, float* u1, float* v0, float* v1) {
+    float a0 = 1e30f, a1 = -1e30f, b0 = 1e30f, b1 = -1e30f;
+    for (int i = 0; i < 4; ++i) {
+        const float dx = p[i * 2] - frame.cx;
+        const float dy = p[i * 2 + 1] - frame.cy;
+        const float u = dx * frame.ux + dy * frame.uy;
+        const float v = dx * frame.vx + dy * frame.vy;
+        if (u < a0) a0 = u;
+        if (u > a1) a1 = u;
+        if (v < b0) b0 = v;
+        if (v > b1) b1 = v;
+    }
+    *u0 = a0; *u1 = a1; *v0 = b0; *v1 = b1;
+}
+
+/** 18 floats/seed: 8 pts unexpanded, 8 pts 0.2H along u, sPx, flags.
+ *  Same as packAabb12 / SEG7_HORIZ_PAD_H_FRAC (C++ cannot see the Kotlin const). */
+static void packOri18(float* op, const OriBox& walked, float sPx, float flags) {
+    oriToQuad(walked, op);
+    OriBox pad = walked;
+    const float hp = 0.05f * std::max(1.f, walked.v1 - walked.v0);
+    pad.u0 -= hp;
+    pad.u1 += hp;
+    oriToQuad(pad, op + 8);
+    op[16] = sPx;
+    op[17] = flags;
+}
+
+static bool oriAabbClip(
+    const OriBox& b, int imgW, int imgH, int* sl, int* st, int* sr, int* sb
+) {
+    if (!sl || !st || !sr || !sb) return false;
+    float pts[8];
+    oriToQuad(b, pts);
+    float minx = pts[0], maxx = pts[0], miny = pts[1], maxy = pts[1];
+    for (int k = 1; k < 4; ++k) {
+        minx = std::min(minx, pts[k * 2]);
+        maxx = std::max(maxx, pts[k * 2]);
+        miny = std::min(miny, pts[k * 2 + 1]);
+        maxy = std::max(maxy, pts[k * 2 + 1]);
+    }
+    *sl = std::max(0, static_cast<int>(std::floor(minx)));
+    *st = std::max(0, static_cast<int>(std::floor(miny)));
+    *sr = std::min(imgW, static_cast<int>(std::ceil(maxx)));
+    *sb = std::min(imgH, static_cast<int>(std::ceil(maxy)));
+    return *sr > *sl && *sb > *st;
+}
+
+/** Nonzero U8 inside OriBox u/v (inWalkSeed predicate). AABB clip = scan window only. */
+static int countInkU8InQuad(const cv::Mat& m, const OriBox& b, int imgW, int imgH) {
+    if (m.empty() || m.type() != CV_8UC1) return 0;
+    int l = 0, t = 0, r = 0, bot = 0;
+    if (!oriAabbClip(b, imgW, imgH, &l, &t, &r, &bot)) return 0;
+    if (l < 0) l = 0;
+    if (t < 0) t = 0;
+    if (r > m.cols) r = m.cols;
+    if (bot > m.rows) bot = m.rows;
+    if (r <= l || bot <= t) return 0;
+    int n = 0;
+    for (int y = t; y < bot; ++y) {
+        const uint8_t* p = m.ptr<uint8_t>(y);
+        for (int x = l; x < r; ++x) {
+            if (!p[x]) continue;
+            const float dx = (x + 0.5f) - b.cx;
+            const float dy = (y + 0.5f) - b.cy;
+            const float u = dx * b.ux + dy * b.uy;
+            const float v = dx * b.vx + dy * b.vy;
+            if (u >= b.u0 && u <= b.u1 && v >= b.v0 && v <= b.v1) ++n;
+        }
+    }
+    return n;
+}
+
+static inline bool inImgF(float px, float py, int w, int h) {
+    return px >= 0.f && py >= 0.f && px < static_cast<float>(w) &&
+        py < static_cast<float>(h);
+}
+
+static int sampleU8Trunc(const cv::Mat& m, float px, float py, int w, int h) {
+    if (!inImgF(px, py, w, h) || m.empty() || m.type() != CV_8UC1) return -1;
+    int x = static_cast<int>(px);
+    int y = static_cast<int>(py);
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x >= w) x = w - 1;
+    if (y >= h) y = h - 1;
+    return m.ptr<uint8_t>(y)[x];
+}
+
+static float sampleF32Trunc(const cv::Mat& m, float px, float py, int w, int h) {
+    if (!inImgF(px, py, w, h) || m.empty()) return -1.f;
+    int x = static_cast<int>(px);
+    int y = static_cast<int>(py);
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x >= w) x = w - 1;
+    if (y >= h) y = h - 1;
+    if (m.type() == CV_8UC1) return static_cast<float>(m.ptr<uint8_t>(y)[x]);
+    if (m.type() != CV_32F) return -1.f;
+    return m.ptr<float>(y)[x];
+}
+
+static double medianInteriorU8(const cv::Mat& m, const OriBox& b, int w, int h) {
+    const int wu = std::max(4, static_cast<int>(std::lround(b.u1 - b.u0)));
+    const int hv = std::max(4, static_cast<int>(std::lround(b.v1 - b.v0)));
+    std::vector<int> vals;
+    vals.reserve(static_cast<size_t>(wu * hv));
+    for (int y = 0; y < hv; ++y) {
+        const float v = b.v0 + (y + 0.5f) / hv * (b.v1 - b.v0);
+        for (int x = 0; x < wu; ++x) {
+            const float u = b.u0 + (x + 0.5f) / wu * (b.u1 - b.u0);
+            const float px = b.cx + u * b.ux + v * b.vx;
+            const float py = b.cy + u * b.uy + v * b.vy;
+            const int g = sampleU8Trunc(m, px, py, w, h);
+            if (g >= 0) vals.push_back(g);
+        }
+    }
+    if (vals.empty()) return 0.0;
+    std::sort(vals.begin(), vals.end());
+    const int n = static_cast<int>(vals.size());
+    if (n % 2 == 1) return vals[n / 2];
+    return 0.5 * (vals[n / 2 - 1] + vals[n / 2]);
+}
+
+static int maxInkRunAlongU(
+    const cv::Mat& lookBin, const OriBox& seed, float v,
+    int imgW, int imgH, int lookL, int lookT, int lookR, int lookB,
+    float u0, float u1,
+    const ObjPack* pack = nullptr
+) {
+    if (lookBin.empty() || lookBin.type() != CV_8UC1) return 0;
+    if (u1 < u0 + 1.f) u1 = u0 + 1.f;
+    const int n = std::max(4, static_cast<int>(std::lround(u1 - u0)));
+    int best = 0, run = 0;
+    for (int i = 0; i <= n; ++i) {
+        bool on = false;
+        if (i < n) {
+            const float u = u0 + (i + 0.5f) / static_cast<float>(n) * (u1 - u0);
+            const int px = static_cast<int>(std::lround(
+                seed.cx + u * seed.ux + v * seed.vx));
+            const int py = static_cast<int>(std::lround(
+                seed.cy + u * seed.uy + v * seed.vy));
+            if (px >= lookL && py >= lookT && px < lookR && py < lookB &&
+                px >= 0 && py >= 0 && px < imgW && py < imgH &&
+                py < lookBin.rows && px < lookBin.cols) {
+                on = isLookInkId(lookBin.ptr<uint8_t>(py)[px], pack);
+            }
+        }
+        if (on) {
+            ++run;
+            if (run > best) best = run;
+        } else {
+            run = 0;
+        }
+    }
+    return best;
+}
+
+static void fillOrientedLookSweep(
+    const cv::Mat& src, bool srcIsBin, double otsu, bool dark, bool invertedBin,
+    int glareW, const cv::Mat& lookBin,
+    const OriBox& seed, float walkedV0, float walkedV1,
+    int imgW, int imgH, int minRun, float sPx,
+    InkSweepPack* out,
+    int lookL, int lookT, int lookR, int lookB,
+    const ObjPack* pack
+) {
+    if (!out) return;
+    const float seedBh = std::max(1.f, seed.v1 - seed.v0);
+    const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedBh)));
+    const int walkedH = std::max(1, static_cast<int>(std::lround(walkedV1 - walkedV0)));
+    const int xPad = std::max(1, static_cast<int>(std::lround(0.60f * walkedH * (kJumpMax + 1))));
+    const int vStart = static_cast<int>(std::lround(seed.v0)) - capPx;
+    const int vEnd = static_cast<int>(std::lround(seed.v1)) + capPx;
+    const int uStart = static_cast<int>(std::lround(seed.u0)) - xPad;
+    const int uEnd = static_cast<int>(std::lround(seed.u1)) + xPad;
+    if (vEnd <= vStart) return;
+    out->thr = static_cast<float>(minRun);
+    out->sPx = sPx;
+    out->energyRatio = 0.f;
+    out->minRun = minRun;
+    out->vOrigin = vStart;
+    out->hOrigin = uStart;
+    out->v0 = static_cast<int>(std::lround(seed.v0)) - vStart;
+    out->v1 = static_cast<int>(std::lround(seed.v1)) - vStart;
+    out->h0 = static_cast<int>(std::lround(seed.u0)) - uStart;
+    out->h1 = static_cast<int>(std::lround(seed.u1)) - uStart;
+    out->vScores.reserve(static_cast<size_t>(vEnd - vStart));
+    for (int v = vStart; v < vEnd; ++v) {
+        out->vScores.push_back(
+            maxInkRunAlongU(
+                lookBin, seed, static_cast<float>(v), imgW, imgH,
+                lookL, lookT, lookR, lookB,
+                static_cast<float>(uStart), static_cast<float>(uEnd), pack));
+    }
+    int ssl = 0, sst = 0, ssr = 0, ssb = 0;
+    if (oriAabbClip(seed, imgW, imgH, &ssl, &sst, &ssr, &ssb)) {
+        packSeedLookRows(lookBin, sst, ssb, ssl, ssr, out);
+    }
+    if (uEnd <= uStart) return;
+    const int wu = std::max(1, uEnd - uStart);
+    const int hv = std::max(1, static_cast<int>(std::lround(seed.v1 - seed.v0)));
+    auto pixInk = [&](int iy, int ix) -> bool {
+        if (iy < 0 || iy >= hv || ix < 0 || ix >= wu) return false;
+        const float v = seed.v0 + (iy + 0.5f) / hv * (seed.v1 - seed.v0);
+        const float u = static_cast<float>(uStart) + ix + 0.5f;
+        const float px = seed.cx + u * seed.ux + v * seed.vx;
+        const float py = seed.cy + u * seed.uy + v * seed.vy;
+        const int g = sampleU8Trunc(src, px, py, imgW, imgH);
+        if (g < 0) return false;
+        if (srcIsBin) {
+            const uint8_t vv = static_cast<uint8_t>(g);
+            const uint8_t b = invertedBin ? static_cast<uint8_t>(255 - vv) : vv;
+            return b != 0;
+        }
+        return dark
+            ? (static_cast<double>(g) <= otsu)
+            : (static_cast<double>(g) > otsu);
+    };
+    out->hScores.reserve(static_cast<size_t>(wu));
+    for (int x = 0; x < wu; ++x) {
+        int best = 0, run = 0;
+        for (int y = 0; y < hv; ++y) {
+            bool on = pixInk(y, x);
+            if (on && glareW > 0) {
+                int xl = x, xr = x + 1;
+                while (xl > 0 && pixInk(y, xl - 1)) --xl;
+                while (xr < wu && pixInk(y, xr)) ++xr;
+                if (xr - xl > glareW) on = false;
+            }
+            if (on) {
+                ++run;
+                if (run > best) best = run;
+            } else {
+                run = 0;
+            }
+        }
+        out->hScores.push_back(best);
+    }
+}
+
+static void jumpOrientedOne(
+    const cv::Mat& mag, OriBox* box, int imgW, int imgH,
+    float maxFrac, float energyRatio, float jumpFrac, float retractClearFrac,
+    float seedBh, cv::Mat* lookBin, float seedV0, float seedV1, int minRun,
+    float lookV0 = 0.f, float* farU0 = nullptr, float* farU1 = nullptr,
+    float lookU0 = 0.f, float lookU1 = 0.f,
+    int lookOx = 0, int lookOy = 0, ObjPack* pack = nullptr,
+    int sPx = 0, int seedIndex = 0,
+    int dispKind = 0, int hMul = 7, int vMul = 16
+#if defined(VE_IDEAL_MASK_MAIN)
+    , bool skipRecover = false
+#endif
+);
+
+static int longestVertRun254Quad(const cv::Mat& look, const OriBox& b, int imgW, int imgH) {
+    if (look.empty() || look.type() != CV_8UC1) return 0;
+    int l = 0, t = 0, r = 0, bot = 0;
+    if (!oriAabbClip(b, imgW, imgH, &l, &t, &r, &bot)) return 0;
+    if (l < 0) l = 0;
+    if (t < 0) t = 0;
+    if (r > look.cols) r = look.cols;
+    if (bot > look.rows) bot = look.rows;
+    int best = 0;
+    for (int x = l; x < r; ++x) {
+        int run = 0;
+        for (int y = t; y < bot; ++y) {
+            const float dx = (static_cast<float>(x) + 0.5f) - b.cx;
+            const float dy = (static_cast<float>(y) + 0.5f) - b.cy;
+            const float u = dx * b.ux + dy * b.uy;
+            const float v = dx * b.vx + dy * b.vy;
+            const bool inside = u >= b.u0 && u <= b.u1 && v >= b.v0 && v <= b.v1;
+            if (inside && look.ptr<uint8_t>(y)[x] == 254) {
+                ++run;
+                if (run > best) best = run;
+            } else {
+                run = 0;
+            }
+        }
+    }
+    return best;
+}
+
+static void seg7OrientedOne(
+    const cv::Mat& src, OriBox seed, int imgW, int imgH,
+    float* outPts8, float* sPxOut,
+    int boundStrategy = 0, int tightInsetPx = 16,
+    bool srcIsBin = false,
+    Seg7Tele* tele = nullptr,
+    bool keepColorStats = false,
+    InkSweepPack* sweepOut = nullptr,
+    cv::Mat* inkDump = nullptr,
+    cv::Mat* overlayY = nullptr,
+    cv::Mat* overlayUv = nullptr,
+    PoisonStats* poisonStats = nullptr,
+    cv::Mat* scratch = nullptr,
+    ObjPack* objPack = nullptr,
+    int seedIndex = 0,
+    cv::Mat* poisonPlane = nullptr,
+    cv::Mat* lookBinPlane = nullptr,
+    bool doHorzJump = false,
+    bool virtSp = false
+#if defined(VE_IDEAL_MASK_MAIN)
+    , bool presetLook254 = false
+#endif
+) {
+    (void)tightInsetPx;
+    oriToQuad(seed, outPts8);
+    const float seedBh = std::max(1.f, seed.v1 - seed.v0);
+    *sPxOut = 0.f;
+    if (src.empty() || src.type() != CV_8UC1) return;
+    const float cap = 2.5f * seedBh;
+    const int vLook = std::max(1, static_cast<int>(std::lround(cap)) + 2);
+    const float lookV = (seed.v1 - seed.v0) + 2.f * static_cast<float>(vLook);
+    const float uPad = 2.5f * lookV;
+    const float lookU0 = seed.u0 - uPad;
+    const float lookU1 = seed.u1 + uPad;
+    const float lookV0 = seed.v0 - static_cast<float>(vLook);
+    int sl = 0, st = 0, sr = 0, sb = 0;
+    if (!oriAabbClip(seed, imgW, imgH, &sl, &st, &sr, &sb)) return;
+    const int seedH = std::max(1, sb - st);
+    const int seedW = std::max(1, sr - sl);
+    OriBox padBox = seed;
+    padBox.u0 -= uPad;
+    padBox.u1 += uPad;
+    padBox.v0 -= static_cast<float>(vLook);
+    padBox.v1 += static_cast<float>(vLook);
+    int lookL = 0, lookT = 0, lookR = 0, lookB = 0;
+    if (!oriAabbClip(padBox, imgW, imgH, &lookL, &lookT, &lookR, &lookB)) return;
+    const int lookW = lookR - lookL;
+    const int lookH = lookB - lookT;
+    if (lookW < 1 || lookH < 1) return;
+    cv::Mat* lookBinHost = asU8(scratch);
+    cv::Mat lookBin;
+#if defined(VE_IDEAL_MASK_MAIN)
+    if (presetLook254) {
+        lookBin = src;
+    } else
+#endif
+    {
+        if (!lookBinHost) return;
+        if (!veAllocLog("seg7Ori_look", veMatBytes(imgH, imgW, CV_8UC1), imgH, imgW, CV_8UC1)) {
+            return;
+        }
+        (void)planeRoi8u(lookBinHost, lookL, lookT, lookW, lookH);
+        lookBin = planeView8u(lookBinHost, 0, 0, imgW, imgH);
+    }
+    if (lookBin.empty()) return;
+    cv::Mat seedY = src(cv::Range(st, sb), cv::Range(sl, sr));
+    if (seedY.empty()) return;
+    PoisonStats stLocal;
+    cv::Mat* objPlane = asU8(inkDump);
+    if (objPlane && (objPlane->cols < imgW || objPlane->rows < imgH)) objPlane = nullptr;
+    cv::Mat* overlayY8 = asU8(overlayY);
+    cv::Mat* overlayUv2 = asUV(overlayUv);
+    cv::Mat lookPoison;
+    cv::Mat lookInkAtPlane;
+    SeedFillGate fillGate;
+    int sPx = 0;
+#if defined(VE_IDEAL_MASK_MAIN)
+    if (presetLook254) {
+        sPx = horizPeakSW(lookBin, lookBin.rows, lookBin.cols, false, imgW).peak;
+    } else
+#endif
+    {
+        sPx = fillPoisonLookRaster(
+            src, &lookBin, sl, st, sr, sb, lookL, lookT, lookR, lookB, srcIsBin, 8, 0,
+            overlayY8, overlayUv2, 0, 0, poisonStats ? &stLocal : nullptr, lookBinHost,
+            objPlane, objPack, seedIndex, false,
+            0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, &lookPoison, false,
+            poisonPlane, &lookInkAtPlane, &fillGate, tele ? &tele->overlap : nullptr, tele,
+            virtSp);
+    }
+    if (tele && !keepColorStats) {
+        float yi = 0.f, yb = 0.f;
+        int ni = 0, nbg = 0;
+        for (int y = 0; y < seedY.rows; ++y) {
+            const uint8_t* yp = seedY.ptr<uint8_t>(y);
+            const int py = st + y;
+            if (py < 0 || py >= lookBin.rows) continue;
+            const uint8_t* bp = lookBin.ptr<uint8_t>(py);
+            for (int x = 0; x < seedY.cols; ++x) {
+                const int px = sl + x;
+                if (px < 0 || px >= lookBin.cols) continue;
+                if (bp[px]) { yi += yp[x]; ++ni; }
+                else { yb += yp[x]; ++nbg; }
+            }
+        }
+        tele->yInk = ni > 0 ? yi / static_cast<float>(ni) : 0.f;
+        tele->yBg = nbg > 0 ? yb / static_cast<float>(nbg) : 0.f;
+        tele->dInk = tele->yInk - tele->yBg;
+    }
+    if (poisonStats) *poisonStats = stLocal;
+    *sPxOut = static_cast<float>(sPx);
+    if (sPx < 1) {
+        if (tele) {
+            tele->sPx = *sPxOut;
+            tele->dTop = 0.f;
+            tele->dBot = 0.f;
+            tele->dLeft = 0.f;
+            tele->dRight = 0.f;
+            tele->nInkSeed = static_cast<float>(
+                countInkU8InQuad(lookInkAtPlane, seed, imgW, imgH));
+            tele->nInkBlue = static_cast<float>(
+                countInkU8InQuad(lookInkAtPlane, seed, imgW, imgH));
+            tele->nInkYellow = static_cast<float>(
+                countInkU8InQuad(lookInkAtPlane, seed, imgW, imgH));
+            tele->nLookBinSeed = static_cast<float>(fillGate.nLookBin);
+            tele->nRecoveredSeed = static_cast<float>(fillGate.nRecovered);
+            tele->fill = fillGate.fill;
+            tele->nRetry = static_cast<float>(fillGate.nRetry);
+            tele->retryWhy = static_cast<float>(fillGate.retryWhy);
+            tele->nValley = static_cast<float>(fillGate.nValley);
+            packFillAttempts(fillGate, tele);
+        }
+        paintLookOverlay(
+            lookBin, lookPoison, overlayY8, overlayUv2, false, 0, 0,
+            0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+            false,
+            seed.cx, seed.cy, seed.ux, seed.uy, seed.vx, seed.vy,
+            seed.u0, seed.u1, seed.v0, seed.v1, objPack,
+            lookL, lookT, lookR, lookB);
+        return;
+    }
+    const int hMul = (tele && tele->poisonHMul > 0.f)
+        ? static_cast<int>(std::lround(tele->poisonHMul)) : 7;
+    const int glareW = hMul * std::max(sPx, 1);
+    const int gapStop = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
+    const int minRun = usedMinRun(sPx);
+    auto lookRowOfV = [&](float v) {
+        const float um = 0.5f * (seed.u0 + seed.u1);
+        return static_cast<int>(std::lround(
+            seed.cy + um * seed.uy + v * seed.vy));
+    };
+    int band0 = std::max(lookT, st - 4 * sPx);
+    int band1 = std::min(lookB, sb + 4 * sPx);
+    auto seedLookX = [&](int y0, int y1, int* xl, int* xr) {
+        const float um = 0.5f * (seed.u0 + seed.u1);
+        auto xAt = [&](float u, int y) {
+            const float v = seed.vy != 0.f
+                ? (static_cast<float>(y) - seed.cy - um * seed.uy) / seed.vy
+                : 0.5f * (seed.v0 + seed.v1);
+            return static_cast<int>(std::lround(seed.cx + u * seed.ux + v * seed.vx));
+        };
+        const int yb = y1 > y0 ? y1 - 1 : y0;
+        const int a = xAt(seed.u0, y0), b = xAt(seed.u0, yb);
+        const int c = xAt(seed.u1, y0), d = xAt(seed.u1, yb);
+        int lo = std::min(std::min(a, b), std::min(c, d));
+        int hi = std::max(std::max(a, b), std::max(c, d)) + 1;
+        if (lo < lookL) lo = lookL;
+        if (hi > lookR) hi = lookR;
+        *xl = lo;
+        *xr = hi;
+    };
+    int suL = lookL, suR = lookR;
+    seedLookX(band0, band1, &suL, &suR);
+    const int recDisp = tele ? static_cast<int>(std::lround(tele->dispKind)) : kDisp7seg;
+    const int recHm = (tele && tele->poisonHMul > 0.f)
+        ? static_cast<int>(std::lround(tele->poisonHMul)) : 7;
+    const int recVm = (tele && tele->poisonVMul > 0.f)
+        ? static_cast<int>(std::lround(tele->poisonVMul)) : 16;
+#if defined(VE_IDEAL_MASK_MAIN)
+    if (!presetLook254)
+#endif
+    recoverStrokeNearInk(
+        src, &lookBin, sPx, band0, band1, objPack, seedIndex, suL, lookT, suR, lookB,
+        recDisp, recHm, recVm);
+    auto ensureBand = [&](int y) {
+        if (y < lookT || y >= lookB) return;
+        if (y >= band0 && y < band1) return;
+        const int ov = sPx;
+        int n0 = band0, n1 = band1;
+        if (y < band0) {
+            n0 = y;
+            n1 = std::min(lookB, band0 + ov);
+        } else {
+            n0 = std::max(lookT, band1 - ov);
+            n1 = std::min(lookB, y + 1);
+        }
+        int xl = lookL, xr = lookR;
+        seedLookX(n0, n1, &xl, &xr);
+#if defined(VE_IDEAL_MASK_MAIN)
+        if (!presetLook254)
+#endif
+        recoverStrokeNearInk(
+            src, &lookBin, sPx, n0, n1, objPack, seedIndex, xl, lookT, xr, lookB,
+            recDisp, recHm, recVm);
+        if (n0 < band0) band0 = n0;
+        if (n1 > band1) band1 = n1;
+    };
+    auto hasBarRaw = [&](float v) {
+        const float u0 = seed.u0;
+        const float u1 = seed.u1 > seed.u0 + 1.f ? seed.u1 : seed.u0 + 1.f;
+        const int n = std::max(4, static_cast<int>(std::lround(u1 - u0)));
+        int run = 0;
+        for (int i = 0; i <= n; ++i) {
+            bool on = false;
+            if (i < n) {
+                const float u = u0 + (i + 0.5f) / static_cast<float>(n) * (u1 - u0);
+                const int px = static_cast<int>(std::lround(
+                    seed.cx + u * seed.ux + v * seed.vx));
+                const int py = static_cast<int>(std::lround(
+                    seed.cy + u * seed.uy + v * seed.vy));
+                if (px >= lookL && py >= lookT && px < lookR && py < lookB &&
+                    px >= 0 && py >= 0 && px < imgW && py < imgH &&
+                    py < lookBin.rows && px < lookBin.cols) {
+                    on = isLookInkId(lookBin.ptr<uint8_t>(py)[px], objPack);
+                }
+            }
+            if (on) ++run;
+            else if (run > 0) {
+                if (run >= minRun && run <= glareW) return true;
+                run = 0;
+            }
+        }
+        return false;
+    };
+    auto hasBar = [&](float v) {
+#if defined(VE_IDEAL_MASK_MAIN)
+        if (!presetLook254)
+#endif
+        ensureBand(lookRowOfV(v));
+        return hasBarRaw(v);
+    };
+    float v0 = seed.v0, v1 = seed.v1;
+    const float maxRetractPx = static_cast<float>(
+        std::max(1, static_cast<int>(std::lround(kVertRetractCapFrac * seedBh))));
+    int fTop = kFlagUnchanged, fBot = kFlagUnchanged;
+    int gapJumpTop = 0, gapJumpBot = 0;
+    float landTop = 0.f, landBot = 0.f;
+    auto expandNegOneShot = [&]() {
+        bool usedGap = false;
+        while (seed.v0 - (v0 - 1.f) <= cap && hasBar(v0 - 1.f)) v0 -= 1.f;
+        if (v0 < seed.v0) fTop = kFlagNormalExpand;
+        if (!usedGap && seed.v0 - (v0 - 1.f) <= cap && !hasBar(v0 - 1.f)) {
+            float v = v0 - 1.f;
+            int n = 0;
+            while (n < gapStop && seed.v0 - v <= cap) {
+                if (hasBar(v)) {
+                    v0 = v;
+                    usedGap = true;
+                    gapJumpTop = 1;
+                    landTop = v;
+                    fTop = kFlagNormalExpand;
+                    while (seed.v0 - (v0 - 1.f) <= cap && hasBar(v0 - 1.f)) v0 -= 1.f;
+                    break;
+                }
+                v -= 1.f;
+                ++n;
+            }
+        }
+        if (fTop == kFlagUnchanged) fTop = kFlagBlockedGap;
+    };
+    auto expandPosOneShot = [&]() {
+        bool usedGap = false;
+        while (v1 - seed.v1 < cap && hasBar(v1)) v1 += 1.f;
+        if (v1 > seed.v1) fBot = kFlagNormalExpand;
+        if (!usedGap && v1 - seed.v1 < cap && !hasBar(v1)) {
+            float v = v1;
+            int n = 0;
+            while (n < gapStop && v - seed.v1 <= cap) {
+                if (hasBar(v)) {
+                    v1 = v + 1.f;
+                    usedGap = true;
+                    gapJumpBot = 1;
+                    landBot = v;
+                    fBot = kFlagNormalExpand;
+                    while (v1 - seed.v1 < cap && hasBar(v1)) v1 += 1.f;
+                    break;
+                }
+                v += 1.f;
+                ++n;
+            }
+        }
+        if (fBot == kFlagUnchanged) fBot = kFlagBlockedGap;
+    };
+    const float origV0 = seed.v0, origV1 = seed.v1;
+    const float origU0 = seed.u0, origU1 = seed.u1;
+    auto walkV = [&]() {
+        v0 = origV0;
+        v1 = origV1;
+        fTop = kFlagUnchanged;
+        fBot = kFlagUnchanged;
+        gapJumpTop = 0;
+        gapJumpBot = 0;
+        landTop = 0.f;
+        landBot = 0.f;
+        if (boundStrategy == 2) {
+            if (hasBar(v0)) {
+                expandNegOneShot();
+            } else {
+                while (v0 < v1 - 1.f && (v0 - origV0) < maxRetractPx && !hasBar(v0)) v0 += 1.f;
+                if (v0 > origV0 && hasBar(v0)) fTop = kFlagNormalRetract;
+                else if (v0 - origV0 >= maxRetractPx) fTop = kFlagBlocked10pct;
+                else fTop = kFlagNormalRetract;
+            }
+            if (hasBar(v1 - 1.f) || hasBar(v1)) {
+                expandPosOneShot();
+            } else {
+                while (v1 > v0 + 1.f && (origV1 - v1) < maxRetractPx && !hasBar(v1 - 1.f)) v1 -= 1.f;
+                if (v1 < origV1 && hasBar(v1 - 1.f)) fBot = kFlagNormalRetract;
+                else if (origV1 - v1 >= maxRetractPx) fBot = kFlagBlocked10pct;
+                else fBot = kFlagNormalRetract;
+            }
+        } else {
+            expandNegOneShot();
+            expandPosOneShot();
+        }
+        if (v1 > v0 && !hasBar(v1) && hasBar(v1 - 1.f)) v1 -= 1.f;
+        if (v1 < v0 + 2.f) v1 = v0 + 2.f;
+    };
+    walkV();
+    if (tele) {
+        tele->dTop1 = v0 - origV0;
+        tele->dBot1 = v1 - origV1;
+        tele->fTop1 = static_cast<float>(fTop);
+        tele->fBot1 = static_cast<float>(fBot);
+        tele->gapJumpBot1 = gapJumpBot ? 1.f : 0.f;
+    }
+    const float seedU0 = seed.u0, seedU1 = seed.u1;
+    seed.v0 = v0;
+    seed.v1 = v1;
+    float farU0 = seed.u0, farU1 = seed.u1;
+    if (doHorzJump) {
+        jumpOrientedOne(
+            src, &seed, imgW, imgH, 0.4f, 0.65f, 0.60f, 0.30f, seedBh,
+            &lookBin, seed.v0, seed.v1, minRun, lookV0,
+            &farU0, &farU1, lookU0, lookU1, 0, 0, objPack, sPx, seedIndex,
+            recDisp, recHm, recVm
+#if defined(VE_IDEAL_MASK_MAIN)
+            , presetLook254
+#endif
+        );
+    }
+    {
+        int r0 = lookRowOfV(seed.v0), r1 = lookRowOfV(seed.v1);
+        if (r1 < r0) std::swap(r0, r1);
+#if defined(VE_IDEAL_MASK_MAIN)
+        if (!presetLook254)
+#endif
+        recoverStrokeNearInk(
+            src, &lookBin, sPx, std::max(lookT, r0), std::min(lookB, r1 + 1),
+            objPack, seedIndex, lookL, lookT, lookR, lookB,
+            recDisp, recHm, recVm);
+    }
+    if (tele) {
+        tele->otsuThr = 0.f;
+        tele->sPx = *sPxOut;
+        tele->dTop = v0 - origV0;
+        tele->dBot = v1 - origV1;
+        tele->dLeft = seed.u0 - seedU0;
+        tele->dRight = seed.u1 - seedU1;
+        tele->fTop = static_cast<float>(fTop);
+        tele->fBot = static_cast<float>(fBot);
+        int fLeft = kFlagUnchanged, fRight = kFlagUnchanged;
+        if (seed.u0 < seedU0) fLeft = kFlagNormalExpand;
+        else if (farU0 < seed.u0) fLeft = kFlagNormalRetract;
+        if (seed.u1 > seedU1) fRight = kFlagNormalExpand;
+        else if (farU1 > seed.u1) fRight = kFlagNormalRetract;
+        tele->fLeft = static_cast<float>(fLeft);
+        tele->fRight = static_cast<float>(fRight);
+        tele->gapJumpTop = gapJumpTop ? 1.f : 0.f;
+        tele->gapJumpBot = gapJumpBot ? 1.f : 0.f;
+        tele->landTop = gapJumpTop ? landTop : 0.f;
+        tele->landBot = gapJumpBot ? landBot : 0.f;
+        tele->farL = farU0;
+        tele->farR = farU1;
+        OriBox seedQ = seed;
+        seedQ.u0 = origU0;
+        seedQ.u1 = origU1;
+        seedQ.v0 = origV0;
+        seedQ.v1 = origV1;
+        OriBox blueQ = seed;
+        blueQ.u0 = seed.u0;
+        blueQ.u1 = seed.u1;
+        blueQ.v0 = v0;
+        blueQ.v1 = v1;
+        OriBox yellowQ = seed;
+        yellowQ.u0 = farU0;
+        yellowQ.u1 = farU1;
+        yellowQ.v0 = std::min(origV0, v0);
+        yellowQ.v1 = std::max(origV1, v1);
+        tele->nInkSeed = static_cast<float>(
+            countInkU8InQuad(lookInkAtPlane, seedQ, imgW, imgH));
+        tele->nInkBlue = static_cast<float>(
+            countInkU8InQuad(lookInkAtPlane, blueQ, imgW, imgH));
+        tele->nInkYellow = static_cast<float>(
+            countInkU8InQuad(lookInkAtPlane, yellowQ, imgW, imgH));
+        tele->nLookBinSeed = static_cast<float>(fillGate.nLookBin);
+        tele->nRecoveredSeed = static_cast<float>(fillGate.nRecovered);
+        tele->fill = fillGate.fill;
+        tele->nRetry = static_cast<float>(fillGate.nRetry);
+        tele->retryWhy = static_cast<float>(fillGate.retryWhy);
+        tele->nValley = static_cast<float>(fillGate.nValley);
+        packFillAttempts(fillGate, tele);
+    }
+    if (sweepOut) {
+        try {
+            OriBox seedSweep = seed;
+            fillOrientedLookSweep(
+                src, true, 0.0, true, false, 0, lookBin,
+                seedSweep, v0, v1, imgW, imgH, minRun, *sPxOut, sweepOut,
+                lookL, lookT, lookR, lookB, objPack);
+        } catch (const cv::Exception&) {
+        }
+    }
+    oriToQuad(seed, outPts8);
+    paintLookOverlay(
+        lookBin, lookPoison, overlayY8, overlayUv2, false, 0, 0,
+        0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+        false,
+        seed.cx, seed.cy, seed.ux, seed.uy, seed.vx, seed.vy,
+        origU0, origU1, origV0, origV1, objPack,
+        lookL, lookT, lookR, lookB);
+}
+
+static double meanUFace(
+    const cv::Mat& mag, const OriBox& box, float u, int imgW, int imgH,
+    float v0, float v1
+) {
+    const float vLo = v0;
+    const float vHi = v1 > v0 + 1.f ? v1 : v0 + 1.f;
+    const int n = std::max(4, static_cast<int>(std::lround(vHi - vLo)));
+    double s = 0.0;
+    int c = 0;
+    for (int i = 0; i < n; ++i) {
+        const float v = vLo + (i + 0.5f) / n * (vHi - vLo);
+        const float px = box.cx + u * box.ux + v * box.vx;
+        const float py = box.cy + u * box.uy + v * box.vy;
+        const float g = sampleF32Trunc(mag, px, py, imgW, imgH);
+        if (g < 0.f) continue;
+        s += g;
+        ++c;
+    }
+    return c > 0 ? s / c : 0.0;
+}
+
+static double meanUFace(
+    const cv::Mat& mag, const OriBox& box, float u, int imgW, int imgH
+) {
+    return meanUFace(mag, box, u, imgW, imgH, box.v0, box.v1);
+}
+
+static void jumpOrientedOne(
+    const cv::Mat& mag, OriBox* box, int imgW, int imgH,
+    float maxFrac, float energyRatio, float jumpFrac, float retractClearFrac,
+    float seedBh,
+    cv::Mat* lookBin, float seedV0, float seedV1, int minRun,
+    float lookV0, float* farU0, float* farU1,
+    float lookU0, float lookU1,
+    int lookOx, int lookOy, ObjPack* pack,
+    int sPx, int seedIndex,
+    int dispKind, int hMul, int vMul
+#if defined(VE_IDEAL_MASK_MAIN)
+    , bool skipRecover
+#endif
+) {
+    (void)maxFrac;
+    (void)retractClearFrac;
+    (void)lookV0;
+    (void)lookU0;
+    (void)lookU1;
+    const float vSpan = std::max(1.f, box->v1 - box->v0);
+    const float coreH = seedBh > 0.f ? seedBh : vSpan;
+    const float vMid = 0.5f * (box->v0 + box->v1);
+    float cv0 = std::max(box->v0, vMid - 0.5f * coreH);
+    float cv1 = std::min(box->v1, vMid + 0.5f * coreH);
+    if (cv1 < cv0 + 1.f) {
+        cv0 = box->v0;
+        cv1 = box->v1;
+    }
+    float sv0 = seedV0;
+    float sv1 = seedV1;
+    if (sv1 < sv0 + 1.f) {
+        sv0 = box->v0;
+        sv1 = box->v1;
+    }
+    const bool useInk = lookBin && !lookBin->empty() && lookBin->type() == CV_8UC1 && minRun > 0;
+    const int bw = useInk ? lookBin->cols : 0;
+    const int bh = useInk ? lookBin->rows : 0;
+    auto faceHas = [&](float u) -> bool {
+        if (!useInk || bw < 1 || bh < 1) return false;
+        const int n = std::max(4, static_cast<int>(std::lround(sv1 - sv0)));
+        int best = 0, run = 0;
+        const bool photo = bw >= imgW && bh >= imgH;
+        for (int i = 0; i < n; ++i) {
+            const float v = sv0 + (i + 0.5f) / static_cast<float>(n) * (sv1 - sv0);
+            const int px = static_cast<int>(std::lround(
+                box->cx + u * box->ux + v * box->vx));
+            const int py = static_cast<int>(std::lround(
+                box->cy + u * box->uy + v * box->vy));
+            bool on = false;
+            if (px >= 0 && py >= 0 && px < imgW && py < imgH) {
+                const int ix = photo ? px : (px - lookOx);
+                const int iy = photo ? py : (py - lookOy);
+                on = ix >= 0 && iy >= 0 && ix < bw && iy < bh &&
+                    isLookInkId(lookBin->ptr<uint8_t>(iy)[ix], pack);
+            }
+            if (on) {
+                ++run;
+                if (run > best) best = run;
+            } else {
+                run = 0;
+            }
+        }
+        return best >= minRun;
+    };
+    auto face = [&](float u) {
+        return meanUFace(mag, *box, u, imgW, imgH, cv0, cv1);
+    };
+    const float du = 2.f;
+    const float uA = box->u0 + du;
+    const float uB = box->u1 - du;
+    double base;
+    if (uB > uA) {
+        double s = 0.0;
+        int c = 0;
+        const int nu = std::max(4, static_cast<int>(std::lround(uB - uA)));
+        for (int i = 0; i < nu; ++i) {
+            s += face(uA + (i + 0.5f) / nu * (uB - uA));
+            ++c;
+        }
+        base = c > 0 ? s / c : face((box->u0 + box->u1) * 0.5f);
+    } else {
+        base = face((box->u0 + box->u1) * 0.5f);
+    }
+    const double thr = energyRatio * std::max(base, 1e-3);
+    auto hit = [&](float u) -> bool {
+        return useInk ? faceHas(u) : face(u) >= thr;
+    };
+    auto recoverHop = [&](float ua, float ub) {
+#if defined(VE_IDEAL_MASK_MAIN)
+        if (skipRecover) return;
+#endif
+        if (!useInk || sPx < 1 || !pack) return;
+        const float ulo = std::min(ua, ub);
+        const float uhi = std::max(ua, ub);
+        const float vv0 = box->v0, vv1 = box->v1;
+        auto px = [&](float u, float v) {
+            return static_cast<int>(std::lround(box->cx + u * box->ux + v * box->vx));
+        };
+        auto py = [&](float u, float v) {
+            return static_cast<int>(std::lround(box->cy + u * box->uy + v * box->vy));
+        };
+        const int x0 = std::min(std::min(px(ulo, vv0), px(ulo, vv1)),
+                                std::min(px(uhi, vv0), px(uhi, vv1)));
+        const int x1 = std::max(std::max(px(ulo, vv0), px(ulo, vv1)),
+                                std::max(px(uhi, vv0), px(uhi, vv1))) + 1;
+        const int y0 = std::min(std::min(py(ulo, vv0), py(ulo, vv1)),
+                                std::min(py(uhi, vv0), py(uhi, vv1)));
+        const int y1 = std::max(std::max(py(ulo, vv0), py(ulo, vv1)),
+                                std::max(py(uhi, vv0), py(uhi, vv1))) + 1;
+        recoverStrokeNearInk(
+            mag, lookBin, sPx, y0 - lookOy, y1 - lookOy, pack, seedIndex,
+            x0 - lookOx, y0 - lookOy, x1 - lookOx, y1 - lookOy,
+            dispKind, hMul, vMul);
+    };
+    const float jx = static_cast<float>(
+        std::max(1, static_cast<int>(std::lround(jumpFrac * vSpan))));
+    const float seedU0 = box->u0;
+    const float seedU1 = box->u1;
+    float u0 = box->u0;
+    float u1 = box->u1;
+    float probe0 = u0;
+    float probe1 = u1;
+    int jumps0 = 0;
+    while (jumps0 < kJumpMax) {
+        const float next0 = u0 - jx;
+        probe0 = next0;
+        recoverHop(next0, u0);
+        if (hit(next0)) {
+            u0 = next0;
+            ++jumps0;
+            continue;
+        }
+        bool hit0 = false;
+        float found0 = u0;
+        for (float cur = next0 + 1.f; cur < u0; cur += 1.f) {
+            if (hit(cur)) {
+                found0 = cur;
+                hit0 = true;
+                break;
+            }
+        }
+        if (hit0) {
+            u0 = found0;
+            ++jumps0;
+            continue;
+        }
+        break;
+    }
+    int jumps1 = 0;
+    while (jumps1 < kJumpMax) {
+        const float next1 = u1 + jx;
+        probe1 = next1;
+        recoverHop(u1, next1);
+        if (hit(next1)) {
+            u1 = next1;
+            ++jumps1;
+            continue;
+        }
+        bool hit1 = false;
+        float new1 = u1;
+        for (float cur = next1 - 1.f; cur > u1; cur -= 1.f) {
+            if (hit(cur)) {
+                new1 = cur;
+                hit1 = true;
+                break;
+            }
+        }
+        if (hit1) {
+            u1 = new1;
+            ++jumps1;
+            continue;
+        }
+        break;
+    }
+    if (farU0) *farU0 = probe0;
+    if (farU1) *farU1 = probe1;
+    if (useInk && sPx > 0 && lookBin && bw > 0 && bh > 0) {
+        const bool photo = bw >= imgW && bh >= imgH;
+        auto iyAt = [&](float uu, float vv) {
+            const int py = static_cast<int>(std::lround(
+                box->cy + uu * box->uy + vv * box->vy));
+            return photo ? py : (py - lookOy);
+        };
+        int ys[4] = {
+            iyAt(seedU0, sv0), iyAt(seedU0, sv1),
+            iyAt(seedU1, sv0), iyAt(seedU1, sv1)
+        };
+        const int clipY0 = std::min(std::min(ys[0], ys[1]), std::min(ys[2], ys[3]));
+        const int clipY1 = std::max(std::max(ys[0], ys[1]), std::max(ys[2], ys[3])) + 1;
+        auto faceIsStroke = [&](float u) -> bool {
+            const int n = std::max(4, static_cast<int>(std::lround(sv1 - sv0)));
+            std::vector<int> starts;
+            starts.reserve(static_cast<size_t>(n));
+            for (int i = 0; i < n; ++i) {
+                const float v = sv0 + (i + 0.5f) / static_cast<float>(n) * (sv1 - sv0);
+                const int px = static_cast<int>(std::lround(
+                    box->cx + u * box->ux + v * box->vx));
+                const int py = static_cast<int>(std::lround(
+                    box->cy + u * box->uy + v * box->vy));
+                if (px < 0 || py < 0 || px >= imgW || py >= imgH) continue;
+                const int ix = photo ? px : (px - lookOx);
+                const int iy = photo ? py : (py - lookOy);
+                if (ix < 0 || iy < 0 || ix >= bw || iy >= bh) continue;
+                if (!isLookInkId(lookBin->ptr<uint8_t>(iy)[ix], pack)) continue;
+                starts.push_back(iy * bw + ix);
+            }
+            return keepCcIsPlausibleStroke(*lookBin, clipY0, clipY1, pack, sPx, starts);
+        };
+        while (u0 < seedU0 - 0.5f && !faceIsStroke(u0)) u0 += 1.f;
+        while (u1 > seedU1 + 0.5f && !faceIsStroke(u1)) u1 -= 1.f;
+        if (u1 < u0 + 2.f) {
+            u0 = seedU0;
+            u1 = seedU1;
+        }
+    }
+    if (u1 < u0 + 2.f) u1 = u0 + 2.f;
+    box->u0 = u0;
+    box->u1 = u1;
+}
+
+}  // namespace
+
+static jfloatArray seg7OrientedMany(
+    JNIEnv* env,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr, jint chromaMode,
+    jint boundStrategy, jint tightInsetPx,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jlong tintPtr = 0,
+    bool doHorzJump = false,
+    jshortArray histArr = nullptr,
+    bool virtSp = false
+) {
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
+    const int imgW = gray->cols, imgH = gray->rows;
+    const jint n8 = env->GetArrayLength(seedsArr);
+    if (n8 <= 0 || n8 % 8 != 0) return env->NewFloatArray(0);
+    const int n = n8 / 8;
+    std::vector<jfloat> seeds(n8);
+    env->GetFloatArrayRegion(seedsArr, 0, n8, seeds.data());
+    cv::Mat* cMag = nullptr;
+    const bool useChroma = chromaMode == 1;
+    const bool useTint = chromaMode == 2 || chromaMode == 3 || chromaMode == 4;
+    const bool adaptive = chromaMode == 4;
+    auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
+    auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
+    auto* inkDump = reinterpret_cast<cv::Mat*>(dumpPtr);
+    auto* overlayY = reinterpret_cast<cv::Mat*>(overlayYPtr);
+    auto* overlayUv = reinterpret_cast<cv::Mat*>(overlayUvPtr);
+    cv::Mat* ovUv = asUV(overlayUv);
+    cv::Mat* lookBinHost = asU8(scratch);
+    cv::Mat* rotPoison = asU8(uv);
+    cv::Mat* tintPlane = asU8(reinterpret_cast<cv::Mat*>(tintPtr));
+    std::vector<PoisonStats> poisonPacks;
+    poisonPacks.resize(static_cast<size_t>(n));
+    if (useChroma) {
+        if (asU8(overlayY) && scratchFits(overlayY, imgW, imgH)) {
+            fillChromaMag(*gray, uv ? *uv : cv::Mat(), overlayY);
+            cMag = overlayY;
+        }
+    }
+    std::vector<jfloat> out(n * 18, 0.f);
+    std::vector<InkSweepPack> sweeps;
+    sweeps.resize(static_cast<size_t>(n));
+    ObjPack objPack;
+    loadObjPack(env, poisonArr, &objPack);
+    for (int i = 0; i < n; ++i) {
+        objPack.abort = false;
+        objPack.lookNextInk = 253;
+        objPack.lookNextNon = 1;
+        objPack.classChange = 0;
+        objPack.seenInk = 0;
+        objPack.seenNon = 0;
+        objPack.phase[0] = '\0';
+        OriBox box{};
+        const float* in = seeds.data() + i * 8;
+        float* op = out.data() + i * 18;
+        if (!oriFromQuad(in, &box)) {
+            for (int k = 0; k < 8; ++k) {
+                op[k] = in[k];
+                op[8 + k] = in[k];
+            }
+            op[16] = 2.f;
+            op[17] = 0.f;
+            continue;
+        }
+        Seg7Tele tele{};
+        tele.method = adaptive ? 4.f : (useChroma ? 1.f : 0.f);
+        const cv::Mat* src = gray;
+        bool srcIsBin = false;
+        bool keepColor = false;
+        if (useTint && uv) {
+            OriBox seedBox = box;
+            auto aabbOf = [&](const OriBox& b, int* l, int* t, int* r, int* bot) {
+                float pts[8];
+                oriToQuad(b, pts);
+                float minx = pts[0], maxx = pts[0], miny = pts[1], maxy = pts[1];
+                for (int k = 1; k < 4; ++k) {
+                    minx = std::min(minx, pts[k * 2]);
+                    maxx = std::max(maxx, pts[k * 2]);
+                    miny = std::min(miny, pts[k * 2 + 1]);
+                    maxy = std::max(maxy, pts[k * 2 + 1]);
+                }
+                *l = std::max(0, static_cast<int>(std::floor(minx)));
+                *t = std::max(0, static_cast<int>(std::floor(miny)));
+                *r = std::min(imgW, static_cast<int>(std::ceil(maxx)));
+                *bot = std::min(imgH, static_cast<int>(std::ceil(maxy)));
+            };
+            int sl = 0, st = 0, sr = 0, sb = 0;
+            aabbOf(seedBox, &sl, &st, &sr, &sb);
+            OriBox padBox = seedBox;
+            const float seedBhT = std::max(1.f, padBox.v1 - padBox.v0);
+            const float capT = 2.5f * seedBhT;
+            const int vLookT = std::max(1, static_cast<int>(std::lround(capT)) + 2);
+            const float uPadT = 0.60f * seedBhT * static_cast<float>(kJumpMax + 1);
+            padBox.u0 -= uPadT;
+            padBox.u1 += uPadT;
+            padBox.v0 -= static_cast<float>(vLookT);
+            padBox.v1 += static_cast<float>(vLookT);
+            int wl = 0, wt = 0, wr = 0, wb = 0;
+            aabbOf(padBox, &wl, &wt, &wr, &wb);
+            cv::Mat* tintDst = tintPlane;
+            if (fillChromaTintMask(*gray, *uv, sl, st, sr, sb, tintDst, 5, 0,
+                    adaptive, &tele, wl, wt, wr, wb) && tintDst && !tintDst->empty()) {
+                keepColor = true;
+                if (skipTintWalk(adaptive, tele)) {
+                    tele.method = 0.f;
+                    src = gray;
+                    srcIsBin = false;
+                } else {
+                    src = tintDst;
+                    srcIsBin = true;
+                }
+            }
+        } else if (useChroma && cMag && !cMag->empty() &&
+            medianInteriorU8(*cMag, box, imgW, imgH) >= 8.0) {
+            src = cMag;
+        }
+        float sPx = 2.f;
+        objPack.classChange = 0;
+        objPack.seenInk = 0;
+        objPack.seenNon = 0;
+        seg7OrientedOne(*src, box, imgW, imgH, op, &sPx,
+            boundStrategy, tightInsetPx, srcIsBin, &tele, keepColor,
+            &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
+            &poisonPacks[static_cast<size_t>(i)], scratch, &objPack, i, rotPoison,
+            lookBinHost, doHorzJump, virtSp);
+        if (srcIsBin && tele.nLookBinSeed == 0.f && !objPack.abort) {
+            tele.method = 0.f;
+            seg7OrientedOne(*gray, box, imgW, imgH, op, &sPx,
+                boundStrategy, tightInsetPx, false, &tele, keepColor,
+                &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
+                &poisonPacks[static_cast<size_t>(i)], scratch, &objPack, i, rotPoison,
+                lookBinHost, doHorzJump, virtSp);
+        }
+        if (objPack.abort) {
+            poisonPacks[static_cast<size_t>(i)].bandH = -1;
+        }
+        appendObjMeta(&poisonPacks[static_cast<size_t>(i)], objPack, i, n);
+        const float flags = objPack.abort ? 1.f : 0.f;
+        OriBox walked{};
+        if (oriFromQuad(op, &walked)) {
+            packOri18(op, walked, sPx, flags);
+        } else {
+            for (int k = 0; k < 8; ++k) op[8 + k] = op[k];
+            op[16] = sPx;
+            op[17] = flags;
+        }
+        storeTeleArr(env, teleArr, i, tele);
+        writeOverlapHistArr(env, histArr, i, tele.overlap);
+    }
+    writeSweepArr(env, sweepArr, sweeps);
+    writePoisonArr(env, poisonArr, poisonPacks);
+    storeObjPack(env, poisonArr, objPack);
+    jfloatArray arr = env->NewFloatArray(static_cast<jint>(out.size()));
+    if (!arr) return nullptr;
+    env->SetFloatArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
+    return arr;
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayOrientTight(
+    JNIEnv* env, jobject thiz,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
+) {
+    return seg7OrientedMany(
+        env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, 0, true, histArr);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayOrientRetract(
+    JNIEnv* env, jobject thiz,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
+) {
+    return seg7OrientedMany(
+        env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 2, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, 0, true, histArr);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayOrientExpand(
+    JNIEnv* env, jobject thiz,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
+) {
+    return seg7OrientedMany(
+        env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, 0, false, histArr);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientTight(
+    JNIEnv* env, jobject thiz,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jlong tintPtr,
+    jshortArray histArr
+) {
+    return seg7OrientedMany(
+        env, grayPtr, uvPtr, scratchPtr, seedsArr, 4, 0, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr, true, histArr);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientRetract(
+    JNIEnv* env, jobject thiz,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jlong tintPtr,
+    jshortArray histArr
+) {
+    return seg7OrientedMany(
+        env, grayPtr, uvPtr, scratchPtr, seedsArr, 4, 2, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr, true, histArr);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientTightVsp(
+    JNIEnv* env, jobject thiz,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jlong tintPtr,
+    jshortArray histArr
+) {
+    return seg7OrientedMany(
+        env, grayPtr, uvPtr, scratchPtr, seedsArr, 4, 0, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr, true, histArr,
+        true);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientRetractVsp(
+    JNIEnv* env, jobject thiz,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jlong tintPtr,
+    jshortArray histArr
+) {
+    return seg7OrientedMany(
+        env, grayPtr, uvPtr, scratchPtr, seedsArr, 4, 2, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr, true, histArr,
+        true);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientExpand(
+    JNIEnv* env, jobject thiz,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jlong tintPtr,
+    jshortArray histArr
+) {
+    return seg7OrientedMany(
+        env, grayPtr, uvPtr, scratchPtr, seedsArr, 4, 0, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr, false, histArr);
+}
+
+struct SeedInkSamp {
+    const cv::Mat* gray = nullptr;
+    const cv::Mat* uv = nullptr;
+    const uint8_t* raster = nullptr;
+    const uint8_t* altY = nullptr;
+    int altYStride = 0;
+    int w = 0, h = 0, grayW = 0, grayH = 0, ox = 0, oy = 0;
+    bool hasRot = false;
+    OriBox rot{};
+    int iu0 = 0, iv0 = 0;
+    bool uvOk = false;
+};
+
+static bool seedMapPhoto(const SeedInkSamp& s, int sx, int sy, int* x, int* y) {
+    int px = 0, py = 0;
+    if (!s.hasRot) {
+        px = s.ox + sx;
+        py = s.oy + sy;
+    } else {
+        const float u = static_cast<float>(s.iu0 + sx);
+        const float v = static_cast<float>(s.iv0 + sy);
+        px = static_cast<int>(std::lround(s.rot.cx + u * s.rot.ux + v * s.rot.vx));
+        py = static_cast<int>(std::lround(s.rot.cy + u * s.rot.uy + v * s.rot.vy));
+    }
+    if (px < 0 || py < 0 || px >= s.grayW || py >= s.grayH) return false;
+    if (!s.gray || px >= s.gray->cols || py >= s.gray->rows) return false;
+    *x = px;
+    *y = py;
+    return true;
+}
+
+static bool seedInPhoto(const SeedInkSamp& s, int sx, int sy) {
+    int x = 0, y = 0;
+    return seedMapPhoto(s, sx, sy, &x, &y);
+}
+
+static bool seedYAt(const SeedInkSamp& s, int sx, int sy, int* out) {
+    if (!out) return false;
+    if (s.altY && sx >= 0 && sy >= 0 && sx < s.w && sy < s.h) {
+        *out = s.altY[static_cast<size_t>(sy) * static_cast<size_t>(s.altYStride) +
+            static_cast<size_t>(sx)];
+        return true;
+    }
+    if (!s.gray) return false;
+    if (!s.hasRot && sx >= 0 && sy >= 0 && sx < s.w && sy < s.h) {
+        *out = s.gray->ptr<uint8_t>(s.oy + sy)[s.ox + sx];
+        return true;
+    }
+    int x = 0, y = 0;
+    if (!seedMapPhoto(s, sx, sy, &x, &y)) return false;
+    *out = s.gray->ptr<uint8_t>(y)[x];
+    return true;
+}
+
+static void seedUvAt(const SeedInkSamp& s, int sx, int sy, int* u, int* v) {
+    *u = 128;
+    *v = 128;
+    if (!s.uvOk || !s.uv) return;
+    int x = 0, y = 0;
+    if (!seedMapPhoto(s, sx, sy, &x, &y)) return;
+    uvAt(*s.uv, s.grayW, x, y, u, v);
+}
+
+enum class SeedPol { Light, Band, Color };
+
+struct SeedPolCtx {
+    SeedPol kind = SeedPol::Light;
+    bool invert = false;
+    int t = 0, tLo = 0, tHi = 0;
+    const SeedInkSamp* samp = nullptr;
+    float yInk = 0.f, yBg = 0.f, dInk = 0.f;
+    float uInkX = 0.f, uInkY = 0.f, uBgX = 0.f, uBgY = 0.f;
+    float eps2 = 0.f, dotThr2 = 0.f;
+    bool bgHasChroma = false;
+    bool tint = false;
+};
+
+static bool seedHueAt(const SeedPolCtx& c, int sx, int sy, float hx, float hy) {
+    int u = 128, v = 128;
+    seedUvAt(*c.samp, sx, sy, &u, &v);
+    const float du = static_cast<float>(u) - 128.f;
+    const float dv = static_cast<float>(v) - 128.f;
+    const float c2 = du * du + dv * dv;
+    const float left = du * hx + dv * hy;
+    return c2 >= c.eps2 && left > 0.f && left * left >= c.dotThr2 * c2;
+}
+
+static bool seedColorInkAt(const SeedPolCtx& c, int sx, int sy) {
+    int yv = 0;
+    if (!seedYAt(*c.samp, sx, sy, &yv)) return false;
+    const float Y = static_cast<float>(yv);
+    const bool polOk = c.dInk * (Y - c.yBg) >= 0.f;
+    const bool nearY = std::fabs(Y - c.yInk) <= std::fabs(Y - c.yBg);
+    const bool bgHue = c.bgHasChroma && seedHueAt(c, sx, sy, c.uBgX, c.uBgY);
+    const bool inkHue = seedHueAt(c, sx, sy, c.uInkX, c.uInkY);
+    return polOk && !bgHue && (nearY || inkHue);
+}
+
+static bool seedPolAt(const SeedPolCtx& c, int sx, int sy) {
+    bool on = false;
+    if (c.kind == SeedPol::Color) {
+        on = seedColorInkAt(c, sx, sy);
+    } else {
+        int yv = 0;
+        if (!seedYAt(*c.samp, sx, sy, &yv)) yv = 0;
+        if (c.kind == SeedPol::Light) on = yv > c.t;
+        else on = yv > c.tLo && yv <= c.tHi;
+        if (c.tint) {
+            const float Y = static_cast<float>(yv);
+            const bool polOk = c.dInk * (Y - c.yBg) >= 0.f;
+            const bool panelHue = c.bgHasChroma &&
+                seedHueAt(c, sx, sy, c.uBgX, c.uBgY);
+            const bool inkHue = seedHueAt(c, sx, sy, c.uInkX, c.uInkY);
+            on = on || (inkHue && !panelHue && polOk);
+        }
+    }
+    return c.invert ? !on : on;
+}
+
+template <typename Pol, typename Body>
+static void seedForEachHRuns(int w, int h, Pol pol, Body body) {
+    for (int y = 0; y < h; ++y) {
+        int run = 0, x0r = 0;
+        for (int x = 0; x < w; ++x) {
+            if (pol(x, y)) {
+                if (run == 0) x0r = x;
+                ++run;
+            } else {
+                if (run > 0) body(y, x0r, run);
+                run = 0;
+            }
+        }
+        if (run > 0) body(y, x0r, run);
+    }
+}
+
+template <typename Pol, typename Body>
+static void seedForEachVRuns(int w, int h, Pol pol, Body body) {
+    for (int x = 0; x < w; ++x) {
+        int run = 0, y0r = 0;
+        for (int y = 0; y < h; ++y) {
+            if (pol(x, y)) {
+                if (run == 0) y0r = y;
+                ++run;
+            } else {
+                if (run > 0) body(x, y0r, run);
+                run = 0;
+            }
+        }
+        if (run > 0) body(x, y0r, run);
+    }
+}
+
+template <typename Pol>
+static void seedPeekH(
+    const SeedInkSamp& s, int y, int x0, int len, Pol pol, int sPx,
+    int* fullLen, bool* blocked
+) {
+    const int maxLen = std::max(1, static_cast<int>(std::ceil(1.3f * static_cast<float>(sPx))));
+    int a = x0;
+    int b = x0 + len;
+    *blocked = false;
+    if (x0 == 0) {
+        if (!seedInPhoto(s, -1, y)) *blocked = true;
+        else {
+            int x = -1;
+            for (;;) {
+                if (!seedInPhoto(s, x, y) || !pol(x, y)) break;
+                a = x;
+                --x;
+                if (b - a > maxLen) break;
+            }
+        }
+    }
+    if (x0 + len == s.w) {
+        if (!seedInPhoto(s, s.w, y)) *blocked = true;
+        else {
+            int x = s.w;
+            for (;;) {
+                if (!seedInPhoto(s, x, y) || !pol(x, y)) break;
+                b = x + 1;
+                ++x;
+                if (b - a > maxLen) break;
+            }
+        }
+    }
+    *fullLen = b - a;
+}
+
+template <typename Pol>
+static void seedPeekV(
+    const SeedInkSamp& s, int x, int y0, int len, Pol pol, int sPx,
+    int* fullLen, bool* blocked
+) {
+    const int maxLen = std::max(1, static_cast<int>(std::ceil(1.3f * static_cast<float>(sPx))));
+    int a = y0;
+    int b = y0 + len;
+    *blocked = false;
+    if (y0 == 0) {
+        if (!seedInPhoto(s, x, -1)) *blocked = true;
+        else {
+            int y = -1;
+            for (;;) {
+                if (!seedInPhoto(s, x, y) || !pol(x, y)) break;
+                a = y;
+                --y;
+                if (b - a > maxLen) break;
+            }
+        }
+    }
+    if (y0 + len == s.h) {
+        if (!seedInPhoto(s, x, s.h)) *blocked = true;
+        else {
+            int y = s.h;
+            for (;;) {
+                if (!seedInPhoto(s, x, y) || !pol(x, y)) break;
+                b = y + 1;
+                ++y;
+                if (b - a > maxLen) break;
+            }
+        }
+    }
+    *fullLen = b - a;
+}
+
+template <typename Pol>
+static void seedMarkSheet(const SeedInkSamp& s, Pol pol, uint8_t* sheet, int stride) {
+    const int w = s.w, h = s.h;
+    seedForEachHRuns(w, h, pol, [&](int y, int x0, int len) {
+        if (len != w) return;
+        uint8_t* row = sheet + y * stride;
+        for (int x = x0; x < x0 + len; ++x) row[x] = 1;
+    });
+    seedForEachVRuns(w, h, pol, [&](int x, int y0, int len) {
+        if (len != h) return;
+        for (int y = y0; y < y0 + len; ++y) sheet[y * stride + x] = 1;
+    });
+}
+
+template <typename Pol>
+static void seedPaintCores(
+    const SeedInkSamp& s, Pol pol, int sPx, uint8_t* dest, int destStride,
+    const uint8_t* sheet, int sheetStride, bool doH, bool doV
+) {
+    if (sPx < 1) return;
+    const int w = s.w, h = s.h;
+    const float plo = 0.7f * static_cast<float>(sPx);
+    const float phi = 1.3f * static_cast<float>(sPx);
+    if (doH) {
+        seedForEachHRuns(w, h, pol, [&](int y, int x0, int len) {
+            if (len == w) return;
+            int fullLen = 0;
+            bool blocked = false;
+            seedPeekH(s, y, x0, len, pol, sPx, &fullLen, &blocked);
+            if (blocked) return;
+            const float fl = static_cast<float>(fullLen);
+            if (fl < plo || fl > phi) return;
+            const uint8_t* sh = sheet + y * sheetStride;
+            uint8_t* d = dest + y * destStride;
+            for (int x = x0; x < x0 + len; ++x) {
+                if (sh[x] == 0) d[x] = 255;
+            }
+        });
+    }
+    if (doV) {
+        seedForEachVRuns(w, h, pol, [&](int x, int y0, int len) {
+            if (len == h) return;
+            int fullLen = 0;
+            bool blocked = false;
+            seedPeekV(s, x, y0, len, pol, sPx, &fullLen, &blocked);
+            if (blocked) return;
+            const float fl = static_cast<float>(fullLen);
+            if (fl < plo || fl > phi) return;
+            for (int y = y0; y < y0 + len; ++y) {
+                if (sheet[y * sheetStride + x] == 0) dest[y * destStride + x] = 255;
+            }
+        });
+    }
+}
+
+static int seedArgmaxRun(const int* hist, int histN, int lo, int hi) {
+    int bestL = 0, bestC = 0;
+    const int last = std::min(hi, histN - 1);
+    if (last < lo) return 0;
+    for (int len = lo; len <= last; ++len) {
+        const int c = hist[len];
+        if (c > bestC) {
+            bestC = c;
+            bestL = len;
+        }
+    }
+    return bestC > 0 ? bestL : 0;
+}
+
+template <typename Pol>
+static int seedSPxFromPol(const SeedInkSamp& s, Pol pol, int lo, int hi) {
+    std::vector<int> bothH(static_cast<size_t>(s.w) + 1, 0);
+    seedForEachHRuns(s.w, s.h, pol, [&](int, int, int len) {
+        if (len != s.w && len >= 0 && len <= s.w) bothH[static_cast<size_t>(len)]++;
+    });
+    auto notPol = [&](int sx, int sy) { return !pol(sx, sy); };
+    seedForEachHRuns(s.w, s.h, notPol, [&](int, int, int len) {
+        if (len != s.w && len >= 0 && len <= s.w) bothH[static_cast<size_t>(len)]++;
+    });
+    return seedArgmaxRun(bothH.data(), static_cast<int>(bothH.size()), lo, hi);
+}
+
+template <typename Pol>
+static void seedGreyMask(const SeedInkSamp& s, Pol pol, uint8_t* white, int stride) {
+    for (int sy = 0; sy < s.h; ++sy) {
+        uint8_t* row = white + sy * stride;
+        for (int sx = 0; sx < s.w; ++sx) {
+            row[sx] = pol(sx, sy) ? 255 : 0;
+        }
+    }
+}
+
+static void seedZeroPlane(uint8_t* p, int stride, int w, int h) {
+    if (!p || w < 1 || h < 1) return;
+    for (int y = 0; y < h; ++y) {
+        std::memset(p + static_cast<size_t>(y) * static_cast<size_t>(stride), 0,
+            static_cast<size_t>(w));
+    }
+}
+
+static void seedCopyStridedToPacked(
+    const uint8_t* src, int stride, int w, int h, uint8_t* dst
+) {
+    for (int y = 0; y < h; ++y) {
+        std::memcpy(dst + static_cast<size_t>(y) * static_cast<size_t>(w),
+            src + static_cast<size_t>(y) * static_cast<size_t>(stride),
+            static_cast<size_t>(w));
+    }
+}
+
+static void seedCopyPackedToStrided(
+    const uint8_t* src, uint8_t* dst, int stride, int w, int h
+) {
+    for (int y = 0; y < h; ++y) {
+        std::memcpy(dst + static_cast<size_t>(y) * static_cast<size_t>(stride),
+            src + static_cast<size_t>(y) * static_cast<size_t>(w),
+            static_cast<size_t>(w));
+    }
+}
+
+static void seedOrStridedIntoPacked(
+    const uint8_t* src, int stride, int w, int h, uint8_t* acc
+) {
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* srow = src + static_cast<size_t>(y) * static_cast<size_t>(stride);
+        uint8_t* drow = acc + static_cast<size_t>(y) * static_cast<size_t>(w);
+        for (int x = 0; x < w; ++x) if (srow[x]) drow[x] = 255;
+    }
+}
+
+static int seedCountNzStrided(const uint8_t* p, int stride, int w, int h) {
+    int c = 0;
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* row = p + static_cast<size_t>(y) * static_cast<size_t>(stride);
+        for (int x = 0; x < w; ++x) if (row[x]) ++c;
+    }
+    return c;
+}
+
+static bool seedStrokeHasHV(const uint8_t* stroke, int stride, int w, int h) {
+    bool hasH = false, hasV = false;
+    auto pol = [&](int sx, int sy) { return stroke[sy * stride + sx] != 0; };
+    seedForEachHRuns(w, h, pol, [&](int, int, int len) {
+        if (len != w) hasH = true;
+    });
+    if (!hasH) return false;
+    seedForEachVRuns(w, h, pol, [&](int, int, int len) {
+        if (len != h) hasV = true;
+    });
+    return hasV;
+}
+
+static bool seedPaintLook(
+    const uint8_t* white, int wstride,
+    const uint8_t* stroke, int sstride,
+    int srcW, int srcH,
+    cv::Mat* y, cv::Mat* uv
+) {
+    if (!white || !stroke || srcW < 1 || srcH < 1 || !y) return false;
+    if (y->empty() || y->type() != CV_8UC1) return false;
+    const int dw = y->cols, dh = y->rows;
+    if (dw < 1 || dh < 1) return false;
+    y->setTo(0);
+    for (int dy = 0; dy < dh; ++dy) {
+        int sy = static_cast<int>((static_cast<int64_t>(dy) * srcH) / dh);
+        if (sy >= srcH) sy = srcH - 1;
+        uint8_t* row = y->ptr<uint8_t>(dy);
+        const uint8_t* wrow = white + sy * wstride;
+        const uint8_t* srow = stroke + sy * sstride;
+        for (int dx = 0; dx < dw; ++dx) {
+            int sx = static_cast<int>((static_cast<int64_t>(dx) * srcW) / dw);
+            if (sx >= srcW) sx = srcW - 1;
+            if (srow[sx] != 0) row[dx] = 150;
+            else if (wrow[sx] != 0) row[dx] = 255;
+            else row[dx] = 0;
+        }
+    }
+    if (uv && !uv->empty() && uv->type() == CV_8UC2) {
+        uv->setTo(cv::Scalar(128, 128));
+        const int uvW = dw / 2;
+        const int uvH = dh / 2;
+        const int writeW = std::min(uvW, uv->cols);
+        const int writeH = std::min(uvH, uv->rows);
+        for (int uy = 0; uy < writeH; ++uy) {
+            const uint8_t* yrow = y->ptr<uint8_t>(uy * 2);
+            cv::Vec2b* uvrow = uv->ptr<cv::Vec2b>(uy);
+            for (int ux = 0; ux < writeW; ++ux) {
+                if (yrow[ux * 2] == 150) uvrow[ux] = cv::Vec2b(44, 21);
+                else uvrow[ux] = cv::Vec2b(128, 128);
+            }
+        }
+    }
+    return true;
+}
+
+struct SeedInkThrNat {
+    int kind = 0, t = 0, tLo = 0, tHi = 0, sPx = 0, seedW = 0, seedH = 0;
+    int skipTint = 0, nBand = 0, w = 0, h = 0, score = 0;
+    std::vector<uint8_t> jpeg;
+};
+
+struct SeedInkPlanes {
+    uint8_t* sheet = nullptr;
+    int sheetStride = 0;
+    uint8_t* white = nullptr;
+    int whiteStride = 0;
+    uint8_t* stroke = nullptr;
+    int strokeStride = 0;
+    uint8_t* deskew = nullptr;
+    int deskewCap = 0;
+    cv::Mat* destY = nullptr;
+    cv::Mat* destUv = nullptr;
+    int grayW = 0;
+};
+
+static void seedFillMeta(
+    SeedInkThrNat* out, int kind, int t, int tLo, int tHi, int sPx,
+    int seedW, int seedH, int skipTint, int nBand, int w, int h
+) {
+    out->kind = kind;
+    out->t = t;
+    out->tLo = tLo;
+    out->tHi = tHi;
+    out->sPx = sPx;
+    out->seedW = seedW;
+    out->seedH = seedH;
+    out->skipTint = skipTint;
+    out->nBand = nBand;
+    out->w = w;
+    out->h = h;
+}
+
+static int seedScore(const SeedInkPlanes& p, int w, int h, const SeedInkThrNat& t) {
+    if (t.sPx < 1) return 0;
+    const int nPix = w * h;
+    const int nWhite = seedCountNzStrided(p.white, p.whiteStride, w, h);
+    const int nStroke = seedCountNzStrided(p.stroke, p.strokeStride, w, h);
+    const int loSw = p.grayW >= 2000 ? 16 : 4;
+    const int hiSw = std::max(35, h / 2);
+    const double seedHd = static_cast<double>(t.seedH);
+    const double ratio = seedHd < 1.0 ? 1e9 : static_cast<double>(t.sPx) / seedHd;
+    int sc = 100;
+    if (ratio < 0.10) sc -= 40;
+    else if (ratio < 0.12) sc -= 10;
+    if (ratio > 0.50) sc -= 40;
+    else if (ratio > 0.40) sc -= 10;
+    const int tgt = static_cast<int>(std::lround(0.22 * seedHd));
+    const double dist = seedHd < 1.0 ? 1e9
+        : std::abs(static_cast<double>(t.sPx) - static_cast<double>(tgt)) / seedHd;
+    sc -= std::min(40, static_cast<int>(std::lround(40.0 * dist)));
+    if (nStroke == 0) sc -= 50;
+    if (nStroke > nPix / 4) sc -= 50;
+    if (static_cast<double>(nWhite) > 0.85 * static_cast<double>(nPix)) sc -= 40;
+    bool hasH = false, hasV = false;
+    auto pol = [&](int sx, int sy) { return p.stroke[sy * p.strokeStride + sx] != 0; };
+    seedForEachHRuns(w, h, pol, [&](int, int, int len) {
+        if (len != w) hasH = true;
+    });
+    seedForEachVRuns(w, h, pol, [&](int, int, int len) {
+        if (len != h) hasV = true;
+    });
+    if (!hasH) sc -= 15;
+    if (!hasV) sc -= 15;
+    if (t.sPx == loSw) sc -= 30;
+    if (static_cast<double>(t.sPx) >= 0.9 * static_cast<double>(hiSw)) sc -= 30;
+    const bool lightKind = (t.kind == 0 || t.kind == 5 || t.kind == 10 ||
+        t.kind == 12 || t.kind == 14) && t.nBand == 0;
+    if (lightKind && ratio >= 0.10 && ratio <= 0.50) sc += 10;
+    const bool floodKind = t.kind == 6 || t.kind == 8 || t.kind == 11 ||
+        t.kind == 13 || t.kind == 15;
+    if (floodKind) {
+        if (nStroke >= 1) {
+            const double wr = static_cast<double>(nWhite) / static_cast<double>(nStroke);
+            if (wr >= 2.0 && wr <= 6.0) sc += 20;
+        }
+        if (nWhite >= nPix / 4) sc -= 25;
+    }
+    if (sc < 0) sc = 0;
+    if (sc > 100) sc = 100;
+    return sc;
+}
+
+static void seedEncodeThr(const SeedInkPlanes& p, int w, int h, SeedInkThrNat* out) {
+    out->score = seedScore(p, w, h, *out);
+    out->jpeg.clear();
+    if (!seedPaintLook(
+            p.white, p.whiteStride, p.stroke, p.strokeStride, w, h, p.destY, p.destUv)) {
+        return;
+    }
+    cv::Mat emptyUv;
+    const cv::Mat& uv = (p.destUv && !p.destUv->empty()) ? *p.destUv : emptyUv;
+    veEncodeYuvMatJpeg(*p.destY, uv, &out->jpeg);
+}
+
+static void seedEvalGrey(
+    const SeedInkSamp& s, SeedPolCtx onCtx, int t, int tLo, int tHi, int kind,
+    int seedW, int seedH, int loSw, int hiSw, bool doV, SeedInkThrNat* out,
+    const SeedInkPlanes& p
+) {
+    onCtx.invert = false;
+    SeedPolCtx offCtx = onCtx;
+    offCtx.invert = true;
+    auto on = [&](int sx, int sy) { return seedPolAt(onCtx, sx, sy); };
+    auto off = [&](int sx, int sy) { return seedPolAt(offCtx, sx, sy); };
+    seedZeroPlane(p.sheet, p.sheetStride, s.w, s.h);
+    seedZeroPlane(p.white, p.whiteStride, s.w, s.h);
+    seedZeroPlane(p.stroke, p.strokeStride, s.w, s.h);
+    seedMarkSheet(s, on, p.sheet, p.sheetStride);
+    seedMarkSheet(s, off, p.sheet, p.sheetStride);
+    const int sPx = seedSPxFromPol(s, on, loSw, hiSw);
+    seedFillMeta(out, kind, t, tLo, tHi, sPx, seedW, seedH, 0, 0, s.w, s.h);
+    seedGreyMask(s, on, p.white, p.whiteStride);
+    seedPaintCores(s, on, sPx, p.stroke, p.strokeStride, p.sheet, p.sheetStride, true, doV);
+    seedPaintCores(s, off, sPx, p.stroke, p.strokeStride, p.sheet, p.sheetStride, true, doV);
+}
+
+static void seedUnionMeta(
+    const std::vector<SeedInkThrNat>& bands, int kind, int seedW, int seedH, int w, int h,
+    SeedInkThrNat* out
+) {
+    std::vector<int> spx, cnt;
+    for (const auto& b : bands) {
+        if (b.sPx <= 0) continue;
+        bool found = false;
+        for (size_t i = 0; i < spx.size(); ++i) {
+            if (spx[i] == b.sPx) {
+                cnt[i]++;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            spx.push_back(b.sPx);
+            cnt.push_back(1);
+        }
+    }
+    int modal = 0, modalC = 0;
+    for (size_t i = 0; i < spx.size(); ++i) {
+        if (cnt[i] > modalC || (cnt[i] == modalC && spx[i] > modal)) {
+            modalC = cnt[i];
+            modal = spx[i];
+        }
+    }
+    seedFillMeta(out, kind, modal, 0, 0, modal, seedW, seedH, 0, 0, w, h);
+    if (modal > 0) {
+        const float plo = 0.7f * static_cast<float>(modal);
+        const float phi = 1.3f * static_cast<float>(modal);
+        for (const auto& b : bands) {
+            if (b.sPx < 1) continue;
+            const float sp = static_cast<float>(b.sPx);
+            if (sp < plo || sp > phi) continue;
+            out->nBand++;
+            if (b.skipTint) out->skipTint = 1;
+        }
+    }
+}
+
+static bool seedUnionIncludes(const SeedInkThrNat& uni, const SeedInkThrNat& b) {
+    if (uni.sPx < 1 || b.sPx < 1) return false;
+    const float plo = 0.7f * static_cast<float>(uni.sPx);
+    const float phi = 1.3f * static_cast<float>(uni.sPx);
+    const float sp = static_cast<float>(b.sPx);
+    return sp >= plo && sp <= phi;
+}
+
+static void seedHueFromStroke(
+    const SeedInkSamp& s, const uint8_t* stroke, int stride, int sPx,
+    SeedPolCtx* c, bool* skipTint
+) {
+    *skipTint = true;
+    float su = 0.f, sv = 0.f, yInkSum = 0.f, chromaInkSum = 0.f;
+    int nInk = 0;
+    for (int sy = 0; sy < s.h; ++sy) {
+        const uint8_t* row = stroke + sy * stride;
+        for (int sx = 0; sx < s.w; ++sx) {
+            if (!row[sx]) continue;
+            int yv = 0;
+            if (!seedYAt(s, sx, sy, &yv)) continue;
+            int u = 128, v = 128;
+            seedUvAt(s, sx, sy, &u, &v);
+            const float du = static_cast<float>(u) - 128.f;
+            const float dv = static_cast<float>(v) - 128.f;
+            const float n2 = du * du + dv * dv;
+            if (n2 >= 1.f) {
+                const float inv = 1.f / std::sqrt(n2);
+                su += du * inv;
+                sv += dv * inv;
+                chromaInkSum += std::sqrt(n2);
+            }
+            yInkSum += static_cast<float>(yv);
+            ++nInk;
+        }
+    }
+    const int dOff = std::max(1, sPx);
+    double yBgSum = 0.0;
+    float suBg = 0.f, svBg = 0.f, chromaBgSum = 0.f;
+    int nBg = 0;
+    auto tryBg = [&](int sx, int sy) {
+        if (sx >= 0 && sy >= 0 && sx < s.w && sy < s.h) {
+            if (stroke[sy * stride + sx]) return;
+        } else if (!seedInPhoto(s, sx, sy)) {
+            return;
+        }
+        int yv = 0;
+        if (!seedYAt(s, sx, sy, &yv)) return;
+        yBgSum += yv;
+        int u = 128, v = 128;
+        seedUvAt(s, sx, sy, &u, &v);
+        const float du = static_cast<float>(u) - 128.f;
+        const float dv = static_cast<float>(v) - 128.f;
+        const float n2 = du * du + dv * dv;
+        if (n2 >= 1.f) {
+            const float inv = 1.f / std::sqrt(n2);
+            suBg += du * inv;
+            svBg += dv * inv;
+            chromaBgSum += std::sqrt(n2);
+        }
+        ++nBg;
+    };
+    if (nInk > 0 && sPx > 0) {
+        for (int sy = 0; sy < s.h; ++sy) {
+            const uint8_t* row = stroke + sy * stride;
+            for (int sx = 0; sx < s.w; ++sx) {
+                if (!row[sx]) continue;
+                tryBg(sx - dOff, sy);
+                tryBg(sx + dOff, sy);
+                tryBg(sx, sy - dOff);
+                tryBg(sx, sy + dOff);
+            }
+        }
+    }
+    if (nInk <= 0) return;
+    const float nInkF = static_cast<float>(nInk);
+    float uInkX = su / nInkF;
+    float uInkY = sv / nInkF;
+    const float nrm2 = uInkX * uInkX + uInkY * uInkY;
+    if (nrm2 > 1e-12f) {
+        const float inv = 1.f / std::sqrt(nrm2);
+        uInkX *= inv;
+        uInkY *= inv;
+    }
+    const float yInk = yInkSum / nInkF;
+    const float yBg = nBg > 0 ? static_cast<float>(yBgSum / nBg)
+        : (yInk < 128.f ? 200.f : 40.f);
+    float uBgX = 0.f, uBgY = 0.f, meanChromaBg = 0.f, nrmBg2 = 0.f;
+    if (nBg > 0) {
+        const float nBgF = static_cast<float>(nBg);
+        uBgX = suBg / nBgF;
+        uBgY = svBg / nBgF;
+        nrmBg2 = uBgX * uBgX + uBgY * uBgY;
+        if (nrmBg2 > 1e-12f) {
+            const float inv = 1.f / std::sqrt(nrmBg2);
+            uBgX *= inv;
+            uBgY *= inv;
+        }
+        meanChromaBg = chromaBgSum / nBgF;
+    }
+    const float meanChromaInk = chromaInkSum / nInkF;
+    const bool inkHasChroma = meanChromaInk >= kTintChromaEps && nrm2 > 1e-12f;
+    const bool bgHasChroma = meanChromaBg >= kTintChromaEps && nrmBg2 > 1e-12f;
+    const float inkBgDot = (inkHasChroma && bgHasChroma)
+        ? (uInkX * uBgX + uInkY * uBgY) : 0.f;
+    *skipTint = meanChromaInk < 12.f || inkBgDot >= kTintDotThr;
+    if (*skipTint) return;
+    c->yInk = yInk;
+    c->yBg = yBg;
+    c->dInk = yInk - yBg;
+    c->uInkX = uInkX;
+    c->uInkY = uInkY;
+    c->uBgX = uBgX;
+    c->uBgY = uBgY;
+    c->eps2 = kTintChromaEps * kTintChromaEps;
+    c->dotThr2 = kTintDotThr * kTintDotThr;
+    c->bgHasChroma = bgHasChroma;
+    c->kind = SeedPol::Color;
+    c->invert = false;
+    c->samp = &s;
+}
+
+static void seedEvalColorBand(
+    const SeedInkSamp& s, const SeedInkThrNat& gb, const SeedPolCtx& colorCtx,
+    int seedW, int seedH, int loSw, int hiSw, SeedInkThrNat* out,
+    const SeedInkPlanes& p
+) {
+    auto inkHue = [&](int sx, int sy) {
+        return seedHueAt(colorCtx, sx, sy, colorCtx.uInkX, colorCtx.uInkY);
+    };
+    auto bgHue = [&](int sx, int sy) {
+        return colorCtx.bgHasChroma &&
+            seedHueAt(colorCtx, sx, sy, colorCtx.uBgX, colorCtx.uBgY);
+    };
+    for (int sy = 0; sy < s.h; ++sy) {
+        uint8_t* wrow = p.white + sy * p.whiteStride;
+        for (int sx = 0; sx < s.w; ++sx) {
+            const bool greyW = wrow[sx] != 0;
+            wrow[sx] = ((greyW || inkHue(sx, sy)) && !bgHue(sx, sy)) ? 255 : 0;
+        }
+    }
+    SeedPolCtx onCtx = colorCtx;
+    onCtx.kind = SeedPol::Color;
+    onCtx.invert = false;
+    SeedPolCtx offCtx = onCtx;
+    offCtx.invert = true;
+    auto on = [&](int sx, int sy) { return seedPolAt(onCtx, sx, sy); };
+    auto off = [&](int sx, int sy) { return seedPolAt(offCtx, sx, sy); };
+    seedZeroPlane(p.sheet, p.sheetStride, s.w, s.h);
+    seedZeroPlane(p.stroke, p.strokeStride, s.w, s.h);
+    seedMarkSheet(s, on, p.sheet, p.sheetStride);
+    seedMarkSheet(s, off, p.sheet, p.sheetStride);
+    const int sPx = seedSPxFromPol(s, on, loSw, hiSw);
+    seedPaintCores(s, on, sPx, p.stroke, p.strokeStride, p.sheet, p.sheetStride, true, true);
+    seedPaintCores(s, off, sPx, p.stroke, p.strokeStride, p.sheet, p.sheetStride, true, true);
+    seedFillMeta(out, 3, gb.t, gb.tLo, gb.tHi, sPx, seedW, seedH, 0, 0, s.w, s.h);
+}
+
+static void seedDigitSPxRange(int seedH, int* lo, int* hi) {
+    *lo = static_cast<int>(std::lround(0.12 * static_cast<double>(seedH)));
+    *hi = static_cast<int>(std::lround(0.40 * static_cast<double>(seedH)));
+}
+
+static bool seedSPxInDigitScale(int sPx, int seedH) {
+    int lo = 0, hi = 0;
+    seedDigitSPxRange(seedH, &lo, &hi);
+    return sPx >= 1 && sPx >= lo && sPx <= hi;
+}
+
+static SeedInkThrNat seedEmptyThr(int kind, int seedW, int seedH, int w, int h) {
+    SeedInkThrNat o{};
+    seedFillMeta(&o, kind, 0, 0, 0, 0, seedW, seedH, 0, 0, w, h);
+    return o;
+}
+
+template <typename Pol>
+static void seedFillRunLensU16(int w, int h, Pol pol, uint16_t* hRun, uint16_t* vRun) {
+    seedForEachHRuns(w, h, pol, [&](int y, int x0, int len) {
+        const uint16_t L = static_cast<uint16_t>(std::min(len, 65535));
+        uint16_t* row = hRun + y * w;
+        for (int x = x0; x < x0 + len; ++x) row[x] = L;
+    });
+    seedForEachVRuns(w, h, pol, [&](int x, int y0, int len) {
+        const uint16_t L = static_cast<uint16_t>(std::min(len, 65535));
+        for (int y = y0; y < y0 + len; ++y) vRun[y * w + x] = L;
+    });
+}
+
+struct SeedPickBest {
+    bool have = false;
+    bool light = false;
+    int nStroke = -1;
+    int sPx = 0;
+    int t = 0, tLo = 0, tHi = 0, skipTint = 0, nBand = 0;
+    SeedPolCtx ctx;
+};
+
+static bool seedPickWins(
+    const SeedPickBest& b, bool light, int nStroke, int sPx, int t, int seedH
+) {
+    if (!b.have) return true;
+    if (light != b.light) return light;
+    if (nStroke != b.nStroke) return nStroke > b.nStroke;
+    const int tgt = static_cast<int>(std::lround(0.22 * static_cast<double>(seedH)));
+    const int da = std::abs(sPx - tgt);
+    const int db = std::abs(b.sPx - tgt);
+    if (da != db) return da < db;
+    return t < b.t;
+}
+
+static void seedConsiderSlices(
+    SeedPickBest* best, bool light, int t, int tLo, int tHi, int sPx, int skipTint,
+    int nBand, const SeedPolCtx& ctx, const SeedInkPlanes& p, int w, int h, int seedH,
+    int nPix, uint8_t* pickW, uint8_t* pickS
+) {
+    if (!seedSPxInDigitScale(sPx, seedH)) return;
+    if (!seedStrokeHasHV(p.stroke, p.strokeStride, w, h)) return;
+    const int nStroke = seedCountNzStrided(p.stroke, p.strokeStride, w, h);
+    const int strokeCap = nPix / 4;
+    if (nStroke < 1 || nStroke > strokeCap) return;
+    if (light) {
+        const int nWhite = seedCountNzStrided(p.white, p.whiteStride, w, h);
+        if (static_cast<double>(nWhite) > 0.85 * static_cast<double>(nPix)) return;
+    }
+    if (!seedPickWins(*best, light, nStroke, sPx, t, seedH)) return;
+    best->have = true;
+    best->light = light;
+    best->nStroke = nStroke;
+    best->sPx = sPx;
+    best->t = t;
+    best->tLo = tLo;
+    best->tHi = tHi;
+    best->skipTint = skipTint;
+    best->nBand = nBand;
+    best->ctx = ctx;
+    if (pickW) seedCopyStridedToPacked(p.white, p.whiteStride, w, h, pickW);
+    if (pickS) seedCopyStridedToPacked(p.stroke, p.strokeStride, w, h, pickS);
+}
+
+static void seedFloodFromCores(
+    const SeedInkSamp& s,
+    const SeedInkThrNat& pick,
+    SeedPolCtx ctx,
+    int kindFlood,
+    SeedInkThrNat* out,
+    const SeedInkPlanes& p,
+    uint16_t* hRun,
+    uint16_t* vRun
+) {
+    const int w = s.w, h = s.h;
+    const int nPix = w * h;
+    *out = seedEmptyThr(kindFlood, pick.seedW, pick.seedH, w, h);
+    out->t = pick.t;
+    out->tLo = pick.tLo;
+    out->tHi = pick.tHi;
+    out->sPx = pick.sPx;
+    out->skipTint = pick.skipTint;
+    out->nBand = pick.nBand;
+    ctx.samp = &s;
+    ctx.invert = false;
+    if (nPix < 1 || pick.sPx < 1 || w > 65535 || h > 65535) return;
+    if (!hRun || !vRun || !p.white || !p.stroke || !p.sheet) return;
+    SeedPolCtx offCtx = ctx;
+    offCtx.invert = true;
+    auto on = [&](int sx, int sy) { return seedPolAt(ctx, sx, sy); };
+    auto off = [&](int sx, int sy) { return seedPolAt(offCtx, sx, sy); };
+    seedZeroPlane(p.sheet, p.sheetStride, w, h);
+    seedMarkSheet(s, on, p.sheet, p.sheetStride);
+    seedMarkSheet(s, off, p.sheet, p.sheetStride);
+    seedZeroPlane(p.white, p.whiteStride, w, h);
+    const int plate = 3 * pick.sPx;
+    const int cap = nPix / 4;
+    std::vector<uint32_t> q;
+    q.reserve(static_cast<size_t>(std::max(1, cap)));
+    int nFlood = 0;
+    auto floodPol = [&](bool wantOn) {
+        auto pol = [&](int sx, int sy) {
+            return wantOn ? on(sx, sy) : off(sx, sy);
+        };
+        std::memset(hRun, 0, static_cast<size_t>(nPix) * sizeof(uint16_t));
+        std::memset(vRun, 0, static_cast<size_t>(nPix) * sizeof(uint16_t));
+        seedFillRunLensU16(w, h, pol, hRun, vRun);
+        q.clear();
+        size_t qh = 0;
+        for (int sy = 0; sy < h; ++sy) {
+            const uint8_t* srow = p.stroke + sy * p.strokeStride;
+            for (int sx = 0; sx < w; ++sx) {
+                if (nFlood >= cap) return;
+                if (!srow[sx]) continue;
+                const int pi = sy * w + sx;
+                if (p.white[sy * p.whiteStride + sx] || p.sheet[sy * p.sheetStride + sx]) {
+                    continue;
+                }
+                if (!pol(sx, sy)) continue;
+                if (hRun[pi] > plate && vRun[pi] > plate) continue;
+                p.white[sy * p.whiteStride + sx] = 255;
+                ++nFlood;
+                q.push_back(
+                    (static_cast<uint32_t>(sy) << 16) | static_cast<uint32_t>(sx));
+            }
+        }
+        while (qh < q.size()) {
+            if (nFlood >= cap) return;
+            const uint32_t pt = q[qh++];
+            const int sx = static_cast<int>(pt & 0xffffu);
+            const int sy = static_cast<int>(pt >> 16);
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    if (dx == 0 && dy == 0) continue;
+                    const int nx = sx + dx;
+                    const int ny = sy + dy;
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                    const int ni = ny * w + nx;
+                    if (p.white[ny * p.whiteStride + nx] ||
+                        p.sheet[ny * p.sheetStride + nx]) {
+                        continue;
+                    }
+                    if (!pol(nx, ny)) continue;
+                    if (hRun[ni] > plate && vRun[ni] > plate) continue;
+                    if (nFlood >= cap) return;
+                    p.white[ny * p.whiteStride + nx] = 255;
+                    ++nFlood;
+                    q.push_back(
+                        (static_cast<uint32_t>(ny) << 16) |
+                        static_cast<uint32_t>(nx));
+                }
+            }
+        }
+    };
+    floodPol(true);
+    floodPol(false);
+}
+
+static jobjectArray packSeedInkThrs(JNIEnv* env, const std::vector<SeedInkThrNat>& thrs) {
+    jclass objClass = env->FindClass("java/lang/Object");
+    if (!objClass) return nullptr;
+    const int n = static_cast<int>(thrs.size());
+    jobjectArray arr = env->NewObjectArray(n * 2, objClass, nullptr);
+    if (!arr) return nullptr;
+    for (int i = 0; i < n; ++i) {
+        const SeedInkThrNat& t = thrs[static_cast<size_t>(i)];
+        jint meta[12] = {
+            t.kind, t.t, t.tLo, t.tHi, t.sPx, t.seedW, t.seedH,
+            t.skipTint, t.nBand, t.w, t.h, t.score
+        };
+        jintArray metaArr = env->NewIntArray(12);
+        if (!metaArr) return nullptr;
+        env->SetIntArrayRegion(metaArr, 0, 12, meta);
+        const int nJpg = static_cast<int>(t.jpeg.size());
+        jbyteArray jpegArr = env->NewByteArray(nJpg);
+        if (!jpegArr) return nullptr;
+        if (nJpg > 0) {
+            env->SetByteArrayRegion(
+                jpegArr, 0, nJpg, reinterpret_cast<const jbyte*>(t.jpeg.data()));
+        }
+        env->SetObjectArrayElement(arr, i * 2, metaArr);
+        env->SetObjectArrayElement(arr, i * 2 + 1, jpegArr);
+        env->DeleteLocalRef(metaArr);
+        env->DeleteLocalRef(jpegArr);
+    }
+    return arr;
+}
+
+static bool seedIsValleyT(const int* ts, int n, int t) {
+    for (int i = 0; i < n; ++i) if (ts[i] == t) return true;
+    return false;
+}
+
+static void seedEvalColorFromGrey(
+    const SeedInkSamp& s, const SeedInkThrNat& gb, const SeedPolCtx& greyCtx,
+    bool uvOk, int seedW, int seedH, int loSw, int hiSw, bool doV,
+    SeedInkThrNat* out, const SeedInkPlanes& p, SeedPolCtx* outCtx
+) {
+    *out = gb;
+    out->jpeg.clear();
+    *outCtx = greyCtx;
+    outCtx->samp = &s;
+    outCtx->tint = false;
+    out->skipTint = 1;
+    if (!uvOk) return;
+    bool skipTint = true;
+    SeedPolCtx hue{};
+    seedHueFromStroke(s, p.stroke, p.strokeStride, gb.sPx, &hue, &skipTint);
+    if (!skipTint) {
+        SeedPolCtx fused = greyCtx;
+        fused.samp = &s;
+        fused.invert = false;
+        fused.tint = true;
+        fused.yInk = hue.yInk;
+        fused.yBg = hue.yBg;
+        fused.dInk = hue.dInk;
+        fused.uInkX = hue.uInkX;
+        fused.uInkY = hue.uInkY;
+        fused.uBgX = hue.uBgX;
+        fused.uBgY = hue.uBgY;
+        fused.eps2 = hue.eps2;
+        fused.dotThr2 = hue.dotThr2;
+        fused.bgHasChroma = hue.bgHasChroma;
+        seedEvalGrey(
+            s, fused, gb.t, gb.tLo, gb.tHi, gb.kind, seedW, seedH, loSw, hiSw, doV,
+            out, p);
+        out->skipTint = 0;
+        *outCtx = fused;
+    }
+}
+
+static void seedMaterializePick(
+    const SeedInkSamp& s, const SeedPickBest& best, bool color, bool uvOk,
+    int seedW, int seedH, int loSw, int hiSw,
+    const SeedInkPlanes& p, uint8_t* pickW, uint8_t* pickS
+) {
+    const int w = s.w, h = s.h;
+    if (pickW && pickS) {
+        seedCopyPackedToStrided(pickW, p.white, p.whiteStride, w, h);
+        seedCopyPackedToStrided(pickS, p.stroke, p.strokeStride, w, h);
+        return;
+    }
+    (void)color;
+    (void)uvOk;
+    SeedPolCtx ctx = best.ctx;
+    ctx.samp = &s;
+    SeedInkThrNat tmp{};
+    seedEvalGrey(
+        s, ctx, best.t, best.tLo, best.tHi, 0, seedW, seedH,
+        loSw, hiSw, true, &tmp, p);
+}
+
+static void seedEmitPickFlood(
+    const SeedInkSamp& s, const SeedPickBest& best, bool color, bool uvOk,
+    bool canPickFlood, int kindPick, int kindFlood,
+    int seedW, int seedH, int loSw, int hiSw,
+    const SeedInkPlanes& p, uint8_t* pickW, uint8_t* pickS,
+    uint16_t* hRun, uint16_t* vRun,
+    std::vector<SeedInkThrNat>* thrs
+) {
+    const int w = s.w, h = s.h;
+    SeedInkThrNat pick = seedEmptyThr(kindPick, seedW, seedH, w, h);
+    SeedInkThrNat flood = seedEmptyThr(kindFlood, seedW, seedH, w, h);
+    if (canPickFlood && best.have && hRun && vRun) {
+        seedFillMeta(
+            &pick, kindPick, best.t, best.tLo, best.tHi, best.sPx,
+            seedW, seedH, best.skipTint, best.nBand, w, h);
+        seedMaterializePick(
+            s, best, color, uvOk, seedW, seedH, loSw, hiSw, p, pickW, pickS);
+        seedEncodeThr(p, w, h, &pick);
+        SeedPolCtx ctx = best.ctx;
+        ctx.samp = &s;
+        seedFloodFromCores(s, pick, ctx, kindFlood, &flood, p, hRun, vRun);
+        seedEncodeThr(p, w, h, &flood);
+    } else {
+        seedZeroPlane(p.white, p.whiteStride, w, h);
+        seedZeroPlane(p.stroke, p.strokeStride, w, h);
+        seedEncodeThr(p, w, h, &pick);
+        flood.jpeg = pick.jpeg;
+    }
+    thrs->push_back(std::move(pick));
+    thrs->push_back(std::move(flood));
+}
+
+static void seedFillHist256(
+    const SeedInkSamp& s, int hist256[256], int ySkipGe, int* nKeep
+) {
+    std::memset(hist256, 0, 256 * sizeof(int));
+    int n = 0;
+    for (int sy = 0; sy < s.h; ++sy) {
+        for (int sx = 0; sx < s.w; ++sx) {
+            int yv = 0;
+            if (!seedYAt(s, sx, sy, &yv)) continue;
+            if (ySkipGe >= 0 && yv >= ySkipGe) continue;
+            if (yv < 0) yv = 0;
+            if (yv > 255) yv = 255;
+            hist256[yv]++;
+            ++n;
+        }
+    }
+    if (nKeep) *nKeep = n;
+}
+
+static void seedValleysFromHist256(
+    const int hist256[256], int valleyTs[64], int* nValleyTs
+) {
+    float hist64[64] = {};
+    for (int i = 0; i < 256; ++i) hist64[i / 4] += static_cast<float>(hist256[i]);
+    int valleys[64];
+    int nValley = 0;
+    findValleyMidpoints64(hist64, valleys, &nValley);
+    *nValleyTs = 0;
+    for (int i = 0; i < nValley; ++i) {
+        int tv = valleys[i] * 4 + 2;
+        if (tv < 0) tv = 0;
+        if (tv > 255) tv = 255;
+        bool dup = false;
+        for (int j = 0; j < *nValleyTs; ++j) {
+            if (valleyTs[j] == tv) { dup = true; break; }
+        }
+        if (!dup && *nValleyTs < 64) valleyTs[(*nValleyTs)++] = tv;
+    }
+}
+
+static void seedConsiderValleyPick(
+    const SeedInkSamp& s, const int* valleyTs, int nValleyTs,
+    int seedW, int seedH, int loSw, int hiSw,
+    const SeedInkPlanes& p, int nPix, uint8_t* pickW, uint8_t* pickS,
+    SeedPickBest* best
+) {
+    const int w = s.w, h = s.h;
+    for (int i = 0; i < nValleyTs; ++i) {
+        const int tv = valleyTs[i];
+        SeedPolCtx ctx{};
+        ctx.kind = SeedPol::Light;
+        ctx.t = tv;
+        ctx.samp = &s;
+        SeedInkThrNat one{};
+        seedEvalGrey(
+            s, ctx, tv, tv, tv, 0, seedW, seedH, loSw, hiSw, true, &one, p);
+        seedConsiderSlices(
+            best, true, one.t, one.tLo, one.tHi, one.sPx, 0, 0, ctx, p,
+            w, h, seedH, nPix, pickW, pickS);
+    }
+    for (int i = 0; i + 1 < nValleyTs; ++i) {
+        const int tLo = valleyTs[i];
+        const int tHi = valleyTs[i + 1];
+        if (tHi <= tLo) continue;
+        SeedPolCtx ctx{};
+        ctx.kind = SeedPol::Band;
+        ctx.tLo = tLo;
+        ctx.tHi = tHi;
+        ctx.samp = &s;
+        SeedInkThrNat one{};
+        seedEvalGrey(
+            s, ctx, tHi, tLo, tHi, 1, seedW, seedH, loSw, hiSw, true, &one, p);
+        seedConsiderSlices(
+            best, false, one.t, one.tLo, one.tHi, one.sPx, one.skipTint, 1,
+            ctx, p, w, h, seedH, nPix, pickW, pickS);
+    }
+}
+
+static void seedBoxMeanFlatten(
+    const SeedInkSamp& s, const SeedInkPlanes& p, int r, uint8_t* ypPacked
+) {
+    const int w = s.w, h = s.h;
+    if (!ypPacked || !p.white || w < 1 || h < 1) return;
+    if (r < 0) r = 0;
+    std::vector<uint32_t> cs(static_cast<size_t>(std::max(w, h)) + 1u, 0);
+    for (int y = 0; y < h; ++y) {
+        cs[0] = 0;
+        for (int x = 0; x < w; ++x) {
+            int yv = 0;
+            if (!seedYAt(s, x, y, &yv)) yv = 0;
+            cs[static_cast<size_t>(x) + 1] =
+                cs[static_cast<size_t>(x)] + static_cast<uint32_t>(yv);
+        }
+        uint8_t* row = p.white + static_cast<size_t>(y) * static_cast<size_t>(p.whiteStride);
+        for (int x = 0; x < w; ++x) {
+            const int lo = std::max(0, x - r);
+            const int hi = std::min(w - 1, x + r);
+            const uint32_t sum =
+                cs[static_cast<size_t>(hi) + 1] - cs[static_cast<size_t>(lo)];
+            const int n = hi - lo + 1;
+            row[x] = static_cast<uint8_t>(sum / static_cast<uint32_t>(std::max(1, n)));
+        }
+    }
+    for (int x = 0; x < w; ++x) {
+        cs[0] = 0;
+        for (int y = 0; y < h; ++y) {
+            const uint32_t v = p.white[
+                static_cast<size_t>(y) * static_cast<size_t>(p.whiteStride) +
+                static_cast<size_t>(x)];
+            cs[static_cast<size_t>(y) + 1] = cs[static_cast<size_t>(y)] + v;
+        }
+        for (int y = 0; y < h; ++y) {
+            const int lo = std::max(0, y - r);
+            const int hi = std::min(h - 1, y + r);
+            const uint32_t sum =
+                cs[static_cast<size_t>(hi) + 1] - cs[static_cast<size_t>(lo)];
+            const int n = hi - lo + 1;
+            ypPacked[static_cast<size_t>(y) * static_cast<size_t>(w) +
+                static_cast<size_t>(x)] =
+                static_cast<uint8_t>(sum / static_cast<uint32_t>(std::max(1, n)));
+        }
+    }
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            int yv = 0;
+            if (!seedYAt(s, x, y, &yv)) yv = 0;
+            const int bg = ypPacked[
+                static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x)];
+            int yp = yv - bg + 128;
+            if (yp < 0) yp = 0;
+            if (yp > 255) yp = 255;
+            ypPacked[static_cast<size_t>(y) * static_cast<size_t>(w) +
+                static_cast<size_t>(x)] = static_cast<uint8_t>(yp);
+        }
+    }
+}
+
+static void seedOrUnionBands(
+    const SeedInkSamp& s, const std::vector<SeedInkThrNat>& bands,
+    const SeedInkThrNat& uni, bool color, bool uvOk,
+    int seedW, int seedH, int loSw, int hiSw,
+    const SeedInkPlanes& p, uint8_t* unionAcc
+) {
+    const int w = s.w, h = s.h;
+    const int nPix = w * h;
+    if (!unionAcc || nPix < 1) return;
+    std::memset(unionAcc, 0, static_cast<size_t>(nPix));
+    for (const auto& b : bands) {
+        if (!seedUnionIncludes(uni, b)) continue;
+        SeedPolCtx ctx{};
+        ctx.kind = SeedPol::Band;
+        ctx.tLo = b.tLo;
+        ctx.tHi = b.tHi;
+        ctx.samp = &s;
+        SeedInkThrNat gb{};
+        seedEvalGrey(
+            s, ctx, b.t, b.tLo, b.tHi, 1, seedW, seedH, loSw, hiSw, true, &gb, p);
+        if (color) {
+            SeedInkThrNat cb{};
+            SeedPolCtx cctx{};
+            seedEvalColorFromGrey(
+                s, gb, ctx, uvOk, seedW, seedH, loSw, hiSw, true, &cb, p, &cctx);
+        }
+        seedOrStridedIntoPacked(p.stroke, p.strokeStride, w, h, unionAcc);
+    }
+    seedZeroPlane(p.white, p.whiteStride, w, h);
+    seedCopyPackedToStrided(unionAcc, p.stroke, p.strokeStride, w, h);
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbeSeedInk(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr,
+    jint l, jint t, jint r, jint b,
+    jfloatArray rotPts,
+    jint imgW, jboolean wantColor,
+    jlong sheetYPtr, jlong whiteYPtr, jlong strokeYPtr,
+    jlong deskewPYPtr, jlong destYPtr, jlong destUvPtr,
+    jint destW, jint destH
+) {
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    if (!gray || gray->empty() || gray->type() != CV_8UC1) return nullptr;
+    auto* sheetY = reinterpret_cast<cv::Mat*>(sheetYPtr);
+    auto* whiteY = reinterpret_cast<cv::Mat*>(whiteYPtr);
+    auto* strokeY = reinterpret_cast<cv::Mat*>(strokeYPtr);
+    auto* deskewP = reinterpret_cast<cv::Mat*>(deskewPYPtr);
+    auto* destY = reinterpret_cast<cv::Mat*>(destYPtr);
+    auto* destUv = destUvPtr ? reinterpret_cast<cv::Mat*>(destUvPtr) : nullptr;
+    if (!sheetY || sheetY->empty() || sheetY->type() != CV_8UC1) return nullptr;
+    if (!whiteY || whiteY->empty() || whiteY->type() != CV_8UC1) return nullptr;
+    if (!strokeY || strokeY->empty() || strokeY->type() != CV_8UC1) return nullptr;
+    if (!deskewP || deskewP->empty() || deskewP->type() != CV_8UC1) return nullptr;
+    if (!destY || destY->empty() || destY->type() != CV_8UC1) return nullptr;
+    (void)destW;
+    (void)destH;
+    cv::Mat* uv = uvPtr ? reinterpret_cast<cv::Mat*>(uvPtr) : nullptr;
+    const bool uvOk = uv && !uv->empty() && uv->type() == CV_8UC2;
+    SeedInkSamp samp{};
+    samp.gray = gray;
+    samp.uv = uvOk ? uv : nullptr;
+    samp.uvOk = uvOk;
+    samp.grayW = gray->cols;
+    samp.grayH = gray->rows;
+    samp.raster = nullptr;
+    int seedW = 1, seedH = 1;
+    int hist256[256] = {};
+    if (rotPts) {
+        const jint nPts = env->GetArrayLength(rotPts);
+        if (nPts < 8) return nullptr;
+        jfloat ptsBuf[8];
+        env->GetFloatArrayRegion(rotPts, 0, 8, ptsBuf);
+        OriBox box{};
+        if (!oriFromQuad(ptsBuf, &box)) return nullptr;
+        const int iu0 = static_cast<int>(std::lround(box.u0));
+        const int iu1 = static_cast<int>(std::lround(box.u1));
+        const int iv0 = static_cast<int>(std::lround(box.v0));
+        const int iv1 = static_cast<int>(std::lround(box.v1));
+        const int rw = iu1 - iu0;
+        const int rh = iv1 - iv0;
+        if (rw < 1 || rh < 1) return nullptr;
+        if (rw > sheetY->cols || rh > sheetY->rows) return nullptr;
+        uint8_t* sh = sheetY->ptr<uint8_t>(0);
+        const int st = sheetY->cols;
+        for (int sy = 0; sy < rh; ++sy) {
+            uint8_t* row = sh + sy * st;
+            for (int sx = 0; sx < rw; ++sx) {
+                const float u = static_cast<float>(iu0 + sx);
+                const float v = static_cast<float>(iv0 + sy);
+                const int x = static_cast<int>(std::lround(
+                    box.cx + u * box.ux + v * box.vx));
+                const int y = static_cast<int>(std::lround(
+                    box.cy + u * box.uy + v * box.vy));
+                uint8_t val = 255;
+                if (x >= 0 && y >= 0 && x < gray->cols && y < gray->rows) {
+                    val = gray->ptr<uint8_t>(y)[x];
+                }
+                row[sx] = val;
+                hist256[val]++;
+            }
+        }
+        samp.w = rw;
+        samp.h = rh;
+        samp.hasRot = true;
+        samp.rot = box;
+        samp.iu0 = iu0;
+        samp.iv0 = iv0;
+        samp.ox = 0;
+        samp.oy = 0;
+        seedW = std::max(1, static_cast<int>(std::lround(box.u1 - box.u0)));
+        seedH = std::max(1, static_cast<int>(std::lround(box.v1 - box.v0)));
+    } else {
+        const int x0 = std::max(0, static_cast<int>(l));
+        const int y0 = std::max(0, static_cast<int>(t));
+        const int x1 = std::min(gray->cols, static_cast<int>(r));
+        const int y1 = std::min(gray->rows, static_cast<int>(b));
+        const int aw = x1 - x0;
+        const int ah = y1 - y0;
+        if (aw < 1 || ah < 1) return nullptr;
+        if (x0 + aw > sheetY->cols || y0 + ah > sheetY->rows) return nullptr;
+        if (x0 + aw > whiteY->cols || y0 + ah > whiteY->rows) return nullptr;
+        if (x0 + aw > strokeY->cols || y0 + ah > strokeY->rows) return nullptr;
+        samp.w = aw;
+        samp.h = ah;
+        samp.ox = x0;
+        samp.oy = y0;
+        samp.hasRot = false;
+        seedW = aw;
+        seedH = ah;
+        for (int y = 0; y < ah; ++y) {
+            const uint8_t* row = gray->ptr<uint8_t>(y0 + y) + x0;
+            for (int x = 0; x < aw; ++x) hist256[row[x]]++;
+        }
+    }
+    const int w = samp.w, h = samp.h;
+    const int nPix = w * h;
+    if (samp.hasRot) {
+        if (w > whiteY->cols || h > whiteY->rows) return nullptr;
+        if (w > strokeY->cols || h > strokeY->rows) return nullptr;
+    }
+    SeedInkPlanes p{};
+    const int planeOx = samp.hasRot ? 0 : samp.ox;
+    const int planeOy = samp.hasRot ? 0 : samp.oy;
+    p.sheet = sheetY->ptr<uint8_t>(planeOy) + planeOx;
+    p.sheetStride = sheetY->cols;
+    p.white = whiteY->ptr<uint8_t>(planeOy) + planeOx;
+    p.whiteStride = whiteY->cols;
+    p.stroke = strokeY->ptr<uint8_t>(planeOy) + planeOx;
+    p.strokeStride = strokeY->cols;
+    p.deskew = deskewP->ptr<uint8_t>(0);
+    p.deskewCap = deskewP->rows * deskewP->cols;
+    p.destY = destY;
+    p.destUv = destUv;
+    p.grayW = samp.grayW;
+    float hist64[64] = {};
+    for (int i = 0; i < 256; ++i) hist64[i / 4] += static_cast<float>(hist256[i]);
+    int cands[12];
+    int nCands = 0;
+    auto addThr = [&](int tv) {
+        if (tv < 0) tv = 0;
+        if (tv > 255) tv = 255;
+        for (int i = 0; i < nCands; ++i) if (cands[i] == tv) return;
+        if (nCands < 12) cands[nCands++] = tv;
+    };
+    addThr(static_cast<int>(otsuThrFromHist(hist256, nPix)));
+    int valleys[64];
+    int nValley = 0;
+    findValleyMidpoints64(hist64, valleys, &nValley);
+    int valleyTs[64];
+    int nValleyTs = 0;
+    for (int i = 0; i < nValley; ++i) {
+        int tv = valleys[i] * 4 + 2;
+        if (tv < 0) tv = 0;
+        if (tv > 255) tv = 255;
+        bool dup = false;
+        for (int j = 0; j < nValleyTs; ++j) if (valleyTs[j] == tv) { dup = true; break; }
+        if (!dup && nValleyTs < 64) valleyTs[nValleyTs++] = tv;
+        addThr(tv);
+    }
+    if (nCands < 1) return nullptr;
+    const int loSw = imgW >= 2000 ? 16 : 4;
+    const int hiSw = std::max(35, h / 2);
+    const bool canPickFlood = nPix <= p.deskewCap && nPix * 2 <= p.deskewCap;
+    const bool canPack3 = 3 * nPix <= p.deskewCap;
+    uint8_t* unionAcc = (nPix <= p.deskewCap) ? p.deskew : nullptr;
+    uint8_t* pickW = (canPack3 && unionAcc) ? unionAcc + nPix : nullptr;
+    uint8_t* pickS = (canPack3 && unionAcc) ? unionAcc + 2 * nPix : nullptr;
+    uint16_t* hRun = canPickFlood
+        ? reinterpret_cast<uint16_t*>(p.deskew) : nullptr;
+    uint16_t* vRun = canPickFlood
+        ? reinterpret_cast<uint16_t*>(destY->ptr()) : nullptr;
+    std::vector<SeedInkThrNat> thrs;
+    thrs.reserve(static_cast<size_t>(nCands) * 2 + 16);
+    SeedPickBest best{};
+    for (int i = 0; i < nCands; ++i) {
+        SeedPolCtx ctx{};
+        ctx.kind = SeedPol::Light;
+        ctx.t = cands[i];
+        ctx.samp = &samp;
+        SeedInkThrNat one{};
+        seedEvalGrey(samp, ctx, cands[i], cands[i], cands[i], 0, seedW, seedH,
+            loSw, hiSw, false, &one, p);
+        if (wantColor) {
+            SeedPolCtx cctx{};
+            seedEvalColorFromGrey(
+                samp, one, ctx, uvOk, seedW, seedH, loSw, hiSw, false, &one, p,
+                &cctx);
+            ctx = cctx;
+        }
+        seedEncodeThr(p, w, h, &one);
+        thrs.push_back(one);
+        if (canPickFlood && seedIsValleyT(valleyTs, nValleyTs, cands[i])) {
+            SeedPolCtx offCtx = ctx;
+            offCtx.invert = true;
+            auto on = [&](int sx, int sy) { return seedPolAt(ctx, sx, sy); };
+            auto off = [&](int sx, int sy) { return seedPolAt(offCtx, sx, sy); };
+            seedPaintCores(
+                samp, on, one.sPx, p.stroke, p.strokeStride, p.sheet, p.sheetStride,
+                false, true);
+            seedPaintCores(
+                samp, off, one.sPx, p.stroke, p.strokeStride, p.sheet, p.sheetStride,
+                false, true);
+            seedConsiderSlices(
+                &best, true, one.t, one.tLo, one.tHi, one.sPx, one.skipTint, 0, ctx, p,
+                w, h, seedH, nPix, pickW, pickS);
+        }
+    }
+    std::vector<SeedInkThrNat> bandThrs;
+    for (int i = 0; i + 1 < nValleyTs; ++i) {
+        const int tLo = valleyTs[i];
+        const int tHi = valleyTs[i + 1];
+        if (tHi <= tLo) continue;
+        SeedPolCtx ctx{};
+        ctx.kind = SeedPol::Band;
+        ctx.tLo = tLo;
+        ctx.tHi = tHi;
+        ctx.samp = &samp;
+        SeedInkThrNat one{};
+        seedEvalGrey(samp, ctx, tHi, tLo, tHi, 1, seedW, seedH,
+            loSw, hiSw, true, &one, p);
+        if (wantColor) {
+            SeedPolCtx cctx{};
+            seedEvalColorFromGrey(
+                samp, one, ctx, uvOk, seedW, seedH, loSw, hiSw, true, &one, p,
+                &cctx);
+            ctx = cctx;
+        }
+        seedEncodeThr(p, w, h, &one);
+        if (canPickFlood) {
+            seedConsiderSlices(
+                &best, false, one.t, one.tLo, one.tHi, one.sPx, one.skipTint, 1,
+                ctx, p, w, h, seedH, nPix, pickW, pickS);
+        }
+        bandThrs.push_back(one);
+        thrs.push_back(std::move(one));
+    }
+    SeedInkThrNat uni{};
+    seedUnionMeta(bandThrs, 2, seedW, seedH, w, h, &uni);
+    if (unionAcc) {
+        seedOrUnionBands(
+            samp, bandThrs, uni, wantColor, uvOk, seedW, seedH, loSw, hiSw, p, unionAcc);
+    } else {
+        seedZeroPlane(p.white, p.whiteStride, w, h);
+        seedZeroPlane(p.stroke, p.strokeStride, w, h);
+    }
+    seedEncodeThr(p, w, h, &uni);
+    thrs.push_back(std::move(uni));
+    seedEmitPickFlood(
+        samp, best, wantColor, uvOk, canPickFlood, 5, 6, seedW, seedH, loSw, hiSw,
+        p, pickW, pickS, hRun, vRun, &thrs);
+    if (!wantColor) {
+        if (nPix >= 1 && nPix <= p.deskewCap && p.deskew) {
+            int r = std::max(16, seedH / 4);
+            const int rCap = seedH / 2;
+            if (r > rCap) r = rCap;
+            if (r < 0) r = 0;
+            seedBoxMeanFlatten(samp, p, r, p.deskew);
+            seedCopyPackedToStrided(p.deskew, p.white, p.whiteStride, w, h);
+            seedZeroPlane(p.stroke, p.strokeStride, w, h);
+            SeedInkThrNat flaty = seedEmptyThr(9, seedW, seedH, w, h);
+            flaty.t = 2 * r + 1;
+            seedEncodeThr(p, w, h, &flaty);
+            thrs.push_back(std::move(flaty));
+            samp.altY = p.deskew;
+            samp.altYStride = w;
+            int histF[256];
+            seedFillHist256(samp, histF, -1, nullptr);
+            int vtsF[64];
+            int nvtF = 0;
+            seedValleysFromHist256(histF, vtsF, &nvtF);
+            SeedPickBest fbest{};
+            seedConsiderValleyPick(
+                samp, vtsF, nvtF, seedW, seedH, loSw, hiSw, p, nPix, pickW, pickS,
+                &fbest);
+            uint16_t* hRunF = (3 * nPix <= p.deskewCap)
+                ? reinterpret_cast<uint16_t*>(p.deskew + nPix) : nullptr;
+            seedEmitPickFlood(
+                samp, fbest, false, uvOk, canPickFlood, 10, 11, seedW, seedH,
+                loSw, hiSw, p, pickW, pickS, hRunF, vRun, &thrs);
+            samp.altY = nullptr;
+            samp.altYStride = 0;
+        }
+        {
+            int histG[256];
+            int nKeep = 0;
+            seedFillHist256(samp, histG, 250, &nKeep);
+            if (nKeep < nPix / 4) seedFillHist256(samp, histG, -1, nullptr);
+            int vtsG[64];
+            int nvtG = 0;
+            seedValleysFromHist256(histG, vtsG, &nvtG);
+            SeedPickBest gbest{};
+            seedConsiderValleyPick(
+                samp, vtsG, nvtG, seedW, seedH, loSw, hiSw, p, nPix, pickW, pickS,
+                &gbest);
+            seedEmitPickFlood(
+                samp, gbest, false, uvOk, canPickFlood, 12, 13, seedW, seedH,
+                loSw, hiSw, p, pickW, pickS, hRun, vRun, &thrs);
+        }
+        if (w >= 3 * 32) {
+            seedZeroPlane(p.white, p.whiteStride, w, h);
+            seedZeroPlane(p.stroke, p.strokeStride, w, h);
+            const int savedW = samp.w;
+            const int savedOx = samp.ox;
+            const int savedIu0 = samp.iu0;
+            uint8_t* const savedWhite = p.white;
+            uint8_t* const savedStroke = p.stroke;
+            uint8_t* const savedSheet = p.sheet;
+            bool haveT = false;
+            int maxSPx = 0;
+            bool anyLight = false;
+            int bestNStroke = -1;
+            int ft = 0, ftLo = 0, ftHi = 0;
+            SeedPolCtx floodCtx{};
+            for (int ti = 0; ti < 3; ++ti) {
+                const int x0 = (ti * w) / 3;
+                const int x1 = ((ti + 1) * w) / 3;
+                const int sw = x1 - x0;
+                if (sw < 1) continue;
+                samp.w = sw;
+                if (samp.hasRot) samp.iu0 = savedIu0 + x0;
+                else samp.ox = savedOx + x0;
+                SeedInkPlanes ps = p;
+                ps.white = savedWhite + x0;
+                ps.stroke = savedStroke + x0;
+                ps.sheet = savedSheet + x0;
+                int histT[256];
+                seedFillHist256(samp, histT, -1, nullptr);
+                int vtsT[64];
+                int nvtT = 0;
+                seedValleysFromHist256(histT, vtsT, &nvtT);
+                SeedPickBest tbest{};
+                seedConsiderValleyPick(
+                    samp, vtsT, nvtT, seedW, seedH, loSw, hiSw, ps, sw * h,
+                    pickW, pickS, &tbest);
+                if (tbest.have) {
+                    seedMaterializePick(
+                        samp, tbest, false, uvOk, seedW, seedH, loSw, hiSw, ps,
+                        pickW, pickS);
+                    haveT = true;
+                    if (tbest.sPx > maxSPx) maxSPx = tbest.sPx;
+                    if (tbest.light) anyLight = true;
+                    if (tbest.nStroke > bestNStroke) {
+                        bestNStroke = tbest.nStroke;
+                        ft = tbest.t;
+                        ftLo = tbest.tLo;
+                        ftHi = tbest.tHi;
+                        floodCtx = tbest.ctx;
+                    }
+                } else {
+                    seedZeroPlane(ps.white, ps.whiteStride, sw, h);
+                    seedZeroPlane(ps.stroke, ps.strokeStride, sw, h);
+                }
+            }
+            samp.w = savedW;
+            samp.ox = savedOx;
+            samp.iu0 = savedIu0;
+            SeedInkThrNat tpick = seedEmptyThr(14, seedW, seedH, w, h);
+            SeedInkThrNat tflood = seedEmptyThr(15, seedW, seedH, w, h);
+            if (haveT) {
+                seedFillMeta(
+                    &tpick, 14, ft, ftLo, ftHi, maxSPx, seedW, seedH, 0,
+                    anyLight ? 0 : 1, w, h);
+                seedEncodeThr(p, w, h, &tpick);
+                if (canPickFlood && hRun && vRun) {
+                    floodCtx.samp = &samp;
+                    seedFloodFromCores(
+                        samp, tpick, floodCtx, 15, &tflood, p, hRun, vRun);
+                    seedEncodeThr(p, w, h, &tflood);
+                } else {
+                    tflood.t = tpick.t;
+                    tflood.tLo = tpick.tLo;
+                    tflood.tHi = tpick.tHi;
+                    tflood.sPx = tpick.sPx;
+                    tflood.skipTint = tpick.skipTint;
+                    tflood.nBand = tpick.nBand;
+                    tflood.jpeg = tpick.jpeg;
+                }
+            } else {
+                seedZeroPlane(p.white, p.whiteStride, w, h);
+                seedZeroPlane(p.stroke, p.strokeStride, w, h);
+                seedEncodeThr(p, w, h, &tpick);
+                tflood.jpeg = tpick.jpeg;
+            }
+            thrs.push_back(std::move(tpick));
+            thrs.push_back(std::move(tflood));
+        }
+    }
+    return packSeedInkThrs(env, thrs);
+}
+
+#if defined(VE_IDEAL_MASK_MAIN)
+// Host/device driver. Ink calls the post-poison walk on a 254 look plane.
+// Energy stays on the energy JNI entry points (stroke Y=255, no UV).
+// Input: magic IMSK, u32 w,h, u32 geom (0 aabb, 1 rot), then two seeds.
+// AABB seeds are eight i32: tight l,t,r,b then one-cell-out l,t,r,b.
+// Rot seeds are sixteen f32: tight quad (8) then one-cell-out quad (8).
+// Tight entry points get the tight red only. Retract entry points get the
+// one-cell-out red only. Then ink plane w*h and energy plane w*h.
+// One stdout line: OK + four boxes.
+
+extern "C" bool veEncodeGrayJpegU8(const cv::Mat&, std::vector<uint8_t>*) { return false; }
+extern "C" bool veEncodeYuvMatJpeg(const cv::Mat&, const cv::Mat&, std::vector<uint8_t>*) {
+    return false;
+}
+
+struct HostArr {
+    int kind = 0;
+    std::vector<jint> ii;
+    std::vector<jfloat> ff;
+    std::vector<jshort> ss;
+    jsize len() const {
+        if (kind == 1) return static_cast<jsize>(ii.size());
+        if (kind == 2) return static_cast<jsize>(ff.size());
+        if (kind == 3) return static_cast<jsize>(ss.size());
+        return 0;
+    }
+};
+
+static HostArr* hostArr(jarray a) { return reinterpret_cast<HostArr*>(a); }
+
+static jsize hostGetArrayLength(JNIEnv*, jarray a) {
+    if (!a) return 0;
+    return hostArr(a)->len();
+}
+static jintArray hostNewInt(JNIEnv*, jsize n) {
+    auto* h = new HostArr();
+    h->kind = 1;
+    h->ii.assign(static_cast<size_t>(n > 0 ? n : 0), 0);
+    return reinterpret_cast<jintArray>(h);
+}
+static jfloatArray hostNewFloat(JNIEnv*, jsize n) {
+    auto* h = new HostArr();
+    h->kind = 2;
+    h->ff.assign(static_cast<size_t>(n > 0 ? n : 0), 0.f);
+    return reinterpret_cast<jfloatArray>(h);
+}
+static jshortArray hostNewShort(JNIEnv*, jsize n) {
+    auto* h = new HostArr();
+    h->kind = 3;
+    h->ss.assign(static_cast<size_t>(n > 0 ? n : 0), 0);
+    return reinterpret_cast<jshortArray>(h);
+}
+static void hostGetInt(JNIEnv*, jintArray a, jsize start, jsize len, jint* buf) {
+    auto* h = hostArr(a);
+    for (jsize i = 0; i < len; ++i) buf[i] = h->ii[static_cast<size_t>(start + i)];
+}
+static void hostSetInt(JNIEnv*, jintArray a, jsize start, jsize len, const jint* buf) {
+    auto* h = hostArr(a);
+    for (jsize i = 0; i < len; ++i) h->ii[static_cast<size_t>(start + i)] = buf[i];
+}
+static void hostGetFloat(JNIEnv*, jfloatArray a, jsize start, jsize len, jfloat* buf) {
+    auto* h = hostArr(a);
+    for (jsize i = 0; i < len; ++i) buf[i] = h->ff[static_cast<size_t>(start + i)];
+}
+static void hostSetFloat(JNIEnv*, jfloatArray a, jsize start, jsize len, const jfloat* buf) {
+    auto* h = hostArr(a);
+    for (jsize i = 0; i < len; ++i) h->ff[static_cast<size_t>(start + i)] = buf[i];
+}
+static void hostGetShort(JNIEnv*, jshortArray a, jsize start, jsize len, jshort* buf) {
+    auto* h = hostArr(a);
+    for (jsize i = 0; i < len; ++i) buf[i] = h->ss[static_cast<size_t>(start + i)];
+}
+static void hostSetShort(JNIEnv*, jshortArray a, jsize start, jsize len, const jshort* buf) {
+    auto* h = hostArr(a);
+    for (jsize i = 0; i < len; ++i) h->ss[static_cast<size_t>(start + i)] = buf[i];
+}
+static jboolean hostExceptionCheck(JNIEnv*) { return JNI_FALSE; }
+
+static JNINativeInterface gFns;
+static _JNIEnv gEnv;
+static bool gEnvReady = false;
+
+static void hostInitEnv() {
+    if (gEnvReady) return;
+    std::memset(&gFns, 0, sizeof(gFns));
+    gFns.GetArrayLength = hostGetArrayLength;
+    gFns.NewIntArray = hostNewInt;
+    gFns.NewFloatArray = hostNewFloat;
+    gFns.NewShortArray = hostNewShort;
+    gFns.GetIntArrayRegion = hostGetInt;
+    gFns.SetIntArrayRegion = hostSetInt;
+    gFns.GetFloatArrayRegion = hostGetFloat;
+    gFns.SetFloatArrayRegion = hostSetFloat;
+    gFns.GetShortArrayRegion = hostGetShort;
+    gFns.SetShortArrayRegion = hostSetShort;
+    gFns.ExceptionCheck = hostExceptionCheck;
+    gEnv.functions = &gFns;
+    gEnvReady = true;
+}
+
+static jintArray hostInts(const jint* v, jsize n) {
+    jintArray a = hostNewInt(nullptr, n);
+    hostSetInt(nullptr, a, 0, n, v);
+    return a;
+}
+static jfloatArray hostFloats(const jfloat* v, jsize n) {
+    jfloatArray a = hostNewFloat(nullptr, n);
+    hostSetFloat(nullptr, a, 0, n, v);
+    return a;
+}
+
+static void quadFromEnergy(const float* o, float* q) {
+    const double rad = static_cast<double>(o[4]) * (3.14159265358979323846 / 180.0);
+    const float ux = static_cast<float>(std::cos(rad));
+    const float uy = static_cast<float>(std::sin(rad));
+    const float vx = -uy;
+    const float vy = ux;
+    const float hu = o[2] * 0.5f;
+    const float hv = o[3] * 0.5f;
+    auto corner = [&](float su, float sv, int i) {
+        q[i] = o[0] + su * hu * ux + sv * hv * vx;
+        q[i + 1] = o[1] + su * hu * uy + sv * hv * vy;
+    };
+    corner(-1.f, -1.f, 0);
+    corner(1.f, -1.f, 2);
+    corner(1.f, 1.f, 4);
+    corner(-1.f, 1.f, 6);
+}
+
+static void fmtInts(char* dst, size_t cap, const jint* v, int n) {
+    size_t used = 0;
+    dst[0] = 0;
+    for (int i = 0; i < n; ++i) {
+        const int wr = std::snprintf(
+            dst + used, cap > used ? cap - used : 0, "%s%d", i ? "," : "", static_cast<int>(v[i]));
+        if (wr < 0) return;
+        used += static_cast<size_t>(wr);
+    }
+}
+static void fmtFloats(char* dst, size_t cap, const float* v, int n) {
+    size_t used = 0;
+    dst[0] = 0;
+    for (int i = 0; i < n; ++i) {
+        const int wr = std::snprintf(
+            dst + used, cap > used ? cap - used : 0, "%s%.6f", i ? "," : "", static_cast<double>(v[i]));
+        if (wr < 0) return;
+        used += static_cast<size_t>(wr);
+    }
+}
+
+static int runOne(const char* path) {
+    FILE* f = std::fopen(path, "rb");
+    if (!f) {
+        std::printf("ERR open %s\n", path);
+        return 1;
+    }
+    char magic[4];
+    uint32_t w = 0, h = 0, geom = 0;
+    int32_t tL = 0, tT = 0, tR = 0, tB = 0, oL = 0, oT = 0, oR = 0, oB = 0;
+    float tq[8] = {}, oq[8] = {};
+    if (std::fread(magic, 1, 4, f) != 4 || std::memcmp(magic, "IMSK", 4) != 0 ||
+        std::fread(&w, 4, 1, f) != 1 || std::fread(&h, 4, 1, f) != 1 ||
+        std::fread(&geom, 4, 1, f) != 1) {
+        std::fclose(f);
+        std::printf("ERR hdr %s\n", path);
+        return 1;
+    }
+    bool hdrOk = false;
+    if (geom == 0) {
+        hdrOk = std::fread(&tL, 4, 1, f) == 1 && std::fread(&tT, 4, 1, f) == 1 &&
+            std::fread(&tR, 4, 1, f) == 1 && std::fread(&tB, 4, 1, f) == 1 &&
+            std::fread(&oL, 4, 1, f) == 1 && std::fread(&oT, 4, 1, f) == 1 &&
+            std::fread(&oR, 4, 1, f) == 1 && std::fread(&oB, 4, 1, f) == 1;
+    } else if (geom == 1) {
+        hdrOk = std::fread(tq, 4, 8, f) == 8 && std::fread(oq, 4, 8, f) == 8;
+    }
+    if (!hdrOk) {
+        std::fclose(f);
+        std::printf("ERR hdr %s\n", path);
+        return 1;
+    }
+    if (w < 1 || h < 1 || w > 20000 || h > 20000) {
+        std::fclose(f);
+        std::printf("ERR size %s\n", path);
+        return 1;
+    }
+    const size_t nPix = static_cast<size_t>(w) * static_cast<size_t>(h);
+    std::vector<uint8_t> inkB(nPix), engB(nPix);
+    if (std::fread(inkB.data(), 1, nPix, f) != nPix ||
+        std::fread(engB.data(), 1, nPix, f) != nPix) {
+        std::fclose(f);
+        std::printf("ERR body %s\n", path);
+        return 1;
+    }
+    std::fclose(f);
+    for (size_t i = 0; i < nPix; ++i) {
+        inkB[i] = inkB[i] ? static_cast<uint8_t>(254) : static_cast<uint8_t>(0);
+        engB[i] = engB[i] ? static_cast<uint8_t>(255) : static_cast<uint8_t>(0);
+    }
+    cv::Mat ink(static_cast<int>(h), static_cast<int>(w), CV_8UC1);
+    cv::Mat energy(static_cast<int>(h), static_cast<int>(w), CV_8UC1);
+    cv::Mat scratch(static_cast<int>(h), static_cast<int>(w), CV_8UC1);
+    if (!ink.isContinuous() || !energy.isContinuous()) {
+        std::printf("ERR mat %s\n", path);
+        return 1;
+    }
+    std::memcpy(ink.data, inkB.data(), nPix);
+    std::memcpy(energy.data, engB.data(), nPix);
+    const int iw = static_cast<int>(w);
+    const int ih = static_cast<int>(h);
+    const jlong eP = reinterpret_cast<jlong>(&energy);
+    const jlong sP = reinterpret_cast<jlong>(&scratch);
+    char b0[256], b1[256], b2[256], b3[256];
+    if (geom == 0) {
+        const jint tightS[4] = {tL, tT, tR, tB};
+        const jint outS[4] = {oL, oT, oR, oB};
+        auto inkBox = [&](const jint* seed, int strategy, char* dst) {
+            int ol = seed[0], ot = seed[1], orr = seed[2], ob = seed[3];
+            int sPx = 0, vSW = 0, hSW = 0, fb = 0;
+            if (orr > ol && ob > ot) {
+                seg7One(ink, ol, ot, orr, ob, iw, ih,
+                    &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb,
+                    true, 0.5f, 0.f, 8, strategy, 0, nullptr, false,
+                    nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, 0, nullptr,
+                    false, true);
+            }
+            const jint v[4] = {ol, ot, orr, ob};
+            fmtInts(dst, 256, v, 4);
+        };
+        auto box4 = [&](jintArray arr, const jint* seed, char* dst) {
+            jint v[4] = {seed[0], seed[1], seed[2], seed[3]};
+            if (arr && hostGetArrayLength(nullptr, arr) >= 4) hostGetInt(nullptr, arr, 0, 4, v);
+            fmtInts(dst, 256, v, 4);
+        };
+        inkBox(tightS, 0, b0);
+        inkBox(outS, 2, b1);
+        scratch.setTo(0);
+        box4(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyAabbTight(
+            &gEnv, nullptr, eP, 0, hostInts(tightS, 4), nullptr, nullptr, sP),
+            tightS, b2);
+        scratch.setTo(0);
+        box4(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyAabbRetract(
+            &gEnv, nullptr, eP, 0, hostInts(outS, 4), nullptr, nullptr, sP),
+            outS, b3);
+        std::printf("OK aabb %s %s %s %s\n", b0, b1, b2, b3);
+    } else {
+        auto inkRot = [&](const float* q, int strategy, char* dst) {
+            float v[8];
+            for (int i = 0; i < 8; ++i) v[i] = q[i];
+            OriBox box{};
+            if (oriFromQuad(q, &box)) {
+                float sPx = 0.f;
+                seg7OrientedOne(ink, box, iw, ih, v, &sPx,
+                    strategy, 0, true, nullptr, false,
+                    nullptr, nullptr, nullptr, nullptr, nullptr,
+                    nullptr, nullptr, 0, nullptr, nullptr, true, false, true);
+            }
+            fmtFloats(dst, 256, v, 8);
+        };
+        auto box8 = [&](jfloatArray arr, const float* seed, char* dst) {
+            float v[8];
+            for (int i = 0; i < 8; ++i) v[i] = seed[i];
+            if (arr && hostGetArrayLength(nullptr, arr) >= 13) {
+                float e[13];
+                hostGetFloat(nullptr, arr, 0, 13, e);
+                quadFromEnergy(e, v);
+            }
+            fmtFloats(dst, 256, v, 8);
+        };
+        inkRot(tq, 0, b0);
+        inkRot(oq, 2, b1);
+        scratch.setTo(0);
+        box8(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyOrientTight(
+            &gEnv, nullptr, eP, hostFloats(tq, 8), nullptr, sP),
+            tq, b2);
+        scratch.setTo(0);
+        box8(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyOrientRetract(
+            &gEnv, nullptr, eP, hostFloats(oq, 8), nullptr, sP),
+            oq, b3);
+        std::printf("OK rot %s %s %s %s\n", b0, b1, b2, b3);
+    }
+    std::fflush(stdout);
+    return 0;
+}
+
+int main(int argc, char** argv) {
+    hostInitEnv();
+    if (argc < 2) {
+        std::fprintf(stderr, "usage: ideal_mask_expand <imsk>...\n");
+        return 2;
+    }
+    int rc = 0;
+    for (int i = 1; i < argc; ++i) {
+        try {
+            if (runOne(argv[i]) != 0) rc = 1;
+        } catch (const cv::Exception& ex) {
+            std::printf("ERR cv %s %s\n", argv[i], ex.what());
+            rc = 1;
+        } catch (const std::exception& ex) {
+            std::printf("ERR c++ %s %s\n", argv[i], ex.what());
+            rc = 1;
+        }
+    }
+    return rc;
+}
+#endif
+

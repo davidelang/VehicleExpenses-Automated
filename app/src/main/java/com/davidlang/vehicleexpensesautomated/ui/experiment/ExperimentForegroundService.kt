@@ -29,19 +29,29 @@ class ExperimentForegroundService : Service() {
         val kind = intent?.getStringExtra(EXTRA_KIND) ?: "experiment"
         ensureChannel()
         val notification = buildNotification(kind)
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(
-                NOTIF_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            startForeground(NOTIF_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(
+                    NOTIF_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                startForeground(NOTIF_ID, notification)
+            }
+        } catch (e: android.app.ForegroundServiceStartNotAllowedException) {
+            Log.e(TAG, "startForeground denied (quota)", e)
+            stopSelf()
+            return START_NOT_STICKY
+        } catch (e: IllegalStateException) {
+            Log.e(TAG, "startForeground denied", e)
+            stopSelf()
+            return START_NOT_STICKY
         }
         acquireWakeLock()
         Log.i(TAG, "FGS started kind=$kind")
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {

@@ -2,6 +2,8 @@
 
 **Not** under `app/src/main/assets/`, so they are not in the APK.
 
+v4 mobile dets live in `exp_det_ab_unscheduled` and are not in the APK.
+
 Scheduled on device: `assets/paddle/exp_det_ab/{product_det,PP-OCRv4_mobile_det}_*.nb` only
 (`MultiScaleDetRunner.DET_MODELS`). See `docs/obsolete/EXPERIMENT_DET_MODELS.md`.
 

@@ -93,13 +93,22 @@ fi
 
 # 4. Integrity Barrier: Strict 'git describe' protection
 # Ensure NO modified tracked files remain. Everything MUST be in git.
-DIRTY_FILES=$(git status --porcelain -uno)
+# clean=cat so a committed expanded sandbox path is not a false local edit.
+DIRTY_FILES=$(git -c filter.manage-configs.clean=cat -c filter.manage-configs.smudge=cat status --porcelain -uno)
 if [ -n "$DIRTY_FILES" ]; then
     echo "CRITICAL ERROR: Uncommitted tracked files detected:"
     echo "$DIRTY_FILES"
     echo "------------------------------------------------------------------"
     echo "Every modified file MUST be explicitly added to the build command."
     echo "Compile aborted to ensure accurate 'git describe' versioning."
+    exit 1
+fi
+
+# Untracked files under the app or the Paddle tree must not reach Gradle.
+UNTRACKED_PATHS=$(git status --porcelain -uall -- app third_party/paddle | awk '/^\?\?/ { print }')
+if [ -n "$UNTRACKED_PATHS" ]; then
+    echo "CRITICAL ERROR: Untracked files under app/ or third_party/paddle/:"
+    echo "$UNTRACKED_PATHS"
     exit 1
 fi
 

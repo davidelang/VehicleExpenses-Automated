@@ -40,6 +40,7 @@ import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -335,31 +336,25 @@ data class PipelineConfig(
  * | set_j  | product | char-aware                      |
  * | set_l  | product | P = INTERIOR_ENERGY + jump      |
  * | set_v  | product | valley                          |
- * | set_o  | v4 mob  | char-aware                      |
- * | set_n  | v4 mob  | P = INTERIOR_ENERGY + jump      |
- * | set_w  | v4 mob  | valley                          |
  *
+ * O/N/W (v4) dropped with tag `obsolete-p4-p5-det`.
  * Dropped as duplicates once shared fixes applied: set_k (old P+legacy sel), set_m (old v4+P without src-border).
  */
 private fun usesCharAwareExpand(pipelineKey: String): Boolean =
-    pipelineKey == "set_j" || pipelineKey == "set_o"
+    pipelineKey == "set_j"
 
 /** Pump Set-P style: ContentExpand INTERIOR_ENERGY + height jump. */
 private fun usesPExpand(pipelineKey: String): Boolean =
-    pipelineKey == "set_l" || pipelineKey == "set_n"
+    pipelineKey == "set_l"
 
 private fun usesValleyExpand(pipelineKey: String): Boolean =
-    pipelineKey == "set_v" || pipelineKey == "set_w"
+    pipelineKey == "set_v"
 
 /** @deprecated use [usesPExpand] */
 private fun isPExpandKey(pipelineKey: String): Boolean = usesPExpand(pipelineKey)
 
 /** All columns: PreferLen from vehicle digit count + mean (+tail strip). */
 private fun usesLenMeanBinSelection(pipelineKey: String): Boolean = true
-
-/** v4 mobile det columns. */
-private fun usesV4MobileDet(pipelineKey: String): Boolean =
-    pipelineKey == "set_o" || pipelineKey == "set_n" || pipelineKey == "set_w"
 
 /** All columns: source-border rec (no black 4px insert). */
 private fun usesSourceBorderRec(pipelineKey: String): Boolean = true
@@ -376,15 +371,10 @@ private fun feedOdoRoiToRecBuffer(
     srcBottom: Int,
     recBuffer: BufferSet,
     @Suppress("UNUSED_PARAMETER") useSourceBorder: Boolean,
-): Pair<Float, Int> {
-    val fed = RecBufferFeed.feedSourceBorderLetterbox(
+): RecBufferFeed.Result {
+    return RecBufferFeed.feedSourceBorderLetterbox(
         srcMat, srcLeft, srcTop, srcRight, srcBottom, recBuffer,
     )
-    // Crop released by caller after OCR (alignment keeps buffer until recognizeNumeric).
-    // feedSourceBorderLetterbox leaves rec crop allocated; alignment code does not release
-    // via Result — it recognizes on full recBuffer.p. Release crop after stamp for parity.
-    recBuffer.c[fed.recCropId].release()
-    return fed.contentScale to fed.sourcePadPx
 }
 
 /**
@@ -494,14 +484,11 @@ suspend fun runAlignmentExperiment(
     // Pre-allocated JSON serialization buffer (16MB starting capacity)
     var jsonCharBuffer = StringBuilder(16 * 1024 * 1024)
 
-    var partCount = 1
-    val maxSizeBytes = 5 * 1024 * 1024 // 5MB parts
-    var currentSize = 0
-    val footer = "</table></body></html>"
-    val experimentRecSet320x48 = BufferSet(320, 48)
-    val experimentDetSet512x128 = BufferSet(512, 128)
+    NativePaddleEngine.initializeGlobalBuffers(context)
+    val experimentRecSet320x48 = NativePaddleEngine.recBufferSet
+    val experimentDetSet512x128 = NativePaddleEngine.square608
 
-    // Report columns: 2 det (product / v4) × 3 expand (char-aware / P / valley).
+    // Report columns: product det × 3 expand (char-aware / P / valley). J / L / V only.
     // Shared on every column: PreferLen(vehicle digit count), prefer-Bin final pick, source-border rec.
     // Face digits only (no rollover timeline in experiment).
     // Silent mlAngle vehicle-ID lock before loop. See docs/obsolete/EXPERIMENT_ALIGNMENT_SETS.md.
@@ -509,22 +496,68 @@ suspend fun runAlignmentExperiment(
         PipelineConfig("set_j", "Set J (prod+charAware)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
         PipelineConfig("set_l", "Set L (prod+P-expand)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
         PipelineConfig("set_v", "Set V (prod+valley)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
-        PipelineConfig("set_o", "Set O (v4+charAware)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
-        PipelineConfig("set_n", "Set N (v4+P-expand)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
-        PipelineConfig("set_w", "Set W (v4+valley)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
     )
     val harnessEngineNames = pipelines.map { "${it.displayName} Paddle" }
     val pipelineNames = pipelines.map { it.displayName }
 
-    fun startNewFile(): File {
-        val f = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html")
-        f.writeText(buildHtmlHeader(timestamp, total, BuildConfig.VERSION_NAME, emptyList(), harnessEngineNames, pipelineNames))
-        return f
+    val alignColLabels = alignmentColumnLabels(pipelineNames, harnessEngineNames, emptyList())
+    val alignMetaHtml =
+        "<b>Run:</b> $timestamp | <b>Version:</b> ${BuildConfig.VERSION_NAME} | <b>Total:</b> $total"
+    val footerHtml = ExperimentReportHtml.footer(
+        ExperimentReportHtml.Kind.ALIGNMENT, alignColLabels, alignMetaHtml,
+    )
+    val cellsDir = File(reportDir, "align_cells_$timestamp").also { it.mkdirs() }
+    val cursorFile = File(reportDir, "align_cursor_$timestamp.txt")
+    cursorFile.writeText("0")
+    val nCells = total
+    val cellOrder = (1..nCells).map { ReportCellRef(it, sortA = it) }
+    val rowsPerFile = ExperimentReportHtml.htmlRowsPerFile(context)
+    val nParts = ExperimentReportHtml.nParts(total, rowsPerFile)
+    val chunks = ExperimentReportHtml.photoChunks(total, rowsPerFile)
+    val reportStem = "alignment_report_$timestamp"
+    chunks.forEachIndexed { part0, photoRange ->
+        val partIndex1 = part0 + 1
+        val partFile = ExperimentReportHtml.partFile(reportDir, reportStem, partIndex1, nParts)
+        partFile.writeText(
+            buildHtmlHeader(
+                timestamp, total, BuildConfig.VERSION_NAME, emptyList(),
+                harnessEngineNames, pipelineNames, alignColLabels, alignMetaHtml,
+                partIndex1, nParts, reportStem,
+            ),
+        )
+        val skeleton = buildString {
+            for (i in photoRange) {
+                val f = photos[i]
+                val id = i + 1
+                val line = subsetMap?.get(f.name) ?: (i + 1)
+                append(ReportCollapser.htmlBegin(id))
+                append(
+                    "<tr data-photo='$line'><td colspan='${alignColLabels.size}'>" +
+                        "<span class='stat pending'>… ${ReportCollapser.idTag(id)}</span></td></tr>\n",
+                )
+                append(ReportCollapser.htmlEnd(id))
+            }
+        }
+        partFile.appendText(skeleton)
+        partFile.appendText(footerHtml)
     }
-
-    var currentFile = startNewFile()
+    val collapser = ReportCollapser(
+        htmlFileForId = { id ->
+            val photoIndex0 = id - 1
+            val partIndex1 = ExperimentReportHtml.partIndex1ForPhoto(photoIndex0, rowsPerFile)
+            ExperimentReportHtml.partFile(reportDir, reportStem, partIndex1, nParts)
+        },
+        cellsDir = cellsDir,
+        cursorFile = cursorFile,
+        nCells = nCells,
+        cellOrder = cellOrder,
+        onLog = onLog,
+    )
     var firstJsonResult = true
 
+    coroutineScope {
+    val collapseJob = collapser.start(this)
+    try {
     photos.forEachIndexed { index, file ->
         val originalLineNumber = subsetMap?.get(file.name) ?: (index + 1)
         // Phase 116 Emergency Fix: Initialize photoResult early with "No Match" state
@@ -741,48 +774,26 @@ suspend fun runAlignmentExperiment(
 
                             val iterativeStages = listOf("Raw", "Bin-Trials")
 
-                            // O/N/W: swap to PP-OCRv4_mobile_det for this column only (restore after).
-                            val swappedDet = usesV4MobileDet(pipeline.key)
-                            if (swappedDet) {
-                                try {
-                                    NativePaddleEngine.loadExperimentDetTiers(context, "PP-OCRv4_mobile_det")
-                                    onLog("${pipeline.displayName}: loaded PP-OCRv4_mobile_det tiers")
-                                } catch (t: Throwable) {
-                                    Log.e(TAG, "${pipeline.key} det swap failed", t)
-                                    onLog("${pipeline.displayName}: det swap FAILED ${t.message}")
-                                }
-                            }
-                            try {
-                                // Expand: J/O char-aware | L/N P(INTERIOR_ENERGY+jump) | V/W valley.
-                                // All columns: PreferLen(digitCount), prefer-Bin final, source-border rec.
-                                runPaddleValleyIterative(
-                                    "${pipeline.displayName} Paddle",
-                                    NativePaddleEngine.bufferSetB,
-                                    imgW,
-                                    imgH,
-                                    globalWinnerRef,
-                                    vehicleBufferSets,
-                                    experimentDetSet512x128,
-                                    experimentRecSet320x48,
-                                    paddleEngine,
-                                    hMap,
-                                    refinementTraces,
-                                    isNumeric = true,
-                                    iterativeStages,
-                                    extraImages,
-                                    useCharAware = usesCharAwareExpand(pipeline.key),
-                                    pipelineKey = pipeline.key,
-                                )
-                            } finally {
-                                if (swappedDet) {
-                                    try {
-                                        NativePaddleEngine.restoreProductionDetTiers(context)
-                                    } catch (t: Throwable) {
-                                        Log.e(TAG, "${pipeline.key} det restore failed", t)
-                                        onLog("${pipeline.displayName}: det restore FAILED ${t.message}")
-                                    }
-                                }
-                            }
+                            // Expand: J char-aware | L P(INTERIOR_ENERGY+jump) | V valley.
+                            // All columns: PreferLen(digitCount), prefer-Bin final, source-border rec.
+                            runPaddleValleyIterative(
+                                "${pipeline.displayName} Paddle",
+                                NativePaddleEngine.bufferSetB,
+                                imgW,
+                                imgH,
+                                globalWinnerRef,
+                                vehicleBufferSets,
+                                experimentDetSet512x128,
+                                experimentRecSet320x48,
+                                paddleEngine,
+                                hMap,
+                                refinementTraces,
+                                isNumeric = true,
+                                iterativeStages,
+                                extraImages,
+                                useCharAware = usesCharAwareExpand(pipeline.key),
+                                pipelineKey = pipeline.key,
+                            )
                         }
                     }
 
@@ -840,8 +851,7 @@ suspend fun runAlignmentExperiment(
                     tilt, deskewResA, pipelines, meta.diagnostic
                 )
 
-                if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
-                currentFile.appendText(rowHtml); currentSize += rowHtml.length
+                ReportCollapser.publishCell(cellsDir, index + 1, rowHtml, "{}")
 
                 val photoJson = serializePhotoResultToJson(
                     originalLineNumber, imgW, imgH, imgW, imgH, meta.isDegraded,
@@ -882,12 +892,19 @@ suspend fun runAlignmentExperiment(
             Log.e(TAG, "FATAL: Experiment failed for row $index (${file.name}):\n" + Log.getStackTraceString(e))
         }
     }
-    currentFile.appendText(footer)
+    } finally {
+        collapser.requestFinal("alignment final collapse")
+        try {
+            collapseJob.join()
+        } catch (_: CancellationException) {
+        }
+        collapser.drainAll()
+    }
+    }
     jsonFile.appendText("\n  ]\n}")
 
     logHeapState(context, "runExperiment:end")
-    experimentRecSet320x48.release()
-    experimentDetSet512x128.release()
+
     vehicleBufferSets.values.forEach { it.release() }
     vehicleBufferSets.clear()
     Log.i(TAG, "runAlignmentExperiment:end json=${jsonFile.absolutePath} total=$total")
@@ -928,9 +945,6 @@ private fun serializePhotoResultToJson(
             photoResult.pathways["set_j"]?.winnerName
                 ?: photoResult.pathways["set_l"]?.winnerName
                 ?: photoResult.pathways["set_v"]?.winnerName
-                ?: photoResult.pathways["set_o"]?.winnerName
-                ?: photoResult.pathways["set_n"]?.winnerName
-                ?: photoResult.pathways["set_w"]?.winnerName
                 ?: "No match",
         )
 
@@ -1017,7 +1031,7 @@ private fun serializePhotoResultToJson(
         val landmarksArray = JSONArray()
         photoResult.pathways["set_j"]?.discoveryResult?.textBlocks?.forEach { block ->
             val cleanedText = OdometerOcrUtils.cleanLandmarkString(block.text)
-            if (cleanedText.length > 1) {
+            if (cleanedText.isNotEmpty()) {
                 landmarksArray.put(JSONObject().apply {
                     put("text", cleanedText)
                     val icrs = IcrsMath.pixelToIcrs(block.boundingBox.centerX().toFloat(), block.boundingBox.centerY().toFloat(), safeW, safeH)
@@ -1265,7 +1279,7 @@ private fun serializeAnnotations(anns: List<SnapshotAnnotation>): String {
         obj.put("x2", ann.x2)
         obj.put("y2", ann.y2)
         obj.put("shape", ann.shape.name)
-        obj.put("color", ann.color)
+        obj.put("color", ann.color.name)
         obj.put("strokeWidth", ann.strokeWidth)
         arr.put(obj)
     }
@@ -1316,8 +1330,7 @@ internal suspend fun runBinTrialsPaddle(
         // TEMP DIAGNOSTIC (2026-06-23) - remove after root cause fixed
         Log.i("HIST_DIAG", "trial start vehicle=$vehicleId odoPre=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} srcCrop=${masterBuffer.c[vehicleId].mat.cols()}x${masterBuffer.c[vehicleId].mat.rows()}")
         odoBuffer.p.clear()
-        val interp = if (masterBuffer.c[vehicleId].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-        org.opencv.imgproc.Imgproc.resize(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+        RecBufferFeed.scaleCropToFitBuffer(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat)
         Log.d("ALIGN_ODO_POP", "masterCrop=${masterBuffer.c[vehicleId].mat.cols()}x${masterBuffer.c[vehicleId].mat.rows()} -> odoTarget=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()}")
         Log.i("HIST_DIAG", "after resize+clear vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()}")
 
@@ -1328,32 +1341,36 @@ internal suspend fun runBinTrialsPaddle(
         Log.i("HIST_DIAG", "after threshold+flip vehicle=$vehicleId p=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()}")
         NativeImageUtils.logMatHeader(odoBuffer.p.mat, "odo_p_after_flip_v$vehicleId")
 
-        val detSc = kotlin.math.min(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
-        val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
-        val fh = (odoBuffer.p.mat.rows() * detSc).toInt().coerceAtMost(128)
-
-        experimentDetSet512x128.p.clear()
-        val dCrId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
-        org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId].mat, experimentDetSet512x128.c[dCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-        val detRes = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
+        val dest = NativePaddleEngine.square608
+        val S = dest.width
+        val srcW = odoBuffer.p.mat.cols()
+        val srcH = odoBuffer.p.mat.rows()
+        val currentLong = maxOf(srcW, srcH)
+        val packScale = if (currentLong <= S) 1.0f else S.toFloat() / currentLong
+        val innerW = (srcW * packScale).toInt().coerceAtLeast(1)
+        val innerH = (srcH * packScale).toInt().coerceAtLeast(1)
+        NativeImageUtils.scalePackedU8(
+            odoBuffer.p.mat, (dest.s as BufferSet.Instance).tensorBindRaw(), S, innerW, innerH,
+        )
+        val detRes = paddleEngine.detect(dest, S, S, copyHeatmap = false)
         var tFullB = if (detRes != null) {
-            val invScale = 1.0f / detSc
+            val invScaleX = srcW.toFloat() / innerW
+            val invScaleY = srcH.toFloat() / innerH
             detRes.nativeBoxes.map { box ->
                 val points = box.points
-                val minX = Math.floor((minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 8.0) * invScale.toDouble()).toInt()
-                val minY = Math.floor((minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 8.0) * invScale.toDouble()).toInt()
-                val maxX = Math.ceil((maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 8.0) * invScale.toDouble()).toInt()
-                val maxY = Math.ceil((maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 8.0) * invScale.toDouble()).toInt()
+                val minX = Math.floor((minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 8.0) * invScaleX.toDouble()).toInt()
+                val minY = Math.floor((minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 8.0) * invScaleY.toDouble()).toInt()
+                val maxX = Math.ceil((maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 8.0) * invScaleX.toDouble()).toInt()
+                val maxY = Math.ceil((maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 8.0) * invScaleY.toDouble()).toInt()
                 val bounds = android.graphics.Rect(minX, minY, maxX, maxY)
                 val scaledPoints = FloatArray(8)
                 for (i in 0 until 8) {
-                    scaledPoints[i] = points[i] * invScale
+                    scaledPoints[i] = points[i] * if (i % 2 == 0) invScaleX else invScaleY
                 }
                 val angle = 0f
                 TextBlock("", bounds, angle, confidence = box.confidence)
             }
         } else emptyList<TextBlock>()
-        experimentDetSet512x128.c[dCrId].release()
 
         var tRawB = tFullB.filter { b1 ->
             tFullB.none { b2 -> b1 !== b2 && b2.boundingBox.contains(b1.boundingBox.left + 5, b1.boundingBox.top + 5, b1.boundingBox.right - 5, b1.boundingBox.bottom - 5) }
@@ -1362,7 +1379,7 @@ internal suspend fun runBinTrialsPaddle(
         val thresholdFactor = 128.0f
 
         val annsPre = mutableListOf<SnapshotAnnotation>()
-        tRawB.forEach { b -> annsPre.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
+        tRawB.forEach { b -> annsPre.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, AnnYuv.RED, 2)) }
         trialsMeta["trial_${vIdx}_red_boxes"] = tRawB.joinToString(";") { b -> "${b.boundingBox.left},${b.boundingBox.top}-${b.boundingBox.right},${b.boundingBox.bottom}" }
         trialsMeta["trial_${vIdx}_initial_red_rects"] = tRawB.joinToString(";") { b -> "${b.boundingBox.left},${b.boundingBox.top},${b.boundingBox.right},${b.boundingBox.bottom}" }
 
@@ -1434,28 +1451,28 @@ internal suspend fun runBinTrialsPaddle(
             NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 1)
             NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 2)
 
-            experimentDetSet512x128.p.clear()
-            val dCrId2 = experimentDetSet512x128.createCrop(0, 0, fw, fh)
-            org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId2].mat, experimentDetSet512x128.c[dCrId2].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-            val detRes2 = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
+            NativeImageUtils.scalePackedU8(
+                odoBuffer.p.mat, (dest.s as BufferSet.Instance).tensorBindRaw(), S, innerW, innerH,
+            )
+            val detRes2 = paddleEngine.detect(dest, S, S, copyHeatmap = false)
             tFullB = if (detRes2 != null) {
-                val invScale = 1.0f / detSc
+                val invScaleX = srcW.toFloat() / innerW
+                val invScaleY = srcH.toFloat() / innerH
                 detRes2.nativeBoxes.map { box ->
                     val points = box.points
-                    val minX = Math.floor((minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 8.0) * invScale.toDouble()).toInt()
-                    val minY = Math.floor((minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 8.0) * invScale.toDouble()).toInt()
-                    val maxX = Math.ceil((maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 8.0) * invScale.toDouble()).toInt()
-                    val maxY = Math.ceil((maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 8.0) * invScale.toDouble()).toInt()
+                    val minX = Math.floor((minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 8.0) * invScaleX.toDouble()).toInt()
+                    val minY = Math.floor((minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 8.0) * invScaleY.toDouble()).toInt()
+                    val maxX = Math.ceil((maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 8.0) * invScaleX.toDouble()).toInt()
+                    val maxY = Math.ceil((maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 8.0) * invScaleY.toDouble()).toInt()
                     val bounds = android.graphics.Rect(minX, minY, maxX, maxY)
                     val scaledPoints = FloatArray(8)
                     for (i in 0 until 8) {
-                        scaledPoints[i] = points[i] * invScale
+                        scaledPoints[i] = points[i] * if (i % 2 == 0) invScaleX else invScaleY
                     }
                     val angle = 0f
                     TextBlock("", bounds, angle, confidence = box.confidence)
                 }
             } else emptyList<TextBlock>()
-            experimentDetSet512x128.c[dCrId2].release()
 
             rb = tFullB.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() } ?: rb
             Log.i("HIST_DIAG", "postFilter vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${rb.boundingBox} factor=$thresholdFactor fullMat=true")
@@ -1626,24 +1643,25 @@ internal suspend fun runBinTrialsPaddle(
             val sR = tBox.right.coerceIn(sL + 1, odoBuffer.p.mat.cols())
             val sB = tBox.bottom.coerceIn(sT + 1, odoBuffer.p.mat.rows())
             if (sR > sL && sB > sT) {
-                val (rScMeta, padMeta) = feedOdoRoiToRecBuffer(
+                val fed = feedOdoRoiToRecBuffer(
                     odoBuffer.p.mat,
                     sL, sT, sR, sB,
                     experimentRecSet320x48,
                     useSourceBorder = usesSourceBorderRec(pipelineKey),
                 )
-                trialsMeta["trial_${vIdx}_rec_scale_$bIdx"] = "%.4f".format(rScMeta)
-                trialsMeta["trial_${vIdx}_rec_src_pad_px_$bIdx"] = padMeta.toString()
+                trialsMeta["trial_${vIdx}_rec_scale_$bIdx"] = "%.4f".format(fed.contentScale)
+                trialsMeta["trial_${vIdx}_rec_src_pad_px_$bIdx"] = fed.sourcePadPx.toString()
                 trialsMeta["trial_${vIdx}_rec_feed"] =
                     if (usesSourceBorderRec(pipelineKey)) "source_border" else "black_pad_4px"
-                // Exact rec buffer fed to recognizeNumeric (for debug of lead-digit / hallucination).
+                // Exact rec slice fed to recognizeNumeric (not the unused 4096 canvas).
                 val (recB64, _) = OcrUtils.takeSnapshot(
-                    experimentRecSet320x48.p, null,
-                    experimentRecSet320x48.p.width, experimentRecSet320x48.p.height,
+                    experimentRecSet320x48.c[fed.recCropId], null,
+                    fed.targetW, fed.targetH,
                     emptyList(), null, experimentRecSet320x48,
                 )
                 if (recB64.isNotEmpty()) trialsMeta["trial_${vIdx}_ocr_rec_thumb_$bIdx"] = recB64
-                val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
+                val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.c[fed.recCropId])
+                experimentRecSet320x48.c[fed.recCropId].release()
                 if (ocrR.debugText.isNotBlank()) {
                     tOdoB.append(ocrR.debugText).append(" ")
                     ocrR.metadata["ocr_probs"]?.let { tProbsB.append(it).append(" ") }
@@ -1657,10 +1675,10 @@ internal suspend fun runBinTrialsPaddle(
         val minP = if (tProbs.isNotEmpty()) tProbs.minOrNull() ?: 0f else 0f
 
         val annsPost = mutableListOf<SnapshotAnnotation>()
-        tRawB.forEach { b -> annsPost.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
+        tRawB.forEach { b -> annsPost.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, AnnYuv.RED, 2)) }
         // Blue = expand frags, orange = OCR cluster/union.
-        tFrags.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.BLUE, 2)) }
-        tCons.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
+        tFrags.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, AnnYuv.BLUE, 2)) }
+        tCons.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, AnnYuv.ORANGE, 2)) }
 
         val histsHtml = StringBuilder()
         if (useCharAware && valleyResults.isNotEmpty()) {
@@ -1669,14 +1687,14 @@ internal suspend fun runBinTrialsPaddle(
                 if (!mSlots.isNullOrEmpty()) {
                     val pts = mSlots.split(",").mapNotNull { it.toIntOrNull() }
                     for (i in 0 until pts.size step 4) {
-                        if (i + 3 < pts.size) annsPost.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, android.graphics.Color.WHITE, 1))
+                        if (i + 3 < pts.size) annsPost.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, AnnYuv.WHITE, 1))
                     }
                 }
                 val fSlots = res.second["charaware_failed_slots"]
                 if (!fSlots.isNullOrEmpty()) {
                     val pts = fSlots.split(",").mapNotNull { it.toIntOrNull() }
                     for (i in 0 until pts.size step 4) {
-                        if (i + 3 < pts.size) annsPost.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, android.graphics.Color.BLUE, 1))
+                        if (i + 3 < pts.size) annsPost.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, AnnYuv.BLUE, 1))
                     }
                 }
             }
@@ -1823,8 +1841,7 @@ internal suspend fun runBinTrialsPaddle(
     // Set winning binarization state (threshold from selected trial)
     if (winnerTrial != null) {
         odoBuffer.p.clear()
-        val interp = if (masterBuffer.c[vehicleId].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-        org.opencv.imgproc.Imgproc.resize(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+        RecBufferFeed.scaleCropToFitBuffer(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat)
 
         odoBuffer.s.clear()
         org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, winnerTrial.thresh, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
@@ -1900,14 +1917,42 @@ private fun findValleyMidpoints(bins: FloatArray): List<Int> {
     return midpoints.distinct()
 }
 
-private fun buildHtmlHeader(time: String, total: Int, version: String, strategies: List<String>, harnessEngines: List<String>, pipelineNames: List<String>): String = buildString {
-    appendLine("<html><head><title>Deep Trace - $time</title>")
-    appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .ocr-step { margin-bottom: 4px; border-bottom: 1px solid #eee; font-size: 18px; text-align: left; }</style></head><body>")
-    append("<h1>OCR Refinement Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th>")
-    pipelineNames.forEach { append("<th style='width:650px;'>Native Aligned $it</th>") }
-    harnessEngines.forEach { append("<th style='width:300px;'>$it</th>") }
-    strategies.forEach { append("<th style='width:300px;'>$it</th>") }
-    appendLine("<th style='width:300px;'>Refinement Consensus</th></tr>")
+private fun alignmentColumnLabels(
+    pipelineNames: List<String>,
+    harnessEngines: List<String>,
+    strategies: List<String>,
+): List<String> {
+    val labels = mutableListOf("# &amp; Original")
+    pipelineNames.forEach { labels.add("Native Aligned $it") }
+    harnessEngines.forEach { labels.add(it) }
+    strategies.forEach { labels.add(it) }
+    labels.add("Refinement Consensus")
+    return labels
+}
+
+private fun buildHtmlHeader(
+    time: String,
+    total: Int,
+    version: String,
+    strategies: List<String>,
+    harnessEngines: List<String>,
+    pipelineNames: List<String>,
+    colLabels: List<String>,
+    metaHtml: String,
+    partIndex1: Int,
+    nParts: Int,
+    reportStem: String,
+): String = buildString {
+    append(ExperimentReportHtml.documentHead("Deep Trace - $time", ExperimentReportHtml.Kind.ALIGNMENT))
+    appendLine("<h1>OCR Refinement Experiment</h1><p>$metaHtml</p>")
+    append(
+        ExperimentReportHtml.toolbar(
+            ExperimentReportHtml.Kind.ALIGNMENT, colLabels, metaHtml,
+            partIndex1 = partIndex1, nParts = nParts, reportStem = reportStem,
+        ),
+    )
+    append(ExperimentReportHtml.tableOpen(colLabels))
+    appendLine("<!-- total=$total version=$version pipelines=${pipelineNames.size} harness=${harnessEngines.size} strategies=${strategies.size} -->")
 }
 
 private fun buildHtmlRowDynamic(
@@ -1936,8 +1981,9 @@ private fun buildHtmlRowDynamic(
     val angMl = deskewRes.mlAngle
     val angV3 = deskewRes.engines["Paddle V3"]?.angle ?: 0f
     val angCpp = deskewRes.paddleCppAngle
-    appendLine("<tr><td><b>#$rowIndex</b>")
+    appendLine("<tr id=\"ve-row-$rowIndex\" data-photo=\"$rowIndex\"><td data-col=\"0\"><b>#$rowIndex</b>")
     appendLine("<br><small>$fileName</small>")
+    appendLine("<div class=\"orig-details\">")
     appendLine("<br><small>$resHtml</small>$diagHtml")
     appendLine("<br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms")
     appendLine("<br>ML: ${"%.1f".format(angMl)}&deg; | V3: ${"%.1f".format(angV3)}&deg; | CPP: ${"%.1f".format(angCpp)}&deg;")
@@ -1947,13 +1993,14 @@ private fun buildHtmlRowDynamic(
     if (extraImages.containsKey("hist1")) {
         appendLine("<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${extraImages["hist1"]}'><br><small>Before Hist (Yellow=Stretch, Magenta=80%)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${extraImages["hist2"]}'><br><small>After Hist (Cyan=Original 80%)</small></td></tr></table>")
     }
-    appendLine("</td>")
+    appendLine("</div></td>")
 
     val winnerRef = cachedRefs.find { it.vehicle.name == winnerName }; val vRes = winnerRef?.let { vehicleResults[it.vehicle.id] }
 
     // Aligned Columns (Dynamic per Pipeline)
+    var colIdx = 1
     pipelines.forEach { pipeline ->
-        appendLine("<td>")
+        appendLine("<td data-col=\"$colIdx\">")
         val pathRes = photoResult.pathways[pipeline.key]
         val alignedB64 = pathRes?.deskewedBase64 ?: ""
         if (alignedB64.isNotEmpty()) {
@@ -1962,35 +2009,36 @@ private fun buildHtmlRowDynamic(
                 val s = trace.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
                 val tx = trace.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
                 val ty = trace.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
-                appendLine("<small>Native Warp (Cubic)<br>Scale: %.3f<br>TX: %.1f, TY: %.1f<br>Time: ${trace.timeMs}ms</small>".format(s, tx, ty))
+                appendLine("<div class='dump-details'><small>Native Warp (Cubic)<br>Scale: %.3f<br>TX: %.1f, TY: %.1f<br>Time: ${trace.timeMs}ms</small></div>".format(s, tx, ty))
             }
         } else {
             appendLine("<i>Not Aligned</i>")
         }
         appendLine("</td>")
+        colIdx++
     }
 
     val allReadings = mutableListOf<String>()
     harnessEngines.forEach { engine ->
-        appendLine("<td>")
-        // Check harness results across all paths
+        appendLine("<td data-col=\"$colIdx\">")
         val hRes = vRes?.pathResults?.values?.firstNotNullOfOrNull { it.harnessResults[engine] }
         if (hRes != null) {
-            appendLine("<b>Time:</b> ${hRes.totalTimeMs}ms<br>")
+            appendLine("<div class='dump-details'><b>Time:</b> ${hRes.totalTimeMs}ms<br></div>")
             appendLine(hRes.htmlCell)
         } else {
             appendLine("<i>No harness data</i>")
         }
         appendLine("</td>")
+        colIdx++
     }
 
     strategies.forEach { strat ->
-        appendLine("<td>")
+        appendLine("<td data-col=\"$colIdx\">")
         if (vRes != null) {
             // Check refinement traces across all paths (Take first one for now)
             val trace = vRes.pathResults.values.firstNotNullOfOrNull { it.refinementTraces[strat] }
             if (trace != null) {
-                appendLine("<b>Time:</b> ${trace.timeMs}ms<br>")
+                appendLine("<div class='dump-details'><b>Time:</b> ${trace.timeMs}ms<br></div>")
                 trace.steps.forEach { step ->
                     if (step.text?.isNotBlank() == true) allReadings.add(step.text)
 
@@ -2033,9 +2081,10 @@ private fun buildHtmlRowDynamic(
             } else appendLine("<i>No refinement data</i>")
         } else appendLine("<i>No refinement data</i>")
         appendLine("</td>")
+        colIdx++
     }
 
-    appendLine("<td><b>Winner:</b> $winnerName<br><br><b>Consensus:</b><br>")
+    appendLine("<td data-col=\"$colIdx\"><b>Winner:</b> $winnerName<br><br><b>Consensus:</b><br>")
     val freq = allReadings.groupBy { it }.mapValues { it.value.size }.toList().sortedByDescending { it.second }
     freq.forEach { (text, count) -> appendLine("<b>$text</b> ($count/48)<br>") }
     appendLine("</td></tr>")
@@ -2291,8 +2340,9 @@ internal suspend fun runPaddleValleyIterative(
         when (masterBuffer) {
             is BufferSet -> {
                 odoBuffer.p.clear()
-                val interp = if (masterBuffer.c[winnerRef.vehicle.id].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-                org.opencv.imgproc.Imgproc.resize(masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+                RecBufferFeed.scaleCropToFitBuffer(
+                    masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat,
+                )
             }
         }
 
@@ -2338,31 +2388,36 @@ internal suspend fun runPaddleValleyIterative(
         }
 
         if (stage != "Bin" && stage != "Bin-Trials") {
-            val detSc = minOf(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
-        val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
-        val fh = (odoBuffer.p.mat.rows() * detSc).toInt().coerceAtMost(128)
-
-        val detCropId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
-        org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[detCropId].mat, experimentDetSet512x128.c[detCropId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-        val detRes = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
+            val dest = NativePaddleEngine.square608
+            val S = dest.width
+            val srcW = odoBuffer.p.mat.cols()
+            val srcH = odoBuffer.p.mat.rows()
+            val currentLong = maxOf(srcW, srcH)
+            val packScale = if (currentLong <= S) 1.0f else S.toFloat() / currentLong
+            val innerW = (srcW * packScale).toInt().coerceAtLeast(1)
+            val innerH = (srcH * packScale).toInt().coerceAtLeast(1)
+            NativeImageUtils.scalePackedU8(
+                odoBuffer.p.mat, (dest.s as BufferSet.Instance).tensorBindRaw(), S, innerW, innerH,
+            )
+        val detRes = paddleEngine.detect(dest, S, S, copyHeatmap = false)
         val rawB = if (detRes != null) {
-            val invScale = 1.0f / detSc
+            val invScaleX = srcW.toFloat() / innerW
+            val invScaleY = srcH.toFloat() / innerH
             detRes.nativeBoxes.map { box ->
                 val points = box.points
-                val minX = Math.floor((minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 8.0) * invScale.toDouble()).toInt()
-                val minY = Math.floor((minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 8.0) * invScale.toDouble()).toInt()
-                val maxX = Math.ceil((maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 8.0) * invScale.toDouble()).toInt()
-                val maxY = Math.ceil((maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 8.0) * invScale.toDouble()).toInt()
+                val minX = Math.floor((minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 8.0) * invScaleX.toDouble()).toInt()
+                val minY = Math.floor((minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 8.0) * invScaleY.toDouble()).toInt()
+                val maxX = Math.ceil((maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 8.0) * invScaleX.toDouble()).toInt()
+                val maxY = Math.ceil((maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 8.0) * invScaleY.toDouble()).toInt()
                 val bounds = android.graphics.Rect(minX, minY, maxX, maxY)
                 val scaledPoints = FloatArray(8)
                 for (i in 0 until 8) {
-                    scaledPoints[i] = points[i] * invScale
+                    scaledPoints[i] = points[i] * if (i % 2 == 0) invScaleX else invScaleY
                 }
                 val angle = 0f
                 TextBlock("", bounds, angle, confidence = box.confidence)
             }
         } else emptyList<TextBlock>()
-        experimentDetSet512x128.c[detCropId].release()
 
         // Red → orange expand by column axis:
         //   char-aware (J/O) | P INTERIOR_ENERGY+jump (L/N) | valley (V/W)
@@ -2410,7 +2465,6 @@ internal suspend fun runPaddleValleyIterative(
             usesCharAwareExpand(pipelineKey) -> jMeta.addProperty("content_expand_mode", "char_aware")
             usesValleyExpand(pipelineKey) -> jMeta.addProperty("content_expand_mode", "valley")
         }
-        if (usesV4MobileDet(pipelineKey)) jMeta.addProperty("det_model", "PP-OCRv4_mobile_det")
         jMeta.addProperty(
             "bin_selection",
             "PreferLen${OdometerTracking.digitCount(winnerRef.vehicle)}->Mean(+tailStrip)",
@@ -2427,36 +2481,37 @@ internal suspend fun runPaddleValleyIterative(
             val sT = box.top.coerceIn(0, odoBuffer.p.mat.rows() - 1)
             val sR = box.right.coerceIn(sL + 1, odoBuffer.p.mat.cols())
             val sB = box.bottom.coerceIn(sT + 1, odoBuffer.p.mat.rows())
-            val (rScMeta, padMeta) = feedOdoRoiToRecBuffer(
+            val fed = feedOdoRoiToRecBuffer(
                 odoBuffer.p.mat,
                 sL, sT, sR, sB,
                 experimentRecSet320x48,
                 useSourceBorder = usesSourceBorderRec(pipelineKey),
             )
-            jMeta.addProperty("rec_scale_$bIdx", "%.4f".format(rScMeta))
-            jMeta.addProperty("rec_src_pad_px_$bIdx", padMeta)
+            jMeta.addProperty("rec_scale_$bIdx", "%.4f".format(fed.contentScale))
+            jMeta.addProperty("rec_src_pad_px_$bIdx", fed.sourcePadPx)
             jMeta.addProperty(
                 "rec_feed",
                 if (usesSourceBorderRec(pipelineKey)) "source_border" else "black_pad_4px",
             )
 
-            // Exact rec buffer fed to recognizeNumeric.
+            // Exact rec slice fed to recognizeNumeric (not the unused 4096 canvas).
             val (recB64, _) = OcrUtils.takeSnapshot(
-                experimentRecSet320x48.p, null,
-                experimentRecSet320x48.p.width, experimentRecSet320x48.p.height,
+                experimentRecSet320x48.c[fed.recCropId], null,
+                fed.targetW, fed.targetH,
                 emptyList(), null, experimentRecSet320x48,
             )
             if (recB64.isNotEmpty()) jMeta.addProperty("ocr_rec_thumb_$bIdx", recB64)
 
-            val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
+            val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.c[fed.recCropId])
+            experimentRecSet320x48.c[fed.recCropId].release()
             if (ocrR.debugText.isNotBlank()) { odoB.append(ocrR.debugText).append(" "); fBoxes.add(box) }
             ocrR.metadata.forEach { (k, v) -> jMeta.addProperty("${k}_${bIdx}", v) }
             }
 
             currentOdoStr = odoB.toString().trim()
             val anns = mutableListOf<SnapshotAnnotation>()
-            rawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, Color.RED, 2)) }
-            fBoxes.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) }
+            rawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, AnnYuv.RED, 2)) }
+            fBoxes.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, AnnYuv.ORANGE, 2)) }
 
             val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
             currentThumb = sB64
@@ -2501,7 +2556,7 @@ internal suspend fun runPaddleValleyIterative(
             htmlOutput.append("$histImg$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
         } else {
             val thumbImg = if (lastThumb.isNotEmpty()) "<img src='data:image/jpeg;base64,$lastThumb'>" else ""
-            // Exact 320×48 rec buffers sent to recognizeNumeric (Raw: ocr_rec_thumb_*; Bin: trial_*_ocr_rec_thumb_*).
+            // Rec slices sent to recognizeNumeric (Raw: ocr_rec_thumb_*; Bin: trial_*_ocr_rec_thumb_*).
             val recBufHtml = buildString {
                 val recKeys = stageMeta.keys.filter {
                     it.startsWith("ocr_rec_thumb_") || it.contains("ocr_rec_thumb_")

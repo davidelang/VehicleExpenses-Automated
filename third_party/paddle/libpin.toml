@@ -9,21 +9,22 @@ track_branch = "pr-x86-android-mobile-gap"
 reproducible = false
 build_time = "few_hours"
 requires_writable_src = false
-build = ["./build"]
-consumer_note = "Docker NDK r28c: patches/ + patches-int8. arm64 tailor+fp16; armv7 tailor+int8 (fp32 calib, no arm82 fp16); x86 slim thin-jni+light (x86 LITE_BUILD_TAILOR drops KernelRegistrar — do not auto-tailor x86 yet). Tailor inputs: fetch-deps ro paddle-models. get-artifacts → artifact/ + app jniLibs."
+build = ["./build", "./build-opt"]
+consumer_note = "Docker NDK r28c: patches/ + patches-int8. arm64 tailor+fp16; armv7 tailor+int8 (fp32 calib, no arm82 fp16); x86 slim thin-jni+light (x86 LITE_BUILD_TAILOR drops KernelRegistrar — do not auto-tailor x86 yet). Tailor inputs: fetch-deps ro paddle-models. get-artifacts → artifact/ + app jniLibs. ./build-opt: host linux-x86_64 opt (same overlays) → artifact/linux-x86_64/opt_linux_x86_current for scripts/reopt-product-models.sh."
 
 # --- pin-local stable names (multi-consumer / audit; independent of promote rows) ---
-# arm64+x86: restored to b8449343 pin ship (First-10-good: L1 cost 84.50). NDK r28c rebuild had regressed heatmaps.
+# arm64: r28c product-FP + HWCAP + SetRunMode harden + per-TU SVE2 (2026-08-27). One arm64 JNI.
+# x86_64 light only: DirectConv ReInitWhenNeeded re-JIT on rec W hop (2026-08-18). jni + armv7 unchanged this turn.
 # armv7: keep branch tailor products (fp32 calib path).
 [[artifact]]
 from = "src/bin/arm64-v8a/libpaddle_lite_jni.so"
 path = "artifact/jni/arm64-v8a/libpaddle_lite_jni.so"
-sha256 = "0334a8c864b491052f47870900537408db3508d9e909438998c7d79afb0c762a"
+sha256 = "2264946fc2a2f5a5a077b5952523454875d8eb2c2d880a122adcadc7843de657"
 
 [[artifact]]
 from = "src/bin/arm64-v8a/libpaddle_light_api_shared.so"
 path = "artifact/jni/arm64-v8a/libpaddle_light_api_shared.so"
-sha256 = "96fbc6a55468d7042d57f427b21aa2427af58ecbad20dadf4c7df921ac03f8d7"
+sha256 = "9b16fe8b6565fbfd667311a8c7ac019d7a9ab37f3aac51aee3a57445496b4e7a"
 
 [[artifact]]
 from = "src/bin/armeabi-v7a/libpaddle_lite_jni.so"
@@ -43,23 +44,29 @@ sha256 = "09b58ad0368274fc4d4429cfbf78432b9b42e30b917e2293c0a00a492870982e"
 [[artifact]]
 from = "src/bin/x86_64/libpaddle_light_api_shared.so"
 path = "artifact/jni/x86_64/libpaddle_light_api_shared.so"
-sha256 = "ebff745447ab9262100b126582274a5062cf6af97ed49df70b1bcf9034655388"
+sha256 = "fbc87854c13d9d939d2e2763d53cdcade6481b9f3f03f7e44821d76424b79c0a"
 
 [[artifact]]
 from = "src/bin/PaddlePredictor.jar"
 path = "artifact/PaddlePredictor.jar"
 sha256 = "8b71ac436ad1607c78088123f45a4f46c7416be205c0f4e544d68fadb19dfe6d"
 
+# --- host model optimizer (build step ./build-opt; consumed by scripts/reopt-product-models.sh) ---
+# No sha256: reproducible = false; build-opt gates on the analytic/output-calib passes instead.
+[[artifact]]
+from = "src/bin/linux-x86_64/opt"
+path = "artifact/linux-x86_64/opt_linux_x86_current"
+
 # --- VE app promote (same from, independent sections) ---
 [[artifact]]
 from = "src/bin/arm64-v8a/libpaddle_lite_jni.so"
 path = "app/src/main/jniLibs/arm64-v8a/libpaddle_lite_jni.so"
-sha256 = "0334a8c864b491052f47870900537408db3508d9e909438998c7d79afb0c762a"
+sha256 = "2264946fc2a2f5a5a077b5952523454875d8eb2c2d880a122adcadc7843de657"
 
 [[artifact]]
 from = "src/bin/arm64-v8a/libpaddle_light_api_shared.so"
 path = "app/src/main/jniLibs/arm64-v8a/libpaddle_light_api_shared.so"
-sha256 = "96fbc6a55468d7042d57f427b21aa2427af58ecbad20dadf4c7df921ac03f8d7"
+sha256 = "9b16fe8b6565fbfd667311a8c7ac019d7a9ab37f3aac51aee3a57445496b4e7a"
 
 [[artifact]]
 from = "src/bin/armeabi-v7a/libpaddle_lite_jni.so"
@@ -79,7 +86,7 @@ sha256 = "09b58ad0368274fc4d4429cfbf78432b9b42e30b917e2293c0a00a492870982e"
 [[artifact]]
 from = "src/bin/x86_64/libpaddle_light_api_shared.so"
 path = "app/src/main/jniLibs/x86_64/libpaddle_light_api_shared.so"
-sha256 = "ebff745447ab9262100b126582274a5062cf6af97ed49df70b1bcf9034655388"
+sha256 = "fbc87854c13d9d939d2e2763d53cdcade6481b9f3f03f7e44821d76424b79c0a"
 
 [[artifact]]
 from = "src/bin/PaddlePredictor.jar"

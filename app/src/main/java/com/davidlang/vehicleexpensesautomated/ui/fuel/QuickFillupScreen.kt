@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.fuel
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.util.Log
 import android.widget.Toast
 import androidx.camera.core.ImageCapture
@@ -42,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -168,6 +170,45 @@ private fun saveBitmapToDcimCamera(context: android.content.Context, bitmap: Bit
     }
 }
 
+/** Pump onError fallback: write already-encoded JPEG bytes into DCIM/Camera. */
+private fun saveJpegBytesToDcimCamera(context: android.content.Context, jpeg: ByteArray): android.net.Uri? {
+    if (jpeg.isEmpty()) return null
+    return try {
+        val resolver = context.contentResolver
+        val contentValues = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "fuel_${System.currentTimeMillis()}.jpg")
+            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                put(
+                    android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+                    android.os.Environment.DIRECTORY_DCIM + "/Camera"
+                )
+                put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+        }
+        val uri = resolver.insert(
+            android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            contentValues
+        ) ?: return null
+        resolver.openOutputStream(uri)?.use { out ->
+            out.write(jpeg)
+        } ?: run {
+            resolver.delete(uri, null, null)
+            return null
+        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            val done = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
+            }
+            resolver.update(uri, done, null, null)
+        }
+        uri
+    } catch (e: Exception) {
+        Log.e("QuickFill", "Fallback DCIM/Camera JPEG save failed", e)
+        null
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuickFillupScreen(
@@ -290,6 +331,8 @@ fun QuickFillupScreen(
     var captureViewState by rememberSaveable { mutableStateOf(CaptureViewState.Live) }
     var capturePending by remember { mutableStateOf(false) }
     var displayBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    val pumpOriginalJpeg = remember { mutableStateOf(ByteArray(0)) }
+    var pumpViewRotation by remember { mutableIntStateOf(0) }
     val isProcessing = captureViewState == CaptureViewState.Processing
     val hasResults = captureViewState == CaptureViewState.Results
     var stageLabel by remember { mutableStateOf("") }
@@ -546,7 +589,9 @@ fun QuickFillupScreen(
                 Image(
                     bitmap = displayBitmap!!.asImageBitmap(),
                     contentDescription = "Odometer Crop",
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().graphicsLayer {
+                        if (captureMode != "odo") rotationZ = pumpViewRotation.toFloat()
+                    },
                     contentScale = ContentScale.Fit
                 )
                 if (isProcessing && captureMode != "pump") {
@@ -609,6 +654,8 @@ fun QuickFillupScreen(
                                         val lastByVehicle = vehicles.associate { v ->
                                             v.id to fuelViewModel.getLastOdometerForVehicle(v.id)
                                         }
+                                        var originalBmp: Bitmap? = null
+                                        var deskewedBmp: Bitmap? = null
                                         val result = OcrHarness.runAutoFillPipeline(
                                             context = context,
                                             masterBuffer = bufferSet,
@@ -616,6 +663,10 @@ fun QuickFillupScreen(
                                             debug = debugMode,
                                             cameraRotationDegrees = rotation,
                                             onStage = { stage, bmp ->
+                                                when (stage) {
+                                                    "Original" -> originalBmp = bmp
+                                                    "Deskewed" -> deskewedBmp = bmp
+                                                }
                                                 scope.launch(Dispatchers.Main) {
                                                     stageLabel = stage
                                                     displayBitmap = bmp
@@ -655,6 +706,10 @@ fun QuickFillupScreen(
                                             if (debugMode && result.debugJson != null) {
                                                 val vId = result.vehicleId ?: selectedVehicleId
                                                 val vName = vehicles.find { it.id == vId }?.name
+                                                val sidecars = buildMap<String, Bitmap> {
+                                                    originalBmp?.let { put("original.jpg", it) }
+                                                    deskewedBmp?.let { put("deskewed.jpg", it) }
+                                                }
                                                 scope.launch(Dispatchers.IO) {
                                                     QuickFillDebugStore.saveSession(
                                                         context = context,
@@ -664,6 +719,7 @@ fun QuickFillupScreen(
                                                         vehicleName = vName,
                                                         odometer = result.odometer,
                                                         error = result.error,
+                                                        extraJpegBitmaps = sidecars,
                                                     )
                                                 }
                                             }
@@ -686,19 +742,33 @@ fun QuickFillupScreen(
                             } else {
                                 scope.launch(Dispatchers.Default) {
                                     try {
+                                        val viewRotation = rotation
+                                        withContext(Dispatchers.Main) {
+                                            pumpViewRotation = viewRotation
+                                        }
+                                        var originalJpeg = ByteArray(0)
+                                        var discoveryJpeg = ByteArray(0)
+                                        var finalJpeg = ByteArray(0)
                                         val result = OcrHarness.runPumpCostVolPipeline(
                                             context = context,
                                             masterBuffer = bufferSet,
                                             debug = debugMode,
-                                            cameraRotationDegrees = rotation,
-                                            onStage = { stage, bmp ->
-                                                if (stage == "final") {
-                                                    withContext(Dispatchers.Main) {
-                                                        displayBitmap = bmp
+                                            onStage = { stage, jpeg ->
+                                                when (stage) {
+                                                    "original" -> {
+                                                        originalJpeg = jpeg
+                                                        withContext(Dispatchers.Main) {
+                                                            pumpOriginalJpeg.value = jpeg
+                                                        }
                                                     }
-                                                } else {
-                                                    scope.launch(Dispatchers.Main) {
-                                                        displayBitmap = bmp
+                                                    "discovery", "final" -> {
+                                                        if (stage == "discovery") discoveryJpeg = jpeg else finalJpeg = jpeg
+                                                        val bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
+                                                        if (bmp != null) {
+                                                            withContext(Dispatchers.Main) {
+                                                                displayBitmap = bmp
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -723,8 +793,13 @@ fun QuickFillupScreen(
                                             if (debugMode && result.debugJson != null) {
                                                 val vId = selectedVehicleId
                                                 val vName = vehicles.find { it.id == vId }?.name
+                                                val jpegSidecars = buildMap<String, ByteArray> {
+                                                    if (originalJpeg.isNotEmpty()) put("original.jpg", originalJpeg)
+                                                    if (discoveryJpeg.isNotEmpty()) put("discovery.jpg", discoveryJpeg)
+                                                    if (finalJpeg.isNotEmpty()) put("final.jpg", finalJpeg)
+                                                }
                                                 scope.launch(Dispatchers.IO) {
-                                                    QuickFillDebugStore.saveSession(
+                                                    val dir = QuickFillDebugStore.saveSession(
                                                         context = context,
                                                         mode = "pump",
                                                         debugJson = result.debugJson,
@@ -733,7 +808,19 @@ fun QuickFillupScreen(
                                                         cost = result.cost,
                                                         volume = result.volume,
                                                         error = result.error,
+                                                        extraJpegBytes = jpegSidecars,
                                                     )
+                                                    for (name in listOf("original.jpg", "discovery.jpg", "final.jpg")) {
+                                                        val f = File(dir, name)
+                                                        if (f.isFile) {
+                                                            PhotoExifWriter.writeGpsAndOrientation(
+                                                                context,
+                                                                f.absolutePath,
+                                                                null,
+                                                                viewRotation,
+                                                            )
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -1344,6 +1431,7 @@ fun QuickFillupScreen(
 
     val onShutterClick = {
         lastCaptureType = captureMode
+        pumpOriginalJpeg.value = ByteArray(0)
         captureViewState = CaptureViewState.Processing
         capturePending = true
         // Do not clear other tags' session photos on shutter; re-shot tag is replaced on success.
@@ -1438,9 +1526,11 @@ fun QuickFillupScreen(
                         }
                         override fun onError(exception: ImageCaptureException) {
                             android.util.Log.e("QuickFill", "Photo capture failed", exception)
-                            // Optional reliability: one fallback JPEG encode of last analysis/display frame.
+                            val pumpBytes = if (photoTag == "pump") pumpOriginalJpeg.value else ByteArray(0)
                             val fallbackBmp = displayBitmap
-                            val fallbackUri = if (fallbackBmp != null && !fallbackBmp.isRecycled) {
+                            val fallbackUri = if (pumpBytes.isNotEmpty()) {
+                                saveJpegBytesToDcimCamera(context, pumpBytes)
+                            } else if (fallbackBmp != null && !fallbackBmp.isRecycled) {
                                 saveBitmapToDcimCamera(context, fallbackBmp)
                             } else {
                                 null

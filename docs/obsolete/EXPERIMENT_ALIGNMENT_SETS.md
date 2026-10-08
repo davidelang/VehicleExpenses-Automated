@@ -27,6 +27,8 @@ Shared on **all** columns (face digits only — no rollover timeline in experime
 | `set_n` | Set N (v4+P-expand) | PP-OCRv4_mobile_det | P |
 | `set_w` | Set W (v4+valley) | PP-OCRv4_mobile_det | valley |
 
+**O/N/W dropped with v4** (tag `obsolete-p4-p5-det`, 2026-08-24/25): see `DROP_P4_P5_DET.md`. Alignment pipelines after that tag are J/L/V only.
+
 Dropped as redundant after shared fixes: `set_k` (old P+legacy bin sel), `set_m` (old v4+P without full shared stack).
 
 1. Shared deskew + silent mlAngle vehicle-ID lock (no pathways set_a).

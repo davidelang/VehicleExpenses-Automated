@@ -42,8 +42,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     ) {
         /** Deskew / Hough angle from tensor or tiled host heat. */
         fun deskewAngleCpp(threshold: Float = 0.20f): Float {
-            outputTensor?.let { return NativeImageUtils.heatmapToAngle(it, threshold) }
-            heatU8?.let { return NativeImageUtils.heatmapToAngleU8(it, width, height, threshold) }
+            val scratch = bufferSetA.s.mat
+            outputTensor?.let { return NativeImageUtils.heatmapToAngle(it, threshold, scratch) }
+            heatU8?.let {
+                return NativeImageUtils.heatmapToAngleU8(it, width, height, threshold, scratch)
+            }
             return 0f
         }
     }
@@ -65,19 +68,18 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         private var isNativeLibLoaded = false
         private val dictionaryV3 = mutableListOf<String>()
+        @Volatile private var warnedRecClassCount = false
 
         // Constrained argmax index sets for numeric recognition (1-based; 0 = CTC blank)
         // Indices into en_dict.txt: 1-10 = "0"-"9", 93 = "."
         val ALLOWED_DIGITS: Set<Int> = (1..10).toSet()
         val ALLOWED_DIGITS_DECIMAL: Set<Int> = (1..10).toSet() + setOf(93)
 
-        // Det predictors: one Lite instance per square tier (weights + activation pool).
-        // Heatmap-stage A/B 2026-08-09: **full-square 2048** (useTiledLargeDet=false) so we can
-        // compare heat/CRC/t_det_ms against the prior tiled gallery (det_mode=tiled_3x3_1024).
-        // When useTiledLargeDet=true: maxEdge>1024 uses 3×3×1024 max-merge (no 2048 predictor).
+        // Det predictors: one Lite instance per standing square (256 + 608). Same det.nb,
+        // resized input. 224 letterbox packs into the 256 set. 2048/4096 are canvases only.
         // Multi-scale experiment uses its own MonoDetPredictor, not this map.
         // Must stay inside det opt dynamic range (currently mono 64…4096).
-        val TIER_SCALES = listOf(224, 608, 1024, 2048)
+        val TIER_SCALES = listOf(256, 608)
         /** Outer letterbox side when content long-edge exceeds max single-tier / tiled outer. */
         const val DET_LARGE_OUTER = 2048
         const val DET_TILE = 1024
@@ -92,10 +94,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedTiers = mutableMapOf<Int, PaddlePredictor>()
         val sharedTierBuffers = mutableMapOf<Int, FloatArray>()
         val sharedTiersInt8 = mutableMapOf<Int, ByteArray>()
-        /** QF G4 det only. Never swap [sharedTiers] (odo + experiment stay on product). */
-        val g4Tiers = mutableMapOf<Int, PaddlePredictor>()
-        val g4TiersInt8 = mutableMapOf<Int, ByteArray>()
-        const val G4_DET_ASSET_BASE = "PP-OCRv4_mobile_det"
         /** Host letterbox + max-merged heat for tiled large det (not Lite tensors). */
         private var largeDetCanvasU8: ByteArray? = null
         private var largeDetHeatU8: ByteArray? = null
@@ -205,62 +203,17 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             // Drop large host buffers so next load reallocates clean sizes for the path.
             sharedTierBuffers.clear()
             sharedTiersInt8.clear()
-            val g4 = g4Tiers.toMap()
-            g4Tiers.clear()
-            for ((scale, pred) in g4) {
-                releasePredictor(pred, "g4_det_tier_$scale")
-            }
-            g4TiersInt8.clear()
             largeDetCanvasU8 = null
             largeDetHeatU8 = null
             System.gc()
-        }
-
-        /**
-         * Lazy-load v4 mobile det into [g4Tiers] without touching [sharedTiers] or
-         * [activeProductPathId]. Returns false if the ABI asset is missing (e.g. armv7).
-         */
-        @Synchronized
-        fun ensureG4DetTiers(context: Context): Boolean {
-            if (g4Tiers.isNotEmpty() && TIER_SCALES.all { g4Tiers.containsKey(it) }) return true
-            val arch = modelArchForPrimaryAbi()
-            val asset = "paddle/exp_det_ab/${G4_DET_ASSET_BASE}_$arch.nb"
-            try {
-                context.assets.open(asset).close()
-            } catch (_: Throwable) {
-                Log.w("PaddleLite", "ensureG4DetTiers: no asset $asset — QF will use product det")
-                return false
-            }
-            val f = File(context.filesDir, "g4_" + asset.replace("/", "_"))
-            context.assets.open(asset).use { inp -> FileOutputStream(f).use { out -> inp.copyTo(out) } }
-            val detPath = f.absolutePath
-            Log.i("PaddleLite", "ensureG4DetTiers arch=$arch → $detPath")
-            for ((scale, p) in g4Tiers.toList()) {
-                releasePredictor(p, "g4_reload_$scale")
-                g4Tiers.remove(scale)
-            }
-            g4TiersInt8.clear()
-            val config = MobileConfig()
-            // Match pin-era First 10 goldens (b8449343): threads=4. threads=1 did not restore
-            // L1 cost 84.50 and reduced heatmap mass further in A/B on emu-5554.
-            config.setThreads(4)
-            config.setPowerMode(PowerMode.LITE_POWER_HIGH)
-            TIER_SCALES.forEach { scale ->
-                config.setModelFromFile(detPath)
-                val p = PaddlePredictor.createPaddlePredictor(config)
-                    ?: throw IllegalStateException("createPaddlePredictor G4 det null scale=$scale")
-                p.getInput(0).resize(longArrayOf(1, 1, scale.toLong(), scale.toLong()))
-                g4Tiers[scale] = p
-                g4TiersInt8[scale] = ByteArray(1 * scale * scale)
-            }
-            return true
         }
 
         // Phase 116: Unified Rigid Backing Fields
         private var _bufferSetA: BufferSet? = null
         private var _bufferSetB: BufferSet? = null
         private var _deskewBufferSetLarge: BufferSet? = null
-        private var _detBufferSet: BufferSet? = null
+        private var _square256: BufferSet? = null
+        private var _square608: BufferSet? = null
         private var _recBufferSet: BufferSet? = null
         private val vehicleOdoBuffers = mutableMapOf<Int, BufferSet>()
         private var _bufferLarge: FloatArray? = null
@@ -286,7 +239,18 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val bufferSetA: BufferSet get() = _bufferSetA!!
         val bufferSetB: BufferSet get() = _bufferSetB!!
         val deskewBufferSetLarge: BufferSet get() = _deskewBufferSetLarge!!
-        val detBufferSet: BufferSet get() = _detBufferSet!!
+        val square256: BufferSet get() = _square256!!
+        val square608: BufferSet get() = _square608!!
+        /** Odo/product 608² square. Replaces 512×128. */
+        val detBufferSet: BufferSet get() = square608
+
+        /**
+         * Standing square for packed deskew/det letterbox.
+         * 224 and 256 → 256²; anything larger → 608². 2048 canvas is not a det square.
+         */
+        fun deskewSetFor(longEdge: Int): BufferSet {
+            return if (longEdge <= 256) square256 else square608
+        }
         val recBufferSet: BufferSet get() = _recBufferSet!!
         private val bufferLarge: FloatArray get() = _bufferLarge!!
         val sharedBmp2048: Bitmap get() = _sharedBmp2048!!
@@ -306,6 +270,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedBuffer: java.nio.ByteBuffer get() = _sharedBuffer!!
         val sharedBytes: ByteArray get() = _sharedBytes!!
         val sharedMatrix = android.graphics.Matrix()
+
+        /** One rec canvas everywhere. Engine infers a createCrop slice, not the unused width. */
+        const val REC_CANVAS_W = 4096
+        const val REC_CANVAS_H = 48
 
         /** Default reference dash size when probe fails (matches shared buffer / typical 12MP refs). Not 4000. */
         const val DEFAULT_REF_DASH_W = 4080
@@ -392,17 +360,17 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             _deskewBufferSetLarge!!.p.clearChroma()
             _deskewBufferSetLarge!!.s.clearChroma()
 
-            _detBufferSet = BufferSet(512, 128)
-            _recBufferSet = BufferSet(320, 48)
+            _square256 = BufferSet(256, 256)
+            _square608 = BufferSet(608, 608)
+            _recBufferSet = BufferSet(REC_CANVAS_W, REC_CANVAS_H)
 
             _bufferLarge = FloatArray(1 * 2048 * 2048) // Native is now exclusively 1-channel (Mono)
             _sharedBmp2048 = Bitmap.createBitmap(2048, 2048, Bitmap.Config.ALPHA_8); _sharedCanvas2048 = Canvas(_sharedBmp2048!!)
 
             _bufferSmall = FloatArray(1 * 512 * 128)
-            _bufferRec = FloatArray(1 * 320 * 48)
-            // Exact numel for Tensor.setData(byte[]): JNI requires length == product(shape).
-            // (Pad was only needed for ShareExternal + unpatched int8_to_fp32 overread.)
-            _bufferRecInt8 = ByteArray(1 * 320 * 48)
+            _bufferRec = FloatArray(1 * REC_CANVAS_W * REC_CANVAS_H)
+            // Capacity for a full canvas; processOcr* feeds a w×h prefix after tensor resize.
+            _bufferRecInt8 = ByteArray(1 * REC_CANVAS_W * REC_CANVAS_H)
 
             _sharedNv21Buffer = ByteArray(4096 * 4096 * 3 / 2)
             _sharedBmpOdoScratch = Bitmap.createBitmap(512, 128, Bitmap.Config.ARGB_8888); _sharedCanvasOdoScratch = Canvas(_sharedBmpOdoScratch!!)
@@ -444,6 +412,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             context.assets.open(assetPath).bufferedReader().use { reader ->
                 reader.forEachLine { target.add(it) }
             }
+            // Rec models were trained with use_space_char=True: PaddleOCR appends ' ' after the
+            // dict lines, so classes = blank + dict lines + ' ' (dict lines + 2; 97 for en_dict).
+            // en_dict.txt's own trailing ' ' line is never emitted; the model's space is the last
+            // class. Without this the decode's `<= dictionary.size` check drops every space.
+            target.add(" ")
         }
 
         /** Java Tensor.setData returns false on size mismatch (no exception) — fail loud. */
@@ -509,8 +482,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             // MEM A/B 2026-08-09 on 5554: threads=1 vs 4 — first tier=2048 still ~+1.9GB
             // and warm PSS ~3GB; no material RAM win (keep 4 for latency/accuracy).
             config.setThreads(4)
-            config.setPowerMode(PowerMode.LITE_POWER_HIGH)
-            Log.i("PaddleLite", "predictor config threads=4 power=HIGH path=$pathId")
+            config.setPowerMode(PowerMode.LITE_POWER_NO_BIND)
+            Log.i("PaddleLite", "predictor config threads=4 power=NO_BIND path=$pathId")
 
             TIER_SCALES.forEach { scale ->
                 val t0 = System.currentTimeMillis()
@@ -552,10 +525,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
 
         /**
-         * Replace **det tiers only** with an experiment nb (e.g. exp_det_ab PP-OCRv4_mobile_det).
-         * Rec models stay production. Call [restoreProductionDetTiers] after the experiment column.
+         * Replace **det tiers only** with an experiment nb under `exp_det_ab/` (scheduled:
+         * `product_det` only). Rec models stay production. Call [restoreProductionDetTiers]
+         * after the experiment column.
          *
-         * @param assetBase name without arch/`.nb`, e.g. `PP-OCRv4_mobile_det`
+         * @param assetBase name without arch/`.nb`, e.g. `product_det`
          */
         fun loadExperimentDetTiers(context: Context, assetBase: String) {
             val arch = modelArchForPrimaryAbi()
@@ -570,7 +544,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
             val config = MobileConfig()
             config.setThreads(4)
-            config.setPowerMode(PowerMode.LITE_POWER_HIGH)
+            config.setPowerMode(PowerMode.LITE_POWER_NO_BIND)
             TIER_SCALES.forEach { scale ->
                 config.setModelFromFile(detPath)
                 val p = PaddlePredictor.createPaddlePredictor(config)
@@ -598,7 +572,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
             val config = MobileConfig()
             config.setThreads(4)
-            config.setPowerMode(PowerMode.LITE_POWER_HIGH)
+            config.setPowerMode(PowerMode.LITE_POWER_NO_BIND)
             TIER_SCALES.forEach { scale ->
                 config.setModelFromFile(detPath)
                 val p = PaddlePredictor.createPaddlePredictor(config)
@@ -641,15 +615,33 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         hmThresh: Float = 0.0f,
         /** 3x3 mask dilate passes before CC (experiment L/M). 0 = off. */
         maskDilatePasses: Int = 0,
-        /** Null = product [sharedTiers]. QF G4 passes [g4Tiers] / [g4TiersInt8]. */
+        /** Null = product [sharedTiers]. */
         detTiers: Map<Int, PaddlePredictor>? = null,
         detTiersInt8: Map<Int, ByteArray>? = null,
+        /** 0 = no 4×4 cell grow (energy-tight); 1 = production default. */
+        growCells: Int = 1,
+        /** Non-packed: A.s Y. Packed detect ignores this and uses packedSet.s after run(). */
+        scratchY: Mat? = null,
+        heatToPhoto: Float = 0f,
+        photoW: Int = 0,
+        photoH: Int = 0,
     ): DetectionResult? {
+        val heatScratch = scratchY ?: bufferSetA.s.mat
         val tPop0 = System.nanoTime()
-        val w: Int; val h: Int; val srcMat: Mat
-        when (input) {
-            is BufferSet.Slice -> { w = input.width; h = input.height; srcMat = input.mat }
-            is Mat -> { w = targetW ?: input.cols(); h = targetH ?: input.rows(); srcMat = input }
+        val packedSet = input as? BufferSet
+        val w: Int
+        val h: Int
+        val srcMat: Mat?
+        when {
+            packedSet != null -> {
+                val S = max(targetW ?: 0, targetH ?: 0)
+                if (S < 1) throw IllegalArgumentException("detect(BufferSet) needs scale")
+                w = S
+                h = S
+                srcMat = null
+            }
+            input is BufferSet.Slice -> { w = input.width; h = input.height; srcMat = input.mat }
+            input is Mat -> { w = targetW ?: input.cols(); h = targetH ?: input.rows(); srcMat = input }
             else -> throw IllegalArgumentException("Unsupported input type for detect")
         }
         val tiers = detTiers ?: sharedTiers
@@ -659,9 +651,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val maxEdge = max(targetW ?: w, targetH ?: h)
         // Smallest single-tier that fits; if content exceeds max tier and tiling is on → 3×3×1024.
         val singleTier = TIER_SCALES.filter { it >= maxEdge }.minOrNull()
-        if (singleTier == null && useTiledLargeDet) {
+        if (packedSet == null && singleTier == null && useTiledLargeDet) {
             return detectTiledLarge(
-                srcMat = srcMat,
+                srcMat = srcMat!!,
                 contentW = w,
                 contentH = h,
                 tPop0 = tPop0,
@@ -672,14 +664,22 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 maskDilatePasses = maskDilatePasses,
                 detTiers = tiers,
                 detTiersInt8 = tiersInt8,
+                growCells = growCells,
+                scratchY = heatScratch,
+                heatToPhoto = heatToPhoto,
+                photoW = photoW,
+                photoH = photoH,
             )
         }
-        val tierScale = singleTier ?: TIER_SCALES.maxOrNull()!!
+        val tierScale = if (packedSet != null) w else (singleTier ?: TIER_SCALES.maxOrNull()!!)
         heartbeat("det_begin tier=$tierScale ${w}x$h path=$activeProductPathId")
         val predictor = tiers[tierScale] ?: return null
         val int8Data = tiersInt8[tierScale] ?: return null
-        java.util.Arrays.fill(int8Data, 0.toByte())
-        NativeImageUtils.populateMonoUInt8(srcMat, int8Data, tierScale, tierScale)
+        var shareHeld = false
+        if (packedSet == null) {
+            java.util.Arrays.fill(int8Data, 0.toByte())
+            NativeImageUtils.populateMonoUInt8(srcMat!!, int8Data, tierScale, tierScale)
+        }
 
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
@@ -691,7 +691,24 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             try {
                 val tJniIn0 = System.nanoTime()
                 val inputTensor = predictor.getInput(0)
-                requireSetData(inputTensor.setData(int8Data), "det uint8 tier=$tierScale")
+                if (packedSet != null) {
+                    val nbytes = tierScale * tierScale
+                    val raw = (packedSet.s as BufferSet.Instance).tensorBindRaw()
+                    val shareRc = NativeImageUtils.shareTensorInputU8(inputTensor, raw, 0, nbytes)
+                    if (shareRc > 0) {
+                        shareHeld = true
+                    } else {
+                        Log.w("PaddleDetect", "ShareExternal packed S=$tierScale returned 0; setData fallback")
+                        java.util.Arrays.fill(int8Data, 0.toByte())
+                        val dup = raw.duplicate()
+                        dup.clear()
+                        if (dup.remaining() < nbytes || int8Data.size < nbytes) return@withSampling null
+                        dup.get(int8Data, 0, nbytes)
+                        requireSetData(inputTensor.setData(int8Data), "det uint8 packed fallback tier=$tierScale")
+                    }
+                } else {
+                    requireSetData(inputTensor.setData(int8Data), "det uint8 tier=$tierScale")
+                }
                 val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
                 val tInfer0 = System.nanoTime()
@@ -710,8 +727,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 val tNativePost0 = System.nanoTime()
                 heartbeat("det_post tier=$tierScale")
                 // Product u8: thr 0 → on if u8≥1; thr 1/255 → on if u8≥2 (Set K A/B).
+                // Packed: labels live on spent det square .s (S×S = heat h×w), not A.p.
                 val nativeRes = NativeImageUtils.processHeatmap(
                     outputTensor, hmThresh, 10f, boxMode, maskDilatePasses,
+                    growCells = growCells,
+                    scratchY = if (packedSet != null) packedSet.s.mat else heatScratch,
+                    heatToPhoto = heatToPhoto,
+                    photoW = photoW,
+                    photoH = photoH,
                 )
                 val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
                 val heatmapPostPath = NativeImageUtils.lastHeatmapPostPath()
@@ -789,6 +812,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             } catch (t: Throwable) {
                 Log.e("PaddleDetect", "Detection failed", t)
                 null
+            } finally {
+                if (shareHeld) NativeImageUtils.releaseSharedTensorInputU8()
             }
         }
     }
@@ -809,7 +834,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         maskDilatePasses: Int,
         detTiers: Map<Int, PaddlePredictor> = sharedTiers,
         detTiersInt8: Map<Int, ByteArray> = sharedTiersInt8,
+        growCells: Int = 1,
+        scratchY: Mat? = null,
+        heatToPhoto: Float = 0f,
+        photoW: Int = 0,
+        photoH: Int = 0,
     ): DetectionResult? {
+        val heatScratch = scratchY ?: bufferSetA.s.mat
         val outer = DET_LARGE_OUTER
         val tile = DET_TILE
         val stride = DET_TILE_STRIDE
@@ -901,6 +932,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 val tNativePost0 = System.nanoTime()
                 val nativeRes = NativeImageUtils.processHeatmapU8(
                     combined, outer, outer, hmThresh, 10f, boxMode, maskDilatePasses,
+                    growCells = growCells,
+                    scratchY = heatScratch,
+                    heatToPhoto = heatToPhoto,
+                    photoW = photoW,
+                    photoH = photoH,
                 )
                 val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
                 val heatmapPostPath = NativeImageUtils.lastHeatmapPostPath()
@@ -1010,6 +1046,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         heatDumpU8z: java.io.File? = null,
         hmThresh: Float = 0.0f,
         maskDilatePasses: Int = 0,
+        heatToPhoto: Float = 0f,
+        photoW: Int = 0,
+        photoH: Int = 0,
     ): DetectionResult? {
         if (!isAvailable) return null
         val predictor = detectorLarge ?: return null
@@ -1041,6 +1080,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tNativePost0 = System.nanoTime()
             val nativeRes = NativeImageUtils.processHeatmap(
                 outputTensor, hmThresh, 10f, boxMode, maskDilatePasses,
+                scratchY = bufferSetA.s.mat,
+                heatToPhoto = heatToPhoto,
+                photoW = photoW,
+                photoH = photoH,
             )
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
             val heatmapPostPath = NativeImageUtils.lastHeatmapPostPath()
@@ -1113,6 +1156,19 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
     }
 
+    /** Populate a w×h rec tensor (not the unused 4096 canvas). JNI setData length must match shape. */
+    private fun recTensorBytes(srcMat: Mat, w: Int, h: Int): ByteArray {
+        val n = w * h
+        NativeImageUtils.populateMonoUInt8(srcMat, bufferRecInt8, w, h)
+        return if (n == bufferRecInt8.size) bufferRecInt8 else bufferRecInt8.copyOf(n)
+    }
+
+    /** Packed Lite feed. Rec tensor H is 48 only. Does not mutate [srcMat]. */
+    private fun packRecForLite(srcMat: Mat, w: Int, h: Int): Triple<ByteArray, Int, Int>? {
+        if (w > REC_CANVAS_W || w < 1 || h != 48) return null
+        return Triple(recTensorBytes(srcMat, w, h), w, 48)
+    }
+
     private suspend fun processOcr(input: Any, predictor: PaddlePredictor?, dictionary: List<String>): RecStageResult = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         if (predictor == null) return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
@@ -1125,19 +1181,23 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
         heartbeat("rec_v3_begin ${w}x$h path=$activeProductPathId")
 
-        if (w * h > 320 * 48) {
-            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) exceed pre-allocated rec tensor capacity.")
+        val tPop0 = System.nanoTime()
+        val packed = packRecForLite(srcMat, w, h)
+        if (packed == null) {
+            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) not rec H=48 (canvas ${REC_CANVAS_W}x${REC_CANVAS_H}).")
             return@withContext RecStageResult("(Size Error)", 0, 0f, null)
         }
-
-        val tPop0 = System.nanoTime()
-        java.util.Arrays.fill(bufferRecInt8, 0.toByte())
-        NativeImageUtils.populateMonoUInt8(srcMat, bufferRecInt8, 320, 48)
+        val recFeed = packed.first
+        val tw = packed.second
+        val th = packed.third
+        heartbeat("rec_v3_tensor ${tw}x$th (from ${w}x$h)")
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
             val tJniIn0 = System.nanoTime()
-            requireSetData(predictor.getInput(0).setData(bufferRecInt8), "rec_v3 uint8")
+            val inputTensor = predictor.getInput(0)
+            inputTensor.resize(longArrayOf(1, 1, th.toLong(), tw.toLong()))
+            requireSetData(inputTensor.setData(recFeed), "rec_v3 uint8 ${tw}x$th")
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val tInfer0 = System.nanoTime()
@@ -1158,6 +1218,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder(); val probs = StringBuilder(); val perCharProbsBuilder = StringBuilder()
             var lastIdx = -1; var totalConf = 0f; var charCount = 0; var lastConf = 1.0f
+            if (!warnedRecClassCount && dictSize != dictionary.size + 1) {
+                warnedRecClassCount = true
+                Log.w("PaddleOCR", "rec class count $dictSize != dictionary.size+1 (${dictionary.size + 1}); CTC index map (space class) may be wrong")
+            }
 
             for (i in 0 until seqLen) {
                 var maxIdx = 0; var maxVal = -1f; val searchLimit = dictSize
@@ -1170,7 +1234,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 }
                 lastIdx = maxIdx
             }
-            val finalStr = result.toString(); val finalConf = if (charCount > 0) totalConf / charCount else 0f
+            val finalStr = result.toString().trim(); val finalConf = if (charCount > 0) totalConf / charCount else 0f  // full text: drop edge spaces
             return@withContext RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null, mapOf("ocr_probs" to probs.toString()), perCharProbs = perCharProbsBuilder.toString())
         } catch (t: Throwable) {
             return@withContext RecStageResult("(Inference Error)", 0, 0f, null)
@@ -1189,19 +1253,23 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
         heartbeat("rec_num_begin ${w}x$h path=$activeProductPathId")
 
-        if (w * h > 320 * 48) {
-            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) exceed pre-allocated rec tensor capacity.")
+        val tPop0 = System.nanoTime()
+        val packed = packRecForLite(srcMat, w, h)
+        if (packed == null) {
+            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) not rec H=48 (canvas ${REC_CANVAS_W}x${REC_CANVAS_H}).")
             return@withContext RecStageResult("(Size Error)", 0, 0f, null)
         }
-
-        val tPop0 = System.nanoTime()
-        java.util.Arrays.fill(bufferRecInt8, 0.toByte())
-        NativeImageUtils.populateMonoUInt8(srcMat, bufferRecInt8, 320, 48)
+        val recFeed = packed.first
+        val tw = packed.second
+        val th = packed.third
+        heartbeat("rec_num_tensor ${tw}x$th (from ${w}x$h)")
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
             val tJniIn0 = System.nanoTime()
-            requireSetData(predictor.getInput(0).setData(bufferRecInt8), "rec_numeric uint8")
+            val inputTensor = predictor.getInput(0)
+            inputTensor.resize(longArrayOf(1, 1, th.toLong(), tw.toLong()))
+            requireSetData(inputTensor.setData(recFeed), "rec_numeric uint8 ${tw}x$th")
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val tInfer0 = System.nanoTime()
