@@ -229,7 +229,7 @@ FILES=(
     ".gemini/policies/auto-saved.toml"
     ".gemini/system.md"
     ".gemini/system_prompt.md"
-    "GEMINI.md"
+    "ANTIGRAVITY.md"
     # TODO.md is NOT synced. It is per-branch backlog (master product backlog vs
     # orchestration meta). Blind cp from orchestration destroyed master cleanups.
     # Merge via MASTER_AGENT_MANDATE special-file protocol only (todo-append/todo-close).
@@ -238,10 +238,9 @@ FILES=(
     "agent_reminder"
     "new_agent_prompt"
     ".gitignore"
-    "docs/specs/OPERATIONAL_HANDBOOK.md"
     "docs/ENVIRONMENT_SETUP.md"
     "docs/reference/ORCHESTRATION_MERGE_INFRA_SYNC.md"
-    "docs/reference/MERGE_POSTMORTEM_IMPROVE_PUMP_CLASSIFICATION.md"
+    "docs/obsolete/MERGE_POSTMORTEM_IMPROVE_PUMP_CLASSIFICATION.md"
     # New for Grok CLI parallel support (added per approved plan)
     "AGENT_MANDATES.md"
     "AGENTS.md"
@@ -550,10 +549,13 @@ while [ "$_wt_i" -lt "${#WT_PATHS[@]}" ]; do
     # Only the decided COPY_LIST (stamp or full) are touched for this target.
     # Application source content must never be overwritten by infra sync.
     # Primary user/group for ownership after cp (cp creates files owned by the
-    # update-rules runner — often ai-orchestrator — which breaks dlang ./deploy
+    # update-rules runner — often ai-orchestrator — which breaks the primary user's ./deploy
     # when +x is missing or only owner can exec).
     PRIMARY_USER=$(sed -n 's/^primary_user=//p' "$SOURCE_DIR/project.config" 2>/dev/null | tr -d '\r' | head -1)
-    PRIMARY_USER=${PRIMARY_USER:-dlang}
+    if [ -z "$PRIMARY_USER" ]; then
+      echo "ERROR: primary_user is unset in $SOURCE_DIR/project.config" >&2
+      exit 1
+    fi
     CODE_GROUP=$(sed -n 's/^code_group=//p' "$SOURCE_DIR/project.config" 2>/dev/null | tr -d '\r' | head -1)
     CODE_GROUP=${CODE_GROUP:-ai-code}
 

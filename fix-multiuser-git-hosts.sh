@@ -7,7 +7,7 @@
 # DOCUMENTED MODEL (docs/reference/MULTIUSER_GIT_VE_PARITY.md) — not "whatever
 # VE currently has" (VE can drift):
 #   .git and every directory under it:  mode 2770, group ai-shared, setgid
-#   owner typically dlang
+#   owner typically the primary user
 #   core.sharedRepository=group
 #   HEAD/config/packed-refs/refs/logs: group-readable/writable (ug+rw)
 #
@@ -16,7 +16,7 @@
 #   If objects/refs/HEAD/config are group ai-code and mode 660/2770 without
 #   other access, planner gets Permission denied on git log (Unix, not Landlock).
 #
-# Usage (run as dlang; uses sudo for chgrp/chmod of mixed owners):
+# Usage (run as the primary user; uses sudo for chgrp/chmod of mixed owners):
 #   ./fix-multiuser-git-hosts.sh --dry-run
 #   ./fix-multiuser-git-hosts.sh
 #   ./fix-multiuser-git-hosts.sh --audit-only
@@ -27,8 +27,16 @@
 #
 set -uo pipefail
 
-if [[ "$(id -un)" != "dlang" && "$(id -un)" != "root" && "${ALLOW_NON_DLANG:-0}" != "1" ]]; then
-  echo "ERROR: run as dlang (or root with GIT_HOME set). whoami=$(id -un)" >&2
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "${PRIMARY_USER:-}" && -f "$SCRIPT_DIR/project.config" ]]; then
+  PRIMARY_USER=$(sed -n 's/^primary_user=//p' "$SCRIPT_DIR/project.config" | tr -d '\r' | head -1)
+fi
+if [[ -z "${PRIMARY_USER:-}" ]]; then
+  echo "ERROR: primary_user is unset in project.config" >&2
+  exit 1
+fi
+if [[ "$(id -un)" != "$PRIMARY_USER" && "$(id -un)" != "root" && "${ALLOW_NON_PRIMARY:-0}" != "1" ]]; then
+  echo "ERROR: run as $PRIMARY_USER (or root with GIT_HOME set). whoami=$(id -un)" >&2
   exit 1
 fi
 
@@ -53,12 +61,18 @@ if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
   _sh=$(getent passwd "$SUDO_USER" | cut -d: -f6)
   GIT_HOME="${GIT_HOME:-$_sh/git}"
 fi
-GIT_HOME="${GIT_HOME:-/home/dlang/git}"
+if [[ -z "${GIT_HOME:-}" && -f "$SCRIPT_DIR/project.config" ]]; then
+  GIT_HOME=$(sed -n 's/^git_home=//p' "$SCRIPT_DIR/project.config" | tr -d '\r' | head -1)
+fi
+if [[ -z "${GIT_HOME:-}" || "$GIT_HOME" == @@* || "$GIT_HOME" != /* ]]; then
+  echo "ERROR: set GIT_HOME or project.config git_home= to an absolute path" >&2
+  exit 1
+fi
 HOSTS="${HOSTS:-VehicleExpenses-automated remotetable extractmail orchestration-example}"
 
 GIT_GROUP=ai-shared
 DIR_MODE=2770
-PRIMARY_USER="${PRIMARY_USER:-dlang}"
+: "${PRIMARY_USER:?primary_user unset in project.config}"
 
 echo "================================================================"
 echo "fix-multiuser-git-hosts"
@@ -216,7 +230,7 @@ fix_repo() {
     return 1
   fi
 
-  # Owner: prefer dlang on tree (optional; mixed owners ok if group is right)
+  # Owner: prefer the primary user on tree (optional; mixed owners ok if group is right)
   if id "$PRIMARY_USER" &>/dev/null; then
     echo "  sudo chown -R $PRIMARY_USER:$GIT_GROUP $g (best-effort)..."
     sudo chown -R "$PRIMARY_USER:$GIT_GROUP" "$g" 2>/dev/null || \
@@ -265,7 +279,7 @@ done
 echo ""
 echo "================================================================"
 if [[ "$AUDIT_ONLY" -eq 1 ]]; then
-  echo "Audit done (rc=$rc). Fix with: $0   (as dlang, no --audit-only)"
+  echo "Audit done (rc=$rc). Fix with: $0   (as $PRIMARY_USER, no --audit-only)"
 elif [[ "$DRY" -eq 1 ]]; then
   echo "Dry-run done. Apply with: $0"
 else

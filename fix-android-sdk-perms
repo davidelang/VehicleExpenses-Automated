@@ -1,13 +1,14 @@
 #!/bin/bash
 # fix-android-sdk-perms — make Android SDK/NDK readable by multi-user build agents
 #
-# Problem (2026-07-13): NDK sysroot libc++_shared.so files were dlang:dlang 660.
-# ai-coder is not in group dlang → Permission denied during CMake configure.
+# Problem (2026-07-13): NDK sysroot libc++_shared.so files were mode 660 and
+# owned by the primary user's private group. ai-coder is not in that group,
+# so CMake configure got Permission denied.
 # See: dev-ai-interaction/research/ndk-build-permission-failure-ai-coder-20260713.md
 #
-# Run as primary user (dlang), once per machine / after NDK upgrade:
+# Run as the primary user, once per machine / after an NDK upgrade:
 #   ./fix-android-sdk-perms
-#   # or: sudo -u dlang ./fix-android-sdk-perms
+#   # or: sudo -u "$PRIMARY_USER" ./fix-android-sdk-perms
 #
 # Safe: only adds group/other read (+X on dirs). Does not delete or move SDK.
 
@@ -19,20 +20,21 @@ if [ -f "$SCRIPT_DIR/project.config" ]; then
   . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|primary_user)' || true)
 fi
 CODE_GROUP=${code_group:-ai-code}
-PRIMARY_USER=${primary_user:-dlang}
+PRIMARY_USER=${primary_user:-}
+: "${PRIMARY_USER:?primary_user unset in project.config}"
 
 SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
 if [ ! -d "$SDK_ROOT" ]; then
-  # common path when agent HOME is not dlang
-  if [ -d /home/dlang/Android/Sdk ]; then
-    SDK_ROOT=/home/dlang/Android/Sdk
+  # common path when agent HOME is not the primary user's
+  if [ -d "/home/${PRIMARY_USER}/Android/Sdk" ]; then
+    SDK_ROOT="/home/${PRIMARY_USER}/Android/Sdk"
   else
     echo "ERROR: Android SDK not found (set ANDROID_SDK_ROOT or install under ~/Android/Sdk)"
     exit 1
   fi
 fi
 
-if [ "$(id -un)" != "$PRIMARY_USER" ] && [ "$(id -un)" != "dlang" ]; then
+if [ "$(id -un)" != "$PRIMARY_USER" ]; then
   echo "WARN: running as $(id -un); prefer $PRIMARY_USER (owns $SDK_ROOT)"
 fi
 
