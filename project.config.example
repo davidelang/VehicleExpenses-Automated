@@ -29,10 +29,10 @@ git_home=@@GIT_HOME@@
 sandbox_special_paths=plans,historical-plans,implementation-failure-logs,PRs,research
 
 # Prefer sandbox_dir for launchers/generate_pr (generic hosts).
-# VehicleExpenses default: @@SANDBOX_PATH@@
+# VehicleExpenses default: dev-ai-interaction
 # Library hosts default: sandbox
 # Legacy alias still accepted: sandbox_path
-# sandbox_dir=@@SANDBOX_PATH@@
+# sandbox_dir=dev-ai-interaction
 # sandbox_dir=sandbox
 
 # Optional build gate for master-merge on non-Android hosts:

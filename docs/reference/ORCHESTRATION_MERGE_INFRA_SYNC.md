@@ -170,7 +170,7 @@ When touching related files, ensure they agree with this handoff:
 | `MASTER_AGENT_MANDATE.md` | §2 merge strategy (already on backport list). |
 | `project-facts.md` (orchestration orientation) | Update merge driver line: `ve-special-ours` not `ve-special-refuse`; mention `merge-branch-into-master.sh` index-first fallback. |
 | `AGENT_MANDATES.md` | Only if merge/sync prose is duplicated and stale. |
-| `docs/specs/OPERATIONAL_HANDBOOK.md` | Optional one-line pointer to this doc for merge infra ownership. |
+| `AGENT_MANDATES.md` | Agent protocol. `OPERATIONAL_HANDBOOK.md` was removed in the 2026-09 docs pass. |
 
 ## Success criteria
 

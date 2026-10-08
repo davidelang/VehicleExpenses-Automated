@@ -206,6 +206,9 @@ build_policy_list() {
     todo-append
     todo-close
     get-builds-tag.sh
+    reset-to-builds.sh
+    GEMINI.md
+    CLAUDE.md
     setup_agent.sh
     remove_worktree.sh
     agent-landlock
@@ -227,10 +230,11 @@ build_policy_list() {
   for f in "${fixed[@]}"; do
     in_never "$f" && continue
     [[ -f "$VE/$f" ]] || continue
-    # Seed exec-preflight onto dests that do not have it yet.
-    if [[ "$f" != "exec-preflight" ]]; then
-      [[ -f "$dest/$f" ]] || continue
-    fi
+    # Seed files a dest may not have yet.
+    case "$f" in
+      exec-preflight|reset-to-builds.sh|GEMINI.md|CLAUDE.md) ;;
+      *) [[ -f "$dest/$f" ]] || continue ;;
+    esac
     POLICY_FILES+=("$f")
   done
   while IFS= read -r f; do
@@ -383,7 +387,11 @@ for dest in "${DESTS[@]}"; do
       echo "  COPY $f — $REASON"
       if [[ "$APPLY" -eq 1 ]]; then
         mkdir -p "$dest/$(dirname "$f")"
-        cp -f "$VE/$f" "$dest/$f"
+        if [[ -L "$VE/$f" ]]; then
+          cp -P "$VE/$f" "$dest/$f"
+        else
+          cp -f "$VE/$f" "$dest/$f"
+        fi
         if [[ -x "$VE/$f" || "$f" == *.sh || "$f" == run-grok* || "$f" == git-merge-drivers/* || "$f" == agent-landlock ]]; then
           chmod a+x "$dest/$f" 2>/dev/null || true
         fi

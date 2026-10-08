@@ -21,7 +21,7 @@ Cite, do not paste:
 
 - `AGENTS.md` (roles, enabled/disabled skills, VE-wins table)
 - `AGENT_MANDATES.md` §1.1, §2–§3, §3.5a, §10
-- `GROK.md` / `GEMINI.md`
+- `GROK.md` / `ANTIGRAVITY.md`
 - `.grok/lib/grok-launch-common.sh`, `run-grok*`
 - `.grok/config.toml` (`[skills].disabled`, `[permission]`, hooks)
 - `MULTI_AGENT_USER_INSTRUCTIONS.md`
@@ -98,7 +98,7 @@ Current VE **disabled** (keep unless the human opts in): `pr-babysit`,
 
 Enabled project skills today: `prepare-local-pr`, `master-merge`,
 `rebase-on-master`, `review` (local; shadows bundled GitHub `review`),
-`check-upgrade`.
+`check-upgrade`, `validate-plans`.
 
 ### 2. New commands useful in multi-agent / multi-worktree
 
