@@ -43,7 +43,7 @@ To assign a task to a new agent:
 
     # For a dedicated narrow Planning Agent session (direct interaction during planning):
     ../run-grok-planner
-    # (The main orchestrator will have written the narrow prompt to dev-ai-interaction/.planning-agent-prompt.txt)
+    # Prompt is .grok/prompts/packs/planner.pack in this worktree.
 
     # For the top-level Master Orchestrator (coordinates planning via run-grok-planner,
     # spawns and monitors execution sub-agents, intervenes on run-away behavior,

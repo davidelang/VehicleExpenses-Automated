@@ -21,7 +21,7 @@ Read in full early on startup/new cycle.
 - **TODO-linked plans/research:** keep paths referenced by **open** (`- [ ]`) TODO items in `plans/`/`research/`. If the plan is obsolete, **close/eliminate the TODO** then archive. Do not leave open TODOs pointing at dead plans.
 - `@@SANDBOX_PATH@@/implementation-failure-logs/` — scan on planner startup / recovery
 - `@@SANDBOX_PATH@@/PRs/PR-<branch>.md` — local PR docs for Master
-- `@@SANDBOX_PATH@@/.planning-agent-prompt.txt` — optional planner prompt file
+- Planner prompt: `.grok/prompts/packs/planner.pack` in the worktree. Not a sandbox file.
 - Pump BufferSet A/B who-writes-what: `@@SANDBOX_PATH@@/research/bufferset-use.md` (inventory). Spec remains `docs/specs/BUFFER_SET_SPEC.md`.
 - Pump rot 7-seg dest/clear: photo is `A.p` (never JPEG/warp dest). Overlay is `B.p` (clear once per column, then accumulate). Look-ink dest is `B.s` origin crop after native (`clear` then warp from `B.p`). Rec flatten dest is `A.s` (`clear` then warp from `A.p`). Detail: `@@SANDBOX_PATH@@/research/pump-rot-column-buffers-20260904-2206.md`.
 - Pump rot 7-seg walk is u/v math on the photo plane (`A.p` gray; tint `A.s` at photo size). Look-bin is an A.s/B.s view ≤ photo. Overlay paint is inside seed u/v. White = walk ink (on and off seed); purple = too-wide/too-tall only. Warp is look-ink JPEG + rec only (not a uv search canvas). Rot look-ink dest is the k-pad union scaled so seed short-axis is 96.

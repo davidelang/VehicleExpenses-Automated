@@ -318,11 +318,9 @@ FILES=(
     "reset-to-builds.sh"
     "GEMINI.md"
     "CLAUDE.md"
-    # run-grok-planner: convenience launcher for dedicated narrow Planning Agent sessions.
-    # Reads the narrow prompt file (written by the main orchestrator to
-    # ${sandbox_dir}/.planning-agent-prompt.txt) to allow the user direct
-    # interaction with the planner until explicit approval. Synced for use from
-    # any worktree.
+    # run-grok-planner: Planning Agent sessions. Prompt is the worktree pack
+    # (.grok/prompts/packs/planner.pack), not a sandbox file. Synced for use
+    # from any worktree.
     "run-grok-planner"
     "run-grok-imagine"
     "run-grok-master"
