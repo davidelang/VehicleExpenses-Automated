@@ -1,16 +1,16 @@
 #!/bin/bash
-# ve-env — project shell environment: umask + group credentials for this multi-user tree.
+# env — project shell environment: umask + group credentials for this multi-user tree.
 #
 # Intended UX (no full desktop logout):
-#   source ./ve-env
+#   source ./env
 #     → set umask 002
 #     → if project groups are missing from *this* shell but present on the account,
 #        re-exec a new shell with full groups via ./ve-refresh-shell (setuid helper).
 #        Other GUI apps stay open; only this terminal is replaced.
 #
-#   ./ve-env check
-#   ./ve-env help
-#   ./ve-env how-to-fix-groups   # if helper not installed yet
+#   ./env check
+#   ./env help
+#   ./env how-to-fix-groups   # if helper not installed yet
 #
 # One-time install of the group refresh helper (sudo):
 #   gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c
@@ -118,7 +118,7 @@ _ve_session_missing_stale() {
 _ve_refresh_installed() {
   # Re-resolve so we pick a root-owned helper even if cwd worktree has a broken copy.
   # Do NOT run the binary as a preflight subprocess: older builds ignore --check and
-  # exec an interactive shell, which hangs "source ./ve-env" forever.
+  # exec an interactive shell, which hangs "source ./env" forever.
   REFRESH="$(_ve_find_refresh 2>/dev/null || true)"
   REFRESH=${REFRESH:-$SCRIPT_DIR/ve-refresh-shell}
   _ve_helper_is_good "$REFRESH"
@@ -127,29 +127,29 @@ _ve_refresh_installed() {
 _ve_try_refresh_shell() {
   # Replace *this* shell with one that has full group list. No desktop logout.
   # NEVER exec a non-root-owned setuid binary (kills terminal). Stat-only gate.
-  echo "ve-env: looking for setuid-root ve-refresh-shell..." >&2
+  echo "env: looking for setuid-root ve-refresh-shell..." >&2
   if ! _ve_refresh_installed; then
     REFRESH="$(_ve_find_refresh 2>/dev/null || true)"
     REFRESH=${REFRESH:-$SCRIPT_DIR/ve-refresh-shell}
     if [ -x "$REFRESH" ] && [ -u "$REFRESH" ] && [ "$(stat -c '%U' "$REFRESH" 2>/dev/null)" != "root" ]; then
-      echo "ve-env: refusing to exec $REFRESH (setuid but owner=$(stat -c '%U' "$REFRESH") — would kill this terminal)." >&2
+      echo "env: refusing to exec $REFRESH (setuid but owner=$(stat -c '%U' "$REFRESH") — would kill this terminal)." >&2
       echo "  Fix:  sudo chown root:root $REFRESH && sudo chmod 4755 $REFRESH" >&2
       echo "  Or:   sudo rm -f $REFRESH   # then use orch root helper" >&2
       echo "  Or:   sudo ./install-ve-refresh-shell.sh --all" >&2
     elif [ ! -e "$REFRESH" ]; then
-      echo "ve-env: no good ve-refresh-shell found (need setuid root under worktree or parents)." >&2
+      echo "env: no good ve-refresh-shell found (need setuid root under worktree or parents)." >&2
     else
-      echo "ve-env: helper not usable: $REFRESH (need -rwsr-xr-x root root)" >&2
+      echo "env: helper not usable: $REFRESH (need -rwsr-xr-x root root)" >&2
       echo "  Rebuild+install: sudo ./install-ve-refresh-shell.sh \$(git rev-parse --show-toplevel 2>/dev/null || pwd)" >&2
     fi
     return 1
   fi
   export VE_ENV_CWD="$(pwd)"
-  echo "ve-env: re-executing shell with full project groups (other apps stay open)..."
+  echo "env: re-executing shell with full project groups (other apps stay open)..."
   echo "  helper: $REFRESH ($(stat -c '%U:%G %a' "$REFRESH" 2>/dev/null))"
   # Replace this process only after printing — if exec fails, we return and keep the shell.
   exec "$REFRESH" || {
-    echo "ve-env: exec $REFRESH failed — shell kept open" >&2
+    echo "env: exec $REFRESH failed — shell kept open" >&2
     return 1
   }
 }
@@ -168,10 +168,10 @@ without a full desktop logout). One-time setup from the *orchestration root*
 
 Or:  sudo ./fix-perms --verbose   # builds/installs the helper when source is present
 
-ve-env looks for the helper in this directory and parents (so agent-N can use ../ve-refresh-shell).
+env looks for the helper in this directory and parents (so agent-N can use ../ve-refresh-shell).
 
 Then in this terminal:
-  source ./ve-env
+  source ./env
 
 Until then, temporary workarounds (no full GUI logout):
   exec sudo -iu $(id -un)          # new login shell as you (if sudo allows)
@@ -188,13 +188,13 @@ _ve_print_how_to_fix_groups() {
 === Fix project groups without closing all GUI apps ===
 
 Linux freezes supplementary groups at login. If groups were added later, this
-shell is "stale". ve-env is *supposed* to fix that by re-execing a shell via
+shell is "stale". env is *supposed* to fix that by re-execing a shell via
 setuid helper ve-refresh-shell (other apps stay open).
 
 EOF
   if _ve_refresh_installed; then
     echo "Helper is installed. From the repo:"
-    echo "  source ./ve-env"
+    echo "  source ./env"
     echo "That will exec a new shell in the same cwd with full groups + umask 002."
   else
     _ve_print_install_helper
@@ -203,7 +203,7 @@ EOF
 
 Verify after refresh:
   id -nG | tr ' ' '\\n' | grep -E '^(ai-code|ai-shared|ai-sandbox)\$'
-  source ./ve-env check || ./ve-env check
+  source ./env check || ./env check
 
 EOF
 }
@@ -227,7 +227,7 @@ _ve_check() {
   elif [ -x "$REFRESH" ] && [ -u "$REFRESH" ]; then
     echo "ve-refresh-shell: BROKEN — setuid but owner=$(stat -c '%U' "$REFRESH" 2>/dev/null) (must be root)"
     echo "  Fix:  sudo chown root:root $REFRESH && sudo chmod 4755 $REFRESH"
-    echo "  Until fixed, source ./ve-env will NOT re-exec (avoids closing the terminal)."
+    echo "  Until fixed, source ./env will NOT re-exec (avoids closing the terminal)."
     bad=1
   elif [ -e "$REFRESH" ]; then
     echo "ve-refresh-shell: present but not setuid-root at $REFRESH"
@@ -271,10 +271,10 @@ _ve_check() {
     if [ -n "$stale" ]; then
       echo "CAUSE: stale session — account has:$stale but this process does not."
       if _ve_refresh_installed; then
-        echo "FIX:  source ./ve-env     # will re-exec shell with full groups (no full logout)"
+        echo "FIX:  source ./env     # will re-exec shell with full groups (no full logout)"
       else
-        echo "FIX:  install ve-refresh-shell once, then source ./ve-env"
-        echo "      details: ./ve-env how-to-fix-groups"
+        echo "FIX:  install ve-refresh-shell once, then source ./env"
+        echo "      details: ./env how-to-fix-groups"
       fi
       echo "NOT:  newgrp (wrong tool for multi-group restore)"
     fi
@@ -333,13 +333,13 @@ cmd="${1:-activate}"
 case "$cmd" in
   help|-h|--help)
     cat <<'EOF'
-ve-env — umask + project groups for this multi-user tree
+env — umask + project groups for this multi-user tree
 
-  source ./ve-env              # umask 002; if groups stale, re-exec fixed shell
-  source ./ve-env activate     # same
-  ./ve-env check               # diagnose only
-  ./ve-env how-to-fix-groups   # install helper / alternatives
-  ./ve-env help
+  source ./env              # umask 002; if groups stale, re-exec fixed shell
+  source ./env activate     # same
+  ./env check               # diagnose only
+  ./env how-to-fix-groups   # install helper / alternatives
+  ./env help
 
 Group refresh does NOT require logging out of the whole desktop. It re-execs
 this terminal via setuid helper ve-refresh-shell (one-time sudo install).
@@ -357,7 +357,7 @@ EOF
     if [ "$_VE_SOURCED" -eq 1 ]; then
       _ve_activate
     else
-      echo "ve-env: not sourced — run:  source ./ve-env"
+      echo "env: not sourced — run:  source ./env"
       _ve_check || true
       exit 1
     fi

@@ -253,7 +253,7 @@ ve_ensure_tracked_exec_other_x() {
   local wt="${1:-}"
   local p mode _hash _stage
   [ -n "$wt" ] && [ -d "$wt" ] || return 0
-  for p in agent-landlock todo-append todo-close ve-env \
+  for p in agent-landlock todo-append todo-close env \
            landlock-smoke-matrix landlock-write-probe; do
     if [ -f "$wt/$p" ]; then
       chmod a+x "$wt/$p" 2>/dev/null || true

@@ -118,7 +118,7 @@ NEVER_COPY=(
   build_app
   deploy
   gradle.properties
-  ve-env
+  env
   sync-debug-keystores
   fix-android-sdk-perms
   ve-resolve-orch

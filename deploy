@@ -432,7 +432,7 @@ if [ "$DATA_ONLY_MODE" != "true" ]; then
   if [ -n "$MISSING" ]; then
     echo "ERROR: this shell is missing project group(s):$MISSING" >&2
     echo "  Agent/build caches are group ai-code; git/sandbox need ai-shared." >&2
-    echo "  Fix (no full logout):  source ./ve-env" >&2
+    echo "  Fix (no full logout):  source ./env" >&2
     echo "  Or open a shell from setup_agent (execs ve-refresh-shell)." >&2
     echo "  Then re-run:  ./deploy" >&2
     echo "  Do NOT:  sg ai-shared  (single-group; breaks multi-user deploy)" >&2
@@ -535,7 +535,7 @@ prepare_build_tree_for_deploy() {
     echo "  Fix (pick one), then re-run ./deploy:" >&2
     echo "    sudo -u ${CODER_USER} rm -rf app/build/generated app/build/kspCaches app/build/intermediates" >&2
     echo "    sudo chown -R ${PRIMARY_USER}:${CODE_GROUP} app/build && find app/build -type d -exec chmod 2770 {} +" >&2
-    echo "  Ensure: id shows ${CODE_GROUP} (source ./ve-env)." >&2
+    echo "  Ensure: id shows ${CODE_GROUP} (source ./env)." >&2
     return 1
   fi
   return 0
