@@ -13,6 +13,7 @@ Do **not** reimplement the full app pump tree here. Split the paddle surface so 
 | `det-heat` | heatmap mass, 100-bin hist, heat CRC, consensus rotation | deskew / hist gate |
 | `det-boxes` | AABB components at thr=0, min_area=10 (red-box-like) | `processHeatmap` boxes (AABB approx; app uses minAreaRect) |
 | `rec` | CTC text + per-char probs + logit CRC | `recognize` / numeric path |
+| `rec-hop` | same rec predictor: `Run` 48×160 then 48×128 (no crash) | x86 DirectConv JIT re-init on rec W hop |
 | `pipeline` | legacy det→deskew→det→crop→rec (skewed_hello gate) | end-to-end smoke only |
 
 ```bash

@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# paddle pin build step 2 (libpin.toml build[]): host linux-x86_64 `opt` model optimizer.
+#
+# Same pin src + overlays as ./build (patches/ then patches-int8/, copied over the pin
+# inside the container), so the opt that writes the .nb files carries exactly the
+# int8/analytic-input passes that ship in this pin.
+#
+# Product: src/bin/linux-x86_64/opt  → get-artifacts →
+#          artifact/linux-x86_64/opt_linux_x86_current  (scripts/reopt-product-models.sh default)
+#
+# Run via:  ./third_party/fetch-deps build paddle      (after ./build)
+# Alone:    ./third_party/paddle/build-opt && ./third_party/get-artifacts paddle
+#
+# Env (same names as ./build):
+#   PADDLE_DOCKER_IMAGE=ve-paddle-ndk28c   image (needs host gcc/cmake: Dockerfile.int8 has both)
+#   PADDLE_NDK_VERSION=r28c                 only used to derive the default image name
+#   PADDLE_SKIP_OPT=1                       skip this step
+#   PADDLE_ALLOW_FAST_MATH=1                keep upstream -ffast-math (default: stripped, as ./build)
+#   PADDLE_OPT_JOBS=N                       make -j (default: nproc in the container)
+set -euo pipefail
+HERE=$(cd "$(dirname "$0")" && pwd)
+SRC=${PADDLE_SRC:-"$HERE/src"}
+PATCHES="$HERE/patches"
+PATCHES_INT8="$HERE/patches-int8"
+SCRIPTS="$HERE/scripts"
+OUT="$SRC/bin/linux-x86_64"
+
+if [[ "${PADDLE_SKIP_OPT:-0}" == "1" ]]; then
+  echo "build-opt: PADDLE_SKIP_OPT=1 — skip"; exit 0
+fi
+[[ -d "$SRC/lite" ]] || { echo "build-opt: no pin src at $SRC (./third_party/fetch-deps ro paddle)" >&2; exit 1; }
+
+NDK_VERSION=${PADDLE_NDK_VERSION:-r20b}
+IMAGE=${PADDLE_DOCKER_IMAGE:-"ve-paddle-ndk${NDK_VERSION}"}
+if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+  for alt in ve-paddle-ndk28c ve-paddle-int8 paddle-build-int8-20.04; do
+    if docker image inspect "$alt" >/dev/null 2>&1; then IMAGE=$alt; break; fi
+  done
+fi
+docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "build-opt: no docker image $IMAGE (run ./build first)" >&2; exit 1; }
+
+# RO pin: unlock only src/bin (same as ./build).
+if [[ ! -d "$SRC/bin" ]]; then chmod u+w "$SRC" 2>/dev/null || true; mkdir -p "$SRC/bin"; fi
+chmod u+w "$SRC/bin" 2>/dev/null || true
+mkdir -p "$OUT"; chmod -R u+w "$OUT" 2>/dev/null || true
+rm -f "$OUT/opt"
+
+echo "build-opt: image=$IMAGE → $OUT/opt"
+docker run --rm \
+  -v "$SRC:/pin-src:ro" \
+  -v "$PATCHES:/patches:ro" \
+  -v "$PATCHES_INT8:/patches-int8:ro" \
+  -v "$SCRIPTS/apply_patches.sh:/apply_patches.sh:ro" \
+  -v "$SCRIPTS/apply_int8_patches.sh:/apply_int8_patches.sh:ro" \
+  -v "$OUT:/output" \
+  -e "PADDLE_ALLOW_FAST_MATH=${PADDLE_ALLOW_FAST_MATH:-0}" \
+  -e "HOST_UID=$(id -u)" -e "HOST_GID=$(id -g)" \
+  -e "OPT_JOBS=${PADDLE_OPT_JOBS:-}" \
+  "$IMAGE" \
+  bash -c 'set -euo pipefail
+    rm -rf /workspace/Paddle-Lite
+    cp -a /pin-src /workspace/Paddle-Lite
+    cd /workspace/Paddle-Lite
+    rm -rf bin build.* 2>/dev/null || true
+    git config --global --add safe.directory /workspace/Paddle-Lite || true
+    FBS_SAVE=""
+    if [[ -d third-party/flatbuffers/pre-build ]]; then
+      FBS_SAVE=$(mktemp -d); cp -a third-party/flatbuffers/pre-build "$FBS_SAVE/"
+    fi
+    if [[ ! -d third-party/gflags || -z "$(ls -A third-party/gflags 2>/dev/null || true)" ]]; then
+      wget -q -O /tmp/tp.tgz \
+        https://paddlelite-data.bj.bcebos.com/third_party_libs/third-party-651c7c4.tar.gz
+      mkdir -p third-party
+      tar -xzf /tmp/tp.tgz -C third-party --strip-components=1
+      rm -f /tmp/tp.tgz
+    fi
+    if [[ -n "$FBS_SAVE" && -d "$FBS_SAVE/pre-build" ]]; then
+      mkdir -p third-party/flatbuffers
+      rm -rf third-party/flatbuffers/pre-build
+      cp -a "$FBS_SAVE/pre-build" third-party/flatbuffers/pre-build
+      rm -rf "$FBS_SAVE"
+    fi
+    bash /apply_patches.sh
+    PATCH_ROOT=/patches-int8 bash /apply_int8_patches.sh
+    if [[ "${PADDLE_ALLOW_FAST_MATH:-0}" != "1" ]]; then
+      for f in cmake/os/common.cmake cmake/linux.cmake; do
+        [[ -f "$f" ]] && sed -i "s/-ffast-math//g; s/-Ofast/-O2/g" "$f" || true
+      done
+    fi
+    # Configure like upstream build_linux.sh build_optimize_tool (LITE_ON_MODEL_OPTIMIZE_TOOL,
+    # WITH_TESTING=OFF, LITE_BUILD_EXTRA, WITH_MKL=OFF; make opt), plus the host-x86 target
+    # defines that build_linux.sh --arch=x86 passes (as the host light build does). Without
+    # ARM_TARGET_ARCH_ABI the VE overlay lite/api/tools/benchmark/CMakeLists.txt:53 expands
+    # an unquoted empty ${ARM_TARGET_ARCH_ABI} and configure aborts. benchmark_bin is only
+    # configured, never built (make opt).
+    rm -f lite/api/paddle_use_ops.h lite/api/paddle_use_kernels.h
+    rm -rf build.opt && mkdir -p build.opt && cd build.opt
+    cmake .. \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DLITE_ON_MODEL_OPTIMIZE_TOOL=ON \
+      -DWITH_TESTING=OFF \
+      -DLITE_BUILD_EXTRA=ON \
+      -DWITH_MKL=OFF \
+      -DWITH_MKLDNN=OFF \
+      -DLITE_WITH_ARM=OFF \
+      -DLITE_WITH_X86=ON \
+      -DARM_TARGET_ARCH_ABI=x86 \
+      -DARM_TARGET_OS= \
+      -DLITE_WITH_PYTHON=OFF \
+      -DLITE_WITH_CV=OFF \
+      -DLITE_WITH_LOG=ON
+    make opt -j"${OPT_JOBS:-$(nproc)}"
+    cd ..
+    OPT=build.opt/lite/api/opt
+    [[ -x "$OPT" ]] || { echo "FAIL: no $OPT"; find build.opt -name opt -type f | head; exit 1; }
+    cp "$OPT" /output/opt
+    git -C /pin-src rev-parse HEAD > /output/opt.pin 2>/dev/null || true
+    chown -R "$HOST_UID:$HOST_GID" /output
+  '
+
+# Gate: the binary must carry the explicit-norm analytic pass and the output calib pass.
+for need in analytic_input_mean analytic_input_std analytic_input_quant_pass output_calib_pass; do
+  grep -q "$need" <<<"$(strings "$OUT/opt")" || { echo "build-opt: FAIL $OUT/opt lacks $need" >&2; exit 1; }
+done
+help_txt=$("$OUT/opt" --help 2>&1 || true)
+grep -q analytic_input_mean <<<"$help_txt" \
+  || { echo "build-opt: FAIL opt --help has no --analytic_input_mean" >&2; exit 1; }
+sha256sum "$OUT/opt"
+echo "build-opt: OK"

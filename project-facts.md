@@ -15,12 +15,18 @@ Read in full early on startup/new cycle.
 
 ## Sandbox (dev-ai-interaction)
 - Absolute path: `@@ORCH_ROOT@@/@@SANDBOX_PATH@@/`
+- `latest-report/heatmap/tablet/` — captured tablet det-heat set. Future pump runs do not write `pump_reports/heatmap/`.
 - `@@SANDBOX_PATH@@/plans/` — designated active plan (user names exact file)
 - `@@SANDBOX_PATH@@/historical-plans/` — archived plans
 - **TODO-linked plans/research:** keep paths referenced by **open** (`- [ ]`) TODO items in `plans/`/`research/`. If the plan is obsolete, **close/eliminate the TODO** then archive. Do not leave open TODOs pointing at dead plans.
 - `@@SANDBOX_PATH@@/implementation-failure-logs/` — scan on planner startup / recovery
 - `@@SANDBOX_PATH@@/PRs/PR-<branch>.md` — local PR docs for Master
 - `@@SANDBOX_PATH@@/.planning-agent-prompt.txt` — optional planner prompt file
+- Pump BufferSet A/B who-writes-what: `@@SANDBOX_PATH@@/research/bufferset-use.md` (inventory). Spec remains `docs/specs/BUFFER_SET_SPEC.md`.
+- Pump rot 7-seg dest/clear: photo is `A.p` (never JPEG/warp dest). Overlay is `B.p` (clear once per column, then accumulate). Look-ink dest is `B.s` origin crop after native (`clear` then warp from `B.p`). Rec flatten dest is `A.s` (`clear` then warp from `A.p`). Detail: `@@SANDBOX_PATH@@/research/pump-rot-column-buffers-20260904-2206.md`.
+- Pump rot 7-seg walk is u/v math on the photo plane (`A.p` gray; tint `A.s` at photo size). Look-bin is an A.s/B.s view ≤ photo. Overlay paint is inside seed u/v. White = walk ink (on and off seed); purple = too-wide/too-tall only. Warp is look-ink JPEG + rec only (not a uv search canvas). Rot look-ink dest is the k-pad union scaled so seed short-axis is 96.
+- Pump look-ink outlines: red = seed, blue = official (final walk after jump/retract), yellow = jump-far / retract-start (not the walk rect). Draw on the encode Mats (`dest.mat` / `dest.uvMat`). `AnnYuv` exhaustive `when` (includes WHITE); no `else` / unknown→white fallback.
+- Pump look-ink JSON/HTML: `inkSeed` / `inkBlue` / `inkYellow` are thr-ink pixel counts (includes poison-ink; not post-poison look-bin). 7seg `fill` = (nLookBin + nRecovered) / red area after poison (recovered = poison ink 8-connected to look-bin). 7-seg look_ink has `attempts[]` (per-evaluate thr/fill/keep/poison); energy has none. Energy look-ink counts dest/energy U8 `>0` in the same three rects.
 
 ## Device / crash logs
 - Prefer `adb logcat -d` (or device-specific) into sandbox once; analyze locally. Do **not** start broad `find … *.log` hunts on the host.
@@ -51,10 +57,10 @@ Read in full early on startup/new cycle.
 - Host installers (`grok-install.sh`, `antigravity-install`) are **local only** (gitignored); `run-*` launchers sync to worktrees. `./update-rules.sh` skips worktree-ahead/dirty paths unless `--force`; supports `--dry-run`.
 
 ## Application ABI / Paddle assets
-- Production models: `app/src/arm64/assets/paddle/prod_u8fp16/*_armv8.nb`, `app/src/x86_64/assets/paddle/prod_u8fp32_u8/*_x86_64.nb`, `app/src/armv7/assets/paddle/prod_u8fp32_u8/*_armv7.nb`; shared dict `app/src/main/assets/paddle/en_dict.txt`; scheduled exp dets `app/src/<abi>/assets/paddle/exp_det_ab/`
+- Production models: `app/src/arm64/assets/paddle/prod_u8fp16/*_armv8.nb`, `app/src/x86_64/assets/paddle/prod_u8fp32_u8/*_x86_64.nb`, `app/src/armv7/assets/paddle/prod_u8fp32_u8/*_armv7.nb`; shared dict `app/src/main/assets/paddle/en_dict.txt`; scheduled exp dets `app/src/<abi>/assets/paddle/exp_det_ab/` (`product_det` only); v4/v5 mobile and server nbs are unscheduled and not in the APK (`third_party/paddle/exp_det_ab_unscheduled/`)
 - Runtime: `app/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86_64}/`, `app/libs/PaddlePredictor.jar`
 - JNI sizing: arm64-v8a tailored ~1.6MB; x86_64 slim jni + `libpaddle_light_api_shared.so`; armeabi-v7a fat multi-path lib (interim)
-- Product ABIs: arm64-v8a + armeabi-v7a + x86_64 flavor APKs (`useLegacyPackaging = false`). arm64/x86 jni = First-10-good pin ship.
+- Product ABIs: arm64-v8a + armeabi-v7a + x86_64 flavor APKs (`useLegacyPackaging = false`). arm64/x86 jni ship stamp `so45e4733a` (arm64 jni 1842712, arm64 light 1826072, x86 jni 30936, x86 light 10430904).
 
 ## Worktree layout
 - App worktrees (`agent-N/`, `master/`): `app/` + root scripts + symlink `dev-ai-interaction -> ../@@SANDBOX_PATH@@`

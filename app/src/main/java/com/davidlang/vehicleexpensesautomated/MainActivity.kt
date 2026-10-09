@@ -799,6 +799,9 @@ class MainActivity : ComponentActivity() {
                                         autoFirst10 = auto == "first10",
                                         autoL1Debug = auto == "l1debug",
                                         autoHorizAffected = auto == "horiz" || auto == "horiz_affected",
+                                        autoProdInkFail = auto == "prodinkfail" || auto == "inkfail",
+                                        autoMixedFail = auto == "mixedfail",
+                                        autoDetDump = auto == "detdump" || auto == "detboxes",
                                         autoSelectedSample =
                                             auto == "selected" || auto == "selected_sample",
                                     )

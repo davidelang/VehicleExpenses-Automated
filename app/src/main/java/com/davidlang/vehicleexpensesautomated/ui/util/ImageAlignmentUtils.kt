@@ -10,7 +10,6 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.opencv.android.OpenCVLoader
-import org.opencv.android.Utils
 import org.opencv.core.*
 import org.opencv.features2d.*
 import org.opencv.imgproc.Imgproc
@@ -350,18 +349,16 @@ object ImageAlignmentUtils {
         )
 
         return try {
-            val src: Mat
-            val dst: Mat
-            val useBufferSet = input is BufferSet
-
-            if (useBufferSet) {
-                src = (input as BufferSet).p.mat
-                dst = input.s.mat
-            } else {
-                src = Mat()
-                Utils.bitmapToMat(input as Bitmap, src)
-                dst = Mat(src.size(), src.type(), Scalar(0.0, 0.0, 0.0, 255.0))
+            if (input !is BufferSet) {
+                return AnchorResult(
+                    false,
+                    message = "anchorAlign requires BufferSet",
+                    timeMs = System.currentTimeMillis() - t0,
+                    metadata = metadata,
+                )
             }
+            val src = input.p.mat
+            val dst = input.s.mat
 
             val matrixLocal = android.graphics.Matrix()
             val values = floatArrayOf(
@@ -380,14 +377,8 @@ object ImageAlignmentUtils {
             Imgproc.warpAffine(src, dst, warpMat, src.size(), Imgproc.INTER_CUBIC, Core.BORDER_CONSTANT, Scalar(0.0, 0.0, 0.0, 255.0))
             warpMat.release()
 
-            if (useBufferSet) {
-                (input as BufferSet).flip()
-                // Sync to scratchBmp for report visualization (if provided)
-                scratchBmp?.let { NativeImageUtils.syncMatToArgb(input.p.mat, it) }
-            } else {
-                Utils.matToBitmap(dst, input as Bitmap)
-                src.release(); dst.release()
-            }
+            input.flip()
+            scratchBmp?.let { NativeImageUtils.syncMatToArgb(input.p.mat, it) }
 
             AnchorResult(true, 0.5f, System.currentTimeMillis() - t0, metadata, "Consensus (%d/%d)".format(bestGroup.size, allCandidates.size))
         } catch (e: Exception) {

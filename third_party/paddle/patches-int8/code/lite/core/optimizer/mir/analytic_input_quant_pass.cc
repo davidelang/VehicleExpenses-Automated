@@ -2,8 +2,13 @@
 // int8 (default): feed kInt8 (xor-128) + int8_to_fp16|fp32
 // uint8:          feed kUInt8 (raw greyscale) + uint8_to_fp16|fp32
 // Math: uint8 path (u-128)*scale ≡ int8 path after q=(int8_t)(u^128).
+// scale = 1/std and the model input x = (u - mean)/std are explicit
+// (--analytic_input_mean/--analytic_input_std). The calib kernels centre at
+// 128, so x = (u-128)/std + (128-mean)/std; the constant is folded into the
+// bias of the conv(s) that read the feed (exact except at zero-padded taps).
 // Prefer *to_fp16 when kFP16 places present; else *to_fp32.
 #include "lite/core/optimizer/mir/analytic_input_quant_pass.h"
+#include <cmath>
 #include <queue>
 #include <set>
 #include <string>
@@ -19,11 +24,6 @@ namespace lite {
 namespace mir {
 
 namespace {
-
-// Detection mono: ImageNet std; rec: 0.5.
-// scale = 1/(255*std) for both int8 (q*scale) and uint8 ((u-128)*scale).
-constexpr float kDetStd = 0.229f;
-constexpr float kRecStd = 0.5f;
 
 TargetType PickTarget(const std::unique_ptr<SSAGraph>& graph) {
   for (const auto& place : graph->valid_places()) {
@@ -60,24 +60,42 @@ mir::Node* FindFirstConv2dFrom(mir::Node* start) {
   return nullptr;
 }
 
-float GuessInputStd(const std::unique_ptr<SSAGraph>& graph) {
-  for (auto* node : graph->StmtTopologicalOrder()) {
-    if (!node->IsStmt()) continue;
-    const auto& type = node->stmt()->op_type();
-    if (type == "conv2d" || type == "depthwise_conv2d") {
-      auto* scope = node->stmt()->op()->scope();
-      for (auto* in : node->inlinks) {
-        if (!in->IsArg() || !in->arg()->is_weight) continue;
-        auto* var = scope->FindVar(in->arg()->name);
-        if (!var) continue;
-        const auto& dims = var->Get<lite::Tensor>().dims();
-        if (dims.size() == 4 && dims[1] == 1) {
-          return kDetStd;
-        }
-      }
-    }
+// bias[o] += offset * sum(W[o, ...]): a constant added to every input pixel
+// of this conv, moved to its (BN-fused) bias. Weights must still be float.
+void FoldInputOffsetIntoBias(mir::Node* conv, float offset) {
+  auto* op_info = conv->stmt()->op_info();
+  const auto& type = conv->stmt()->op_type();
+  CHECK(type == "conv2d" || type == "depthwise_conv2d")
+      << "analytic_input_quant_pass: feed consumer " << type
+      << " cannot absorb input mean != 128; use mean 128 or fold it in "
+         "convert_mono.py";
+  CHECK(op_info->HasInput("Bias") && !op_info->Input("Bias").empty())
+      << "analytic_input_quant_pass: first conv has no Bias to absorb "
+         "(128-mean)/std; run conv_bn fuse or use mean 128";
+  auto* scope = conv->stmt()->op()->scope();
+  auto* w = scope->FindVar(op_info->Input("Filter").front())
+                ->GetMutable<lite::Tensor>();
+  auto* b = scope->FindVar(op_info->Input("Bias").front())
+                ->GetMutable<lite::Tensor>();
+  auto is_quant = [](PrecisionType p) {
+    return p == PRECISION(kInt8) || p == PRECISION(kInt16) ||
+           p == PRECISION(kFP16);
+  };
+  CHECK(!is_quant(w->precision()) && !is_quant(b->precision()))
+      << "analytic_input_quant_pass: mean != 128 needs float first-conv "
+         "weights/bias (not with --quant_model); use mean 128";
+  const int64_t out_c = w->dims()[0];
+  const int64_t per = w->numel() / out_c;
+  CHECK_EQ(b->numel(), out_c) << "unexpected first-conv bias size";
+  const float* wd = w->data<float>();
+  float* bd = b->mutable_data<float>();
+  for (int64_t o = 0; o < out_c; ++o) {
+    double s = 0.0;
+    for (int64_t i = 0; i < per; ++i) s += wd[o * per + i];
+    bd[o] += static_cast<float>(offset * s);
   }
-  return kRecStd;
+  LOG(INFO) << "analytic_input_quant_pass: folded input offset " << offset
+            << " into " << op_info->Input("Bias").front();
 }
 
 }  // namespace
@@ -129,8 +147,14 @@ void AnalyticInputQuantPass::Apply(const std::unique_ptr<SSAGraph>& graph) {
                  << input_dtype_ << " (use int8|uint8); defaulting to int8";
   }
 
-  const float std_val = GuessInputStd(graph);
-  const float input_scale = 1.0f / (255.0f * std_val);
+  CHECK(std::isfinite(input_mean_) && std::isfinite(input_std_) &&
+        input_std_ > 0.f)
+      << "analytic_input_quant_pass: set --analytic_input_mean and "
+         "--analytic_input_std (pixel units, x = (u - mean) / std). "
+         "rec_v3/rec_numeric: 127.5/127.5; det: values from convert_mono.py "
+         "mono_norm.json (128/58.395)";
+  const float input_scale = 1.0f / input_std_;
+  const float input_offset = (128.0f - input_mean_) / input_std_;
   const auto target = PickTarget(graph);
 
   const std::string in_name = feed_out->AsArg().name;
@@ -236,6 +260,9 @@ void AnalyticInputQuantPass::Apply(const std::unique_ptr<SSAGraph>& graph) {
   for (auto* cons : feed_out->outlinks) {
     if (cons->IsStmt()) consumers.push_back(cons);
   }
+  if (input_offset != 0.f) {
+    for (auto* cons : consumers) FoldInputOffsetIntoBias(cons, input_offset);
+  }
   for (auto* cons : consumers) {
     RemoveDirectedLink(feed_out, cons);
     UpdateInputs(cons->stmt()->op().get(), in_name, out_name);
@@ -286,7 +313,7 @@ void AnalyticInputQuantPass::Apply(const std::unique_ptr<SSAGraph>& graph) {
   LOG(INFO) << "analytic_input_quant_pass: feed("
             << (use_uint8 ? "kUInt8" : "kInt8") << ")->calib(" << alias
             << ",scale=" << input_scale << ")->" << (want_fp16 ? "fp16" : "fp32")
-            << " ops; std=" << std_val;
+            << " ops; mean=" << input_mean_ << " std=" << input_std_;
 }
 
 }  // namespace mir

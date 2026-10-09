@@ -15,9 +15,99 @@
 #include <cstdio>
 #include "paddle/paddle_api.h"
 #include "BufferSetHandle.h"
+#include "OrientedQuadOrder.h"
 #include <android/log.h>
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "NativeImageUtils", __VA_ARGS__)
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "NativeImageUtils", __VA_ARGS__)
+
+static constexpr size_t kVeAllocCap = 64ull * 1024ull * 1024ull;
+
+static size_t veMatBytes(int rows, int cols, int type) {
+    if (rows < 0 || cols < 0) return kVeAllocCap + 1;
+    return static_cast<size_t>(rows) * static_cast<size_t>(cols) * CV_ELEM_SIZE(type);
+}
+
+static bool veAllocLog(const char* tag, size_t bytes, int rows, int cols, int type) {
+    LOGI("veAllocLog tag=%s bytes=%zu rows=%d cols=%d type=%d", tag, bytes, rows, cols, type);
+    if (bytes > kVeAllocCap) {
+        LOGE("veAllocLog FAIL tag=%s bytes=%zu >64MiB rows=%d cols=%d type=%d",
+             tag, bytes, rows, cols, type);
+        return false;
+    }
+    return true;
+}
+
+static cv::Mat g_jpegBgr;
+static cv::Mat jpegBgrScratch(int w, int h);
+static cv::Mat g_ccLabels;
+
+static bool ccLabelsScratch(int h, int w, cv::Mat* out) {
+    if (!out || h < 1 || w < 1) return false;
+    if (g_ccLabels.empty() || g_ccLabels.type() != CV_32S ||
+        g_ccLabels.rows < h || g_ccLabels.cols < w) {
+        const int nr = std::max(h, g_ccLabels.rows);
+        const int nc = std::max(w, g_ccLabels.cols);
+        const size_t bytes = veMatBytes(nr, nc, CV_32S);
+        if (!veAllocLog("g_ccLabels", bytes, nr, nc, CV_32S)) return false;
+        g_ccLabels.create(nr, nc, CV_32S);
+    }
+    *out = g_ccLabels(cv::Rect(0, 0, w, h));
+    return true;
+}
+
+/** BT.601-ish 8U (OpenCV I420 scale) into handle Y + NV21 VU. rgb=true if src is RGB. */
+static bool color3ToHandleYuv(const cv::Mat& c3, BufferSetHandle* handle, bool rgb) {
+    if (!handle || !handle->yMat || !handle->uvMat || c3.empty() || c3.type() != CV_8UC3) {
+        return false;
+    }
+    const int w = (int)handle->width, h = (int)handle->height;
+    if (c3.cols != w || c3.rows != h) return false;
+    cv::Mat& yM = *handle->yMat;
+    cv::Mat& uvM = *handle->uvMat;
+    if (yM.rows < h || yM.cols < w || yM.type() != CV_8UC1) return false;
+    if (uvM.rows < h / 2 || uvM.cols < w / 2 || uvM.type() != CV_8UC2) return false;
+    auto yuv1 = [&](int R, int G, int B, int* Y, int* U, int* V) {
+        *Y = (4899 * R + 9617 * G + 1868 * B + 8192) >> 14;
+        *V = ((8192 * R - 6860 * G - 1332 * B + 8192) >> 14) + 128;
+        *U = ((-2765 * R - 5427 * G + 8192 * B + 8192) >> 14) + 128;
+        if (*Y < 0) *Y = 0; if (*Y > 255) *Y = 255;
+        if (*U < 0) *U = 0; if (*U > 255) *U = 255;
+        if (*V < 0) *V = 0; if (*V > 255) *V = 255;
+    };
+    for (int y = 0; y < h; ++y) {
+        const uchar* p = c3.ptr<uchar>(y);
+        uint8_t* yp = yM.ptr<uint8_t>(y);
+        for (int x = 0; x < w; ++x) {
+            int B = p[x * 3 + 0], G = p[x * 3 + 1], R = p[x * 3 + 2];
+            if (rgb) { const int t = B; B = R; R = t; }
+            int Y, U, V;
+            yuv1(R, G, B, &Y, &U, &V);
+            yp[x] = (uint8_t)Y;
+        }
+    }
+    for (int y = 0; y < h; y += 2) {
+        const uchar* p0 = c3.ptr<uchar>(y);
+        const uchar* p1 = c3.ptr<uchar>(y + 1 < h ? y + 1 : y);
+        cv::Vec2b* uv = uvM.ptr<cv::Vec2b>(y / 2);
+        for (int x = 0; x < w; x += 2) {
+            int Rs = 0, Gs = 0, Bs = 0, n = 0;
+            for (int dy = 0; dy < 2; ++dy) {
+                const uchar* p = dy ? p1 : p0;
+                for (int dx = 0; dx < 2 && x + dx < w; ++dx) {
+                    int B = p[(x + dx) * 3 + 0], G = p[(x + dx) * 3 + 1], R = p[(x + dx) * 3 + 2];
+                    if (rgb) { const int t = B; B = R; R = t; }
+                    Rs += R; Gs += G; Bs += B; ++n;
+                }
+            }
+            if (n < 1) n = 1;
+            int Y, U, V;
+            yuv1(Rs / n, Gs / n, Bs / n, &Y, &U, &V);
+            uv[x / 2][0] = (uint8_t)V;
+            uv[x / 2][1] = (uint8_t)U;
+        }
+    }
+    return true;
+}
 
 static void logMatHeader(const char* tag, const cv::Mat* m) {
     if (!m) { LOGI("MAT_HEADER: %s null", tag); return; }
@@ -75,7 +165,9 @@ std::string matToBase64(const cv::Mat& mat, int quality = 95) {
 }
 
 void filterComponents(cv::Mat& mat, float vSW, float hSW, int mode) {
-    cv::Mat labels, stats, centroids;
+    cv::Mat labels;
+    if (!ccLabelsScratch(mat.rows, mat.cols, &labels)) return;
+    cv::Mat stats, centroids;
     int nLabels = cv::connectedComponentsWithStats(mat, labels, stats, centroids, 8);
     for (int i = 1; i < nLabels; ++i) {
         int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
@@ -84,11 +176,18 @@ void filterComponents(cv::Mat& mat, float vSW, float hSW, int mode) {
         if (mode == 0) remove = (w < 0.5 * vSW && h <= 0.75 * hSW);
         else if (mode == 1) remove = (w < 0.5 * vSW);
         else if (mode == 2) remove = (h <= 0.75 * hSW);
-        
+
         if (remove) {
-            cv::Rect rect(stats.at<int>(i, cv::CC_STAT_LEFT), stats.at<int>(i, cv::CC_STAT_TOP), w, h);
-            cv::Mat mask = (labels(rect) == i);
-            mat(rect).setTo(0, mask);
+            const int id = i;
+            const int left = stats.at<int>(i, cv::CC_STAT_LEFT);
+            const int top = stats.at<int>(i, cv::CC_STAT_TOP);
+            for (int y = top; y < top + h; ++y) {
+                int* lab = labels.ptr<int>(y) + left;
+                uchar* pix = mat.ptr<uchar>(y) + left;
+                for (int x = 0; x < w; ++x) {
+                    if (lab[x] == id) pix[x] = 0;
+                }
+            }
         }
     }
 }
@@ -214,42 +313,32 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeTestI
 JNIEXPORT jboolean JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeIngestJpegToYuv(
     JNIEnv* env, jobject thiz, jstring path, jlong handlePtr) {
-    
-    const char* nativePath = env->GetStringUTFChars(path, nullptr);
-    cv::Mat bgr = cv::imread(nativePath, cv::IMREAD_COLOR);
-    env->ReleaseStringUTFChars(path, nativePath);
-    
-    if (bgr.empty()) return JNI_FALSE;
-    
     auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
     if (!handle) return JNI_FALSE;
-    
-    if (handle->width != (size_t)bgr.cols || handle->height != (size_t)bgr.rows) {
+    const int w = (int)handle->width, h = (int)handle->height;
+    if (w < 1 || h < 1) return JNI_FALSE;
+
+    const char* nativePath = env->GetStringUTFChars(path, nullptr);
+    if (!nativePath) return JNI_FALSE;
+    FILE* f = fopen(nativePath, "rb");
+    env->ReleaseStringUTFChars(path, nativePath);
+    if (!f) return JNI_FALSE;
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return JNI_FALSE; }
+    const long n = ftell(f);
+    if (n < 1 || fseek(f, 0, SEEK_SET) != 0) { fclose(f); return JNI_FALSE; }
+    std::vector<uchar> fileBuf(static_cast<size_t>(n));
+    const size_t got = fread(fileBuf.data(), 1, fileBuf.size(), f);
+    fclose(f);
+    if (got != fileBuf.size()) return JNI_FALSE;
+
+    cv::Mat dest = jpegBgrScratch(w, h);
+    if (dest.empty()) return JNI_FALSE;
+    cv::Mat decoded = cv::imdecode(fileBuf, cv::IMREAD_COLOR, &g_jpegBgr);
+    if (decoded.empty() || decoded.cols != w || decoded.rows != h ||
+        decoded.type() != CV_8UC3) {
         return JNI_FALSE;
     }
-    
-    // 1. Convert to YUV I420 (YYYY U V)
-    cv::Mat i420;
-    cv::cvtColor(bgr, i420, cv::COLOR_BGR2YUV_I420);
-    
-    // 2. Perform in-place C++ Interleaving into NV21
-    size_t ySize = handle->width * handle->height;
-    size_t uvSize = ySize / 4;
-    
-    // Copy Y Plane directly
-    std::memcpy(handle->data, i420.data, ySize);
-    
-    // Interleave U and V planes into VUVU...
-    uint8_t* dst_uv = handle->data + ySize;
-    uint8_t* src_u = i420.data + ySize;
-    uint8_t* src_v = src_u + uvSize;
-    
-    for (size_t i = 0; i < uvSize; ++i) {
-        dst_uv[i * 2] = src_v[i];
-        dst_uv[i * 2 + 1] = src_u[i];
-    }
-    
-    return JNI_TRUE;
+    return color3ToHandleYuv(decoded, handle, false) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jstring JNICALL
@@ -335,28 +424,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeInges
         return JNI_FALSE;
     }
     
-    // We now have RGB bytes. Wrap them in a Mat.
+    // We now have RGB bytes. Wrap them in a Mat (libraw buffer, not OpenCV dest).
     cv::Mat rgb(image->height, image->width, CV_8UC3, image->data);
-    
-    // 1. Convert to YUV I420 (Planar 4:2:0)
-    cv::Mat i420;
-    cv::cvtColor(rgb, i420, cv::COLOR_RGB2YUV_I420);
-    
-    // 2. Perform in-place C++ Interleaving into NV21
-    size_t ySize = handle->width * handle->height;
-    size_t uvSize = ySize / 4;
-    
-    // Copy Y Plane directly
-    std::memcpy(handle->data, i420.data, ySize);
-    
-    // Interleave U and V planes into VUVU...
-    uint8_t* dst_uv = handle->data + ySize;
-    uint8_t* src_u = i420.data + ySize;
-    uint8_t* src_v = src_u + uvSize;
-    
-    for (size_t i = 0; i < uvSize; ++i) {
-        dst_uv[i * 2] = src_v[i];
-        dst_uv[i * 2 + 1] = src_u[i];
+    if (!color3ToHandleYuv(rgb, handle, true)) {
+        LibRaw::dcraw_clear_mem(image);
+        RawProcessor.recycle();
+        return JNI_FALSE;
     }
     
     auto t4 = std::chrono::high_resolution_clock::now();
@@ -501,39 +574,284 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeDumpD
     return env->NewStringUTF(buf);
 }
 
+/** Standing JPEG BGR plane; grows, never released per call. Dest-crop sized. */
+static cv::Mat jpegBgrScratch(int w, int h) {
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
+    if (g_jpegBgr.empty() || g_jpegBgr.type() != CV_8UC3 ||
+        g_jpegBgr.rows < h || g_jpegBgr.cols < w) {
+        const int nr = std::max(h, g_jpegBgr.rows);
+        const int nc = std::max(w, g_jpegBgr.cols);
+        const size_t bytes = veMatBytes(nr, nc, CV_8UC3);
+        if (!veAllocLog("jpegBgrScratch", bytes, nr, nc, CV_8UC3)) {
+            return cv::Mat();
+        }
+        g_jpegBgr.create(nr, nc, CV_8UC3);
+    }
+    if (!g_jpegBgr.data) return cv::Mat();
+    return cv::Mat(h, w, CV_8UC3, g_jpegBgr.data);
+}
+
+static void yuvToBgrPixel(int Y, int U, int V, cv::Vec3b* out) {
+    int r = Y + static_cast<int>(1.402 * (V - 128));
+    int g = Y - static_cast<int>(0.344136 * (U - 128) + 0.714136 * (V - 128));
+    int b = Y + static_cast<int>(1.772 * (U - 128));
+    (*out)[0] = static_cast<uint8_t>(std::max(0, std::min(255, b)));
+    (*out)[1] = static_cast<uint8_t>(std::max(0, std::min(255, g)));
+    (*out)[2] = static_cast<uint8_t>(std::max(0, std::min(255, r)));
+}
+
+static bool encodeYuvMatJpeg(const cv::Mat& y, const cv::Mat& uv, int quality, std::vector<uint8_t>* out) {
+    if (!out || y.empty() || y.type() != CV_8UC1) return false;
+    const int w = y.cols, h = y.rows;
+    if (w < 1 || h < 1) return false;
+    cv::Mat bgr = jpegBgrScratch(w, h);
+    if (bgr.empty() || bgr.rows < h || bgr.cols < w) return false;
+    const bool hasUv = !uv.empty() && uv.type() == CV_8UC2 && uv.rows >= (h + 1) / 2 && uv.cols >= (w + 1) / 2;
+    for (int yy = 0; yy < h; ++yy) {
+        const uint8_t* yp = y.ptr<uint8_t>(yy);
+        const uint8_t* uvp = hasUv ? uv.ptr<uint8_t>(yy / 2) : nullptr;
+        cv::Vec3b* dp = bgr.ptr<cv::Vec3b>(yy);
+        for (int xx = 0; xx < w; ++xx) {
+            int U = 128, V = 128;
+            if (uvp) {
+                const int ux = (xx / 2) * 2;
+                V = uvp[ux];
+                U = uvp[ux + 1];
+            }
+            yuvToBgrPixel(yp[xx], U, V, &dp[xx]);
+        }
+    }
+    if (!bgr.isContinuous()) return false;
+    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, quality};
+    return cv::imencode(".jpg", bgr, *out, params);
+}
+
+bool veEncodeGrayJpegU8(const cv::Mat& u8, std::vector<uint8_t>* out) {
+    if (!out || u8.empty() || u8.type() != CV_8UC1) return false;
+    const int w = u8.cols, h = u8.rows;
+    if (w < 1 || h < 1) return false;
+    if (std::max(w, h) > 400) return false;
+    cv::Mat bgr = jpegBgrScratch(w, h);
+    if (bgr.empty() || bgr.rows < h || bgr.cols < w) return false;
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* yp = u8.ptr<uint8_t>(y);
+        cv::Vec3b* dp = bgr.ptr<cv::Vec3b>(y);
+        for (int x = 0; x < w; ++x) {
+            const uint8_t g = yp[x];
+            dp[x] = cv::Vec3b(g, g, g);
+        }
+    }
+    if (!bgr.isContinuous()) return false;
+    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, 70};
+    return cv::imencode(".jpg", bgr, *out, params);
+}
+
+extern "C" bool veEncodeYuvMatJpeg(const cv::Mat& y, const cv::Mat& uv, std::vector<uint8_t>* out) {
+    return encodeYuvMatJpeg(y, uv, 80, out);
+}
+
+static bool encodeYuvPlanesJpeg(
+    const uint8_t* yData, const uint8_t* uData, const uint8_t* vData,
+    int w, int h, int stride, int quality, std::vector<uint8_t>* out
+) {
+    if (!out || !yData || w < 1 || h < 1) return false;
+    cv::Mat bgr = jpegBgrScratch(w, h);
+    if (bgr.empty() || bgr.rows < h || bgr.cols < w) return false;
+    for (int y = 0; y < h; ++y) {
+        cv::Vec3b* dp = bgr.ptr<cv::Vec3b>(y);
+        const uint8_t* yp = yData + y * stride;
+        for (int x = 0; x < w; ++x) {
+            int U = 128, V = 128;
+            if (uData && vData) {
+                const int i = (y / 2) * stride + (x / 2) * 2;
+                V = vData[i];
+                U = uData[i];
+            }
+            yuvToBgrPixel(yp[x], U, V, &dp[x]);
+        }
+    }
+    if (!bgr.isContinuous()) return false;
+    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, quality};
+    return cv::imencode(".jpg", bgr, *out, params);
+}
+
+static void scalePlaneU8(const cv::Mat& src, int sl, int st, int sr, int sb, cv::Mat* dst) {
+    const int dw = dst->cols, dh = dst->rows;
+    const int sw = std::max(1, sr - sl);
+    const int sh = std::max(1, sb - st);
+    const int srcW = src.cols, srcH = src.rows;
+    for (int y = 0; y < dh; ++y) {
+        int y0 = st + y * sh / dh;
+        int y1 = st + (y + 1) * sh / dh;
+        if (y1 <= y0) y1 = y0 + 1;
+        if (y0 < 0) y0 = 0;
+        if (y1 > srcH) y1 = srcH;
+        if (y0 >= y1) { y0 = std::max(0, srcH - 1); y1 = srcH; }
+        uint8_t* d = dst->ptr<uint8_t>(y);
+        for (int x = 0; x < dw; ++x) {
+            int x0 = sl + x * sw / dw;
+            int x1 = sl + (x + 1) * sw / dw;
+            if (x1 <= x0) x1 = x0 + 1;
+            if (x0 < 0) x0 = 0;
+            if (x1 > srcW) x1 = srcW;
+            if (x0 >= x1) { x0 = std::max(0, srcW - 1); x1 = srcW; }
+            int sum = 0, n = 0;
+            for (int yy = y0; yy < y1; ++yy) {
+                const uint8_t* p = src.ptr<uint8_t>(yy);
+                for (int xx = x0; xx < x1; ++xx) {
+                    sum += p[xx];
+                    ++n;
+                }
+            }
+            d[x] = n > 0 ? static_cast<uint8_t>(sum / n) : 0;
+        }
+    }
+}
+
+static void scalePlaneUv(const cv::Mat& src, int sl, int st, int sr, int sb, cv::Mat* dst) {
+    const int dw = dst->cols, dh = dst->rows;
+    const int sw = std::max(1, sr - sl);
+    const int sh = std::max(1, sb - st);
+    const int srcW = src.cols, srcH = src.rows;
+    for (int y = 0; y < dh; ++y) {
+        int y0 = st + y * sh / dh;
+        int y1 = st + (y + 1) * sh / dh;
+        if (y1 <= y0) y1 = y0 + 1;
+        if (y0 < 0) y0 = 0;
+        if (y1 > srcH) y1 = srcH;
+        if (y0 >= y1) { y0 = std::max(0, srcH - 1); y1 = srcH; }
+        uint8_t* d = dst->ptr<uint8_t>(y);
+        for (int x = 0; x < dw; ++x) {
+            int x0 = sl + x * sw / dw;
+            int x1 = sl + (x + 1) * sw / dw;
+            if (x1 <= x0) x1 = x0 + 1;
+            if (x0 < 0) x0 = 0;
+            if (x1 > srcW) x1 = srcW;
+            if (x0 >= x1) { x0 = std::max(0, srcW - 1); x1 = srcW; }
+            int sumU = 0, sumV = 0, n = 0;
+            for (int yy = y0; yy < y1; ++yy) {
+                const uint8_t* p = src.ptr<uint8_t>(yy);
+                for (int xx = x0; xx < x1; ++xx) {
+                    sumV += p[xx * 2];
+                    sumU += p[xx * 2 + 1];
+                    ++n;
+                }
+            }
+            if (n > 0) {
+                d[x * 2] = static_cast<uint8_t>(sumV / n);
+                d[x * 2 + 1] = static_cast<uint8_t>(sumU / n);
+            } else {
+                d[x * 2] = 128;
+                d[x * 2 + 1] = 128;
+            }
+        }
+    }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeScalePackedU8(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong srcYPtr, jobject dstBuf, jint S, jint innerW, jint innerH
+) {
+    auto* srcY = reinterpret_cast<cv::Mat*>(srcYPtr);
+    if (!srcY || srcY->empty() || srcY->type() != CV_8UC1 || !dstBuf || S < 1) return JNI_FALSE;
+    if (innerW < 1) innerW = 1;
+    if (innerH < 1) innerH = 1;
+    if (innerW > S || innerH > S) return JNI_FALSE;
+    void* data = env->GetDirectBufferAddress(dstBuf);
+    if (!data) return JNI_FALSE;
+    const jlong cap = env->GetDirectBufferCapacity(dstBuf);
+    const jlong need = static_cast<jlong>(S) * static_cast<jlong>(S);
+    if (cap < need) return JNI_FALSE;
+    std::memset(data, 0, static_cast<size_t>(need));
+    cv::Mat inner(innerH, innerW, CV_8UC1, data, static_cast<size_t>(S));
+    scalePlaneU8(*srcY, 0, 0, srcY->cols, srcY->rows, &inner);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeWrapPackedU8(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong matPtr, jobject buf, jint S
+) {
+    auto* m = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!m || !buf || S < 1) return JNI_FALSE;
+    void* data = env->GetDirectBufferAddress(buf);
+    if (!data) return JNI_FALSE;
+    const jlong cap = env->GetDirectBufferCapacity(buf);
+    const jlong need = static_cast<jlong>(S) * static_cast<jlong>(S);
+    if (cap < need) return JNI_FALSE;
+    *m = cv::Mat(S, S, CV_8UC1, data, static_cast<size_t>(S));
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeScaleYuvRoi(
+    JNIEnv* /*env*/, jobject /*thiz*/,
+    jlong srcYPtr, jlong srcUvPtr,
+    jint sl, jint st, jint sr, jint sb,
+    jlong dstYPtr, jlong dstUvPtr
+) {
+    auto* srcY = reinterpret_cast<cv::Mat*>(srcYPtr);
+    auto* dstY = reinterpret_cast<cv::Mat*>(dstYPtr);
+    auto* dstUv = reinterpret_cast<cv::Mat*>(dstUvPtr);
+    if (!srcY || srcY->empty() || srcY->type() != CV_8UC1 || !dstY || dstY->empty() ||
+        dstY->type() != CV_8UC1) {
+        return JNI_FALSE;
+    }
+    const int imgW = srcY->cols, imgH = srcY->rows;
+    int l = sl, t = st, r = sr, b = sb;
+    if (l < 0) l = 0;
+    if (t < 0) t = 0;
+    if (r > imgW) r = imgW;
+    if (b > imgH) b = imgH;
+    if (r <= l) r = std::min(imgW, l + 1);
+    if (b <= t) b = std::min(imgH, t + 1);
+    scalePlaneU8(*srcY, l, t, r, b, dstY);
+    if (dstUv && !dstUv->empty() && dstUv->type() == CV_8UC2) {
+        auto* srcUv = reinterpret_cast<cv::Mat*>(srcUvPtr);
+        if (srcUv && !srcUv->empty() && srcUv->type() == CV_8UC2) {
+            const int ul = l / 2, ut = t / 2, ur = (r + 1) / 2, ub = (b + 1) / 2;
+            scalePlaneUv(*srcUv, ul, ut, ur, ub, dstUv);
+        } else {
+            dstUv->setTo(cv::Scalar(128, 128));
+        }
+    }
+    return JNI_TRUE;
+}
+
+JNIEXPORT jbyteArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEncodeYuvMatJpeg(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong yPtr, jlong uvPtr, jint quality
+) {
+    auto* y = reinterpret_cast<cv::Mat*>(yPtr);
+    auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
+    std::vector<uint8_t> buf;
+    cv::Mat empty;
+    if (!encodeYuvMatJpeg(y ? *y : empty, uv ? *uv : empty, quality, &buf) || buf.empty()) {
+        return env->NewByteArray(0);
+    }
+    jbyteArray arr = env->NewByteArray(static_cast<jint>(buf.size()));
+    if (!arr) return env->NewByteArray(0);
+    env->SetByteArrayRegion(arr, 0, static_cast<jint>(buf.size()),
+        reinterpret_cast<const jbyte*>(buf.data()));
+    return arr;
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCompressYuvToBase64(
-    JNIEnv* env, jobject thiz, jobject yBuf, jobject uBuf, jobject vBuf, jint w, jint h, jint stride, jint quality) {
-    
+    JNIEnv* env, jobject /*thiz*/, jobject yBuf, jobject uBuf, jobject vBuf, jint w, jint h, jint stride, jint quality) {
     uint8_t* yData = (uint8_t*)env->GetDirectBufferAddress(yBuf);
     uint8_t* uData = (uint8_t*)env->GetDirectBufferAddress(uBuf);
     uint8_t* vData = (uint8_t*)env->GetDirectBufferAddress(vBuf);
-
-    if (!yData || !uData || !vData) return env->NewStringUTF("");
-
-    cv::Mat bgr(h, w, CV_8UC3);
-    for (int y = 0; y < h; ++y) {
-        for (int x = 0; x < w; ++x) {
-            uint8_t Y = yData[y * stride + x];
-            uint8_t V = vData[(y/2) * stride + (x/2)*2];
-            uint8_t U = uData[(y/2) * stride + (x/2)*2];
-            
-            int r = Y + 1.402 * (V - 128);
-            int g = Y - 0.344136 * (U - 128) - 0.714136 * (V - 128);
-            int b = Y + 1.772 * (U - 128);
-            
-            cv::Vec3b& pixel = bgr.at<cv::Vec3b>(y, x);
-            pixel[0] = (uint8_t)std::max(0, std::min(255, b));
-            pixel[1] = (uint8_t)std::max(0, std::min(255, g));
-            pixel[2] = (uint8_t)std::max(0, std::min(255, r));
-        }
-    }
-
+    if (!yData) return env->NewStringUTF("");
     std::vector<uint8_t> buf;
-    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, quality};
-    cv::imencode(".jpg", bgr, buf, params);
-
-    std::string b64 = base64_encode(buf.data(), buf.size());
+    if (!encodeYuvPlanesJpeg(yData, uData, vData, w, h, stride, quality, &buf) || buf.empty()) {
+        return env->NewStringUTF("");
+    }
+    std::string b64 = base64_encode(buf.data(), static_cast<unsigned int>(buf.size()));
     return env->NewStringUTF(b64.c_str());
 }
 
@@ -674,8 +992,9 @@ static struct {
     jbyteArray arr_global;
     jbyte* elems;
     jboolean is_copy;
+    jobject buf_global;
     int held;
-} g_tensor_u8_share = {nullptr, nullptr, JNI_FALSE, 0};
+} g_tensor_u8_share = {nullptr, nullptr, JNI_FALSE, nullptr, 0};
 
 static void release_tensor_u8_share(JNIEnv* env) {
     if (!g_tensor_u8_share.held) return;
@@ -686,9 +1005,13 @@ static void release_tensor_u8_share(JNIEnv* env) {
     if (g_tensor_u8_share.arr_global) {
         env->DeleteGlobalRef(g_tensor_u8_share.arr_global);
     }
+    if (g_tensor_u8_share.buf_global) {
+        env->DeleteGlobalRef(g_tensor_u8_share.buf_global);
+    }
     g_tensor_u8_share.arr_global = nullptr;
     g_tensor_u8_share.elems = nullptr;
     g_tensor_u8_share.is_copy = JNI_FALSE;
+    g_tensor_u8_share.buf_global = nullptr;
     g_tensor_u8_share.held = 0;
 }
 
@@ -735,6 +1058,39 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeShare
 
     LOGI("shareTensorInputU8 offset=%d nbytes=%d isCopy=%d", (int)offset, (int)nbytes, (int)isCopy);
     return isCopy ? 2 : 1;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeShareTensorInputU8Direct(
+    JNIEnv* env, jclass, jobject jtensor, jobject buf, jint offset, jint nbytes) {
+    if (!jtensor || !buf || offset < 0 || nbytes <= 0) return 0;
+    release_tensor_u8_share(env);
+
+    jclass cls = env->GetObjectClass(jtensor);
+    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
+    if (env->ExceptionCheck() || !fid) {
+        env->ExceptionClear();
+        return 0;
+    }
+    jlong nativePtr = env->GetLongField(jtensor, fid);
+    if (nativePtr == 0) return 0;
+    auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
+    if (!uptr || !(*uptr)) return 0;
+
+    void* base = env->GetDirectBufferAddress(buf);
+    if (!base) return 0;
+    const jlong cap = env->GetDirectBufferCapacity(buf);
+    if (static_cast<jlong>(offset) + static_cast<jlong>(nbytes) > cap) return 0;
+
+    void* data = reinterpret_cast<uint8_t*>(base) + static_cast<size_t>(offset);
+    (*uptr)->ShareExternalMemory(
+        data, static_cast<size_t>(nbytes), paddle::lite_api::TargetType::kHost);
+
+    g_tensor_u8_share.buf_global = env->NewGlobalRef(buf);
+    g_tensor_u8_share.held = 1;
+
+    LOGI("shareTensorInputU8Direct offset=%d nbytes=%d", (int)offset, (int)nbytes);
+    return 1;
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -1122,25 +1478,21 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     // --- PHASE 1: EXPAND OUT (Move while range is high) ---
     while (minY > 0) {
         int r = getRange((int)minX, (int)maxX, (int)minY - 1, true);
-        LOGE("EXPAND_TRACE: [OUT] Y=%d (H) range=%d", (int)minY - 1, r);
         if (r < THRESHOLD) break;
         minY -= 1.0;
     }
     while (maxY < maxH - 1) {
         int r = getRange((int)minX, (int)maxX, (int)maxY + 1, true);
-        LOGE("EXPAND_TRACE: [OUT] Y=%d (H) range=%d", (int)maxY + 1, r);
         if (r < THRESHOLD) break;
         maxY += 1.0;
     }
     while (minX > 0) {
         int r = getRange((int)minY, (int)maxY, (int)minX - 1, false);
-        LOGE("EXPAND_TRACE: [OUT] X=%d (V) range=%d", (int)minX - 1, r);
         if (r < THRESHOLD) break;
         minX -= 1.0;
     }
     while (maxX < maxW - 1) {
         int r = getRange((int)minY, (int)maxY, (int)maxX + 1, false);
-        LOGE("EXPAND_TRACE: [OUT] X=%d (V) range=%d", (int)maxX + 1, r);
         if (r < THRESHOLD) break;
         maxX += 1.0;
     }
@@ -1157,25 +1509,21 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     // --- PHASE 2: PULL BACK IN (Stop on content or original floor) ---
     while (minY < maxY && minY < floorT) {
         int r = getRange((int)minX, (int)maxX, (int)minY, true);
-        LOGE("EXPAND_TRACE: [IN] Y=%d (H) range=%d", (int)minY, r);
         if (r >= THRESHOLD) break;
         minY += 1.0;
     }
     while (maxY > minY && maxY > floorB) {
         int r = getRange((int)minX, (int)maxX, (int)maxY, true);
-        LOGE("EXPAND_TRACE: [IN] Y=%d (H) range=%d", (int)maxY, r);
         if (r >= THRESHOLD) break;
         maxY -= 1.0;
     }
     while (minX < maxX && minX < floorL) {
         int r = getRange((int)minY, (int)maxY, (int)minX, false);
-        LOGE("EXPAND_TRACE: [IN] X=%d (V) range=%d", (int)minX, r);
         if (r >= THRESHOLD) break;
         minX += 1.0;
     }
     while (maxX > minX && maxX > floorR) {
         int r = getRange((int)minY, (int)maxY, (int)maxX, false);
-        LOGE("EXPAND_TRACE: [IN] X=%d (V) range=%d", (int)maxX, r);
         if (r >= THRESHOLD) break;
         maxX -= 1.0;
     }
@@ -1232,10 +1580,42 @@ static float normAnglePm45(float ang) {
     return ang;
 }
 
+static bool wrapHeatScratch(jlong scratchPtr, int h, int w,
+                            cv::Mat* maskOut, cv::Mat* labelsOut, cv::Mat* edgesOut,
+                            const uchar* photoYData);
+static const uchar* bufferSetAPrimaryYData(JNIEnv* env);
+static float heatAngleFromLabels(
+    const cv::Mat& labels, const cv::Mat& stats, int numLabels, int w, int h,
+    const float* heatF, const uint8_t* heatU);
+
+static float houghMedianPm45(const std::vector<cv::Vec2f>& lines) {
+    std::vector<float> angs;
+    angs.reserve(std::min<size_t>(lines.size(), 200));
+    const size_t nTake = std::min<size_t>(lines.size(), 200);
+    for (size_t i = 0; i < nTake; ++i) {
+        const float deg = static_cast<float>(lines[i][1] * 180.0 / CV_PI) - 90.0f;
+        angs.push_back(normAnglePm45(deg));
+    }
+    std::vector<float> near;
+    near.reserve(angs.size());
+    for (float a : angs) {
+        if (std::fabs(a) < 30.0f) near.push_back(a);
+    }
+    const std::vector<float>& use = near.empty() ? angs : near;
+    if (use.empty()) return 0.0f;
+    std::vector<float> sorted = use;
+    std::sort(sorted.begin(), sorted.end());
+    const size_t mid = sorted.size() / 2;
+    if (sorted.size() % 2 == 1) return sorted[mid];
+    return 0.5f * (sorted[mid - 1] + sorted[mid]);
+}
+
 // Production deskew angle from det heatmap (phase-2 GT winner: hough_thr0.2).
 // Fallback: legacy CC + minAreaRect + 0.5° weighted buckets if Hough finds no lines.
 // Must not throw: OpenCV exceptions on the JNI path abort the process (uncaught).
-static float heatmapToAngleHoughOrBucket(const cv::Mat& heatmap, float threshold) {
+// mask/labels/edges live on caller scratch (A.s); never wrap A.p. Missing wrap → 0 (JNI fail).
+static float heatmapToAngleHoughOrBucket(const cv::Mat& heatmap, float threshold, jlong scratchPtr,
+                                         const uchar* photoYData) {
     try {
         const int h = heatmap.rows;
         const int w = heatmap.cols;
@@ -1246,10 +1626,11 @@ static float heatmapToAngleHoughOrBucket(const cv::Mat& heatmap, float threshold
             return 0.0f;
         }
 
-        // --- Primary: Hough lines on Canny of thresholded heat (matches estimators.py) ---
-        // Explicit CV_8UC1 binary (0/255). Do NOT pass MatExpr (e.g. mask8>0) into OpenCV
-        // algorithms — connectedComponentsWithStats rejects it (unsupported array type / abort).
-        cv::Mat mask8(h, w, CV_8UC1);
+        cv::Mat mask8, labels, edges;
+        if (!wrapHeatScratch(scratchPtr, h, w, &mask8, &labels, &edges, photoYData)) {
+            LOGE("heatmapToAngle: wrapHeatScratch failed h=%d w=%d", h, w);
+            return 0.0f;
+        }
         {
             const float* src = heatmap.ptr<float>(0);
             uint8_t* dst = mask8.ptr<uint8_t>(0);
@@ -1258,86 +1639,17 @@ static float heatmapToAngleHoughOrBucket(const cv::Mat& heatmap, float threshold
                 dst[i] = (src[i] > threshold) ? 255 : 0;
             }
         }
-        cv::Mat edges;
         cv::Canny(mask8, edges, 50, 150);
         const int houghThr = std::max(40, static_cast<int>(std::min(h, w) * 0.05));
         std::vector<cv::Vec2f> lines;
         cv::HoughLines(edges, lines, 1.0, CV_PI / 180.0, houghThr);
 
-        if (!lines.empty()) {
-            std::vector<float> angs;
-            angs.reserve(std::min<size_t>(lines.size(), 200));
-            const size_t nTake = std::min<size_t>(lines.size(), 200);
-            for (size_t i = 0; i < nTake; ++i) {
-                // OpenCV: theta is normal angle; line orientation ≈ theta - 90°
-                const float deg = static_cast<float>(lines[i][1] * 180.0 / CV_PI) - 90.0f;
-                angs.push_back(normAnglePm45(deg));
-            }
-            std::vector<float> near;
-            near.reserve(angs.size());
-            for (float a : angs) {
-                if (std::fabs(a) < 30.0f) near.push_back(a);
-            }
-            const std::vector<float>& use = near.empty() ? angs : near;
-            std::vector<float> sorted = use;
-            std::sort(sorted.begin(), sorted.end());
-            const size_t mid = sorted.size() / 2;
-            if (sorted.size() % 2 == 1) {
-                return sorted[mid];
-            }
-            return 0.5f * (sorted[mid - 1] + sorted[mid]);
-        }
+        if (!lines.empty()) return houghMedianPm45(lines);
 
-        // --- Fallback: legacy weighted 0.5° buckets (previous production) ---
-        cv::Mat labels, stats, centroids;
+        cv::Mat stats, centroids;
         const int numLabels =
             cv::connectedComponentsWithStats(mask8, labels, stats, centroids, 8, CV_32S);
-        if (numLabels <= 1) return 0.0f;
-
-        std::map<int, double> buckets;
-        for (int l = 1; l < numLabels; ++l) {
-            const int area = stats.at<int>(l, cv::CC_STAT_AREA);
-            if (area < 10) continue;
-
-            const int left = stats.at<int>(l, cv::CC_STAT_LEFT);
-            const int top = stats.at<int>(l, cv::CC_STAT_TOP);
-            const int width = stats.at<int>(l, cv::CC_STAT_WIDTH);
-            const int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
-
-            cv::Mat points(area, 1, CV_32SC2);
-            int idx = 0;
-            double sumHeatmap = 0.0;
-            for (int y = top; y < top + height; ++y) {
-                for (int x = left; x < left + width; ++x) {
-                    if (labels.at<int>(y, x) == l) {
-                        if (idx < area) {
-                            points.at<cv::Point>(idx++) = cv::Point(x, y);
-                        }
-                        sumHeatmap += static_cast<double>(heatmap.at<float>(y, x));
-                    }
-                }
-            }
-            if (idx < area) points = points.rowRange(0, idx);
-            if (points.empty()) continue;
-
-            const cv::RotatedRect rrect = cv::minAreaRect(points);
-            const float angle = calculateAngle(rrect);
-            const double confidence = sumHeatmap / static_cast<double>(idx);
-            const int bucketIdx = static_cast<int>(std::round(angle * 2.0f));
-            const double weight = static_cast<double>(cv::arcLength(points, true)) * confidence;
-            buckets[bucketIdx] += weight;
-        }
-        if (buckets.empty()) return 0.0f;
-
-        int bestBucket = 0;
-        double maxWeight = -1.0;
-        for (const auto& entry : buckets) {
-            if (entry.second > maxWeight) {
-                maxWeight = entry.second;
-                bestBucket = entry.first;
-            }
-        }
-        return static_cast<float>(bestBucket) / 2.0f;
+        return heatAngleFromLabels(labels, stats, numLabels, w, h, heatmap.ptr<float>(0), nullptr);
     } catch (const cv::Exception& e) {
         LOGE("heatmapToAngle OpenCV: %s", e.what());
         return 0.0f;
@@ -1352,7 +1664,7 @@ static float heatmapToAngleHoughOrBucket(const cv::Mat& heatmap, float threshold
 
 JNIEXPORT jfloat JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatmapToAngle(
-    JNIEnv* env, jobject thiz, jobject tensor, jfloat threshold) {
+    JNIEnv* env, jobject thiz, jobject tensor, jfloat threshold, jlong scratchPtr) {
 
     jclass cls = env->GetObjectClass(tensor);
     jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
@@ -1377,7 +1689,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
     const float* data = heatBuf.data();
 
     cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
-    return heatmapToAngleHoughOrBucket(heatmap, threshold);
+    return heatmapToAngleHoughOrBucket(heatmap, threshold, scratchPtr, bufferSetAPrimaryYData(env));
 }
 
 // Return full heatmap as float[] for Java (safe for float32 / uint8 / fp16).
@@ -1467,17 +1779,22 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
 // det is single-threaded per engine in practice). Values: "u8" | "float".
 static char g_lastHeatmapPostPath[16] = "unknown";
 
-// Paddle det head decides on 4×4 feed cells. The output tensor we threshold is often
-// already upsampled 1:1 with the feed, so heatW/feedW cannot reveal that. One "cell"
-// outward is this many pixels on *that output array* (far side of the 4×4), not 1.
-static const int kPaddleDetHeatCellPx = 4;
+// Flood AABB + area for one 8-connected heat blob. id is 1..254 (0 = background).
+struct HeatBlob {
+    uint8_t id;
+    int area;
+    int left;
+    int top;
+    int width;
+    int height;
+};
 
-// Shared geometry pack from connectedComponentsWithStats.
+// Shared geometry pack from 8-connected u8 flood AABBs.
 // confScale: multiply mean of confMat ROI (1.0 for CV_32F heat in [0,1]; 1/255 for CV_8U heat).
+// labels is CV_8UC1 (onLab reads uint8). GrowCells / heatToPhoto unchanged.
 static void packHeatmapBoxes(
     const cv::Mat& labels,
-    const cv::Mat& stats,
-    int numLabels,
+    const std::vector<HeatBlob>& blobs,
     int w,
     int h,
     float minArea,
@@ -1485,24 +1802,33 @@ static void packHeatmapBoxes(
     const cv::Mat& confMat,
     float confScale,
     std::vector<float>* results,
-    int maxBoxes) {
+    int maxBoxes,
+    int growCells = 1,
+    float heatToPhoto = 0.f,
+    int photoW = 0,
+    int photoH = 0) {
     const int boxCap = maxBoxes > 0 ? maxBoxes : 200;
+    int gc = growCells;
+    if (gc < 0) gc = 0;
+    if (gc > 1) gc = 1;
+    const int cell = gc * 4;
     int count = 0;
-    for (int l = 1; l < numLabels; ++l) {
+    for (size_t bi = 0; bi < blobs.size(); ++bi) {
         if (count >= boxCap) break;
 
-        int area = stats.at<int>(l, cv::CC_STAT_AREA);
+        const HeatBlob& blob = blobs[bi];
+        const int l = (int)blob.id;
+        int area = blob.area;
         if (area < minArea) continue;
 
-        int left = stats.at<int>(l, cv::CC_STAT_LEFT);
-        int top = stats.at<int>(l, cv::CC_STAT_TOP);
-        int width = stats.at<int>(l, cv::CC_STAT_WIDTH);
-        int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
+        int left = blob.left;
+        int top = blob.top;
+        int width = blob.width;
+        int height = blob.height;
 
         cv::Point2f vertices[4];
-        const int cell = kPaddleDetHeatCellPx;
         if (useAabb) {
-            // Axis-aligned min/max of on-mask pixels, then one 4×4 cell outward.
+            // Axis-aligned min/max of on-mask pixels, then growCells heat pixels outward (0 = tight).
             const float x0 = (float)std::max(0, left - cell);
             const float y0 = (float)std::max(0, top - cell);
             const float x1 = (float)std::min(w, left + width + cell);
@@ -1512,25 +1838,43 @@ static void packHeatmapBoxes(
             vertices[2] = cv::Point2f(x1, y1);
             vertices[3] = cv::Point2f(x0, y1);
         } else {
-            // Flat CV_32SC2 of on-label points (ABI-stable vs std::vector<Point>).
-            cv::Mat points(area, 1, CV_32SC2);
-            int idx = 0;
+            // Boundary pixels of this CC in the stats bbox → stack hull (no points(area) Mat).
+            auto onLab = [&](int x, int y) -> bool {
+                if ((unsigned)x >= (unsigned)w || (unsigned)y >= (unsigned)h) return false;
+                return labels.ptr<uint8_t>(y)[x] == (uint8_t)l;
+            };
+            auto isEdge = [&](int x, int y) -> bool {
+                return !onLab(x - 1, y) || !onLab(x + 1, y) ||
+                       !onLab(x, y - 1) || !onLab(x, y + 1);
+            };
+            int nBound = 0;
             for (int y = top; y < top + height; ++y) {
+                const uint8_t* row = labels.ptr<uint8_t>(y);
                 for (int x = left; x < left + width; ++x) {
-                    if (labels.at<int>(y, x) == l) {
-                        if (idx < area) {
-                            points.at<cv::Point>(idx++) = cv::Point(x, y);
-                        }
-                    }
+                    if (row[x] != (uint8_t)l) continue;
+                    if (isEdge(x, y)) ++nBound;
                 }
             }
-            if (idx < area) {
-                points = points.rowRange(0, idx);
+            if (nBound < 1) continue;
+            const int stride = nBound > 4096 ? (nBound + 4095) / 4096 : 1;
+            cv::Point pts[4096];
+            int nPts = 0;
+            int seen = 0;
+            for (int y = top; y < top + height; ++y) {
+                const uint8_t* row = labels.ptr<uint8_t>(y);
+                for (int x = left; x < left + width; ++x) {
+                    if (row[x] != (uint8_t)l) continue;
+                    if (!isEdge(x, y)) continue;
+                    if ((seen % stride) == 0 && nPts < 4096) {
+                        pts[nPts++] = cv::Point(x, y);
+                    }
+                    ++seen;
+                }
             }
-            if (points.empty()) continue;
-
-            cv::RotatedRect rect = cv::minAreaRect(points);
-            // Grow along the quad axes (not AABB) so tilted reds get the same 4×4 cell.
+            if (nPts < 1) continue;
+            cv::Mat pointsHdr(nPts, 1, CV_32SC2, pts);
+            cv::RotatedRect rect = cv::minAreaRect(pointsHdr);
+            // Grow along the quad axes (not AABB) so tilted reds get the same stride-4 cell.
             rect.size.width += 2.f * (float)cell;
             rect.size.height += 2.f * (float)cell;
             rect.points(vertices);
@@ -1541,6 +1885,21 @@ static void packHeatmapBoxes(
                 if (vertices[i].y > (float)h) vertices[i].y = (float)h;
             }
         }
+        if (heatToPhoto > 0.f) {
+            const float maxX = photoW > 0 ? (float)photoW : 0.f;
+            const float maxY = photoH > 0 ? (float)photoH : 0.f;
+            for (int i = 0; i < 4; ++i) {
+                vertices[i].x *= heatToPhoto;
+                vertices[i].y *= heatToPhoto;
+                if (vertices[i].x < 0.f) vertices[i].x = 0.f;
+                if (vertices[i].y < 0.f) vertices[i].y = 0.f;
+                if (vertices[i].x > maxX) vertices[i].x = maxX;
+                if (vertices[i].y > maxY) vertices[i].y = maxY;
+            }
+        }
+        // OpenCV minAreaRect corner order is not TL/TR/BR/BL and does not pick u≈horizontal.
+        // Canonicalize at the JNI source so Kotlin seeds are already image-oriented.
+        canonicalizeVerticesTlTrBrBl(vertices);
 
         if (count < 3) {
             LOGI("nativeProcessHeatmap: box[%d] label=%d aabb=%d vertices=(%.1f,%.1f)(%.1f,%.1f)(%.1f,%.1f)(%.1f,%.1f) area=%d",
@@ -1576,10 +1935,13 @@ static void packHeatmapBoxes(
 // (v0.98-71 abort; v0.98-72+ try/catch left L/M as silent no-ops → identical reds). Pure C++
 // 3x3 max avoids that ABI path. Scale note: growth is in *heatmap* pixels then mapped to
 // full-res (e.g. ~2 heat-px at 224 → tens of full-image px after ICRS upscale).
-static void dilateMaskPasses(cv::Mat& mask, int passes) {
+static void dilateMaskPasses(cv::Mat& mask, cv::Mat& buf, int passes) {
     if (passes <= 0 || mask.empty() || mask.type() != CV_8UC1) return;
+    if (buf.empty() || buf.type() != CV_8UC1 || buf.rows != mask.rows || buf.cols != mask.cols) {
+        LOGE("dilateMaskPasses: wrap ping-pong missing size=%dx%d", mask.cols, mask.rows);
+        return;
+    }
     if (passes > 32) passes = 32;  // hard safety
-    cv::Mat buf(mask.size(), CV_8UC1);
     cv::Mat* a = &mask;
     cv::Mat* b = &buf;
     for (int p = 0; p < passes; ++p) {
@@ -1615,14 +1977,356 @@ static void dilateMaskPasses(cv::Mat& mask, int passes) {
     LOGI("dilateMaskPasses: pure 3x3 max applied passes=%d size=%dx%d", passes, mask.cols, mask.rows);
 }
 
+/** A.p luma .data (photo Y). Null if engine buffers are not up. */
+static const uchar* bufferSetAPrimaryYData(JNIEnv* env) {
+    if (!env) return nullptr;
+    jclass engineCls = env->FindClass(
+        "com/davidlang/vehicleexpensesautomated/ui/util/NativePaddleEngine");
+    if (!engineCls) {
+        env->ExceptionClear();
+        return nullptr;
+    }
+    jclass companionCls = env->FindClass(
+        "com/davidlang/vehicleexpensesautomated/ui/util/NativePaddleEngine$Companion");
+    if (!companionCls) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(engineCls);
+        return nullptr;
+    }
+    jfieldID companionFid = env->GetStaticFieldID(
+        engineCls, "Companion",
+        "Lcom/davidlang/vehicleexpensesautomated/ui/util/NativePaddleEngine$Companion;");
+    if (!companionFid) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(engineCls);
+        env->DeleteLocalRef(companionCls);
+        return nullptr;
+    }
+    jobject companion = env->GetStaticObjectField(engineCls, companionFid);
+    env->DeleteLocalRef(engineCls);
+    if (!companion) {
+        env->DeleteLocalRef(companionCls);
+        return nullptr;
+    }
+    jmethodID getA = env->GetMethodID(
+        companionCls, "getBufferSetA",
+        "()Lcom/davidlang/vehicleexpensesautomated/ui/util/BufferSet;");
+    env->DeleteLocalRef(companionCls);
+    if (!getA) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(companion);
+        return nullptr;
+    }
+    jobject bufA = env->CallObjectMethod(companion, getA);
+    env->DeleteLocalRef(companion);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return nullptr;
+    }
+    if (!bufA) return nullptr;
+    jclass bufCls = env->GetObjectClass(bufA);
+    jmethodID getP = env->GetMethodID(
+        bufCls, "getP",
+        "()Lcom/davidlang/vehicleexpensesautomated/ui/util/BufferSet$Slice;");
+    env->DeleteLocalRef(bufCls);
+    if (!getP) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(bufA);
+        return nullptr;
+    }
+    jobject sliceP = env->CallObjectMethod(bufA, getP);
+    env->DeleteLocalRef(bufA);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return nullptr;
+    }
+    if (!sliceP) return nullptr;
+    jclass sliceCls = env->GetObjectClass(sliceP);
+    jmethodID getMat = env->GetMethodID(sliceCls, "getMat", "()Lorg/opencv/core/Mat;");
+    env->DeleteLocalRef(sliceCls);
+    if (!getMat) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(sliceP);
+        return nullptr;
+    }
+    jobject matObj = env->CallObjectMethod(sliceP, getMat);
+    env->DeleteLocalRef(sliceP);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return nullptr;
+    }
+    if (!matObj) return nullptr;
+    jclass matCls = env->GetObjectClass(matObj);
+    jfieldID nativeObjFid = env->GetFieldID(matCls, "nativeObj", "J");
+    env->DeleteLocalRef(matCls);
+    if (!nativeObjFid) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(matObj);
+        return nullptr;
+    }
+    jlong ptr = env->GetLongField(matObj, nativeObjFid);
+    env->DeleteLocalRef(matObj);
+    auto* m = reinterpret_cast<cv::Mat*>(ptr);
+    if (!m || !m->data) return nullptr;
+    return m->data;
+}
+
+// Wrap mask (8UC1) then labels (CV_32S) then edges (8UC1) as headers on caller scratch Y (A.s).
+// Need ≥ ~6*h*w bytes (labels 4-byte aligned after the mask).
+// Refuse if scratch .data is A.p photo Y. Heap (Mat::create) only if have < need.
+static bool wrapHeatScratch(jlong scratchPtr, int h, int w,
+                            cv::Mat* maskOut, cv::Mat* labelsOut, cv::Mat* edgesOut,
+                            const uchar* photoYData) {
+    if (scratchPtr == 0 || !maskOut || !labelsOut || !edgesOut || h <= 0 || w <= 0) return false;
+    auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
+    if (!scratch || scratch->empty() || !scratch->data || !scratch->isContinuous()) return false;
+    if (photoYData && scratch->data == photoYData) {
+        LOGE("wrapHeatScratch: refuse A.p photo Y h=%d w=%d", h, w);
+        return false;
+    }
+    const size_t n = static_cast<size_t>(h) * static_cast<size_t>(w);
+    const size_t labelsOff = (n + 3u) & ~static_cast<size_t>(3u);
+    const size_t edgesOff = labelsOff + 4u * n;
+    const size_t need = edgesOff + n;
+    const size_t have = scratch->total() * scratch->elemSize();
+    if (have < need) {
+        const size_t bytes = n + 4u * n + n;
+        if (!veAllocLog("heatScratchHeap", bytes, h, w, CV_8UC1)) return false;
+        maskOut->create(h, w, CV_8UC1);
+        labelsOut->create(h, w, CV_32S);
+        edgesOut->create(h, w, CV_8UC1);
+        if (maskOut->empty() || labelsOut->empty() || edgesOut->empty() ||
+            !maskOut->data || !labelsOut->data || !edgesOut->data) {
+            LOGE("wrapHeatScratch: heap create failed h=%d w=%d", h, w);
+            return false;
+        }
+        return true;
+    }
+    uchar* base = scratch->data;
+    *maskOut = cv::Mat(h, w, CV_8UC1, base);
+    *labelsOut = cv::Mat(h, w, CV_32S, base + labelsOff);
+    *edgesOut = cv::Mat(h, w, CV_8UC1, base + edgesOff);
+    return true;
+}
+
+// Box-path labels only: h×w CV_8UC1 header on scratch (need = h*w bytes). No mask/edges pack.
+static bool wrapHeatLabelsU8(jlong scratchPtr, int h, int w, cv::Mat* labelsOut) {
+    if (scratchPtr == 0 || !labelsOut || h <= 0 || w <= 0) return false;
+    auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
+    if (!scratch || scratch->empty() || !scratch->data || !scratch->isContinuous()) return false;
+    if (scratch->type() != CV_8UC1) return false;
+    const size_t n = static_cast<size_t>(h) * static_cast<size_t>(w);
+    const size_t have = scratch->total() * scratch->elemSize();
+    if (have < n) return false;
+    *labelsOut = cv::Mat(h, w, CV_8UC1, scratch->data);
+    return true;
+}
+
+// 8-connected BFS (same neighbor walk as poison flood255LookIds). Ids 1..254; 0 = background.
+// Stops starting new blobs at 254 or boxCap. Heat test is in-predicate (no packed threshold mask).
+// kind: 0 = heatU > thrU, 1 = heatF > thrF, 2 = mask plane != 0. Non-template: this TU is extern "C".
+static bool heatOnAt(int kind, int x, int y, int w,
+                     const uint8_t* heatU, double thrU, const float* heatF, float thrF,
+                     const uint8_t* mask) {
+    const size_t i = static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x);
+    if (kind == 2) return mask[i] != 0;
+    if (kind == 0) return static_cast<double>(heatU[i]) > thrU;
+    return heatF[i] > thrF;
+}
+
+static void floodHeatBlobsU8(
+    cv::Mat& labels, int w, int h, int boxCap, int kind,
+    const uint8_t* heatU, double thrU, const float* heatF, float thrF, const uint8_t* mask,
+    std::vector<HeatBlob>* blobs) {
+    labels.setTo(0);
+    blobs->clear();
+    std::vector<int> st;
+    st.reserve(256);
+    uint8_t nextId = 1;
+    for (int y = 0; y < h; ++y) {
+        uint8_t* row = labels.ptr<uint8_t>(y);
+        for (int x = 0; x < w; ++x) {
+            if (row[x] != 0) continue;
+            if (!heatOnAt(kind, x, y, w, heatU, thrU, heatF, thrF, mask)) continue;
+            if (nextId > 254 || (int)blobs->size() >= boxCap) return;
+            const uint8_t id = nextId++;
+            st.clear();
+            st.push_back(y * w + x);
+            row[x] = id;
+            int x0 = x, x1 = x + 1, y0 = y, y1 = y + 1;
+            int area = 0;
+            while (!st.empty()) {
+                const int i = st.back();
+                st.pop_back();
+                const int cy = i / w;
+                const int cx = i - cy * w;
+                ++area;
+                if (cx < x0) x0 = cx;
+                if (cx + 1 > x1) x1 = cx + 1;
+                if (cy < y0) y0 = cy;
+                if (cy + 1 > y1) y1 = cy + 1;
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        if (!dx && !dy) continue;
+                        const int nx = cx + dx, ny = cy + dy;
+                        if ((unsigned)nx >= (unsigned)w || (unsigned)ny >= (unsigned)h) continue;
+                        uint8_t* np = labels.ptr<uint8_t>(ny) + nx;
+                        if (*np != 0) continue;
+                        if (!heatOnAt(kind, nx, ny, w, heatU, thrU, heatF, thrF, mask)) continue;
+                        *np = id;
+                        st.push_back(ny * w + nx);
+                    }
+                }
+            }
+            HeatBlob b;
+            b.id = id;
+            b.area = area;
+            b.left = x0;
+            b.top = y0;
+            b.width = x1 - x0;
+            b.height = y1 - y0;
+            blobs->push_back(b);
+        }
+    }
+}
+
+// dilate=0: flood heat in-predicate (no mask, no edges). dilate>0: heap ping-pong then flood into labels.
+// JNI has one scratchY (labels); packedSet.p is not a second JNI arg (NativeImageUtils.kt unlisted).
+static bool heatMaybeDilateFlood(
+    cv::Mat& labels, int w, int h, int boxCap, int dilatePasses,
+    const uint8_t* heatU, double thrU, const float* heatF, float thrF,
+    std::vector<HeatBlob>* blobs) {
+    const size_t n = static_cast<size_t>(h) * static_cast<size_t>(w);
+    if (dilatePasses <= 0) {
+        if (heatU) {
+            floodHeatBlobsU8(labels, w, h, boxCap, 0, heatU, thrU, nullptr, 0.f, nullptr, blobs);
+        } else if (heatF) {
+            floodHeatBlobsU8(labels, w, h, boxCap, 1, nullptr, 0.0, heatF, thrF, nullptr, blobs);
+        } else {
+            return false;
+        }
+        return true;
+    }
+    if (!veAllocLog("heatDilateMask", n, h, w, CV_8UC1)) return false;
+    if (!veAllocLog("heatDilateBuf", n, h, w, CV_8UC1)) return false;
+    cv::Mat mask(h, w, CV_8UC1);
+    cv::Mat buf(h, w, CV_8UC1);
+    uchar* mptr = mask.ptr<uchar>(0);
+    if (heatU) {
+        for (size_t i = 0; i < n; ++i) mptr[i] = heatU[i] > thrU ? (uchar)255 : (uchar)0;
+    } else if (heatF) {
+        for (size_t i = 0; i < n; ++i) mptr[i] = heatF[i] > thrF ? (uchar)255 : (uchar)0;
+    } else {
+        return false;
+    }
+    dilateMaskPasses(mask, buf, dilatePasses);
+    floodHeatBlobsU8(labels, w, h, boxCap, 2, nullptr, 0.0, nullptr, 0.f, mask.ptr<uchar>(0), blobs);
+    return true;
+}
+
+// CC boundary subsample into stack pts[4096] (no points(area) Mat). Returns nPts.
+static int heatLabelEdgePts(
+    const cv::Mat& labels, int l, int left, int top, int width, int height, int w, int h,
+    cv::Point* pts) {
+    auto onLab = [&](int x, int y) -> bool {
+        if ((unsigned)x >= (unsigned)w || (unsigned)y >= (unsigned)h) return false;
+        return labels.ptr<int>(y)[x] == l;
+    };
+    auto isEdge = [&](int x, int y) -> bool {
+        return !onLab(x - 1, y) || !onLab(x + 1, y) ||
+               !onLab(x, y - 1) || !onLab(x, y + 1);
+    };
+    int nBound = 0;
+    for (int y = top; y < top + height; ++y) {
+        const int* row = labels.ptr<int>(y);
+        for (int x = left; x < left + width; ++x) {
+            if (row[x] != l) continue;
+            if (isEdge(x, y)) ++nBound;
+        }
+    }
+    if (nBound < 1) return 0;
+    const int stride = nBound > 4096 ? (nBound + 4095) / 4096 : 1;
+    int nPts = 0;
+    int seen = 0;
+    for (int y = top; y < top + height; ++y) {
+        const int* row = labels.ptr<int>(y);
+        for (int x = left; x < left + width; ++x) {
+            if (row[x] != l) continue;
+            if (!isEdge(x, y)) continue;
+            if ((seen % stride) == 0 && nPts < 4096) {
+                pts[nPts++] = cv::Point(x, y);
+            }
+            ++seen;
+        }
+    }
+    return nPts;
+}
+
+static float heatBestBucketAngle(const std::map<int, double>& buckets) {
+    if (buckets.empty()) return 0.0f;
+    int bestBucket = 0;
+    double maxWeight = -1.0;
+    for (const auto& entry : buckets) {
+        if (entry.second > maxWeight) {
+            maxWeight = entry.second;
+            bestBucket = entry.first;
+        }
+    }
+    return static_cast<float>(bestBucket) / 2.0f;
+}
+
+// minAreaRect 0.5° buckets from CC labels; heatF XOR heatU. Walks labels in place.
+static float heatAngleFromLabels(
+    const cv::Mat& labels, const cv::Mat& stats, int numLabels, int w, int h,
+    const float* heatF, const uint8_t* heatU) {
+    if (numLabels <= 1) return 0.0f;
+    std::map<int, double> buckets;
+    for (int l = 1; l < numLabels; ++l) {
+        const int area = stats.at<int>(l, cv::CC_STAT_AREA);
+        if (area < 10) continue;
+        const int left = stats.at<int>(l, cv::CC_STAT_LEFT);
+        const int top = stats.at<int>(l, cv::CC_STAT_TOP);
+        const int width = stats.at<int>(l, cv::CC_STAT_WIDTH);
+        const int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
+        cv::Point pts[4096];
+        const int nPts = heatLabelEdgePts(labels, l, left, top, width, height, w, h, pts);
+        if (nPts < 1) continue;
+        cv::Mat pointsHdr(nPts, 1, CV_32SC2, pts);
+        const cv::RotatedRect rrect = cv::minAreaRect(pointsHdr);
+        const float angle = calculateAngle(rrect);
+        double sum = 0.0;
+        int nOn = 0;
+        for (int y = top; y < top + height; ++y) {
+            const int* row = labels.ptr<int>(y);
+            for (int x = left; x < left + width; ++x) {
+                if (row[x] != l) continue;
+                const size_t i = static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x);
+                if (heatF) sum += static_cast<double>(heatF[i]);
+                else if (heatU) sum += static_cast<double>(heatU[i]);
+                ++nOn;
+            }
+        }
+        if (nOn < 1) continue;
+        const double confidence = heatF
+            ? (sum / static_cast<double>(nOn))
+            : ((sum / 255.0) / static_cast<double>(nOn));
+        const int bucketIdx = static_cast<int>(std::round(angle * 2.0f));
+        const double weight = static_cast<double>(cv::arcLength(pointsHdr, true)) * confidence;
+        buckets[bucketIdx] += weight;
+    }
+    return heatBestBucketAngle(buckets);
+}
+
 // boxMode: 0 = minAreaRect on on-mask pixels (production); 1 = axis-aligned CC stats box (AABB).
-// maskDilatePasses: morph dilate iterations on binary thr mask before CC (experiment L/M).
-// kUInt8 product heatmaps: thr/CC/geometry/hist entirely on u8 — no float heat buffer.
+// maskDilatePasses: morph dilate iterations on binary thr mask before flood (experiment L/M).
+// kUInt8 product heatmaps: thr/flood/geometry/hist entirely on u8 — no float heat buffer.
 // float/fp16: convert once via tensorToFloatHeatmap (legacy path).
+// scratchPtr: u8 label plane (packed det square .s after run(); need h*w). Missing wrap → fail.
 JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProcessHeatmap(
     JNIEnv* env, jobject thiz, jobject tensor, jfloat threshold, jfloat minArea, jint boxMode,
-    jint maskDilatePasses, jint maxBoxes) {
+    jint maskDilatePasses, jint maxBoxes, jint growCells, jlong scratchPtr,
+    jfloat heatToPhoto, jint photoW, jint photoH) {
 
     jclass cls = env->GetObjectClass(tensor);
     jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
@@ -1653,6 +2357,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
     std::vector<float> results;
     results.reserve(std::min<size_t>(static_cast<size_t>(boxCap), n / 50 + 1) * 9 + 100);
 
+    cv::Mat labels;
+    if (!wrapHeatLabelsU8(scratchPtr, h, w, &labels)) {
+        LOGE("nativeProcessHeatmap: wrapHeatLabelsU8 failed h=%d w=%d", h, w);
+        return nullptr;
+    }
+    std::vector<HeatBlob> blobs;
+    blobs.reserve(static_cast<size_t>(std::min(boxCap, 254)));
+
     if (prec == PrecisionType::kUInt8) {
         // --- u8-native path (product armv8 / phone prod_u8fp16 heat is kUInt8) ---
         const uint8_t* data = nativeTensor->data<uint8_t>();
@@ -1664,22 +2376,19 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
              (unsigned)data[0], (unsigned)(n > 1 ? data[1] : 0),
              (unsigned)(n > 2 ? data[2] : 0), (unsigned)(n > 3 ? data[3] : 0));
 
-        // Float thr t on (u/255): on iff u/255 > t iff u > t*255. OpenCV THRESH_BINARY uses >.
+        // Float thr t on (u/255): on iff u/255 > t iff u > t*255.
         // t=0 → thrU=0 → u≥1 (matches prior float path on u/255).
         const double thrU = static_cast<double>(threshold) * 255.0;
         cv::Mat heatU8(h, w, CV_8UC1, const_cast<uint8_t*>(data));
-        cv::Mat mask;
-        cv::threshold(heatU8, mask, thrU, 255.0, cv::THRESH_BINARY);
-        // mask is already CV_8U from 8-bit threshold.
-        dilateMaskPasses(mask, (int)maskDilatePasses);
+        if (!heatMaybeDilateFlood(labels, w, h, boxCap, (int)maskDilatePasses,
+                                  data, thrU, nullptr, 0.f, &blobs)) {
+            return nullptr;
+        }
         if (maskDilatePasses > 0) {
             LOGI("nativeProcessHeatmap: u8 maskDilatePasses=%d", (int)maskDilatePasses);
         }
-
-        cv::Mat labels, stats, centroids;
-        int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
         // conf in [0,1] like float path: mean(u8)/255
-        packHeatmapBoxes(labels, stats, numLabels, w, h, minArea, useAabb, heatU8, 1.0f / 255.0f, &results, boxCap);
+        packHeatmapBoxes(labels, blobs, w, h, minArea, useAabb, heatU8, 1.0f / 255.0f, &results, boxCap, (int)growCells, (float)heatToPhoto, (int)photoW, (int)photoH);
 
         float hist[100] = {0};
         for (size_t i = 0; i < n; ++i) {
@@ -1702,17 +2411,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
              data[0], data[1], data[2], data[3]);
 
         cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
-        cv::Mat mask;
-        cv::threshold(heatmap, mask, threshold, 255.0, cv::THRESH_BINARY);
-        mask.convertTo(mask, CV_8U);
-        dilateMaskPasses(mask, (int)maskDilatePasses);
+        if (!heatMaybeDilateFlood(labels, w, h, boxCap, (int)maskDilatePasses,
+                                  nullptr, 0.0, data, (float)threshold, &blobs)) {
+            return nullptr;
+        }
         if (maskDilatePasses > 0) {
             LOGI("nativeProcessHeatmap: float maskDilatePasses=%d", (int)maskDilatePasses);
         }
-
-        cv::Mat labels, stats, centroids;
-        int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
-        packHeatmapBoxes(labels, stats, numLabels, w, h, minArea, useAabb, heatmap, 1.0f, &results, boxCap);
+        packHeatmapBoxes(labels, blobs, w, h, minArea, useAabb, heatmap, 1.0f, &results, boxCap, (int)growCells, (float)heatToPhoto, (int)photoW, (int)photoH);
 
         float hist[100] = {0};
         for (size_t i = 0; i < n; ++i) {
@@ -1733,7 +2439,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
 JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProcessHeatmapU8(
     JNIEnv* env, jobject thiz, jbyteArray heatU8, jint w, jint h, jfloat threshold,
-    jfloat minArea, jint boxMode, jint maskDilatePasses, jint maxBoxes) {
+    jfloat minArea, jint boxMode, jint maskDilatePasses, jint maxBoxes, jint growCells,
+    jlong scratchPtr, jfloat heatToPhoto, jint photoW, jint photoH) {
     if (!heatU8 || w <= 0 || h <= 0) return nullptr;
     const size_t n = static_cast<size_t>(h) * static_cast<size_t>(w);
     if (n > 64u * 1024u * 1024u) return nullptr;
@@ -1749,15 +2456,22 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
     std::vector<float> results;
     results.reserve(std::min<size_t>(static_cast<size_t>(boxCap), n / 50 + 1) * 9 + 100);
 
+    cv::Mat labels;
+    if (!wrapHeatLabelsU8(scratchPtr, h, w, &labels)) {
+        LOGE("nativeProcessHeatmapU8: wrapHeatLabelsU8 failed h=%d w=%d", h, w);
+        env->ReleaseByteArrayElements(heatU8, raw, JNI_ABORT);
+        return nullptr;
+    }
     const double thrU = static_cast<double>(threshold) * 255.0;
     cv::Mat heatMat(h, w, CV_8UC1, const_cast<uint8_t*>(data));
-    cv::Mat mask;
-    cv::threshold(heatMat, mask, thrU, 255.0, cv::THRESH_BINARY);
-    dilateMaskPasses(mask, (int)maskDilatePasses);
-
-    cv::Mat labels, stats, centroids;
-    int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
-    packHeatmapBoxes(labels, stats, numLabels, w, h, minArea, useAabb, heatMat, 1.0f / 255.0f, &results, boxCap);
+    std::vector<HeatBlob> blobs;
+    blobs.reserve(static_cast<size_t>(std::min(boxCap, 254)));
+    if (!heatMaybeDilateFlood(labels, w, h, boxCap, (int)maskDilatePasses,
+                              data, thrU, nullptr, 0.f, &blobs)) {
+        env->ReleaseByteArrayElements(heatU8, raw, JNI_ABORT);
+        return nullptr;
+    }
+    packHeatmapBoxes(labels, blobs, w, h, minArea, useAabb, heatMat, 1.0f / 255.0f, &results, boxCap, (int)growCells, (float)heatToPhoto, (int)photoW, (int)photoH);
 
     float hist[100] = {0};
     for (size_t i = 0; i < n; ++i) {
@@ -1782,7 +2496,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
 // Must not throw: uncaught cv::Exception aborts the process.
 JNIEXPORT jfloat JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatmapToAngleU8(
-    JNIEnv* env, jobject thiz, jbyteArray heatU8, jint w, jint h, jfloat threshold) {
+    JNIEnv* env, jobject thiz, jbyteArray heatU8, jint w, jint h, jfloat threshold, jlong scratchPtr) {
     if (!heatU8 || w < 8 || h < 8) return 0.f;
     const size_t n = static_cast<size_t>(h) * static_cast<size_t>(w);
     if (n > 64u * 1024u * 1024u) return 0.f;
@@ -1793,95 +2507,28 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
 
     float result = 0.f;
     try {
-        // OpenCV THRESH_BINARY uses >: thrU=0 → u≥1; thrU=1 → u≥2.
         const double thrU = static_cast<double>(threshold) * 255.0;
         cv::Mat heatMat(h, w, CV_8UC1, const_cast<uint8_t*>(data));
-        cv::Mat mask8;
+        cv::Mat mask8, labels, edges;
+        if (!wrapHeatScratch(scratchPtr, h, w, &mask8, &labels, &edges,
+                             bufferSetAPrimaryYData(env))) {
+            LOGE("heatmapToAngleU8: wrapHeatScratch failed h=%d w=%d", h, w);
+            env->ReleaseByteArrayElements(heatU8, raw, JNI_ABORT);
+            return 0.f;
+        }
         cv::threshold(heatMat, mask8, thrU, 255.0, cv::THRESH_BINARY);
-        // Ensure true CV_8UC1 continuous (not MatExpr) for CC/Hough.
-        if (mask8.type() != CV_8UC1) {
-            mask8.convertTo(mask8, CV_8UC1);
-        }
-        if (!mask8.isContinuous()) {
-            mask8 = mask8.clone();
-        }
-
-        cv::Mat edges;
         cv::Canny(mask8, edges, 50, 150);
         const int houghThr = std::max(40, static_cast<int>(std::min(h, w) * 0.05));
         std::vector<cv::Vec2f> lines;
         cv::HoughLines(edges, lines, 1.0, CV_PI / 180.0, houghThr);
 
         if (!lines.empty()) {
-            std::vector<float> angs;
-            angs.reserve(std::min<size_t>(lines.size(), 200));
-            const size_t nTake = std::min<size_t>(lines.size(), 200);
-            for (size_t i = 0; i < nTake; ++i) {
-                const float deg = static_cast<float>(lines[i][1] * 180.0 / CV_PI) - 90.0f;
-                angs.push_back(normAnglePm45(deg));
-            }
-            std::vector<float> near;
-            near.reserve(angs.size());
-            for (float a : angs) {
-                if (std::fabs(a) < 30.0f) near.push_back(a);
-            }
-            const std::vector<float>& use = near.empty() ? angs : near;
-            std::vector<float> sorted = use;
-            std::sort(sorted.begin(), sorted.end());
-            const size_t mid = sorted.size() / 2;
-            if (sorted.size() % 2 == 1) {
-                result = sorted[mid];
-            } else if (!sorted.empty()) {
-                result = 0.5f * (sorted[mid - 1] + sorted[mid]);
-            }
+            result = houghMedianPm45(lines);
         } else {
-            // Fallback: CC + minAreaRect 0.5° buckets (u8 confidence = sum u / (255*n))
-            cv::Mat labels, stats, centroids;
+            cv::Mat stats, centroids;
             const int numLabels =
                 cv::connectedComponentsWithStats(mask8, labels, stats, centroids, 8, CV_32S);
-            if (numLabels > 1) {
-                std::map<int, double> buckets;
-                for (int l = 1; l < numLabels; ++l) {
-                    const int area = stats.at<int>(l, cv::CC_STAT_AREA);
-                    if (area < 10) continue;
-                    const int left = stats.at<int>(l, cv::CC_STAT_LEFT);
-                    const int top = stats.at<int>(l, cv::CC_STAT_TOP);
-                    const int width = stats.at<int>(l, cv::CC_STAT_WIDTH);
-                    const int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
-                    cv::Mat points(area, 1, CV_32SC2);
-                    int idx = 0;
-                    double sumU = 0.0;
-                    for (int y = top; y < top + height; ++y) {
-                        for (int x = left; x < left + width; ++x) {
-                            if (labels.at<int>(y, x) == l) {
-                                if (idx < area) {
-                                    points.at<cv::Point>(idx++) = cv::Point(x, y);
-                                }
-                                sumU += static_cast<double>(data[static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x)]);
-                            }
-                        }
-                    }
-                    if (idx < area) points = points.rowRange(0, idx);
-                    if (points.empty()) continue;
-                    const cv::RotatedRect rrect = cv::minAreaRect(points);
-                    const float angle = calculateAngle(rrect);
-                    const double confidence = (sumU / 255.0) / static_cast<double>(idx);
-                    const int bucketIdx = static_cast<int>(std::round(angle * 2.0f));
-                    const double weight = static_cast<double>(cv::arcLength(points, true)) * confidence;
-                    buckets[bucketIdx] += weight;
-                }
-                if (!buckets.empty()) {
-                    int bestBucket = 0;
-                    double maxWeight = -1.0;
-                    for (const auto& entry : buckets) {
-                        if (entry.second > maxWeight) {
-                            maxWeight = entry.second;
-                            bestBucket = entry.first;
-                        }
-                    }
-                    result = static_cast<float>(bestBucket) / 2.0f;
-                }
-            }
+            result = heatAngleFromLabels(labels, stats, numLabels, w, h, nullptr, data);
         }
     } catch (const cv::Exception& e) {
         LOGE("heatmapToAngleU8 OpenCV: %s", e.what());
@@ -2801,7 +3448,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     int minVertRun  = std::max(1, (int)(hSW * 0.5f));  
 
     // 2. Find connected components with stats
-    cv::Mat labels, stats, centroids;
+    cv::Mat labels;
+    if (!ccLabelsScratch(mat->rows, mat->cols, &labels)) return nullptr;
+    cv::Mat stats, centroids;
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
 
     // 3. Union bounding boxes of valid components that intersect the starting box
@@ -2855,7 +3504,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeFindA
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
 
-    cv::Mat labels, stats, centroids;
+    cv::Mat labels;
+    if (!ccLabelsScratch(mat->rows, mat->cols, &labels)) return nullptr;
+    cv::Mat stats, centroids;
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
 
     std::vector<int> boxes;
@@ -2887,7 +3538,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGetAl
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
 
-    cv::Mat labels, stats, centroids;
+    cv::Mat labels;
+    if (!ccLabelsScratch(mat->rows, mat->cols, &labels)) return nullptr;
+    cv::Mat stats, centroids;
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
 
     const int nObjects = nLabels - 1;
@@ -2921,7 +3574,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
     long long msInitialCc = 0, msHoriz = 0, msVert = 0, msReCc = 0, msSmallFilter = 0;
 
     // Object detection (CC): populate per-pixel labels buffer before any filters (Set J semantics).
-    cv::Mat labels, stats, centroids;
+    cv::Mat labels;
+    if (!ccLabelsScratch(mat->rows, mat->cols, &labels)) return nullptr;
+    cv::Mat stats, centroids;
     auto tCc0 = std::chrono::high_resolution_clock::now();
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
     msInitialCc = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -3383,7 +4038,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeConne
     while (changed && pass < 3) {
         changed = false;
         pass++;
-        cv::Mat labels, stats, centroids;
+        cv::Mat labels;
+        if (!ccLabelsScratch(mat->rows, mat->cols, &labels)) break;
+        cv::Mat stats, centroids;
         int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
         if (nLabels <= 2) break;
 
@@ -3452,7 +4109,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
 
     __android_log_print(ANDROID_LOG_INFO, "NativeImage", "ROLLING: Start. vSW=%.2f, hSW=%.2f, Size=%dx%d", vSW, hSW, mat->cols, mat->rows);
 
-    cv::Mat labels, stats, centroids;
+    cv::Mat labels;
+    if (!ccLabelsScratch(mat->rows, mat->cols, &labels)) return;
+    cv::Mat stats, centroids;
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
     if (nLabels <= 2) {
         __android_log_print(ANDROID_LOG_INFO, "NativeImage", "ROLLING: Too few labels (%d). Exiting.", nLabels);

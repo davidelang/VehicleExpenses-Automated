@@ -20,6 +20,7 @@
 #ifndef PADDLE_LITE_API_H_  // NOLINT
 #define PADDLE_LITE_API_H_
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <string>
@@ -478,6 +479,9 @@ class LITE_API CxxConfig : public ConfigBase {
   bool analytic_input_quant_{false};
   // "int8" (xor-128, default) or "uint8" (raw greyscale).
   std::string analytic_input_dtype_{"int8"};
+  // Feed normalisation x = (u - mean) / std in pixel units; NaN = unset.
+  float analytic_input_mean_{std::numeric_limits<float>::quiet_NaN()};
+  float analytic_input_std_{std::numeric_limits<float>::quiet_NaN()};
   std::string output_calib_precision_{};  // "fp16" or "uint8" for fetch calib
   bool sparse_model_{false};  // Enable sparse_conv_detect_pass in opt
   float sparse_threshold_{0.6f};
@@ -555,6 +559,10 @@ class LITE_API CxxConfig : public ConfigBase {
   const std::string& analytic_input_dtype() const {
     return analytic_input_dtype_;
   }
+  void set_analytic_input_mean(float v) { analytic_input_mean_ = v; }
+  float analytic_input_mean() const { return analytic_input_mean_; }
+  void set_analytic_input_std(float v) { analytic_input_std_ = v; }
+  float analytic_input_std() const { return analytic_input_std_; }
   void set_output_calib_precision(const std::string& v) {
     output_calib_precision_ = v;
   }

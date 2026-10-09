@@ -10,7 +10,7 @@
 - Not uncommon for **all scales** on a photo to return empty heat / no boxes for v5 mobile.
 - Heatmap overlays often blank → not useful for expand-P or box comparison.
 
-**Conclusion:** v5 mobile is too poor at detecting anything for this experiment’s purpose. Prefer **product_det** and **PP-OCRv4_mobile_det**.
+**Conclusion:** v5 mobile is too poor at detecting anything for this experiment’s purpose. **product_det** is the det that stayed scheduled. v4 mobile is not in the APK.
 
 ## PP-OCRv4 / v5 **server** det — too slow for real-time / multi-scale
 
@@ -25,9 +25,10 @@
 
 ## Recovery
 
-- **Scheduled APK assets only:** `app/src/<abi>/assets/paddle/exp_det_ab/{product_det,PP-OCRv4_mobile_det}_*.nb`.
-- Multi-scale list: `MultiScaleDetRunner.DET_MODELS` (product + v4 mobile only).
-- Pump Set P4 loads `PP-OCRv4_mobile_det` via `NativePaddleEngine.loadExperimentDetTiers` from those assets.
+- **Scheduled APK assets only:** `app/src/<abi>/assets/paddle/exp_det_ab/product_det_*.nb` only.
+- Multi-scale list: `MultiScaleDetRunner.DET_MODELS` is `product_det` only.
+- Set P4 is not a scheduled column. It does not load `PP-OCRv4_mobile_det` from APK assets.
+- v4 mobile dets live in `exp_det_ab_unscheduled` and are not in the APK.
 - **Server dets (host-only, never APK):** `third_party/paddle/exp_det_ab_unscheduled/PP-OCRv{4,5}_server_det_*.nb` (~84–109 MiB). GitHub rejects them as regular blobs (100 MiB hook). They are stored with **Git LFS** (`.gitattributes`). Need `git-lfs` on PATH (`sudo apt install git-lfs` or equivalent) then `git lfs pull`. Paddle still needs the raw `.nb` after checkout (LFS smudge writes it). Rebuild without LFS: `app/src/main/assets/paddle/scripts/convert_v5_pir_to_nb.sh`.
 - LFS-rewritten tip of the old raw-blob backup: tag `backup-master-pre-server-nb-purge` peels to `c9807192` (`chore: eng-log PR-fix_deploy merge build gate SUCCESS`). Do not push the pre-migrate SHA `8226489e` (still has 108 MiB regular blobs).
 - Other `docs/obsolete/*` recovery tags (`obsolete-experiment-pump-multi-sets`, `obsolete-experiment-alignment-sets-a-e`, `c51809dc`, …) never contained these server nbs; their SHAs are unchanged.

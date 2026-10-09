@@ -10,8 +10,10 @@ import com.baidu.paddle.lite.MobileConfig
 import com.baidu.paddle.lite.PaddlePredictor
 import com.baidu.paddle.lite.PowerMode
 import com.davidlang.vehicleexpensesautomated.BuildConfig
+import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentReportHtml
+import com.davidlang.vehicleexpensesautomated.ui.experiment.ReportCellRef
+import com.davidlang.vehicleexpensesautomated.ui.experiment.ReportCollapser
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -22,10 +24,6 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -143,19 +141,16 @@ object MultiScaleDetRunner {
     )
 
     /**
-     * HTML / availableModels — product + v4 **mobile** only.
-     * - **v5 mobile** removed: too many zero-box cells (poor det); see docs/obsolete.
-     * - **v4/v5 server** never scheduled: ~1/10 speed, tens of seconds/cell — not real-time.
+     * HTML / availableModels — **product_det** only.
+     * v4/v5 mobile+server unscheduled: `docs/obsolete/DROP_P4_P5_DET.md`.
      */
     val DET_MODELS: List<String> = listOf(
-        "PP-OCRv4_mobile_det",
         "product_det",
     )
 
     /** Compute order: lightest graph first (fit-probe before heavy LMK). */
     private val MODEL_COMPUTE_RANK: Map<String, Int> = mapOf(
         "product_det" to 0,
-        "PP-OCRv4_mobile_det" to 1,
     )
 
     /**
@@ -570,12 +565,11 @@ object MultiScaleDetRunner {
         return out
     }
 
-    private fun idTag(id: Int): String = "%07d".format(Locale.US, id)
-
-    private fun htmlBegin(id: Int) = "<!--C:B:${idTag(id)}-->"
-    private fun htmlEnd(id: Int) = "<!--C:E:${idTag(id)}-->"
-    private fun jsonBegin(id: Int) = "<!--JC:B:${idTag(id)}-->"
-    private fun jsonEnd(id: Int) = "<!--JC:E:${idTag(id)}-->"
+    private fun idTag(id: Int): String = ReportCollapser.idTag(id)
+    private fun htmlBegin(id: Int) = ReportCollapser.htmlBegin(id)
+    private fun htmlEnd(id: Int) = ReportCollapser.htmlEnd(id)
+    private fun jsonBegin(id: Int) = ReportCollapser.jsonBegin(id)
+    private fun jsonEnd(id: Int) = ReportCollapser.jsonEnd(id)
 
     private fun copyModelAsset(context: Context, name: String, arch: String): File {
         val asset = "$ASSET_DIR/${name}_$arch.nb"
@@ -1059,7 +1053,10 @@ object MultiScaleDetRunner {
         // Only tray is a subdirectory: cells/ holds pre-merge fragments, then is purged.
         val outDir = reportDir(context)
         val cellsDir = File(outDir, "cells").also { it.mkdirs() }
-        val htmlFile = File(outDir, "multi_scale_det_report_$ts.html")
+        val rowsPerFile = ExperimentReportHtml.htmlRowsPerFile(context)
+        val nParts = ExperimentReportHtml.nParts(nPhotos, rowsPerFile)
+        val chunks = ExperimentReportHtml.photoChunks(nPhotos, rowsPerFile)
+        val reportStem = "multi_scale_det_report_$ts"
         val sparseFile = File(outDir, "multi_scale_det_results_$ts.sparse")
         val statusFile = File(outDir, "multi_scale_det_status_$ts.json")
         val manifestFile = File(outDir, "multi_scale_det_manifest_$ts.json")
@@ -1094,7 +1091,14 @@ object MultiScaleDetRunner {
             manifestFile, ts, arch, models, photos, counts, nCells, matrix, passes,
             cellOrder, modelsCompute,
         )
-        writeSparseHtml(htmlFile, ts, arch, models, photos, counts, matrix, idByKey)
+        chunks.forEachIndexed { part0, photoRange ->
+            val partIndex1 = part0 + 1
+            val partFile = ExperimentReportHtml.partFile(outDir, reportStem, partIndex1, nParts)
+            writeSparseHtml(
+                partFile, ts, arch, models, photos, counts, matrix, idByKey,
+                photoRange, partIndex1, nParts, reportStem,
+            )
+        }
         writeSparseResults(sparseFile, ts, arch, models, photos, counts, cellOrder, matrix)
         // Pre-publish over-maxLite + domain-policy blanks so stage-1 matches compute.
         var preSkip = 0
@@ -1116,22 +1120,30 @@ object MultiScaleDetRunner {
         writeStatus(statusFile, ts, "stage1_done", preSkip, nCells, 0, "pre_skip=$preSkip")
 
         onLog(
-            "STAGE1 html=${htmlFile.name} sparse=${sparseFile.name} cells=$nCells " +
+            "STAGE1 html_parts=$nParts stem=$reportStem sparse=${sparseFile.name} cells=$nCells " +
                 "pre_skip_blank=$preSkip maxLite=" +
                 models.joinToString { "$it=${maxLiteSideForModel(it)}" },
         )
         logMem("after_stage1", onLog)
 
+        val piById = HashMap<Int, Int>(nCells)
+        for (c in cellOrder) piById[c.id] = c.pi
         val collapser = ReportCollapser(
-            htmlFile = htmlFile,
-            sparseFile = sparseFile,
+            htmlFileForId = { id ->
+                val pi = piById[id] ?: 0
+                val partIndex1 = ExperimentReportHtml.partIndex1ForPhoto(pi, rowsPerFile)
+                ExperimentReportHtml.partFile(outDir, reportStem, partIndex1, nParts)
+            },
             cellsDir = cellsDir,
             cursorFile = cursorFile,
-            statusFile = statusFile,
-            ts = ts,
             nCells = nCells,
-            cellOrder = cellOrder,
+            cellOrder = cellOrder.map { ReportCellRef(it.id, it.pi, it.row, it.mi) },
             onLog = onLog,
+            sparseFile = sparseFile,
+            onStatus = { phase, done, total, cursor, detail ->
+                writeStatus(statusFile, ts, phase, done, total, cursor, detail)
+            },
+            periodMs = COLLAPSE_PERIOD_MS,
         )
         val collapseJob = collapser.start(this)
 
@@ -1363,8 +1375,7 @@ object MultiScaleDetRunner {
                         val contentH = (srcH * scaleFactor).toInt().coerceAtLeast(1)
                         val (ovNum, ovDen) = overlapNumDenForDomain(ref.domain)
 
-                        var outerId = -1
-                        var innerId = -1
+                        var packedHdr: Mat? = null
                         try {
                             workspace.resize(contentW, contentH)
                             workspace.clearCrops()
@@ -1376,10 +1387,12 @@ object MultiScaleDetRunner {
                                 0.0,
                                 Imgproc.INTER_AREA,
                             )
-                            val ids = PumpCostVolUtils.prepareScale(workspace, le)
-                            outerId = ids.first
-                            innerId = ids.second
-                            val outer = workspace.c[outerId]
+                            PumpCostVolUtils.prepareScale(workspace, le)
+                            val dest = NativePaddleEngine.deskewSetFor(le)
+                            packedHdr = NativeImageUtils.wrapPackedU8(
+                                (dest.s as BufferSet.Instance).tensorBindRaw(),
+                                dest.width,
+                            )
                             val outerSide = outerSideForScale(le)
                             onLog(
                                 "DETECT_BEGIN id=${c.id} $mName outer=$le strategy=$feedStrat " +
@@ -1391,7 +1404,7 @@ object MultiScaleDetRunner {
                             val det = try {
                                 withDetectMemSampling(c.id, onLog, intervalMs = 250L) {
                                     slot!!.detect(
-                                        outer.mat,
+                                        packedHdr!!,
                                         contentW,
                                         contentH,
                                         outerSide = outerSide,
@@ -1504,7 +1517,7 @@ object MultiScaleDetRunner {
                                     }
                                     val delta = if (angDiff > 0.01f) " <b>Δ</b>" else ""
                                     append(
-                                        "<div class='stat'>boxes=${redsFull.size} mass=$mass " +
+                                        "<div class='dump-details'><div class='stat'>boxes=${redsFull.size} mass=$mass " +
                                             "t=${tDet}ms ${feedStrat.name.lowercase()} " +
                                             "feed=${det?.liteH}x${det?.liteW}" +
                                             (if (det?.inputNocopy == true) " nocopy" else "") +
@@ -1514,7 +1527,7 @@ object MultiScaleDetRunner {
                                             "ang≥2=${"%.2f".format(Locale.US, angleGt1)}°" +
                                             delta +
                                             " · blue=P orange=P+jump" +
-                                            "</div>",
+                                            "</div></div>",
                                     )
                                 }
                                 val jsonBody = successJson(
@@ -1528,17 +1541,9 @@ object MultiScaleDetRunner {
                                 publishCell(cellsDir, c.id, htmlBody, jsonBody)
                             }
                         } finally {
-                            if (innerId >= 0) {
-                                try {
-                                    workspace.c[innerId].release()
-                                } catch (_: Throwable) {
-                                }
-                            }
-                            if (outerId >= 0) {
-                                try {
-                                    workspace.c[outerId].release()
-                                } catch (_: Throwable) {
-                                }
+                            try {
+                                packedHdr?.release()
+                            } catch (_: Throwable) {
                             }
                             flushCellScratch()
                         }
@@ -1584,7 +1589,7 @@ object MultiScaleDetRunner {
         } finally {
             teardownPredictors("multi_scale_det_end")
             // Wake collapser out of the 60s schedule delay and merge all tray cells now.
-            collapser.requestFinal()
+            collapser.requestFinal("multi_scale_det final collapse")
             try {
                 collapseJob.join()
             } catch (_: CancellationException) {
@@ -1741,28 +1746,7 @@ object MultiScaleDetRunner {
         htmlBody: String,
         jsonBody: String,
     ) {
-        val tag = idTag(id)
-        val htmlPart = File(cellsDir, "$tag.html.part")
-        val htmlFinal = File(cellsDir, "$tag.html")
-        val jsonPart = File(cellsDir, "$tag.json.part")
-        val jsonFinal = File(cellsDir, "$tag.json")
-        writeTextSynced(htmlPart, htmlBody)
-        writeTextSynced(jsonPart, jsonBody)
-        if (!htmlPart.renameTo(htmlFinal)) {
-            htmlFinal.delete()
-            htmlPart.renameTo(htmlFinal)
-        }
-        if (!jsonPart.renameTo(jsonFinal)) {
-            jsonFinal.delete()
-            jsonPart.renameTo(jsonFinal)
-        }
-    }
-
-    private fun writeTextSynced(file: File, text: String) {
-        FileOutputStream(file).use { fos ->
-            fos.write(text.toByteArray(Charsets.UTF_8))
-            fos.fd.sync()
-        }
+        ReportCollapser.publishCell(cellsDir, id, htmlBody, jsonBody)
     }
 
     private fun errorJson(
@@ -1979,12 +1963,9 @@ object MultiScaleDetRunner {
                 .put("passes", passesJa)
                 .put("max_side", MAX_SIDE)
                 .put("max_lite_side_product", maxLiteSideForModel("product_det"))
-                .put("max_lite_side_v4_mobile", maxLiteSideForModel("PP-OCRv4_mobile_det"))
                 .put(
                     "max_lite_note",
-                    "product maxLite=${maxLiteSideForModel("product_det")}; " +
-                        "v4 mobile maxLite=${maxLiteSideForModel("PP-OCRv4_mobile_det")}; " +
-                        "v5 mobile not scheduled",
+                    "product maxLite=${maxLiteSideForModel("product_det")}; v4/v5 not scheduled",
                 )
                 .put("det_tile_min_overlap_frac", DET_TILE_OVERLAP_NUM.toDouble() / DET_TILE_OVERLAP_DEN)
                 .put("pump_tile_overlap_frac", PUMP_TILE_OVERLAP_NUM.toDouble() / PUMP_TILE_OVERLAP_DEN)
@@ -2011,7 +1992,7 @@ object MultiScaleDetRunner {
                 .put("n_cells", nCells)
                 .put(
                     "compute_order",
-                    "pass outer small→large; models product→v4; domain policy skips; " +
+                    "pass outer small→large; models product only; domain policy skips; " +
                         "tile overlap default 30% pump 50%; blue vs orange expand in JSON",
                 )
                 .put("file_order", "row_major_photo_matrixRow_model")
@@ -2053,61 +2034,53 @@ object MultiScaleDetRunner {
         counts: Map<String, Int>,
         matrix: List<ScaleTileRow>,
         idByKey: Map<Triple<Int, Int, Int>, Int>,
+        photoRange: IntRange,
+        partIndex1: Int,
+        nParts: Int,
+        reportStem: String,
     ) {
         val nRows = matrix.size
+        val shorts = models.map { it.removePrefix("PP-OCR").removeSuffix("_det") }
+        val colLabels = mutableListOf("# / photo", "outer / strategy") + shorts
+        val metaHtml =
+            "<b>Run</b> $ts · <b>Device</b> ${Build.MODEL} · " +
+                "<b>Version</b> ${BuildConfig.VERSION_NAME} · <b>arch</b> $arch · " +
+                "<b>photos</b> ${photos.size} · pump=${counts["pump"] ?: 0} " +
+                "dash=${counts["dash"] ?: 0} expense=${counts["expense"] ?: 0}"
         f.bufferedWriter().use { w ->
-            w.appendLine("<!DOCTYPE html><html><head><meta charset='utf-8'/>")
-            w.appendLine("<title>Multi-scale det $ts</title>")
-            w.appendLine(
-                "<style>" +
-                    "body{font-family:sans-serif;font-size:13px;background:#111;color:#eee}" +
-                    "table{border-collapse:collapse;width:100%}" +
-                    "th,td{border:1px solid #444;padding:3px;vertical-align:top;text-align:center}" +
-                    "th{background:#222}" +
-                    "img{max-width:100%;height:auto}" +
-                    ".meta{color:#9cf;font-size:12px}" +
-                    ".domain-pump{color:#8f8}.domain-dash{color:#fc8}.domain-expense{color:#f8f}" +
-                    ".stat{font-size:10px;color:#bbb}.pending{color:#666}" +
-                    ".scale{color:#90caf9;font-weight:600;font-size:11px}" +
-                    "</style></head><body>",
-            )
+            w.append(ExperimentReportHtml.documentHead("Multi-scale det $ts", ExperimentReportHtml.Kind.MULTISCALE))
             w.appendLine("<h1>Multi-scale det × multi-model + expand P</h1>")
+            w.appendLine("<p class='meta'>$metaHtml</p>")
             w.appendLine(
-                "<p class='meta'><b>Run</b> $ts · <b>Device</b> ${Build.MODEL} · " +
-                    "<b>Version</b> ${BuildConfig.VERSION_NAME} · <b>arch</b> $arch · " +
-                    "<b>threads</b> 4 · <b>photos</b> ${photos.size} · " +
-                    "pump=${counts["pump"] ?: 0} dash=${counts["dash"] ?: 0} " +
-                    "expense=${counts["expense"] ?: 0} · <b>rows</b> $nRows</p>",
-            )
-            w.appendLine(
-                "<p class='meta'>Matrix: <b>one row per outer</b> ($nRows). " +
+                "<p class='meta dump-details'>Matrix: <b>one row per outer</b> ($nRows). " +
                     "Feed = single if outer≤maxLite else H-span (pump/dash) or H/V by orientation (expense). " +
-                    "maxLite product ${maxLiteSideForModel("product_det")} / " +
-                    "v4 ${maxLiteSideForModel("PP-OCRv4_mobile_det")}. " +
-                    "pump: no 4096, H-tile 50% ov. dash: ≥512 H-tile. expense: ≥1024. " +
-                    "<b>Boxes:</b> red=seed, blue=P, <span style='color:#fa0'>orange=P+jump</span>. " +
-                    "Blank = domain skip.</p>",
+                    "maxLite product ${maxLiteSideForModel("product_det")}. " +
+                    "<b>Boxes:</b> red=seed, blue=P, orange=P+jump. Blank = domain skip.</p>",
             )
-            w.append("<table><tr><th style='width:140px'># / photo</th><th class='scale'>outer / strategy</th>")
-            for (m in models) {
-                val short = m.removePrefix("PP-OCR").removeSuffix("_det")
-                w.append("<th>$short<br><span class='stat'>maxLite=${maxLiteSideForModel(m)}</span></th>")
-            }
-            w.appendLine("</tr>")
+            w.append(
+                ExperimentReportHtml.toolbar(
+                    ExperimentReportHtml.Kind.MULTISCALE, colLabels, metaHtml,
+                    partIndex1 = partIndex1, nParts = nParts, reportStem = reportStem,
+                ),
+            )
+            w.append(ExperimentReportHtml.tableOpen(colLabels))
 
-            for (pi in photos.indices) {
+            try {
+            for (pi in photoRange) {
                 val ref = photos[pi]
+                val photoNum = pi + 1
                 for (ri in matrix.indices) {
                     val row = matrix[ri]
-                    w.append("<tr>")
+                    w.append("<tr data-photo='$photoNum'>")
                     if (ri == 0) {
                         w.append(
-                            "<td rowspan='$nRows'><b>#${pi + 1}</b><br>" +
-                                "<span class='domain-${ref.domain}'>${ref.domain}</span><br>" +
-                                "<small>${esc(ref.displayName)}</small></td>",
+                            "<td rowspan='$nRows' data-col='0'><b>#$photoNum</b><br>" +
+                                "<small>${esc(ref.displayName)}</small>" +
+                                "<div class='orig-details'><br>" +
+                                "<span class='domain-${ref.domain}'>${ref.domain}</span></div></td>",
                         )
                     }
-                    w.append("<th class='scale'>${esc(row.label)}</th>")
+                    w.append("<th class='scale' data-col='1'>${esc(row.label)}</th>")
                     for (mi in models.indices) {
                         val id = idByKey[Triple(mi, pi, ri)]
                             ?: error("missing id for mi=$mi pi=$pi row=$ri")
@@ -2116,7 +2089,7 @@ object MultiScaleDetRunner {
                             mName, ref.domain, row.strategy, row.outer,
                             ref.nativeW, ref.nativeH,
                         )
-                        w.append("<td id='c${idTag(id)}'>")
+                        w.append("<td id='c${idTag(id)}' data-col='${mi + 2}'>")
                         w.append(htmlBegin(id))
                         if (skip != null) {
                             w.append("")
@@ -2129,7 +2102,13 @@ object MultiScaleDetRunner {
                     w.appendLine("</tr>")
                 }
             }
-            w.appendLine("</table></body></html>")
+            } finally {
+            w.append(
+                ExperimentReportHtml.footer(
+                    ExperimentReportHtml.Kind.MULTISCALE, colLabels, metaHtml,
+                ),
+            )
+            }
         }
     }
 
@@ -2213,396 +2192,6 @@ object MultiScaleDetRunner {
         )
     }
 
-    // ── Collapser ────────────────────────────────────────────────────────────
-
-    private class ReportCollapser(
-        private val htmlFile: File,
-        private val sparseFile: File,
-        private val cellsDir: File,
-        private val cursorFile: File,
-        private val statusFile: File,
-        private val ts: String,
-        private val nCells: Int,
-        private val cellOrder: List<CellRef>,
-        private val onLog: (String) -> Unit,
-    ) {
-        private val byId: Map<Int, CellRef> = cellOrder.associateBy { it.id }
-        @Volatile var cursor: Int = 0
-            private set
-        @Volatile private var finalRequested = false
-        private var job: Job? = null
-
-        fun start(scope: CoroutineScope): Job {
-            cursor = cursorFile.readText().trim().toIntOrNull() ?: 0
-            val j = scope.launch(Dispatchers.IO) {
-                try {
-                    while (isActive) {
-                        val n = collapseOnce(force = false)
-                        if (finalRequested) {
-                            // End-of-run: drain contiguous ready tray cells without 60s wait.
-                            if (!hasReadyBeyond(cursor) && n == 0) break
-                            // Keep merging tightly until the tray is empty from cursor forward.
-                            if (n == 0) delay(50) else continue
-                        } else {
-                            delay(COLLAPSE_PERIOD_MS)
-                        }
-                    }
-                    drainAll()
-                } catch (c: CancellationException) {
-                    // requestFinal() cancels sleep so we consolidate immediately.
-                    drainAll()
-                    throw c
-                }
-            }
-            job = j
-            return j
-        }
-
-        /**
-         * Signal end-of-run consolidation: cancel the 60s schedule delay so the collapser
-         * job wakes and drains, then [drainAll] from the run finally as a backstop.
-         */
-        fun requestFinal() {
-            finalRequested = true
-            job?.cancel(CancellationException("multi_scale_det final collapse"))
-        }
-
-        private fun hasReadyBeyond(c: Int): Boolean {
-            var i = c + 1
-            while (i <= nCells) {
-                if (cellReady(i)) return true
-                i++
-            }
-            return false
-        }
-
-        private fun cellReady(id: Int): Boolean {
-            val tag = idTag(id)
-            return File(cellsDir, "$tag.html").isFile && File(cellsDir, "$tag.json").isFile
-        }
-
-        /**
-         * Merge all contiguous ready cells from [cursor] until a gap or [nCells].
-         * Used at end of run so we do not wait for the next [COLLAPSE_PERIOD_MS] tick.
-         */
-        fun drainAll() {
-            var total = 0
-            var rounds = 0
-            while (rounds < nCells + 2) {
-                val n = collapseOnce(force = true)
-                total += n
-                rounds++
-                if (n == 0) break
-            }
-            onLog(
-                "COLLAPSE drainAll merged=$total cursor=$cursor/$nCells " +
-                    "ready_beyond=${hasReadyBeyond(cursor)}",
-            )
-        }
-
-        /**
-         * Collapse contiguous ready ids (cursor+1…). Multi-splice in file (row-major) order.
-         * @return number of cells merged
-         */
-        fun collapseOnce(force: Boolean): Int {
-            // Extend contiguous run of ready cells
-            val batch = ArrayList<Int>()
-            var id = cursor + 1
-            while (id <= nCells && cellReady(id)) {
-                batch.add(id)
-                id++
-            }
-            if (batch.isEmpty()) {
-                if (force && finalRequested) {
-                    // Quiet when mid-run force is rare; end-of-run drain logs via drainAll.
-                } else if (force) {
-                    onLog("COLLAPSE cursor=$cursor (no new cells)")
-                }
-                return 0
-            }
-
-            // File order: sort by (photo, matrix-row, model) = row-major walk of HTML table
-            val fileOrder = batch.sortedWith(
-                compareBy(
-                    { byId[it]?.pi ?: 0 },
-                    { byId[it]?.row ?: 0 },
-                    { byId[it]?.mi ?: 0 },
-                ),
-            )
-
-            onLog("COLLAPSE ids ${batch.first()}..${batch.last()} (n=${batch.size}) fileOrder=${fileOrder.size} stream")
-
-            // Tray stays on disk — collapser streams body files; never loads report or batch into RAM.
-            multiSpliceStream(
-                src = htmlFile,
-                orderedIds = fileOrder,
-                begin = { htmlBegin(it) },
-                end = { htmlEnd(it) },
-                bodyFile = { File(cellsDir, "${idTag(it)}.html") },
-            )
-            // Sparse is one record per line — rewrite line-by-line (still O(1) cell body RAM).
-            multiSpliceSparseLines(
-                src = sparseFile,
-                orderedIds = batch, // any order; match by marker on line
-                bodyFile = { File(cellsDir, "${idTag(it)}.json") },
-            )
-
-            // Purge tray after successful splice
-            for (cid in batch) {
-                val tag = idTag(cid)
-                File(cellsDir, "$tag.html").delete()
-                File(cellsDir, "$tag.json").delete()
-                File(cellsDir, "$tag.html.part").delete()
-                File(cellsDir, "$tag.json.part").delete()
-            }
-
-            cursor = batch.last()
-            cursorFile.writeText(cursor.toString())
-            writeStatus(statusFile, ts, "collapsing", cursor, nCells, cursor, "merged ${batch.size}")
-            return batch.size
-        }
-
-        /**
-         * results.sparse: each cell is one line `BEGIN{json}END`. Replace matching lines
-         * by streaming the tray JSON (one cell at a time).
-         */
-        private fun multiSpliceSparseLines(
-            src: File,
-            orderedIds: List<Int>,
-            bodyFile: (Int) -> File,
-        ) {
-            if (orderedIds.isEmpty()) return
-            val want = orderedIds.toHashSet()
-            val begins = orderedIds.associateWith { jsonBegin(it) }
-            val tmp = File(src.parentFile, src.name + ".tmp")
-            tmp.delete()
-            src.bufferedReader().use { reader ->
-                tmp.bufferedWriter().use { writer ->
-                    var line: String?
-                    while (reader.readLine().also { line = it } != null) {
-                        val ln = line!!
-                        var replaced = false
-                        for (cid in orderedIds) {
-                            val b = begins[cid]!!
-                            if (ln.contains(b)) {
-                                val body = bodyFile(cid)
-                                if (body.isFile) {
-                                    // Stream body without loading siblings
-                                    writer.append(jsonBegin(cid))
-                                    body.bufferedReader().use { br ->
-                                        var chunk: String?
-                                        while (br.readLine().also { chunk = it } != null) {
-                                            writer.append(chunk)
-                                        }
-                                    }
-                                    // body file is single-line JSON; if multi-line, lines joined without \n is ok for our writers
-                                    writer.append(jsonEnd(cid))
-                                    writer.append('\n')
-                                } else {
-                                    writer.append(ln)
-                                    writer.append('\n')
-                                }
-                                replaced = true
-                                break
-                            }
-                        }
-                        if (!replaced) {
-                            writer.append(ln)
-                            writer.append('\n')
-                        }
-                    }
-                }
-            }
-            val bak = File(src.parentFile, src.name + ".bak")
-            bak.delete()
-            if (src.exists()) src.renameTo(bak)
-            if (!tmp.renameTo(src)) {
-                tmp.copyTo(src, overwrite = true)
-                tmp.delete()
-            }
-            bak.delete()
-        }
-
-        /**
-         * Stream multi-splice: O(marker) memory.
-         * 1) Scan src once with a rolling window → offsets of BEGIN/END for each id (file order).
-         * 2) Copy gaps via FileChannel.transferTo; stream each tray body file into the gap.
-         * 3) Atomic mv of .tmp → src.
-         */
-        private fun multiSpliceStream(
-            src: File,
-            orderedIds: List<Int>,
-            begin: (Int) -> String,
-            end: (Int) -> String,
-            bodyFile: (Int) -> File,
-        ) {
-            if (orderedIds.isEmpty()) return
-            val begins = orderedIds.map { begin(it).toByteArray(Charsets.UTF_8) }
-            val ends = orderedIds.map { end(it).toByteArray(Charsets.UTF_8) }
-            val spans = findMarkerSpans(src, begins, ends) ?: run {
-                Log.e(TAG, "multiSpliceStream: marker scan failed for ${src.name}")
-                return
-            }
-
-            val tmp = File(src.parentFile, src.name + ".tmp")
-            tmp.delete()
-            java.io.RandomAccessFile(src, "r").use { rafIn ->
-                val inCh = rafIn.channel
-                FileOutputStream(tmp).use { fos ->
-                    val outCh = fos.channel
-                    var pos = 0L
-                    for (i in orderedIds.indices) {
-                        val cid = orderedIds[i]
-                        val bAt = spans[i * 2]
-                        val eAt = spans[i * 2 + 1]
-                        val bMark = begins[i]
-                        val eMark = ends[i]
-                        // copy [pos, bAt)
-                        transferRange(inCh, outCh, pos, bAt - pos)
-                        // write BEGIN + body file + END
-                        writeFully(outCh, bMark)
-                        val body = bodyFile(cid)
-                        if (body.isFile) {
-                            FileInputStream(body).use { bin ->
-                                val bch = bin.channel
-                                var off = 0L
-                                var rem = bch.size()
-                                while (rem > 0) {
-                                    val n = bch.transferTo(off, rem, outCh)
-                                    if (n <= 0) break
-                                    off += n
-                                    rem -= n
-                                }
-                            }
-                        }
-                        writeFully(outCh, eMark)
-                        pos = eAt + eMark.size
-                    }
-                    // tail
-                    val len = inCh.size()
-                    if (pos < len) transferRange(inCh, outCh, pos, len - pos)
-                    outCh.force(true)
-                }
-            }
-
-            val bak = File(src.parentFile, src.name + ".bak")
-            bak.delete()
-            if (src.exists() && !src.renameTo(bak)) {
-                Log.w(TAG, "rename src→bak failed ${src.name}")
-            }
-            if (!tmp.renameTo(src)) {
-                tmp.inputStream().use { inp ->
-                    FileOutputStream(src).use { out -> inp.copyTo(out, 64 * 1024) }
-                }
-                tmp.delete()
-            }
-            bak.delete()
-        }
-
-        private fun transferRange(
-            from: java.nio.channels.FileChannel,
-            to: java.nio.channels.FileChannel,
-            position: Long,
-            count: Long,
-        ) {
-            var pos = position
-            var rem = count
-            while (rem > 0) {
-                val n = from.transferTo(pos, rem, to)
-                if (n <= 0) break
-                pos += n
-                rem -= n
-            }
-        }
-
-        private fun writeFully(ch: java.nio.channels.FileChannel, bytes: ByteArray) {
-            val buf = java.nio.ByteBuffer.wrap(bytes)
-            while (buf.hasRemaining()) ch.write(buf)
-        }
-
-        /**
-         * Single forward scan; needles alternate BEGIN_i, END_i for ordered ids.
-         * Returns flat [b0,e0,b1,e1,…] file offsets, or null if any marker missing.
-         * Uses a fixed-size rolling window (no full-file buffer).
-         */
-        private fun findMarkerSpans(
-            src: File,
-            begins: List<ByteArray>,
-            ends: List<ByteArray>,
-        ): LongArray? {
-            val n = begins.size
-            if (n == 0) return LongArray(0)
-            val needles = ArrayList<ByteArray>(n * 2)
-            for (i in 0 until n) {
-                needles.add(begins[i])
-                needles.add(ends[i])
-            }
-            val maxNeedle = needles.maxOf { it.size }.coerceAtLeast(1)
-            val chunk = 64 * 1024
-            val window = ByteArray(chunk + maxNeedle)
-            val positions = LongArray(needles.size)
-            var needleIdx = 0
-            var fileBase = 0L // file offset of window[0]
-            var winLen = 0
-
-            FileInputStream(src).use { fis ->
-                while (needleIdx < needles.size) {
-                    val needle = needles[needleIdx]
-                    // Need more data if window too small
-                    if (winLen < needle.size) {
-                        val nread = fis.read(window, winLen, window.size - winLen)
-                        if (nread <= 0) {
-                            Log.e(TAG, "EOF seeking marker #$needleIdx in ${src.name}")
-                            return null
-                        }
-                        winLen += nread
-                        continue
-                    }
-                    val at = indexOfBytes(window, 0, winLen, needle)
-                    if (at >= 0) {
-                        positions[needleIdx] = fileBase + at
-                        needleIdx++
-                        // Consume through end of this match
-                        val consume = at + needle.size
-                        val remain = winLen - consume
-                        if (remain > 0) {
-                            System.arraycopy(window, consume, window, 0, remain)
-                        }
-                        fileBase += consume
-                        winLen = remain
-                    } else {
-                        // Keep last (maxNeedle-1) bytes as overlap; drop the rest
-                        val keep = maxNeedle - 1
-                        if (winLen > keep) {
-                            val drop = winLen - keep
-                            System.arraycopy(window, drop, window, 0, keep)
-                            fileBase += drop
-                            winLen = keep
-                        }
-                        val nread = fis.read(window, winLen, window.size - winLen)
-                        if (nread <= 0) {
-                            Log.e(TAG, "EOF seeking marker #$needleIdx in ${src.name}")
-                            return null
-                        }
-                        winLen += nread
-                    }
-                }
-            }
-            return positions
-        }
-
-        private fun indexOfBytes(hay: ByteArray, from: Int, to: Int, needle: ByteArray): Int {
-            if (needle.isEmpty()) return from
-            val last = to - needle.size
-            outer@ for (i in from..last) {
-                for (j in needle.indices) {
-                    if (hay[i + j] != needle[j]) continue@outer
-                }
-                return i
-            }
-            return -1
-        }
-    }
 
     private fun esc(s: String): String =
         s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -2627,48 +2216,15 @@ object MultiScaleDetRunner {
         val scale = if (fullW > PREVIEW_MAX_W) PREVIEW_MAX_W.toFloat() / fullW else 1.0f
         val pw = max(1, (fullW * scale).roundToInt())
         val ph = max(1, (fullH * scale).roundToInt())
-        val graySmall = Mat()
-        Imgproc.resize(gray, graySmall, Size(pw.toDouble(), ph.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
-        val bgr = Mat()
-        Imgproc.cvtColor(graySmall, bgr, Imgproc.COLOR_GRAY2BGR)
-        graySmall.release()
-
-        if (heatU8 != null && heatW > 0 && heatH > 0 && contentW > 0 && contentH > 0 &&
-            heatU8.size >= heatW * heatH
+        val destFull = try { NativePaddleEngine.bufferSetB.s.mat } catch (_: Throwable) { return "" }
+        if (destFull.empty() || destFull.type() != CvType.CV_8UC1 ||
+            destFull.rows() < ph || destFull.cols() < pw
         ) {
-            try {
-                // Content heat → preview only (never materialize fullW×fullH float).
-                val heatMat = Mat(heatH, heatW, CvType.CV_8UC1)
-                heatMat.put(0, 0, heatU8)
-                val cW = min(contentW, heatW)
-                val cH = min(contentH, heatH)
-                val contentHeat = heatMat.submat(0, cH, 0, cW)
-                val heatPrev = Mat()
-                Imgproc.resize(
-                    contentHeat,
-                    heatPrev,
-                    Size(pw.toDouble(), ph.toDouble()),
-                    0.0,
-                    0.0,
-                    Imgproc.INTER_LINEAR,
-                )
-                contentHeat.release()
-                heatMat.release()
-                // u8 heat: on if value > 0 (matches HEAT_THR_U8_GE1 / production G-dense).
-                val mask = Mat()
-                Core.compare(heatPrev, Scalar(0.0), mask, Core.CMP_GT)
-                heatPrev.release()
-                val redLayer = Mat(ph, pw, CvType.CV_8UC3, Scalar(0.0, 0.0, 220.0))
-                val blended = Mat()
-                Core.addWeighted(bgr, 0.55, redLayer, 0.45, 0.0, blended)
-                blended.copyTo(bgr, mask)
-                blended.release()
-                redLayer.release()
-                mask.release()
-            } catch (t: Throwable) {
-                Log.w(TAG, "heat fill skip: ${t.message}")
-            }
+            return ""
         }
+        val graySmall = destFull.submat(0, ph, 0, pw)
+        Imgproc.resize(gray, graySmall, Size(pw.toDouble(), ph.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+        // Heat-fill skipped: no empty graySmall/bgr/blended dests.
 
         fun mapR(r: Rect): org.opencv.core.Rect {
             val l = (r.left * scale).roundToInt().coerceIn(0, pw - 1)
@@ -2680,40 +2236,37 @@ object MultiScaleDetRunner {
         for (r in reds) {
             val o = mapR(r)
             Imgproc.rectangle(
-                bgr,
+                graySmall,
                 Point(o.x.toDouble(), o.y.toDouble()),
                 Point((o.x + o.width).toDouble(), (o.y + o.height).toDouble()),
-                Scalar(0.0, 0.0, 255.0),
+                Scalar(255.0),
                 2,
             )
         }
         for (b in blues) {
             val o = mapR(b)
             Imgproc.rectangle(
-                bgr,
+                graySmall,
                 Point(o.x.toDouble(), o.y.toDouble()),
                 Point((o.x + o.width).toDouble(), (o.y + o.height).toDouble()),
-                Scalar(255.0, 0.0, 0.0), // BGR blue
+                Scalar(180.0),
                 2,
             )
         }
         for (or in oranges) {
             val o = mapR(or)
             Imgproc.rectangle(
-                bgr,
+                graySmall,
                 Point(o.x.toDouble(), o.y.toDouble()),
                 Point((o.x + o.width).toDouble(), (o.y + o.height).toDouble()),
-                Scalar(0.0, 165.0, 255.0), // BGR orange
+                Scalar(220.0),
                 2,
             )
         }
 
-        val rgb = Mat()
-        Imgproc.cvtColor(bgr, rgb, Imgproc.COLOR_BGR2RGB)
-        bgr.release()
         val bmp = Bitmap.createBitmap(pw, ph, Bitmap.Config.ARGB_8888)
-        Utils.matToBitmap(rgb, bmp)
-        rgb.release()
+        Utils.matToBitmap(graySmall, bmp)
+        graySmall.release()
         val b64 = OcrUtils.bitmapToBase64(bmp, 72)
         bmp.recycle()
         return b64

@@ -55,6 +55,12 @@ class LITE_API OptBase {
   void SetAnalyticInputDtype(const std::string &dtype) {
     opt_config_.set_analytic_input_dtype(dtype);
   }
+  void SetAnalyticInputMean(float mean) {
+    opt_config_.set_analytic_input_mean(mean);
+  }
+  void SetAnalyticInputStd(float std_val) {
+    opt_config_.set_analytic_input_std(std_val);
+  }
   void SetValidPlaces(const std::string &valid_places);
   void SetOptimizeOut(const std::string &lite_out_name);
   void RecordModelInfo(bool record_strip_info = true);

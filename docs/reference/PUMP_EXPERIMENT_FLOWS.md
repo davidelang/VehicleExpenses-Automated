@@ -6,12 +6,20 @@ Current heatmap-expand attempts used by the pump experiment. Quick Fill’s gene
 
 Each column = fresh master. H/L/M/N/O/Q parked — `docs/obsolete/EXPERIMENT_PUMP_SETS.md`.
 
-Ten columns: production G-- / G4, P4-jump control, three frozen-width stop A/Bs (with a **single** post-stop height pad from the v0.98-229 167×2 review), then rot / Prod-jump / **Prod-m65** / Prod-rot. **m65 / gx / xycut / P4-rot / Prod-rot / Prod-m65** use G-on-cap verts **0.00 / 0.05 / 0.15**. P4-jump still G4 (0/0.1/0.3); Prod-jump still G--. No 0–0.50 rot sweep. Default energy `maxFrac=0.4`; **Prod-m65 stays 2.5** so a short product-det seed can still grow (v4 vs product expand A/B).
+Only `Set rot-G--` is scheduled. Product det at 224 and 608, vertical factor 0.34, pad p54 (0.54 / 0.55). Quick Fill is a separate copy of that rot-G-- at 0.34 / p54, not G-- and not G4.
+
+| Flow display name | Det | Expand | Notes |
+|-------------------|-----|--------|-------|
+| `Set rot-G--` | product det **224 and 608** | vertical factor **0.34**; pad **p54** (0.54 / 0.55) | The only scheduled column. Quick Fill is a separate copy of this rot-G-- at 0.34 / p54, not G-- and not G4. |
+
+### Retired history: ten-column table
+
+The old ten-column table is retired history. It is not scheduled. Quick Fill is not G-- and not G4.
 
 | Flow display name | Det | Expand | Notes |
 |-------------------|-----|--------|-------|
 | `Set G-- (4 pass, none, calculated)` | product | calculated verts; thr **u8≥1**; horiz **0.5** | Experiment product-det reference + heat dumps |
-| `Set G4 (v4 det, calculated 0.0-2.5)` | **PP-OCRv4_mobile_det** | G-style calculated verts **0.0 / 0.1 / 0.3**; horiz **0.5**; deskew | v4 det A/B vs G--; **Quick Fill live path** |
+| `Set G4 (v4 det, calculated 0.0-2.5)` | **PP-OCRv4_mobile_det** | G-style calculated verts **0.0 / 0.1 / 0.3**; horiz **0.5**; deskew | v4 det A/B vs G--; retired history, not live Quick Fill |
 | `Set P4-jump (v4 + energy + jump, S OCR)` | **PP-OCRv4_mobile_det** | AABB energy **maxFrac=0.4**; if a red **hits the cap**, OCR G4 verts (0/0.1/0.3) on that red instead | Control. `final` = energy-or-G. Jump L/R only. **No extra vert pad** |
 | `Set P4-m65 (v4 + mean0.65 frozen + jump)` | **PP-OCRv4_mobile_det** | Frozen seed width; stop when strip **\|∇\| mean** &lt; **0.65** × seed; then **+0.08×seedH** each tip; L/R jump. If a red **hits the cap**, OCR G verts **0.00 / 0.05 / 0.15** | `final` = energy-or-G |
 | `Set P4-gx (v4 + gx0.55 frozen + jump)` | **PP-OCRv4_mobile_det** | Frozen width; energy = **\|∂I/∂x\|**; stop at **0.55** × seed `gx`; **+0.08×seedH** each tip; L/R jump. Cap → G **0.00 / 0.05 / 0.15** | `final` = energy-or-G |
@@ -44,7 +52,9 @@ Ten columns: production G-- / G4, P4-jump control, three frozen-width stop A/Bs 
 
 Metadata on expand columns: `content_expand_jump` / `content_expand_jump_frac` / `content_expand_ocr_scales` (assembly `ocrScales` / `finalOcrScale`). JSON `scaleVariants[]` has per-S rects/cands/final.
 
-**UI subset button:** **Horiz-affected (76)** still filters photos; columns are the full active set above. Deep link: `vehicleexpenses://experiment/pump?auto=horiz`.
+**UI subset button:** **Horiz-affected (76)** still filters photos; the scheduled column is only `Set rot-G--`. Deep link: `vehicleexpenses://experiment/pump?auto=horiz`.
+
+**Report `#` / JSON `line_number`:** 1-based index in sorted full `pump_photos` (`allPhotos`), not the subset `index+1`. Subset runs still process only subset files.
 
 **Parked** (source, not scheduled): P / P-jump / P4 / P-rot / P4-rot, H* horiz, L/M dilate, N/O/Q content modes, G-dense, K, Set I.
 
@@ -58,13 +68,17 @@ Metadata on expand columns: `content_expand_jump` / `content_expand_jump_frac` /
 * G-- / H* / L–Q discovery: `HEAT_THR_U8_GE1` → on if **u8 ≥ 1**
 * (parked K): `HEAT_THR_U8_GE2` → on if **u8 ≥ 2**  
 
-**Heat dumps** (once per photo, from G-- column):  
-`reportDir/pump_heats_<timestamp>/<photo>/scale{224,608,1024}_heatmap.u8z` + `.meta.json`  
-Format: magic `HMU8`, w/h LE u32, comp=1 (zlib), raw_len, payload. See `HeatmapU8Dump.kt`.
+**Heat dumps:** `dumpHeats` stays false on every column, including G--. Pump runs do not write `pump_reports/heatmap/`. The captured set is `latest-report/heatmap/tablet/`. The in-model upsample is two stride-2 transposed convolutions inside the det `.nb`. File format, when a dump exists: `reportDir/pump_heats_<timestamp>/<photo>/scale{224,608,1024}_heatmap.u8z` + `.meta.json`. Magic `HMU8`, w/h LE u32, comp=1 (zlib), raw_len, payload. See `HeatmapU8Dump.kt`.
+
+**7seg Y Otsu fill (red/seed only, not energy):** `(look-bin + 8-connected recovered poison ink) / seed area`; recovered is **in** look-bin (`hasBar`); walk/`sPx` from the **final** seed; band **0.05–0.45**. Ceiling (`fill>0.45`) less-ink extras (`retryWhy=2`, `nRetry` = extras). Floor extras (`retryWhy=1`, cap 3) if `fill<0.05` **or** `nLookBin==0`. In-band SW-discard remaining valleys (`retryWhy=3`, first in-band **and** accepted sPx). look_ink `attempts[]` has per-evaluate thr/fill/keep/poison (energy has none).
+
+**Seed poison (7seg) — five-step combine:** (1) Whole-seed ink/bg + stroke (Y Otsu+pepper). (2) Poison **areas** = 1453 fat/wide first-Otsu CCs (`min(h,v)-run > 3×max(v0,4)` or `h-run > 11×max(v0,4)`; if `v0≤4` also `h-run > 0.25×seedW`) **union** T/B brightness bands (mean/p50 Y vs interior `≥ max(16, 0.5×|dInk|)`, height `max(sPx, round(0.12×seedH))`; **all pixels** in the band, not only first-Otsu ink). 1453 is the fat-CC detector only. (3) Re-process excluding those areas (clean Otsu; keep stroke if solid else re-peak `v0_clean`; **glare-first second Otsu** on the dark remainder of `keepClean` when first Otsu inverted onto a large poison sheet). (4) Local Otsu on poison **pixels** only (`keepR`), never the blob bounding box and never look pixels outside the seed. Peak>4 → those pixels’ ink bits are valid; no-peak → do not OR a sheet. Look-strip rows outside the seed use **clean** (or tint/`srcIsBin`) only — no blob x-range extrusion off-seed. (5) **OR** peaked poison pixels with the clean sample into one U8 255 **seed** plane; empty combined may OR a dark-digit clean sample (`dInk≤-10`, 5–40% ink) without changing `v0Clean`/look-outside. Look-strip 255/0 then 255-flood (`lookAlloc` poison/254) then recover (walk-edge bands, `kind[]` ink). Walk `hasBar` is 254 or `kind==kKindInk`. Walk `sPx`/`minRun`/`glareW` stay **clean**. Combine is not “one global threshold with poison forced 0.”
 
 **Energy traces:** Off. Full lossless jump+rot dumps already exist from `2026-08-15_09-38-52` / `09-39-09`. P4-jump / P4-rot no longer write `expand_energy_<ts>/`. Official path and unofficial `energy_count` OCR are unchanged.
 
 **Oriented expand:** P4-rot / Prod-rot grow + count walk run in JNI (`ContentExpandNative.cpp`) so Sobel samples stay in native memory. Geometry is unchanged (±v / `|∇I·û|`). Kotlin path remains as fallback if native returns null, and when energy traces are on.
+
+**Rot uv:** picked **once on the seed** — **u** = edge closest to horizontal (tie → longer), **v** rotated so **vy≥0** (bottom = lower flatter side). Expand / jump / k-pad / `horiz_pad` only translate sides in that frame; they do not re-pick axes from walked corners.
 
 **Edge-count (same run):** After energy stop, additive run-count valley pullback, then a **one-direction** pad: pulled tip steps back toward energy by `0.10×seedH` (not past energy); energy-stop tip whose run-count is still ≥ `0.45×cSeed` grows that tip only by `0.08×seedH`. Cap-stops do not grow. Grow is skipped when the energy box is already `> 2.4×seedH` so the 48 px rec crop does not shrink the digits. A few pixels into the neighboring row is acceptable. Official `final` stays `energy` / `energy_or_g`. Extra `scaleVariants` entry `kind=energy_count` is scored unofficially only.
 
@@ -72,6 +86,10 @@ Format: magic `HMU8`, w/h LE u32, comp=1 (zlib), raw_len, payload. See `HeatmapU
 * Oriented (`countPullbackOriented`): walk **±v** (normal to the long edges). Each step is a seed-width strip of **|∇I·û|** (derivative along the text axis). Do **not** AABB the quad first — that walk is a different geometry.
 
 **Rec buffer:** `recB64` is a JPEG preview of the **48×W crop** actually fed to recognize (plus `recW`/`recH`). That JPEG is visual QA only — recognize already ran on the raw crop.
+
+**Rec canvas:** one **4096×48** buffer everywhere. Engine infers a `createCrop(0,0,needW,48)` slice (`needW = 32-align(48×srcW/srcH)`, clip only at 4096). Aspect kept; unused canvas width is never fed to CRNN.
+
+**HTML look ink:** spliced into the report as `data:image/jpeg;base64` (fetch is HTML+JSON only; no `look_ink/` folder).
 
 **Background:** Pump **Run Test** / First 10 / Selected / Horiz-affected use `ExperimentJobRunner` + `ExperimentForegroundService` (dataSync FGS + partial wake lock), same as multi-scale / heatmap. Leaving the screen or locking the phone does **not** cancel the job. Do not launch `runPumpExperiment` from `rememberCoroutineScope` (that died on Pixel 6 Pro with `ForgottenCoroutineScopeException` after screen lock).
 
@@ -89,7 +107,7 @@ Recorded in JSON `product_path` / `product_dir` and branch metadata. Run both de
 | | |
 |--|--|
 | **Background** | Jobs use **`ExperimentJobRunner`** (app-scoped) + **`ExperimentForegroundService`** (dataSync FGS + partial wake lock) so leaving the UI does not cancel multi-hour runs. |
-| **Det models (columns)** | **product + v4 mobile** only (`product_det`, `PP-OCRv4_mobile_det`). **v5 mobile dropped** (too many 0-box cells). **Server dets never scheduled** (~1/10 speed). See `docs/obsolete/EXPERIMENT_DET_MODELS.md`. Assets under `paddle/exp_det_ab/`. |
+| **Det models (columns)** | `product_det` only. v4/v5 mobile and server dets are unscheduled and not in the APK (`third_party/paddle/exp_det_ab_unscheduled/`). See `docs/obsolete/EXPERIMENT_DET_MODELS.md`. |
 | **Threads** | 4 |
 | **Scales (rows)** | long-edge matrix with strategy rows (single / square / hspan / vspan); maxLite caps product 2048 / v4 1504 |
 | **Tiling** | when outer > model maxLite: square / hspan / vspan with ≥30% overlap max-merge heat |
@@ -108,7 +126,7 @@ HTML layout: photo id column + scale column + **one cell per det model** (host-s
 
 Removed clusters include: sets A–H / D / E / G / G- columns, binPeak stack, ML discovery. **procI** remains in source but is not scheduled.
 
-**Not modified:** Quick Fill / `OcrHarness` / `SET_G_MINUS_MINUS_VERT_FACTORS` production constants.
+**Quick Fill** is a separate copy of `Set rot-G--` at 0.34 / p54, not G-- and not G4. This multi-scale section does not change that copy.
 
 ## 1. The Tree Architecture (`PumpBranch`)
 
@@ -160,7 +178,7 @@ Neither includes below-threshold ink; blue/orange expansion still searches crop 
 Product det heat is **kUInt8**. `nativeProcessHeatmap` takes the **u8 path** for both box modes:
 
 * thr on the u8 plane (`u > thr*255`; campaign thr=0 → u≥1)
-* `connectedComponentsWithStats` on the binary mask
+* heat CC is u8 8-flood on det `.s` (ids 1..254; no int32 labels / mask pack on A.p)
 * AABB stats box **or** minAreaRect of on-label pixels
 * conf = mean(u8 ROI)/255; hist bins match prior float hist of (u/255)
 

@@ -6,7 +6,6 @@ import android.graphics.RectF
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
-import org.opencv.imgproc.Imgproc
 import kotlin.math.max
 import kotlin.math.min
 
@@ -53,8 +52,9 @@ data class PathResult(val cost: String, val vol: String, val costB64: String, va
 val SET_G_VERT_FACTORS: List<Float> = listOf(0.1f, 0.2f, 0.3f, 0.4f, 0.6f, 1.1f, 1.3f, 1.7f)
 /** Set G- = shared reduce k=6; phone loss 2 / emu loss 2 vs full cand */
 val SET_G_MINUS_VERT_FACTORS: List<Float> = listOf(0.1f, 0.2f, 0.3f, 0.4f, 0.6f, 1.3f)
-/** Set G-- = shared reduce k=4; experiment product-det column; phone loss 4 / emu loss 5 vs full cand */
-val SET_G_MINUS_MINUS_VERT_FACTORS: List<Float> = listOf(0.1f, 0.3f, 0.4f, 1.1f)
+/** Set G-- (deskew): best-3 verts {0.1, 0.2, 0.4}; UV expand + L/R seed-height pads. Parked in pump flows. */
+val SET_G_MINUS_MINUS_VERT_FACTORS: List<Float> = listOf(0.1f, 0.2f, 0.4f)
+val SET_G_ROT_VERT_FACTORS: List<Float> = listOf(0.34f)
 /**
  * Experiment-only dense vertical expansion for Set G-dense / Set K.
  * v → blue height multiple (1+2v).
@@ -69,19 +69,32 @@ val SET_G_DENSE_VERT_FACTORS: List<Float> = listOf(
     1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f,
 )
 /**
- * Set G4 live verts. After v0.98-212 167×2 combo cover of the 0–0.3 union:
- * 0+0.1+0.3 misses 1 phone / 2 tablet vs that union; 0.2 and 0.25 add almost
- * nothing on top. Half-glyph leftovers still need v>0.3 and are not targeted.
- */
-val SET_G4_VERT_FACTORS: List<Float> = listOf(0.0f, 0.1f, 0.3f)
-/**
  * Energy G-on-cap verts (m65 / gx / xycut / P4-rot / Prod-rot). v0.98-230
  * sweep first-unique clustered at 0.00 / 0.05 / 0.15. Used only when energy
- * hits maxFrac — not a per-seed sweep. P4-jump still uses G4 0/0.1/0.3.
+ * hits maxFrac — not a per-seed sweep.
  */
 val SET_M65_CAP_VERT_FACTORS: List<Float> = listOf(0.0f, 0.05f, 0.15f)
-/** Production / G-- horizontal pad as fraction of *expanded blue height* (each side). */
+/** Legacy symmetric horiz pad (fraction of *expanded* blue height); keep for G-dense / horiz-reach. */
 const val SET_G_HORIZ_FACTOR: Float = 0.5f
+/**
+ * Default UV L/R pads as fraction of *seed short-axis height* (bh).
+ * Chosen ≈ ideal-ink overhang p90 on 04-41-33 (med L/R ≈0.39/0.41; p90 ≈0.54/0.57).
+ * Used by deskew G-- (parked) and as the single rot-G-- pad (via [SET_G_ROT_UV_PAD_VARIANTS]).
+ */
+const val SET_G_UV_LEFT_FRAC: Float = 0.54f
+const val SET_G_UV_RIGHT_FRAC: Float = 0.55f
+
+/** One UV L/R pad pair (fraction of seed short-axis height). */
+data class UvPadVariant(val id: String, val left: Float, val right: Float)
+
+/**
+ * rot-G-- single pad at fixed G=0.34 (candidate nest: seed × pad × vert).
+ * p54 = SET_G_UV_* — balanced vs ideal-ink (w/ink ≈1.05; side shortfalls ~11–13%).
+ * Multi-pad A/B (p48/p60) parked after 04-41-33 size check.
+ */
+val SET_G_ROT_UV_PAD_VARIANTS: List<UvPadVariant> = listOf(
+    UvPadVariant("p54", SET_G_UV_LEFT_FRAC, SET_G_UV_RIGHT_FRAC),
+)
 /**
  * Experiment G-dense / K: **2×** [SET_G_HORIZ_FACTOR] (each side = full expanded blue height).
  * May pull in display bezel noise (often OCR'd as a leading/trailing **1**); watch false extras.
@@ -180,6 +193,173 @@ val HORIZ_REACH_AFFECTED_FILENAMES: List<String> = listOf(
     "PXL_20260703_031558607.jpg",
     "PXL_20260706_190516439.jpg",
     "PXL_20260706_214711042.jpg",
+)
+
+/**
+ * Photos where ink-prod or rot-ink-prod is not exact (relax=fail) on a trusted
+ * cost/vol field at **k=0** (`scaleVariants` kind=ink s=0). Union of Pixel 6 Pro
+ * + Pixel Tablet start-113 runs `pump_results_2026-08-25_14-45-50` and
+ * `14-46-20`. Excludes 15 photos no scheduled column pool-exacts. Used by
+ * Experiment Pump "Prod-ink fail" subset button (68 images). Source:
+ * `dev-ai-interaction/research/pump-red-runlength/prod_ink_fail_photos_k0_1445.json`
+ * key `union_k0`.
+ */
+val PROD_INK_FAIL_FILENAMES: List<String> = listOf(
+    "PXL_20220701_020625793.dng",
+    "PXL_20221020_220049868.dng",
+    "PXL_20221121_021250335.dng",
+    "PXL_20221121_195449335.jpg",
+    "PXL_20221126_210421897.dng",
+    "PXL_20221126_210421897.jpg",
+    "PXL_20221128_172956178.jpg",
+    "PXL_20221222_211812872.jpg",
+    "PXL_20221230_182006230.dng",
+    "PXL_20230101_055935720.dng",
+    "PXL_20230128_022551423.dng",
+    "PXL_20230206_014546051.dng",
+    "PXL_20230318_232827961.jpg",
+    "PXL_20230411_173710801.dng",
+    "PXL_20230520_194221428.dng",
+    "PXL_20230520_194628805.dng",
+    "PXL_20230612_180633478.jpg",
+    "PXL_20230625_225655795.dng",
+    "PXL_20230705_105304742.dng",
+    "PXL_20230827_000357771.jpg",
+    "PXL_20230902_175948030.jpg",
+    "PXL_20230924_205918100.jpg",
+    "PXL_20231120_002742785.dng",
+    "PXL_20231120_002920554.jpg",
+    "PXL_20231127_200208050.jpg",
+    "PXL_20231211_004047524.jpg",
+    "PXL_20231221_210417588.jpg",
+    "PXL_20231223_075001042.jpg",
+    "PXL_20240521_025057693.jpg",
+    "PXL_20240708_222637707.jpg",
+    "PXL_20240718_000403216.jpg",
+    "PXL_20240722_200504113.jpg",
+    "PXL_20240808_211542775.jpg",
+    "PXL_20241130_183108905.jpg",
+    "PXL_20241213_220345190.jpg",
+    "PXL_20241222_024130766.jpg",
+    "PXL_20250101_020218807.jpg",
+    "PXL_20250408_223113314.jpg",
+    "PXL_20250426_042852976.jpg",
+    "PXL_20250426_084222634.jpg",
+    "PXL_20250501_084603153.jpg",
+    "PXL_20250501_160616426.jpg",
+    "PXL_20250626_205528017.jpg",
+    "PXL_20250703_032207597.jpg",
+    "PXL_20250706_213056077.jpg",
+    "PXL_20250726_211343400.jpg",
+    "PXL_20250814_231431109.jpg",
+    "PXL_20250830_221843009.jpg",
+    "PXL_20250906_001113787.jpg",
+    "PXL_20250911_214550967.jpg",
+    "PXL_20250926_022815882.jpg",
+    "PXL_20250930_065746276.jpg",
+    "PXL_20251004_023935813.jpg",
+    "PXL_20251107_064636287.jpg",
+    "PXL_20251120_015319617.jpg",
+    "PXL_20260114_020053675.jpg",
+    "PXL_20260131_023636224.jpg",
+    "PXL_20260202_204443784.jpg",
+    "PXL_20260214_204206758.jpg",
+    "PXL_20260220_043453305.jpg",
+    "PXL_20260302_000113349.jpg",
+    "PXL_20260311_180433036.jpg",
+    "PXL_20260425_044615955.jpg",
+    "PXL_20260531_181110716.jpg",
+    "PXL_20260617_033252085.jpg",
+    "PXL_20260626_225456569.jpg",
+    "PXL_20260702_220704854.jpg",
+    "PXL_20260706_190516439.jpg",
+)
+
+/**
+ * Mixed-fail / readable pump photos: trusted GT and **not** all-column exact
+ * (exact only; relaxed = fail) on `pump_results_2026-08-30_08-45-44.json`
+ * (13 columns). Skip no-GT (2), untrusted both fields (7), all-trusted-exact (54),
+ * nobody exact (29). 76 names, phone `file` order.
+ * Source: `dev-ai-interaction/research/mixed_fail_readable_084544.json`
+ * key `mixed_fail_readable`. Pump grid “Mixed fail (76)”; `auto=mixedfail`.
+ */
+val MIXED_FAIL_READABLE_FILENAMES: List<String> = listOf(
+    "PXL_20221121_195449335.jpg",
+    "PXL_20221126_021759797.jpg",
+    "PXL_20221221_210212750.dng",
+    "PXL_20221222_211812872.jpg",
+    "PXL_20221228_165217774.dng",
+    "PXL_20230101_055935720.dng",
+    "PXL_20230128_022551423.dng",
+    "PXL_20230206_014546051.dng",
+    "PXL_20230225_040459673.dng",
+    "PXL_20230318_232827961.jpg",
+    "PXL_20230411_173710801.dng",
+    "PXL_20230414_023123861.dng",
+    "PXL_20230520_194628805.dng",
+    "PXL_20230612_180633478.jpg",
+    "PXL_20230621_073220076.dng",
+    "PXL_20230705_105304742.dng",
+    "PXL_20230714_203504848.jpg",
+    "PXL_20230806_235553394.jpg",
+    "PXL_20231120_002742785.dng",
+    "PXL_20231120_002920554.jpg",
+    "PXL_20231120_210527402.dng",
+    "PXL_20231211_004047524.jpg",
+    "PXL_20231221_210417588.jpg",
+    "PXL_20231221_213627643.jpg",
+    "PXL_20231223_075001042.jpg",
+    "PXL_20231226_184548623.jpg",
+    "PXL_20240131_013430374.jpg",
+    "PXL_20240325_035731504.jpg",
+    "PXL_20240408_003215875.jpg",
+    "PXL_20240521_025057693.jpg",
+    "PXL_20240630_011346680.jpg",
+    "PXL_20240708_222637707.jpg",
+    "PXL_20240718_000403216.jpg",
+    "PXL_20240722_200504113.jpg",
+    "PXL_20240808_211542775.jpg",
+    "PXL_20241007_023801663.jpg",
+    "PXL_20241123_194900843.jpg",
+    "PXL_20241202_143338144.jpg",
+    "PXL_20250202_042340658.jpg",
+    "PXL_20250426_024053319.jpg",
+    "PXL_20250426_084222634.jpg",
+    "PXL_20250501_160616426.jpg",
+    "PXL_20250503_222128862.jpg",
+    "PXL_20250528_213707194.jpg",
+    "PXL_20250617_052502070.jpg",
+    "PXL_20250626_205528017.jpg",
+    "PXL_20250703_032207597.jpg",
+    "PXL_20250706_185716830.jpg",
+    "PXL_20250706_213056077.jpg",
+    "PXL_20250726_211343400.jpg",
+    "PXL_20250811_211835846.jpg",
+    "PXL_20250814_231431109.jpg",
+    "PXL_20250906_001113787.jpg",
+    "PXL_20250926_022815882.jpg",
+    "PXL_20250930_065746276.jpg",
+    "PXL_20251004_023935813.jpg",
+    "PXL_20251107_064636287.jpg",
+    "PXL_20251108_025727627.jpg",
+    "PXL_20251108_025912900.jpg",
+    "PXL_20251120_015319617.jpg",
+    "PXL_20251220_040853040.jpg",
+    "PXL_20251223_044233818.jpg",
+    "PXL_20260131_023636224.jpg",
+    "PXL_20260131_030237621.jpg",
+    "PXL_20260202_204443784.jpg",
+    "PXL_20260219_050715169.jpg",
+    "PXL_20260220_043453305.jpg",
+    "PXL_20260411_201506380.jpg",
+    "PXL_20260617_033252085.jpg",
+    "PXL_20260626_225456569.jpg",
+    "PXL_20260702_220704854.jpg",
+    "PXL_20260706_190516439.jpg",
+    "PXL_20260706_214711042.jpg",
+    "PXL_20260707_041630487.jpg",
+    "PXL_20260710_005548570.jpg",
+    "fuel_1783829858019.jpg",
 )
 
 /**
@@ -337,7 +517,7 @@ object PumpCostVolUtils {
             .put("digits", c.digits)
             .put("asisProbs", c.asisProbs)
             .put("digitsProbs", c.digitsProbs)
-        if (c.recB64.isNotEmpty()) j.put("recB64", c.recB64)
+        if (c.recB64.isNotEmpty()) j.put("_htmlRec", c.recB64)
         if (c.recW > 0) j.put("recW", c.recW)
         if (c.recH > 0) j.put("recH", c.recH)
         c.rect?.let { j.put("rect", rectToJson(it)) }
@@ -551,25 +731,32 @@ object PumpCostVolUtils {
     }
 
     fun prepareScale(buffer: BufferSet, targetLongEdge: Int): Pair<Int, Int> {
+        val dest = NativePaddleEngine.deskewSetFor(targetLongEdge)
+        val S = dest.width
+        val letterEdge = min(targetLongEdge, S)
         val srcW = buffer.p.width
         val srcH = buffer.p.height
         val currentLongEdge = max(srcW, srcH)
-        val scale = if (currentLongEdge <= targetLongEdge) 1.0f else targetLongEdge.toFloat() / currentLongEdge
-        val targetW = (srcW * scale).toInt()
-        val targetH = (srcH * scale).toInt()
+        val scale = if (currentLongEdge <= letterEdge) 1.0f else letterEdge.toFloat() / currentLongEdge
+        val targetW = (srcW * scale).toInt().coerceAtLeast(1)
+        val targetH = (srcH * scale).toInt().coerceAtLeast(1)
         val alignedW = ((targetW + 31) / 32) * 32
         val alignedH = ((targetH + 31) / 32) * 32
-        Log.d(TAG, "prepareScale: target=$targetLongEdge -> ${targetW}x${targetH} (Aligned: ${alignedW}x${alignedH})")
-        val outerId = buffer.s.createCrop(0, 0, alignedW, alignedH)
-        buffer.c[outerId].clear()
-        val innerId = buffer.s.createCrop(0, 0, targetW, targetH)
-        Imgproc.resize(buffer.p.mat, buffer.c[innerId].mat, buffer.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-        return Pair(outerId, innerId)
+        Log.d(TAG, "prepareScale: request=$targetLongEdge destS=$S -> ${targetW}x${targetH} (Aligned: ${alignedW}x${alignedH})")
+        if (alignedW > S || alignedH > S) {
+            Log.e(TAG, "prepareScale: aligned ${alignedW}x${alignedH} exceeds packed S=$S")
+            return Pair(0, 0)
+        }
+        val raw = (dest.s as BufferSet.Instance).tensorBindRaw()
+        if (!NativeImageUtils.scalePackedU8(buffer.p.mat, raw, S, targetW, targetH)) {
+            Log.e(TAG, "prepareScale: packed scale failed S=$S inner=${targetW}x$targetH")
+            return Pair(0, 0)
+        }
+        return Pair(targetW, targetH)
     }
 
     suspend fun runDiscoveryPaddle(
         buffer: BufferSet,
-        id: Int,
         paddleEngine: NativePaddleEngine,
         contentW: Int,
         contentH: Int,
@@ -582,9 +769,17 @@ object PumpCostVolUtils {
         detTiers: Map<Int, com.baidu.paddle.lite.PaddlePredictor>? = null,
         detTiersInt8: Map<Int, ByteArray>? = null,
     ): List<List<PumpHunk>> {
+        val dest = NativePaddleEngine.deskewSetFor(scale)
+        val S = dest.width
+        val fullW = buffer.p.width
+        val fullH = buffer.p.height
+        val heatToPhoto =
+            max(fullW, fullH).toFloat() / max(contentW, contentH).coerceAtLeast(1).toFloat()
         // copyHeatmap=false: campaign only needs boxes; floatData/getFloatData crashes on uint8 heatmaps
         val res = paddleEngine.detect(
-            buffer.c[id],
+            dest,
+            targetW = S,
+            targetH = S,
             copyHeatmap = false,
             boxMode = boxMode,
             heatDumpU8z = heatDumpU8z,
@@ -592,6 +787,9 @@ object PumpCostVolUtils {
             maskDilatePasses = maskDilatePasses,
             detTiers = detTiers,
             detTiersInt8 = detTiersInt8,
+            heatToPhoto = heatToPhoto,
+            photoW = fullW,
+            photoH = fullH,
         ) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
         if (metadata != null) {
             metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
@@ -603,8 +801,6 @@ object PumpCostVolUtils {
             metadata["mask_dilate_passes_${scale}"] = res.metadata["mask_dilate_passes"] ?: maskDilatePasses.toString()
             metadata["heatmap_cell_px_${scale}"] = NativeImageUtils.PADDLE_DET_HEAT_CELL_PX.toString()
         }
-        val masterW = buffer.c[id].width
-        val masterH = buffer.c[id].height
         val hist = res.heatmapHist ?: IntArray(0)
         if (metadata != null && hist.isNotEmpty()) metadata["heatmap_hist_${scale}"] = JSONArray(hist.toList()).toString()
         val rawRects = res.nativeBoxes.map { box ->
@@ -616,18 +812,13 @@ object PumpCostVolUtils {
             Rect(minX, minY, maxX, maxY)
         }
         val hunksDetected = mutableListOf<PumpHunk>()
-        val fullW = buffer.p.width
-        val fullH = buffer.p.height
         rawRects.forEach { r ->
-            val ml = r.left.toInt().coerceIn(0, masterW - 1)
-            val mt = r.top.toInt().coerceIn(0, masterH - 1)
-            val mr = r.right.toInt().coerceIn(0, masterW - 1)
-            val mb = r.bottom.toInt().coerceIn(0, masterH - 1)
-            val fl = ml * fullW.toFloat() / contentW
-            val ft = mt * fullH.toFloat() / contentH
-            val fr = mr * fullW.toFloat() / contentW
-            val fb = mb * fullH.toFloat() / contentH
-            hunksDetected.add(PumpHunk("", RectF(fl, ft, fr, fb)))
+            hunksDetected.add(
+                PumpHunk(
+                    "",
+                    RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()),
+                ),
+            )
         }
         val nonNestedRects = rawRects.filter { r1 ->
             rawRects.none { r2 -> r1 != r2 && r2.contains(r1.left + 5, r1.top + 5, r1.right - 5, r1.bottom - 5) }
@@ -638,45 +829,65 @@ object PumpCostVolUtils {
         val hunksMaxExtent = mutableListOf<PumpHunk>()
         val hunksNative = mutableListOf<PumpHunk>()
         nonNestedRects.forEach { rect ->
-            val ml = rect.left.toInt().coerceIn(0, masterW - 1)
-            val mt = rect.top.toInt().coerceIn(0, masterH - 1)
-            val mr = rect.right.toInt().coerceIn(0, masterW - 1)
-            val mb = rect.bottom.toInt().coerceIn(0, masterH - 1)
-            val fl = ml * fullW.toFloat() / contentW
-            val ft = mt * fullH.toFloat() / contentH
-            val fr = mr * fullW.toFloat() / contentW
-            val fb = mb * fullH.toFloat() / contentH
-            hunksRaw.add(PumpHunk("", RectF(fl, ft, fr, fb)))
+            hunksRaw.add(
+                PumpHunk(
+                    "",
+                    RectF(
+                        rect.left.toFloat(), rect.top.toFloat(),
+                        rect.right.toFloat(), rect.bottom.toFloat(),
+                    ),
+                ),
+            )
         }
+        val inv = if (heatToPhoto > 0f) 1f / heatToPhoto else 1f
         consolidated.forEach { rect ->
-            val ml = rect.left.toInt().coerceIn(0, masterW - 1)
-            val mt = rect.top.toInt().coerceIn(0, masterH - 1)
-            val mr = rect.right.toInt().coerceIn(0, masterW - 1)
-            val mb = rect.bottom.toInt().coerceIn(0, masterH - 1)
-            val rawRect = Rect(ml, mt, mr, mb)
-            val (retractedRect, maxExtentRect) = NativeImageUtils.expandByUniformity(buffer.c[id].mat, rawRect)
-            val fl = retractedRect.left * fullW.toFloat() / contentW
-            val ft = retractedRect.top * fullH.toFloat() / contentH
-            val fr = retractedRect.right * fullW.toFloat() / contentW
-            val fb = retractedRect.bottom * fullH.toFloat() / contentH
-            hunksExpanded.add(PumpHunk("", RectF(fl, ft, fr, fb)))
-            val yfl = maxExtentRect.left * fullW.toFloat() / contentW
-            val yft = maxExtentRect.top * fullH.toFloat() / contentH
-            val yfr = maxExtentRect.right * fullW.toFloat() / contentW
-            val yfb = maxExtentRect.bottom * fullH.toFloat() / contentH
-            hunksMaxExtent.add(PumpHunk("", RectF(yfl, yft, yfr, yfb)))
+            val heatRect = Rect(
+                (rect.left * inv).toInt(),
+                (rect.top * inv).toInt(),
+                (rect.right * inv).toInt(),
+                (rect.bottom * inv).toInt(),
+            )
+            val packed = NativeImageUtils.wrapPackedU8(
+                (dest.s as BufferSet.Instance).tensorBindRaw(),
+                S,
+            )
+            val (retractedRect, maxExtentRect) = try {
+                NativeImageUtils.expandByUniformity(packed, heatRect)
+            } finally {
+                packed.release()
+            }
+            hunksExpanded.add(
+                PumpHunk(
+                    "",
+                    RectF(
+                        retractedRect.left * heatToPhoto,
+                        retractedRect.top * heatToPhoto,
+                        retractedRect.right * heatToPhoto,
+                        retractedRect.bottom * heatToPhoto,
+                    ),
+                ),
+            )
+            hunksMaxExtent.add(
+                PumpHunk(
+                    "",
+                    RectF(
+                        maxExtentRect.left * heatToPhoto,
+                        maxExtentRect.top * heatToPhoto,
+                        maxExtentRect.right * heatToPhoto,
+                        maxExtentRect.bottom * heatToPhoto,
+                    ),
+                ),
+            )
         }
         res.nativeBoxes.forEach { box ->
-            val scaleX = fullW.toFloat() / contentW
-            val scaleY = fullH.toFloat() / contentH
-            var minX = Float.MAX_VALUE; var maxX = Float.MIN_VALUE
-            var minY = Float.MAX_VALUE; var maxY = Float.MIN_VALUE
-            box.points.toList().chunked(2).forEach { (px, py) ->
-                val sx = px * scaleX; val sy = py * scaleY
-                if (sx < minX) minX = sx; if (sx > maxX) maxX = sx
-                if (sy < minY) minY = sy; if (sy > maxY) maxY = sy
-            }
-            hunksNative.add(PumpHunk("Conf: %.2f".format(box.confidence), RectF(minX, minY, maxX, maxY)))
+            val p = box.points
+            val minX = minOf(p[0], p[2], p[4], p[6])
+            val minY = minOf(p[1], p[3], p[5], p[7])
+            val maxX = maxOf(p[0], p[2], p[4], p[6])
+            val maxY = maxOf(p[1], p[3], p[5], p[7])
+            hunksNative.add(
+                PumpHunk("Conf: %.2f".format(box.confidence), RectF(minX, minY, maxX, maxY)),
+            )
         }
         return listOf(hunksDetected, hunksRaw, hunksExpanded, hunksMaxExtent, hunksNative)
     }
@@ -687,11 +898,15 @@ object PumpCostVolUtils {
         targetW: Int,
         targetH: Int,
     ): String = try {
+        val dest = recBuffer.c[recCropId]
+        val cw = targetW.coerceAtLeast(2).coerceAtMost(dest.width.coerceAtLeast(2))
+        val ch = targetH.coerceAtLeast(2).coerceAtMost(dest.height.coerceAtLeast(2))
+        val roi = android.graphics.Rect(0, 0, cw, ch)
         OcrUtils.takeSnapshot(
-            recBuffer.c[recCropId],
-            null,
-            targetW.coerceAtLeast(2),
-            targetH.coerceAtLeast(2),
+            dest,
+            roi,
+            0,
+            0,
             emptyList(),
             null,
             recBuffer,
@@ -727,7 +942,8 @@ object PumpCostVolUtils {
             }
             val fed = RecBufferFeed.feedSourceBorderHeightStrip(
                 workspace, r, imgW, imgH, recBuffer,
-                targetH = 48, maxW = 320,
+                targetH = 48,
+                borderPx = RecBufferFeed.DEFAULT_BORDER_PX,
             )
             val snap = snapRecCrop(recBuffer, fed.recCropId, fed.targetW, fed.targetH)
             val asisRes = paddleEngine.recognize(recBuffer.c[fed.recCropId])
@@ -805,7 +1021,7 @@ object PumpCostVolUtils {
         NativePaddleEngine.heartbeat("deskew_done ms=$tDeskew angle=$tilt")
 
         val tRed0 = System.currentTimeMillis()
-        val scales = listOf(224, 608, 1024)
+        val scales = listOf(224, 608)
         val pdHunksRawTotal = mutableListOf<PumpHunk>()
         val pdHunksExpTotal = mutableListOf<PumpHunk>()
         val pdHunksMaxTotal = mutableListOf<PumpHunk>()
@@ -818,13 +1034,11 @@ object PumpCostVolUtils {
             val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
             val targetW = (srcW * scaleFactor).toInt()
             val targetH = (srcH * scaleFactor).toInt()
-            val (outerId, innerId) = prepareScale(workspace, scale)
-            val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale)
+            prepareScale(workspace, scale)
+            val paddleResults = runDiscoveryPaddle(workspace, paddleEngine, targetW, targetH, scale)
             pdHunksRawTotal.addAll(paddleResults[1])
             pdHunksExpTotal.addAll(paddleResults[2])
             pdHunksMaxTotal.addAll(paddleResults[3])
-            workspace.c[innerId].release()
-            workspace.c[outerId].release()
             NativePaddleEngine.heartbeat("det_scale_done scale=$scale")
         }
 
@@ -958,13 +1172,11 @@ object PumpCostVolUtils {
             val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
             val targetW = (srcW * scaleFactor).toInt()
             val targetH = (srcH * scaleFactor).toInt()
-            val (outerId, innerId) = prepareScale(workspace, scale)
-            val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale)
+            prepareScale(workspace, scale)
+            val paddleResults = runDiscoveryPaddle(workspace, paddleEngine, targetW, targetH, scale)
             pdHunksRawTotal.addAll(paddleResults[1])
             pdHunksExpTotal.addAll(paddleResults[2])
             pdHunksMaxTotal.addAll(paddleResults[3])
-            workspace.c[innerId].release()
-            workspace.c[outerId].release()
         }
         doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
         doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)

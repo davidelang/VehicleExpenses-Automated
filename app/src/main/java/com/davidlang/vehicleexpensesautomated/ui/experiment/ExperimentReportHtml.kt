@@ -1,0 +1,409 @@
+package com.davidlang.vehicleexpensesautomated.ui.experiment
+
+import android.content.Context
+import android.content.SharedPreferences
+import java.io.File
+
+/**
+ * Shared experiment HTML chrome: sticky filters, column hide, prev/next photo,
+ * 500px default column cap. kind = pump | alignment | multiscale.
+ */
+object ExperimentReportHtml {
+
+    enum class Kind { PUMP, ALIGNMENT, MULTISCALE }
+
+    const val PREFS_NAME = "vehicle_settings"
+    const val KEY_HTML_ROWS_PER_FILE = "experiment_html_rows_per_file"
+    const val DEFAULT_HTML_ROWS_PER_FILE = 50
+
+    fun kindKey(kind: Kind): String = when (kind) {
+        Kind.PUMP -> "pump"
+        Kind.ALIGNMENT -> "alignment"
+        Kind.MULTISCALE -> "multiscale"
+    }
+
+    /** Missing key → 50. Stored &lt; 0 → 0 (unlimited). */
+    fun htmlRowsPerFile(prefs: SharedPreferences): Int {
+        if (!prefs.contains(KEY_HTML_ROWS_PER_FILE)) return DEFAULT_HTML_ROWS_PER_FILE
+        val v = prefs.getInt(KEY_HTML_ROWS_PER_FILE, DEFAULT_HTML_ROWS_PER_FILE)
+        return if (v < 0) 0 else v
+    }
+
+    fun htmlRowsPerFile(context: Context): Int =
+        htmlRowsPerFile(context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE))
+
+    /** Unparsable or negative write → 0. */
+    fun sanitizeHtmlRowsPerFileWrite(raw: String): Int {
+        val v = raw.toIntOrNull() ?: return 0
+        return if (v < 0) 0 else v
+    }
+
+    fun nParts(nPhotos: Int, rowsPerFile: Int): Int {
+        if (nPhotos <= 0) return 1
+        if (rowsPerFile <= 0) return 1
+        return (nPhotos + rowsPerFile - 1) / rowsPerFile
+    }
+
+    fun partPad(nParts: Int): Int = maxOf(2, nParts.toString().length)
+
+    fun partFileName(reportStem: String, partIndex1: Int, nParts: Int): String {
+        val nn = partIndex1.toString().padStart(partPad(nParts), '0')
+        return "${reportStem}_part$nn.html"
+    }
+
+    fun partFile(dir: File, reportStem: String, partIndex1: Int, nParts: Int): File =
+        File(dir, partFileName(reportStem, partIndex1, nParts))
+
+    fun partIndex1ForPhoto(photoIndex0: Int, rowsPerFile: Int): Int {
+        if (rowsPerFile <= 0) return 1
+        return (photoIndex0 / rowsPerFile) + 1
+    }
+
+    /** Inclusive-exclusive photo-index ranges, 0 .. nPhotos-1. */
+    fun photoChunks(nPhotos: Int, rowsPerFile: Int): List<IntRange> {
+        val n = nPhotos.coerceAtLeast(0)
+        if (n == 0) return listOf(0 until 0)
+        if (rowsPerFile <= 0) return listOf(0 until n)
+        val chunks = ArrayList<IntRange>()
+        var start = 0
+        while (start < n) {
+            val end = minOf(start + rowsPerFile, n)
+            chunks.add(start until end)
+            start = end
+        }
+        return chunks
+    }
+
+    fun css(): String {
+        val hideCols = (1..40).joinToString("\n") { n ->
+            """body.hide-col-$n #report [data-col="$n"] { display: none !important; }"""
+        }
+        val hidePhotos = (1..200).joinToString("\n") { n ->
+            """body.hide-photo-$n #report tr[data-photo="$n"] { display: none !important; }"""
+        }
+        return """
+<style>
+body { font-family: sans-serif; margin: 0; }
+.ve-bar { position: sticky; top: 0; z-index: 30; background: #f7f7f7;
+  border-bottom: 1px solid #bbb; padding: 8px 12px; font-size: 14px; }
+.ve-bar .ctl { display: inline-block; margin: 3px 10px 3px 0; white-space: nowrap; }
+.ve-bar .row { margin: 4px 0; }
+#col-checks { display: flex; flex-wrap: wrap; align-items: center; }
+#report { border-collapse: collapse; font-size: 18px; --col-max: 500px;
+  table-layout: fixed; width: max-content; }
+#report th, #report td { border: 1px solid #ccc; padding: 4px; text-align: center;
+  vertical-align: top; word-wrap: break-word; }
+#report th[data-col], #report td[data-col] {
+  max-width: var(--col-max); width: var(--col-max); overflow: hidden; box-sizing: border-box;
+}
+#report.col-unlim { table-layout: auto; width: max-content; }
+#report.col-unlim th[data-col], #report.col-unlim td[data-col] {
+  max-width: none; width: auto; overflow: visible;
+}
+#report th { background: #eee; position: sticky; z-index: 5; }
+#report img { max-width: 100% !important; height: auto; border: 1px solid #eee; margin-bottom: 2px; }
+#report .look-ink-crops img { max-width: none !important; height: auto; image-rendering: pixelated; }
+.res-table { width: 100%; border: none; font-size: 16px; }
+.res-table th { background: #f0f0f0; }
+body.hide-orig-details .orig-details { display: none; }
+body.hide-dump-details .dump-details { display: none; }
+body.hide-rec-crops .rec-crops { display: none; }
+body.hide-look-ink-crops .look-ink-crops { display: none; }
+body.hide-overlay .overlay-full { display: none; }
+body.hide-results .results-col { display: none !important; }
+.look-ink-crops img { max-width: none !important; height: auto; image-rendering: pixelated; }
+$hideCols
+$hidePhotos
+.ocr-step { margin-bottom: 4px; border-bottom: 1px solid #eee; font-size: 18px; text-align: left; }
+.stat { font-size: 10px; color: #666; }
+</style>
+""".trimIndent()
+    }
+
+    fun toolbar(
+        kind: Kind,
+        columnLabels: List<String>,
+        metaHtml: String,
+        partIndex1: Int = 1,
+        nParts: Int = 1,
+        reportStem: String = "",
+    ): String {
+        val rec = if (kind == Kind.PUMP) {
+            """<label class="ctl"><input type="checkbox" class="ve-overlay" checked> Overlay</label>
+    <label class="ctl"><input type="checkbox" class="ve-look-ink" checked> Look ink</label>
+    <label class="ctl"><input type="checkbox" class="ve-rec-crops" checked> Rec crops</label>
+    <label class="ctl"><input type="checkbox" class="ve-results" checked> Results</label>"""
+        } else ""
+        val checks = StringBuilder()
+        val last = columnLabels.size - 1
+        columnLabels.forEachIndexed { i, lab ->
+            if (i == 0) return@forEachIndexed
+            if (kind == Kind.PUMP && i == last) return@forEachIndexed
+            val esc = lab.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            checks.append(
+                """<label class="ctl"><input type="checkbox" checked data-col="$i">$esc</label>""",
+            )
+        }
+        val prevPart = if (partIndex1 > 1) {
+            """<a href="${partFileName(reportStem, partIndex1 - 1, nParts)}">Prev part</a>"""
+        } else {
+            """<a>Prev part</a>"""
+        }
+        val nextPart = if (partIndex1 < nParts) {
+            """<a href="${partFileName(reportStem, partIndex1 + 1, nParts)}">Next part</a>"""
+        } else {
+            """<a>Next part</a>"""
+        }
+        return """
+<div class="ve-bar">
+  <div class="row">$metaHtml</div>
+  <div class="row">
+    <button type="button" class="ve-prev">Prev photo</button>
+    <button type="button" class="ve-next">Next photo</button>
+    $prevPart
+    $nextPart
+    <button type="button" class="ve-all">All columns</button>
+    <button type="button" class="ve-none">No experiment columns</button>
+    <label class="ctl"><input type="checkbox" class="ve-orig-details" checked>
+      # / filename extra details (orig, hist, deskew, timing)</label>
+    <label class="ctl"><input type="checkbox" class="ve-dump-details" checked> Dump details</label>
+    $rec
+    <label class="ctl">Column max width
+      <input type="number" class="ve-col-max" value="500" min="80" step="10" style="width:4.5em;"> px</label>
+    <label class="ctl"><input type="checkbox" class="ve-col-unlim"> unlimited</label>
+    <label class="ctl">Rows <input class="ve-rows" type="text" placeholder="all" style="width:12em;"></label>
+  </div>
+  <div class="row" id="col-checks">$checks</div>
+</div>
+""".trimIndent()
+    }
+
+    fun script(kind: Kind): String {
+        val key = "ve-exp-html-ui:${kindKey(kind)}"
+        val recJs = if (kind == Kind.PUMP) "true" else "false"
+        return """
+<script>
+(function() {
+  const KEY = "$key";
+  const HAS_REC = $recJs;
+  function reportEl() { return document.getElementById('report'); }
+  function topBar() {
+    return document.querySelector('.ve-bar');
+  }
+  function syncSticky() {
+    const tb = topBar();
+    if (!tb) return;
+    const h = tb.getBoundingClientRect().height;
+    document.querySelectorAll('#report thead th').forEach(function(th) { th.style.top = h + 'px'; });
+  }
+  function photoStarts() {
+    const seen = {};
+    const out = [];
+    document.querySelectorAll('tr[data-photo]').forEach(function(tr) {
+      const p = tr.getAttribute('data-photo');
+      if (seen[p]) return;
+      if (document.body.classList.contains('hide-photo-' + p)) return;
+      seen[p] = 1;
+      out.push(tr);
+    });
+    return out;
+  }
+  function parseRows(s) {
+    s = (s || '').trim();
+    if (!s || s === 'all' || s === '*') return null;
+    const toks = s.split(/[^\d\-]+/).filter(Boolean);
+    const set = {};
+    var any = false;
+    toks.forEach(function(t) {
+      const m = t.match(/^(\d+)-(\d+)$/);
+      if (m) {
+        var a = parseInt(m[1], 10), b = parseInt(m[2], 10);
+        if (a > b) { var tmp = a; a = b; b = tmp; }
+        for (var i = a; i <= b; i++) { set[i] = 1; any = true; }
+      } else if (/^\d+$/.test(t)) {
+        set[parseInt(t, 10)] = 1;
+        any = true;
+      }
+    });
+    return any ? set : null;
+  }
+  function applyRows() {
+    var inp = document.querySelector('.ve-rows');
+    var set = parseRows(inp ? inp.value : '');
+    for (var n = 1; n <= 200; n++) {
+      document.body.classList.toggle('hide-photo-' + n, !!(set && !set[n]));
+    }
+  }
+  function currentIndex() {
+    const rows = photoStarts();
+    var i = 0;
+    var y = 80;
+    for (var k = 0; k < rows.length; k++) {
+      if (rows[k].getBoundingClientRect().top <= y + 4) i = k;
+    }
+    return i;
+  }
+  function goPhoto(d) {
+    const rows = photoStarts();
+    if (!rows.length) return;
+    var i = currentIndex() + d;
+    if (i < 0) i = 0;
+    if (i >= rows.length) i = rows.length - 1;
+    rows[i].scrollIntoView({ block: 'start' });
+  }
+  function applyWidth() {
+    const report = reportEl();
+    const unlim = document.querySelector('.ve-col-unlim');
+    const colMax = document.querySelector('.ve-col-max');
+    if (!unlim || !colMax || !report) return;
+    if (unlim.checked) {
+      report.classList.add('col-unlim');
+      colMax.disabled = true;
+    } else {
+      var px = parseInt(colMax.value, 10);
+      if (!px || px < 80) px = 500;
+      colMax.value = px;
+      report.style.setProperty('--col-max', px + 'px');
+      report.classList.remove('col-unlim');
+      colMax.disabled = false;
+    }
+    syncSticky();
+  }
+  function apply() {
+    var src = topBar();
+    if (!src) return;
+    src.querySelectorAll('input[data-col]').forEach(function(cb) {
+      var id = cb.getAttribute('data-col');
+      var on = cb.checked;
+      document.body.classList.toggle('hide-col-' + id, !on);
+      document.querySelectorAll('.ve-bar input[data-col="' + id + '"]').forEach(function(o) { o.checked = on; });
+    });
+    var orig = document.querySelector('.ve-orig-details');
+    var dump = document.querySelector('.ve-dump-details');
+    document.body.classList.toggle('hide-orig-details', orig && !orig.checked);
+    document.body.classList.toggle('hide-dump-details', dump && !dump.checked);
+    if (HAS_REC) {
+      var rec = document.querySelector('.ve-rec-crops');
+      document.body.classList.toggle('hide-rec-crops', rec && !rec.checked);
+      var lookInk = document.querySelector('.ve-look-ink');
+      document.body.classList.toggle('hide-look-ink-crops', lookInk && !lookInk.checked);
+      var overlay = document.querySelector('.ve-overlay');
+      document.body.classList.toggle('hide-overlay', overlay && !overlay.checked);
+      var results = document.querySelector('.ve-results');
+      document.body.classList.toggle('hide-results', results && !results.checked);
+    }
+    applyRows();
+    applyWidth();
+    save();
+  }
+  function save() {
+    try {
+      var st = { cols: {}, orig: true, dump: true, rec: true, lookInk: true, overlay: true, results: true, unlim: false, max: 500, rows: '' };
+      var src = topBar();
+      if (src) {
+        src.querySelectorAll('input[data-col]').forEach(function(cb) {
+          st.cols[cb.getAttribute('data-col')] = cb.checked;
+        });
+      }
+      var orig = document.querySelector('.ve-orig-details');
+      var dump = document.querySelector('.ve-dump-details');
+      var rec = document.querySelector('.ve-rec-crops');
+      var lookInk = document.querySelector('.ve-look-ink');
+      var overlay = document.querySelector('.ve-overlay');
+      var results = document.querySelector('.ve-results');
+      var unlim = document.querySelector('.ve-col-unlim');
+      var colMax = document.querySelector('.ve-col-max');
+      var rows = document.querySelector('.ve-rows');
+      if (orig) st.orig = orig.checked;
+      if (dump) st.dump = dump.checked;
+      if (rec) st.rec = rec.checked;
+      if (lookInk) st.lookInk = lookInk.checked;
+      if (overlay) st.overlay = overlay.checked;
+      if (results) st.results = results.checked;
+      if (unlim) st.unlim = unlim.checked;
+      if (colMax) st.max = parseInt(colMax.value, 10) || 500;
+      if (rows) st.rows = rows.value;
+      localStorage.setItem(KEY, JSON.stringify(st));
+    } catch (e) {}
+  }
+  function load() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      var st = JSON.parse(raw);
+      if (st.cols) {
+        document.querySelectorAll('.ve-bar input[data-col]').forEach(function(cb) {
+          var id = cb.getAttribute('data-col');
+          if (Object.prototype.hasOwnProperty.call(st.cols, id)) cb.checked = !!st.cols[id];
+        });
+      }
+      document.querySelectorAll('.ve-orig-details').forEach(function(el) { if (st.orig !== undefined) el.checked = !!st.orig; });
+      document.querySelectorAll('.ve-dump-details').forEach(function(el) { if (st.dump !== undefined) el.checked = !!st.dump; });
+      document.querySelectorAll('.ve-rec-crops').forEach(function(el) { if (st.rec !== undefined) el.checked = !!st.rec; });
+      document.querySelectorAll('.ve-look-ink').forEach(function(el) { if (st.lookInk !== undefined) el.checked = !!st.lookInk; });
+      document.querySelectorAll('.ve-overlay').forEach(function(el) { if (st.overlay !== undefined) el.checked = !!st.overlay; });
+      document.querySelectorAll('.ve-results').forEach(function(el) { if (st.results !== undefined) el.checked = !!st.results; });
+      document.querySelectorAll('.ve-col-unlim').forEach(function(el) { if (st.unlim !== undefined) el.checked = !!st.unlim; });
+      document.querySelectorAll('.ve-col-max').forEach(function(el) { if (st.max) el.value = st.max; });
+      document.querySelectorAll('.ve-rows').forEach(function(el) { if (st.rows !== undefined) el.value = st.rows; });
+    } catch (e) {}
+  }
+  function inBar(el) { return el && el.closest && el.closest('.ve-bar'); }
+  document.addEventListener('change', function(e) {
+    if (inBar(e.target)) apply();
+  });
+  document.addEventListener('input', function(e) {
+    var t = e.target;
+    if (t && t.classList && t.classList.contains('ve-col-max')) applyWidth();
+    if (t && t.classList && t.classList.contains('ve-rows')) apply();
+  });
+  document.addEventListener('click', function(e) {
+    var t = e.target;
+    if (!inBar(t)) return;
+    if (t.closest('.ve-all')) {
+      document.querySelectorAll('.ve-bar input[data-col]').forEach(function(cb) { cb.checked = true; });
+      apply();
+    } else if (t.closest('.ve-none')) {
+      document.querySelectorAll('.ve-bar input[data-col]').forEach(function(cb) { cb.checked = false; });
+      apply();
+    } else if (t.closest('.ve-prev')) {
+      goPhoto(-1);
+    } else if (t.closest('.ve-next')) {
+      goPhoto(1);
+    }
+  });
+  function boot() { load(); apply(); }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+  setTimeout(boot, 0);
+  window.addEventListener('resize', syncSticky);
+})();
+</script>
+""".trimIndent()
+    }
+
+    fun documentHead(title: String, kind: Kind): String =
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"/><title>$title</title>\n${css()}\n${script(kind)}</head><body>\n"
+
+    fun tableOpen(headerCells: List<String>, resultsLast: Boolean = false): String {
+        val sb = StringBuilder()
+        sb.append("<table id=\"report\"><thead><tr>")
+        val last = headerCells.size - 1
+        headerCells.forEachIndexed { i, lab ->
+            if (resultsLast && i == last) {
+                sb.append("<th class=\"results-col\">$lab</th>")
+            } else {
+                sb.append("<th data-col=\"$i\">$lab</th>")
+            }
+        }
+        sb.append("</tr></thead><tbody>\n")
+        return sb.toString()
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    fun footer(kind: Kind, columnLabels: List<String>, metaHtml: String): String =
+        "</tbody></table>\n</body></html>\n"
+}
