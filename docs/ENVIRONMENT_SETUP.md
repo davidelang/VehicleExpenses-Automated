@@ -80,7 +80,7 @@ If agents build as a non-primary user:
 |------|----------|
 | Canonical keystore | `<repo-or-orchestration>/.android-shared/debug.keystore` (seeded from primary `~/.android/debug.keystore`) |
 | Unify role homes | **`./sync-debug-keystores`** (also from `fix-perms`) |
-| Runtime env | `build_app` / `deploy` / `ve-env` / `run-grok*` set `ANDROID_USER_HOME` → **worktree** `.android-shared` (copy from orch if missing) |
+| Runtime env | `build_app` / `deploy` / `env` / `run-grok*` set `ANDROID_USER_HOME` → **worktree** `.android-shared` (copy from orch if missing) |
 
 Foreign per-user keys cause `INSTALL_FAILED_UPDATE_INCOMPATIBLE` on devices. Phones already on the shared cert stay fine; a device installed with a foreign cert needs **one** uninstall then re-deploy by a human.
 
@@ -160,7 +160,7 @@ VehicleExpenses-automated/          # orchestration branch (managing root)
 ├── update-rules.sh                 # push brain FILES; stamp orch_root= in project.config
 ├── setup_agent.sh                  # create agent-N worktree
 ├── run-grok-*                      # role launchers
-└── build_app, deploy, fix-perms, sync-debug-keystores, ve-env, …
+└── build_app, deploy, fix-perms, sync-debug-keystores, env, …
 ```
 
 App worktrees symlink: `dev-ai-interaction` → `../dev-ai-interaction`.
@@ -172,18 +172,18 @@ App worktrees symlink: `dev-ai-interaction` → `../dev-ai-interaction`.
    See `docs/specs/PERMISSIONS_MODEL.md` and comments in `project.config.example` / `setup-project` (emit-only user commands).
 2. **Copy** `project.config.example` → **`project.config`** (gitignored); fill real usernames/paths including absolute **`orch_root=`** (or run `./update-rules.sh` from this root to stamp it on orch + every worktree).
 3. Clone or worktree the **orchestration** branch as the managing root (or run `./enable-full-orchestration.sh` from a plain tree for guidance).
-4. **`sudo ./fix-perms`** (rare) for systemic ownership/setgid; day-to-day prefer `source ./ve-env`.
+4. **`sudo ./fix-perms`** (rare) for systemic ownership/setgid; day-to-day prefer `source ./env`.
 5. **`./install-ve-refresh-shell.sh --all`** (or via fix-perms) for setuid group refresh helper.
 6. **`./sync-debug-keystores`** (prefer once with sudo for correct home ownership).
 7. **`./fix-android-sdk-perms`** as primary after NDK install.
-8. Seed orch **`.android-shared`** (canonical keystore). Worktree `.android-shared` / `.gradle-home` are created on first `ve-env` / `build_app`.
+8. Seed orch **`.android-shared`** (canonical keystore). Worktree `.android-shared` / `.gradle-home` are created on first `env` / `build_app`.
 9. Install **Grok CLI** (or Gemini) binaries referenced by launchers (`GROK_BIN` / project.config).
 
 ### 4.3 Daily multi-agent flow
 
 ```bash
 # Managing root (orchestration)
-source ./ve-env          # umask 002 + groups; ANDROID_USER_HOME
+source ./env          # umask 002 + groups; ANDROID_USER_HOME
 ./setup_agent.sh my-feature
 cd my-feature            # or agent-N
 ../run-grok-coder        # or run-grok-planner / run-grok-master *from that worktree*
@@ -211,7 +211,7 @@ Equal content is always a no-op. Host installers (`grok-install.sh`, `antigravit
 
 - Present under orchestration root, `master/`, and each `agent-N/`
 - **Byte-identical** to orchestration after a successful sync
-- Scripts that must be executable: `build_app`, `deploy`, `fix-perms`, `sync-debug-keystores`, `ve-env`, `run-grok*`, etc. (`update-rules` / fix-perms force `+x` on known names)
+- Scripts that must be executable: `build_app`, `deploy`, `fix-perms`, `sync-debug-keystores`, `env`, `run-grok*`, etc. (`update-rules` / fix-perms force `+x` on known names)
 
 **Not** in FILES (machine-local or generated):
 
@@ -242,7 +242,7 @@ Equal content is always a no-op. Host installers (`grok-install.sh`, `antigravit
 |----|--------|
 | `./build_app` for agent-mandated builds (commit + tag + assemble) | Raw `./gradlew` as the normal agent path |
 | Human `./deploy` for install | Agents running `deploy` / `adb install` / `installDebug` |
-| `source ./ve-env` if groups/umask wrong | `newgrp` for multi-group restore |
+| `source ./env` if groups/umask wrong | `newgrp` for multi-group restore |
 | `./sync-debug-keystores` if signing drifts | Unique `~/.android/debug.keystore` per ai-* user for installs |
 
 ---
@@ -291,7 +291,7 @@ test -r "$ANDROID_SDK_ROOT/ndk/"*/toolchains/llvm/prebuilt/linux-x86_64/sysroot/
 | `libc++_shared.so: Permission denied` | `./fix-android-sdk-perms` as primary |
 | `Unable to delete …/generated/ksp/…` on deploy | Owner wipe of `app/build/generated` or fail-fast message from deploy; ensure group-writable build dirs |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | Unify keys (`./sync-debug-keystores`); uninstall once on poisoned device; human re-deploy |
-| Missing groups / umask | `source ./ve-env` |
+| Missing groups / umask | `source ./env` |
 | Uncommitted tracked files block `build_app` | Commit via `./build_app msg files…` or restore; after ad-hoc `cp` of tracked scripts, commit or `update-rules` |
 | Orchestration `./build_app` “No gradlew” | Expected; compile inside `master/` or `agent-N/` |
 

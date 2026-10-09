@@ -6,7 +6,7 @@
 # --force: overwrite dest tracked seed files that differ from orch.
 #
 # On success: exec a new interactive shell in the new worktree with project
-# environment (umask 002 + full groups via ve-refresh-shell, same as ve-env).
+# environment (umask 002 + full groups via ve-refresh-shell, same as env).
 # That replaces this terminal only (other GUI apps stay open).
 #
 # Always run from the orchestration root.
@@ -243,7 +243,7 @@ fi
 # Files that use filter=manage-configs (see .gitattributes). Smudge substitutes @@ tokens.
 STAMPED_FILES=(
   run-grok run-grok-master run-grok-planner run-grok-coder run-grok-orchestrator
-  ve-env
+  env
   setup-project set-worktree-perms set-sandbox-perms
 )
 
@@ -451,7 +451,7 @@ PARENT_ROOT=".."
 
 # Copy latest authoritative copies of key permission/infra files from orchestration root
 # (ensures even if the branch tip was slightly behind, the tree is current)
-for f in append-to-engineering-log run-as-primary.c ve-env ve-refresh-shell.c; do
+for f in append-to-engineering-log run-as-primary.c env ve-refresh-shell.c; do
   copy_orch_seed_file "$PARENT_ROOT/$f" "$AGENT_ABS/$f"
 done
 # Launchers often live only on orchestration until update-rules; seed common ones
@@ -549,7 +549,7 @@ fi
     git add -u 2>/dev/null || true
     # Newly copied tracked scripts may be untracked if not on branch tip yet
     git add -A -- \
-      ve-env deploy build_app setup_agent.sh fix-perms update-rules.sh \
+      env deploy build_app setup_agent.sh fix-perms update-rules.sh \
       append-to-engineering-log get-builds-tag.sh install-*.sh \
       git-merge-drivers hooks AGENT_MANDATES.md AGENTS.md GROK.md \
       standard-plan-compliance-block.md project-facts.md 2>/dev/null || true
@@ -559,21 +559,21 @@ fi
   fi
 )
 
-# --- Enter new worktree shell (ve-env semantics) ---
+# --- Enter new worktree shell (env semantics) ---
 # Replace this process with an interactive shell in AGENT_ABS, umask 002, full
-# project groups when ve-refresh-shell is installed setuid (same as source ./ve-env).
+# project groups when ve-refresh-shell is installed setuid (same as source ./env).
 unset VE_SETUP_AGENT
 trap - EXIT
 
 echo "Worktree ready: $AGENT_ABS"
 echo "Branch: $BRANCH_NAME  Agent ID: $AGENT_ID"
 echo "Next: run a launcher from here, e.g.  ../run-grok-coder   or   ../run-grok-planner"
-echo "Entering worktree shell (umask 002 + project groups via ve-env helper)..."
+echo "Entering worktree shell (umask 002 + project groups via env helper)..."
 
 export VE_ENV_CWD="$AGENT_ABS"
 umask 002
 
-# Prefer setuid-root helper only (setuid+non-root owner is unsafe — see ve-env)
+# Prefer setuid-root helper only (setuid+non-root owner is unsafe — see env)
 REFRESH=""
 for _vrs in "$ORCH_ROOT/ve-refresh-shell" "$AGENT_ABS/ve-refresh-shell"; do
   if [ -x "$_vrs" ] && [ -u "$_vrs" ] && [ "$(stat -c '%U' "$_vrs" 2>/dev/null)" = "root" ]; then
@@ -589,7 +589,7 @@ fi
 # Fallback: interactive shell in worktree with umask 002 (groups may still be stale)
 echo "NOTE: ve-refresh-shell not setuid yet — shell may lack project groups."
 echo "  One-time: gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c && sudo chown root:root ve-refresh-shell && sudo chmod 4755 ve-refresh-shell"
-echo "  Then: source ./ve-env"
+echo "  Then: source ./env"
 cd "$AGENT_ABS" || {
   echo "ERROR: cannot cd to $AGENT_ABS"
   return 1 2>/dev/null || exit 1

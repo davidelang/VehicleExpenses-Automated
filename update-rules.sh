@@ -327,7 +327,7 @@ FILES=(
     "run-grok-coder"
     "run-grok-orchestrator"
     "run-grok"
-    "ve-env"
+    "env"
     "ve-refresh-shell.c"
     "run-antigravity"
     "run-antigravity-master"
@@ -636,7 +636,7 @@ while [ "$_wt_i" -lt "${#WT_PATHS[@]}" ]; do
            [[ "$FILE" == deploy || "$FILE" == build_app || "$FILE" == gradlew ]] || \
            [[ "$FILE" == run-* ]] || \
            [[ "$FILE" == git-merge-drivers/* ]] || \
-           [[ "$FILE" == agent-landlock || "$FILE" == todo-append || "$FILE" == todo-close || "$FILE" == ve-env ]]; then
+           [[ "$FILE" == agent-landlock || "$FILE" == todo-append || "$FILE" == todo-close || "$FILE" == env ]]; then
           chmod a+x "$TARGET_FILE" 2>/dev/null || true
         fi
     done
@@ -649,7 +649,7 @@ while [ "$_wt_i" -lt "${#WT_PATHS[@]}" ]; do
     # Ensure management/orchestration scripts end up executable (right perms).
     for _exe in "$WT"/deploy "$WT"/build_app "$WT"/gradlew \
                 "$WT"/ve-resolve-orch \
-                "$WT"/agent-landlock "$WT"/todo-append "$WT"/todo-close "$WT"/ve-env \
+                "$WT"/agent-landlock "$WT"/todo-append "$WT"/todo-close "$WT"/env \
                 "$WT"/landlock-smoke-matrix "$WT"/landlock-write-probe \
                 "$WT"/install-merge-drivers.sh "$WT"/merge-branch-into-master.sh; do
       [ -f "$_exe" ] || continue
@@ -748,7 +748,7 @@ while [ "$_wt_i" -lt "${#WT_PATHS[@]}" ]; do
     # Re-assert executables after commit (git may not preserve all mode bits in WT)
     for _exe in "$WT"/deploy "$WT"/build_app "$WT"/gradlew \
                 "$WT"/ve-resolve-orch \
-                "$WT"/agent-landlock "$WT"/todo-append "$WT"/todo-close "$WT"/ve-env \
+                "$WT"/agent-landlock "$WT"/todo-append "$WT"/todo-close "$WT"/env \
                 "$WT"/landlock-smoke-matrix "$WT"/landlock-write-probe \
                 "$WT"/install-merge-drivers.sh "$WT"/merge-branch-into-master.sh; do
       [ -f "$_exe" ] || continue
