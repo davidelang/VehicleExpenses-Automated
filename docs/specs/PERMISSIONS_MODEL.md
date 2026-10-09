@@ -40,7 +40,7 @@ All code, scripts, and docs must follow this. Changes require plan + approval.
   - Files created by group members: **664**.
   - Non-members (ai-planner as "other"): r-x (read source, no write).
   - **Umask for source/docs work: `002`** (666→664, 777→775 → with setgid dirs **2775**). **Not** `007` (that yields 660/770 and breaks planner other-read).
-  - **Failure mode:** umask `027` → **640** (owner-only write; group read-only; planner cannot read). Fix via `source ./ve-env`, agent launchers, and `build_app`/`deploy` post-normalize — not daily `fix-perms`.
+  - **Failure mode:** umask `027` → **640** (owner-only write; group read-only; planner cannot read). Fix via `source ./env`, agent launchers, and `build_app`/`deploy` post-normalize — not daily `fix-perms`.
 - **Build output** (app/build/, build/, .gradle/): `dlang:ai-code 2770` (setgid). Files often **660**. Group members can overwrite. Gradle in `build_app` **and** `deploy` uses `--no-daemon` and may use umask 007 only inside the gradle subprocess; then chmod dirs 2770.
 - **Sandbox** (dev-ai-interaction/ and subdirs for plans etc.): `dlang:ai-shared 2775`.
 - **.git/**: `dlang:ai-shared 2770` (group can add objects).
@@ -123,7 +123,7 @@ See also `dev-ai-interaction/research/ndk-build-permission-failure-ai-coder-2026
 
 **Fix keys (idempotent):** `./sync-debug-keystores` (also invoked from `fix-perms` / `ensure_shared_build_homes`). Prefer `sudo ./sync-debug-keystores` once so homes get correct ownership.
 
-**Runtime:** `build_app`/`deploy`/`ve-env`/`run-grok*` export `ANDROID_USER_HOME` to the **worktree** `.android-shared` (seeded from `$orch_root/.android-shared` if missing).
+**Runtime:** `build_app`/`deploy`/`env`/`run-grok*` export `ANDROID_USER_HOME` to the **worktree** `.android-shared` (seeded from `$orch_root/.android-shared` if missing).
 
 **Already-poisoned device:** uninstall once (`adb uninstall …` or `PRESERVE_DATA=1 ./deploy`), then human re-deploy with the unified key. Phones already on the shared cert are unaffected.
 
@@ -140,7 +140,7 @@ See also `dev-ai-interaction/research/ndk-build-permission-failure-ai-coder-2026
 ## When to Run Fixers / env helpers
 | Symptom | Run |
 |---------|-----|
-| New shell, unsure umask/groups | `source ./ve-env` or `./ve-env check` |
+| New shell, unsure umask/groups | `source ./env` or `./env check` |
 | Agent/build created wrong modes | next `./build_app` / `./deploy` (normalize) |
 | Deploy: Unable to delete `app/build/generated/ksp/...` (Hilt .pro) | Owner wipe: `sudo -u ai-coder rm -rf app/build/generated app/build/kspCaches app/build/intermediates` (or chown tree); then `./deploy`. Fixed scripts fail-fast with this message. |
 | Root-owned / systemic worktree breakage | `sudo ./fix-perms` (**rare**; does not replace multiuser git repair) |

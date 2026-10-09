@@ -10,7 +10,7 @@
 #   ./install-ve-refresh-shell.sh --all        # orch root + all worktrees
 #
 # Requires sudo for chown root + chmod 4755. Idempotent.
-# NEVER leaves setuid bit on a non-root-owned binary (kills terminals via ve-env).
+# NEVER leaves setuid bit on a non-root-owned binary (kills terminals via env).
 
 set -euo pipefail
 

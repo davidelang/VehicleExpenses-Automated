@@ -55,7 +55,7 @@ static void exec_user_shell(struct passwd *pw) {
 }
 
 int main(int argc, char **argv) {
-  /* ve-env runs: ve-refresh-shell --check  (subprocess; must not kill the shell) */
+  /* env runs: ve-refresh-shell --check  (subprocess; must not kill the shell) */
   if (argc >= 2 && argv[1] != NULL &&
       (strcmp(argv[1], "--check") == 0 || strcmp(argv[1], "-c") == 0)) {
     if (geteuid() != 0) {
