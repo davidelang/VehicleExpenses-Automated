@@ -20,7 +20,7 @@ Read in full early on startup/new cycle.
 - **TODO-linked plans/research:** keep paths referenced by **open** (`- [ ]`) TODO items in `plans/`/`research/`. If the plan is obsolete, **close/eliminate the TODO** then archive. Do not leave open TODOs pointing at dead plans.
 - `@@SANDBOX_PATH@@/implementation-failure-logs/` — planner startup: **filenames only** in the ack (do not read). Read a log only if the user names it or asks for recovery.
 - `@@SANDBOX_PATH@@/PRs/PR-<branch>.md` — local PR docs for Master
-- `@@SANDBOX_PATH@@/.planning-agent-prompt.txt` — optional planner prompt file
+- Planner prompt: `.grok/prompts/packs/planner.pack` in the worktree. Not a sandbox file.
 
 ## Device / crash logs
 - Prefer `adb logcat -d` (or device-specific) into sandbox once; analyze locally. Do **not** start broad `find … *.log` hunts on the host.

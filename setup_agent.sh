@@ -363,6 +363,24 @@ re_smudge_stamped_files() {
   done
 }
 
+# Smudge rewrites tracked files in place. The clean filter turns those bytes
+# back into the index blob, so `git diff` is empty, but `git status` still
+# reports them modified because size and mtime changed. `git add` stores the
+# new stat. It does not stage a content change when the cleaned blob matches.
+refresh_smudged_index() {
+  local f
+  local -a present=()
+  mapfile -t _mc_files < <(manage_configs_files)
+  for f in "${_mc_files[@]}"; do
+    [ -f "$f" ] || continue
+    present+=("$f")
+  done
+  if [ "${#present[@]}" -eq 0 ]; then
+    return 0
+  fi
+  git add -- "${present[@]}"
+}
+
 verify_smudge() {
   local failed=0
   if [ ! -f project.config ]; then
@@ -414,6 +432,12 @@ fi
 seed_smudge_inputs "$ORCH_ROOT"
 if ! re_smudge_stamped_files; then
   echo "Error: Failed to smudge stamped files using orchestration filter scripts."
+  cd ..
+  git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
+  return 1 2>/dev/null || exit 1
+fi
+if ! refresh_smudged_index; then
+  echo "Error: Failed to refresh the index after smudge."
   cd ..
   git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
   return 1 2>/dev/null || exit 1
