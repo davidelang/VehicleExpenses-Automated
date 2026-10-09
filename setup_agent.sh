@@ -82,6 +82,22 @@ _setup_req shared_group "$SHARED_GROUP"
 # Enforce correct creation umask for setgid inheritance
 umask 007
 
+# .git is mode 2770 and owned by the primary user, so this shell can enter it.
+# Role accounts rewrite files such as .git/config as mode 660, group
+# $SHARED_GROUP. A long-lived desktop shell does not have that supplementary
+# group until `source ./ve-env`.
+if ! id -nG | grep -Fqw -- "$SHARED_GROUP"; then
+  echo "Error: this shell is missing group $SHARED_GROUP." >&2
+  echo "  .git/config is $(stat -c '%A %U:%G' .git/config 2>/dev/null || echo missing)." >&2
+  echo "  Run: source ./ve-env" >&2
+  echo "  Then: ./setup_agent.sh $BRANCH_NAME" >&2
+  exit 1
+fi
+if [ ! -r .git/config ]; then
+  echo "Error: cannot read .git/config ($(stat -c '%A %U:%G' .git/config 2>/dev/null || echo missing))." >&2
+  exit 1
+fi
+
 # A removed worktree can leave a prunable registration. The slot loop treats a
 # missing directory as free, and git worktree add then refuses that path.
 if ! git worktree prune -v; then

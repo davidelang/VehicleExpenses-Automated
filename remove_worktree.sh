@@ -27,6 +27,13 @@ if [ -z "$TARGET" ]; then
     exit 1
 fi
 
+if [ ! -r .git/config ]; then
+    echo "Error: cannot read .git/config ($(stat -c '%A %U:%G' .git/config 2>/dev/null || echo missing))." >&2
+    echo "  Run: source ./ve-env" >&2
+    echo "  Then re-run this command." >&2
+    exit 1
+fi
+
 # 1. Resolve TARGET to the worktree directory and branch name
 if [ -d "$TARGET" ] && [ ! -L "$TARGET" ]; then
     # TARGET is the directory (agent-N)
