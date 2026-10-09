@@ -642,6 +642,20 @@ while [ "$_wt_i" -lt "${#WT_PATHS[@]}" ]; do
     done
     echo "    summary: copy=$COPIED_N skip=$SKIPPED_N dry_run=$DRY_RUN"
 
+    # Copying env does not delete the old path. Drop a tracked ve-env.
+    if git -C "$WT" cat-file -e "HEAD:ve-env" 2>/dev/null; then
+      porcelain=$(git -C "$WT" status --porcelain -- ve-env 2>/dev/null || true)
+      if [ -n "$porcelain" ] && [ "$FORCE" -ne 1 ]; then
+        echo "    SKIP remove ve-env — DIRTY ($porcelain)"
+      elif [ "$DRY_RUN" -eq 1 ]; then
+        echo "    REMOVE ve-env — renamed to env"
+      else
+        echo "    REMOVE ve-env — renamed to env"
+        git -C "$WT" rm -f -- ve-env
+        COPIED_FILES+=("ve-env")
+      fi
+    fi
+
     if [ "$DRY_RUN" -eq 1 ]; then
         continue
     fi
