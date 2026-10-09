@@ -374,9 +374,12 @@ verify_smudge() {
     [ -f "$f" ] || continue
     # Match real tokens only (@@SANDBOX_PATH@@). Do NOT match:
     # - comments mentioning "@@ tokens"
+    # - the documented shape @@VAR@@ in project.config.example
     # - intentional runtime checks like: [[ "$1" == @@* ]]
-    if grep -qE '@@[A-Z0-9_]+@@' "$f" 2>/dev/null; then
+    leftover=$(grep -oE '@@[A-Z0-9_]+@@' "$f" 2>/dev/null | grep -vx '@@VAR@@' || true)
+    if [ -n "$leftover" ]; then
       echo "Error: Unsubstituted @@ tokens remain in $f (smudge filter did not run correctly)."
+      echo "$leftover" | sort -u | sed 's/^/  /'
       failed=1
     fi
   done

@@ -55,4 +55,5 @@ sandbox_special_paths=plans,historical-plans,implementation-failure-logs,PRs,res
 # useradd -g @@CODE_GROUP@@ -G @@SHARED_GROUP@@ @@ORCHESTRATOR_USER@@
 # usermod -aG @@CODE_GROUP@@ @@ORCHESTRATOR_USER@@
 
-# Notes for filters: use @@VAR@@ in source scripts for substitution.
+# Notes for filters: source scripts use @@ tokens whose names are the
+# uppercase keys from the assignments above.
