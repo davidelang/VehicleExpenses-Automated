@@ -116,7 +116,6 @@ EXECUTABLES=(
   build_app
   deploy
   setup_agent.sh
-  sync_infrastructure.sh
   remove_worktree.sh
   generate_pr.sh
   cleanup_pr.sh
