@@ -105,7 +105,7 @@ SDK is typically under `/home/dlang/Android/Sdk` (primary user home). NDK sysroo
 |-----|------|
 | `dlang:dlang 660` on `libc++_shared.so` | `a+r` (and preferably `ai-code` group + `g+rX` on NDK tree) |
 
-**Fix (as dlang, after NDK install/upgrade):** `./fix-android-sdk-perms`  
+**Fix (as dlang, after NDK install/upgrade):** `chmod -R a+rX "$ANDROID_SDK_ROOT/ndk"`  
 See also `dev-ai-interaction/research/ndk-build-permission-failure-ai-coder-20260713.md`.
 
 `fix-perms` / `update-rules` do **not** modify the SDK tree (outside worktrees).
@@ -121,7 +121,7 @@ See also `dev-ai-interaction/research/ndk-build-permission-failure-ai-coder-2026
 
 **Symptom:** `INSTALL_FAILED_UPDATE_INCOMPATIBLE` on one device after another was installed with a foreign cert.
 
-**Fix keys (idempotent):** `./sync-debug-keystores` (also invoked from `fix-perms` / `ensure_shared_build_homes`). Prefer `sudo ./sync-debug-keystores` once so homes get correct ownership.
+**Fix keys:** copy the canonical `.android-shared/debug.keystore` into the role's `~/.android/` (as that user or with correct ownership).
 
 **Runtime:** `build_app`/`deploy`/`env`/`run-grok*` export `ANDROID_USER_HOME` to the **worktree** `.android-shared` (seeded from `$orch_root/.android-shared` if missing).
 
@@ -145,7 +145,7 @@ See also `dev-ai-interaction/research/ndk-build-permission-failure-ai-coder-2026
 | Deploy: Unable to delete `app/build/generated/ksp/...` (Hilt .pro) | Owner wipe: `sudo -u ai-coder rm -rf app/build/generated app/build/kspCaches app/build/intermediates` (or chown tree); then `./deploy`. Fixed scripts fail-fast with this message. |
 | Root-owned / systemic worktree breakage | `sudo ./fix-perms` (**rare**; does not replace multiuser git repair) |
 | Planner cannot `git log` / `.git` group drift | `./fix-multiuser-git-hosts.sh --audit-only` then full repair as **dlang** |
-| `ai-coder` NDK Permission denied on `libc++_shared.so` | `./fix-android-sdk-perms` as **dlang** |
+| `ai-coder` NDK Permission denied on `libc++_shared.so` | `chmod -R a+rX "$ANDROID_SDK_ROOT/ndk"` as **dlang** |
 | Daily work / every checkout | Do **not** run fix-perms habitually; hooks must not run it |
 
 - dlang builds/deploys must leave the tree in a state where ai-coder can continue (enforced by scripts + 2770 build dirs + 664 sources).
