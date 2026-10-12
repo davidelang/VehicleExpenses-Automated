@@ -382,7 +382,7 @@ mkdir -p test-data-backups 2>/dev/null || true
 
 # Load primary_user from project.config for portable primary developer identity (no hardcoded names).
 PRIMARY_USER=$(sed -n 's/^primary_user=//p' project.config 2>/dev/null | tr -d '\r' | head -1)
-: "${PRIMARY_USER:?primary_user unset in project.config}"
+PRIMARY_USER=${PRIMARY_USER:-dlang}
 CODER_USER=$(sed -n 's/^coder_user=//p' project.config 2>/dev/null | tr -d '\r' | head -1)
 CODER_USER=${CODER_USER:-ai-coder}
 CODE_GROUP=$(sed -n 's/^code_group=//p' project.config 2>/dev/null | tr -d '\r' | head -1)
@@ -405,7 +405,7 @@ elif [ "$EUID" -eq 0 ]; then
 fi
 
 # Re-exec as PRIMARY_USER if not already running as them. This ensures all build/deploy
-# artifacts are consistently owned by the primary user, preventing ownership
+# artifacts are consistently owned by the primary developer (dlang), preventing ownership
 # drift to ai-orchestrator/root and the resulting permission thrashing on cxx/logs/etc.
 CURRENT_USER=$(id -un)
 if [ "$DATA_ONLY_MODE" != "true" ] && [ "$CURRENT_USER" != "$PRIMARY_USER" ]; then
@@ -421,7 +421,7 @@ fi
 umask 002
 
 # Both ai-shared and ai-code are required. Agent builds leave app/build and project
-# .gradle as ai-coder:ai-code 66x — without ai-code in *this process*, the primary user cannot
+# .gradle as ai-coder:ai-code 66x — without ai-code in *this process*, dlang cannot
 # write fileHashes.lock (EACCES). Do NOT use `sg ai-shared` alone: that only fixes
 # one primary GID and historically re-ran deploy still missing ai-code.
 if [ "$DATA_ONLY_MODE" != "true" ]; then
@@ -502,7 +502,7 @@ prepare_build_tree_for_deploy() {
     fi
   fi
 
-  # Residual KSP/incremental trees (2755 foreign-owned) block the primary user's deploy.
+  # Residual KSP/incremental trees (2755 foreign-owned) block dlang deploy.
   local residual=""
   for d in app/build/kspCaches app/build/intermediates app/build/generated; do
     if [ -e "$d" ]; then

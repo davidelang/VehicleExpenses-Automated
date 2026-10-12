@@ -138,7 +138,7 @@ ve_setup_worktree_build_homes() {
       chmod 660 "$dest" 2>/dev/null || true
     else
       echo "ERROR: no debug.keystore at $dest and none at $src" >&2
-      echo "  Run ./sync-debug-keystores from the orchestration root to seed the canonical key." >&2
+      echo "  Copy the primary user's ~/.android/debug.keystore to $src to seed the canonical key." >&2
       return 1
     fi
   fi
