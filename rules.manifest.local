@@ -9,7 +9,6 @@ local .gitignore
 local docs/ENVIRONMENT_SETUP.md
 local docs/reference/ORCHESTRATION_MERGE_INFRA_SYNC.md
 local docs/obsolete/MERGE_POSTMORTEM_IMPROVE_PUMP_CLASSIFICATION.md
-local run-grok-imagine
 local env
 local ve-refresh-shell.c
 local generate_pr.sh
