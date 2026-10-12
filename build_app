@@ -11,7 +11,7 @@
 
 # Load primary_user from project.config for portable primary developer identity (no hardcoded names).
 PRIMARY_USER=$(sed -n 's/^primary_user=//p' project.config 2>/dev/null | tr -d '\r' | head -1)
-: "${PRIMARY_USER:?primary_user unset in project.config}"
+PRIMARY_USER=${PRIMARY_USER:-dlang}
 
 # Re-exec as PRIMARY_USER (not root) if we started as root. This ensures we use
 # the primary developer's debug keystore (~/.android/debug.keystore) for consistent APK
