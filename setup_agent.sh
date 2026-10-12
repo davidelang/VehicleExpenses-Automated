@@ -82,6 +82,29 @@ _setup_req shared_group "$SHARED_GROUP"
 # Enforce correct creation umask for setgid inheritance
 umask 007
 
+# .git is mode 2770 and owned by the primary user, so this shell can enter it.
+# Role accounts rewrite files such as .git/config as mode 660, group
+# $SHARED_GROUP. A long-lived desktop shell does not have that supplementary
+# group until `source ./env`.
+if ! id -nG | grep -Fqw -- "$SHARED_GROUP"; then
+  echo "Error: this shell is missing group $SHARED_GROUP." >&2
+  echo "  .git/config is $(stat -c '%A %U:%G' .git/config 2>/dev/null || echo missing)." >&2
+  echo "  Run: source ./env" >&2
+  echo "  Then: ./setup_agent.sh $BRANCH_NAME" >&2
+  exit 1
+fi
+if [ ! -r .git/config ]; then
+  echo "Error: cannot read .git/config ($(stat -c '%A %U:%G' .git/config 2>/dev/null || echo missing))." >&2
+  exit 1
+fi
+
+# A removed worktree can leave a prunable registration. The slot loop treats a
+# missing directory as free, and git worktree add then refuses that path.
+if ! git worktree prune -v; then
+    echo "Error: git worktree prune failed." >&2
+    exit 1
+fi
+
 # 0. Safety Check: Don't name a branch agent-N (reserved for auto-generated dirs)
 if [[ "$BRANCH_NAME" =~ ^agent-[0-9]+$ ]]; then
     echo "Error: Branch name cannot be '$BRANCH_NAME' (reserved for directory names)."
@@ -204,8 +227,14 @@ WORKTREE_ERR=0
 if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
     git worktree add --no-checkout "$AGENT_ID" "$BRANCH_NAME" || WORKTREE_ERR=$?
 else
-    # Create from current master
-    git worktree add --no-checkout "$AGENT_ID" -b "$BRANCH_NAME" master || WORKTREE_ERR=$?
+    # Full ref. This checkout has a master/ directory and
+    # refs/remotes/{origin,local,push}/master beside refs/heads/master.
+    if ! git rev-parse --verify --quiet --end-of-options 'refs/heads/master^{commit}' >/dev/null; then
+        echo "Error: refs/heads/master does not resolve to a commit." >&2
+        git rev-parse --verify --end-of-options 'refs/heads/master^{commit}' >&2 || true
+        exit 1
+    fi
+    git worktree add --no-checkout "$AGENT_ID" -b "$BRANCH_NAME" refs/heads/master || WORKTREE_ERR=$?
     if [ "$WORKTREE_ERR" -eq 0 ]; then
       # Create (or force-update) a lightweight tag for git describe to anchor on.
       echo "Creating/updating lightweight tag ${BRANCH_NAME}-start for versioning..."
@@ -334,6 +363,24 @@ re_smudge_stamped_files() {
   done
 }
 
+# Smudge rewrites tracked files in place. The clean filter turns those bytes
+# back into the index blob, so `git diff` is empty, but `git status` still
+# reports them modified because size and mtime changed. `git add` stores the
+# new stat. It does not stage a content change when the cleaned blob matches.
+refresh_smudged_index() {
+  local f
+  local -a present=()
+  mapfile -t _mc_files < <(manage_configs_files)
+  for f in "${_mc_files[@]}"; do
+    [ -f "$f" ] || continue
+    present+=("$f")
+  done
+  if [ "${#present[@]}" -eq 0 ]; then
+    return 0
+  fi
+  git add -- "${present[@]}"
+}
+
 verify_smudge() {
   local failed=0
   if [ ! -f project.config ]; then
@@ -345,9 +392,12 @@ verify_smudge() {
     [ -f "$f" ] || continue
     # Match real tokens only (@@SANDBOX_PATH@@). Do NOT match:
     # - comments mentioning "@@ tokens"
+    # - the documented shape @@VAR@@ in project.config.example
     # - intentional runtime checks like: [[ "$1" == @@* ]]
-    if grep -qE '@@[A-Z0-9_]+@@' "$f" 2>/dev/null; then
+    leftover=$(grep -oE '@@[A-Z0-9_]+@@' "$f" 2>/dev/null | grep -vx '@@VAR@@' || true)
+    if [ -n "$leftover" ]; then
       echo "Error: Unsubstituted @@ tokens remain in $f (smudge filter did not run correctly)."
+      echo "$leftover" | sort -u | sed 's/^/  /'
       failed=1
     fi
   done
@@ -382,6 +432,12 @@ fi
 seed_smudge_inputs "$ORCH_ROOT"
 if ! re_smudge_stamped_files; then
   echo "Error: Failed to smudge stamped files using orchestration filter scripts."
+  cd ..
+  git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
+  return 1 2>/dev/null || exit 1
+fi
+if ! refresh_smudged_index; then
+  echo "Error: Failed to refresh the index after smudge."
   cd ..
   git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
   return 1 2>/dev/null || exit 1
