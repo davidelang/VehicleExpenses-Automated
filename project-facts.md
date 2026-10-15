@@ -4,6 +4,10 @@ Cold-start map so agents do not hunt or invent wrong procedures. Anything discov
 
 Read in full early on startup/new cycle.
 
+## Build and commit
+- Build: `./build_app`
+- Commit: `./build_app "<message>"|@<msg_file> <paths...>` (builds, then commits exactly the named paths and tags builds)
+
 ## App docs (master `docs/`)
 - `README.md` — GitHub front page
 - `docs/README.md` — index
