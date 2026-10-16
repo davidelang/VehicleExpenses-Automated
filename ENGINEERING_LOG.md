@@ -11822,3 +11822,7 @@ Plan ocr-geom-rec-prep-not-sizes-20260921-0445-plan.md. Tag detect-ocr-work-2/bu
 ## 2026-10-15 - Switch Manage Vehicles crops to Edit Odo, Save, Clear Odo, and Select Odo.
 
 - Manage Vehicles crops use Edit Odo, Save, Clear Odo, and Select Odo. Ignore crop is gone.
+
+## 2026-10-15 - Call the paddle seed reader from Quick Fill and batch dash.
+
+- Quick Fill, Start trip, and batch dash call the paddle seed reader.
