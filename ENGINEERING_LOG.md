@@ -11790,3 +11790,7 @@ Plan ocr-geom-rec-prep-not-sizes-20260921-0445-plan.md. Tag detect-ocr-work-2/bu
 ## 2026-10-15 - Read alignment seeds as an overlap union with a 0.40 pad.
 
 - Alignment seed read is the overlap union inside the red quad, padded 0.40, with Raw and Bin-Trials columns, the failure subset, and the letter veto.
+
+## 2026-10-15 - Draw landmark OCR with Atkinson Hyperlegible.
+
+- Landmark OCR text uses Atkinson Hyperlegible, and the OFL notice is tracked.

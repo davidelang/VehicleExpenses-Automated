@@ -85,7 +85,10 @@ fun LandmarkDebugDialog(
             isImageLoading = true
             withContext(Dispatchers.IO) {
                 try {
-                    val options = BitmapFactory.Options().apply { inSampleSize = 1 }
+                    val options = BitmapFactory.Options().apply {
+                        inSampleSize = 1
+                        inMutable = true
+                    }
                     val raw = if (photoPath.startsWith("content://")) {
                         context.contentResolver.openInputStream(Uri.parse(photoPath))?.use {
                             BitmapFactory.decodeStream(it, null, options)
@@ -95,10 +98,12 @@ fun LandmarkDebugDialog(
                     } else null
 
                     if (raw != null) {
-                        // Apply heavy filters on background thread
-                        val filtered = OdometerOcrUtils.applyBilateral(OdometerOcrUtils.applyGrayscale(raw))
-                        processedBitmap = filtered
-                        raw.recycle()
+                        processedBitmap = try {
+                            OdometerOcrUtils.applyBilateral(OdometerOcrUtils.applyGrayscale(raw))
+                        } catch (e: Exception) {
+                            Log.e("LandmarkDialog", "Failed to filter image; showing decoded photo", e)
+                            raw
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e("LandmarkDialog", "Failed to load/process image", e)
@@ -168,14 +173,15 @@ fun LandmarkDebugDialog(
                     }
                 } else {
                     val bitmap = processedBitmap
-                    if (bitmap != null) {
-                        val imgW = bitmap.width.toFloat()
-                        val imgH = bitmap.height.toFloat()
 
-                        var scale by remember { mutableStateOf(1f) }
-                        var offset by remember { mutableStateOf(Offset.Zero) }
+                    Column(modifier = Modifier.weight(1f)) {
+                        if (bitmap != null) {
+                            val imgW = bitmap.width.toFloat()
+                            val imgH = bitmap.height.toFloat()
 
-                        Column(modifier = Modifier.weight(1f)) {
+                            var scale by remember { mutableStateOf(1f) }
+                            var offset by remember { mutableStateOf(Offset.Zero) }
+
                             // IMAGE VIEW
                             Box(modifier = Modifier.fillMaxWidth().aspectRatio(imgW / imgH)) {
                                 Box(modifier = Modifier
@@ -230,8 +236,9 @@ fun LandmarkDebugDialog(
                                     }
                                 }
                             }
+                        }
 
-                            LazyVerticalGrid(
+                        LazyVerticalGrid(
                                 columns = GridCells.Adaptive(minSize = 150.dp),
                                 modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
                                 contentPadding = PaddingValues(4.dp),
@@ -253,9 +260,10 @@ fun LandmarkDebugDialog(
                                                 var crop by remember(zone) { mutableStateOf<Bitmap?>(null) }
 
                                                 DisposableEffect(zone, bitmap) {
-                                                    if (zone != null && zone.width() > 0 && zone.height() > 0) {
+                                                    val bmp = bitmap
+                                                    if (zone != null && bmp != null && zone.width() > 0 && zone.height() > 0) {
                                                         try {
-                                                            crop = Bitmap.createBitmap(bitmap, max(0, zone.left), max(0, zone.top), min(bitmap.width - zone.left, zone.width()), min(bitmap.height - zone.top, zone.height()))
+                                                            crop = Bitmap.createBitmap(bmp, max(0, zone.left), max(0, zone.top), min(bmp.width - zone.left, zone.width()), min(bmp.height - zone.top, zone.height()))
                                                         } catch (e: Exception) { Log.e("LandmarkDialog", "Crop failed", e) }
                                                     }
                                                     onDispose {
@@ -277,7 +285,10 @@ fun LandmarkDebugDialog(
                                                             newList[index] = lm.copy(text = newText)
                                                             editableLandmarks = newList
                                                         },
-                                                        textStyle = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontFamily = LandmarkGlyphFont,
+                                                        ),
                                                         modifier = Modifier
                                                             .fillMaxWidth()
                                                             .height(48.dp)
@@ -316,7 +327,18 @@ fun LandmarkDebugDialog(
                                                         singleLine = true
                                                     )
                                                 } else {
-                                                    if (lm.text.isNotBlank()) Text(lm.text, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                                                    if (lm.text.isNotBlank()) {
+                                                        Text(
+                                                            lm.text,
+                                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                                fontSize = 12.sp,
+                                                                fontFamily = LandmarkGlyphFont,
+                                                            ),
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.primary,
+                                                            maxLines = 1,
+                                                        )
+                                                    }
                                                     else Text("[Container]", style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp), fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.secondary)
                                                 }
 
@@ -328,11 +350,6 @@ fun LandmarkDebugDialog(
                                     }
                                 }
                             }
-                        }
-                    } else {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("No image data available", color = MaterialTheme.colorScheme.error)
-                        }
                     }
                 }
             }
