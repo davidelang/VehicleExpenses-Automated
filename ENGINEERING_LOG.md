@@ -11782,3 +11782,7 @@ Plan ocr-geom-rec-prep-not-sizes-20260921-0445-plan.md. Tag detect-ocr-work-2/bu
 ## 2026-10-15 - reset to e7f1d33ea done
 
 - Reset to merge-base with master; log kept; infra kept: 42 path(s).
+
+## 2026-10-15 - Archive five obsolete research notes.
+
+- Index the purged-engine and sandbox-researcher notes under docs/obsolete.
