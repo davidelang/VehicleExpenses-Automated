@@ -94,6 +94,15 @@ private external fun expRotGmmRecognize(
     scratchH: Int,
 ): ExpRotGmmOut
 
+/** Same JNI symbol as [expRotGmmRecognize]. Scheduled pump columns do not call this. */
+internal fun recognizeRotGmmQuads(
+    grayNativeObj: Long,
+    quadPts: FloatArray,
+    recBuffer: BufferSet,
+    scratchW: Int,
+    scratchH: Int,
+): ExpRotGmmOut = expRotGmmRecognize(grayNativeObj, quadPts, recBuffer, scratchW, scratchH)
+
 private val SEED_INK_PROBE_FLOWS = listOf(
     "Set aabb-tight",
     "Set aabb-large",
@@ -961,6 +970,7 @@ suspend fun runPumpExperiment(
         val skeleton = buildString {
             for (i in photoRange) {
                 val f = photos[i]
+                // Subset button keeps full-run row; do not renumber the subset from 1.
                 val line = allPhotos.indexOfFirst { it.name == f.name } + 1
                 append("<tr data-photo='$line'>")
                 append("<td data-col=\"0\"><b>#$line</b><br><small>${f.name}</small>")
@@ -1032,6 +1042,7 @@ suspend fun runPumpExperiment(
         put("version", BuildConfig.VERSION_NAME)
     }
     photos.forEachIndexed { index, file ->
+        // Subset button keeps full-run row; do not renumber the subset from 1.
         val fullRow = allPhotos.indexOfFirst { it.name == file.name } + 1
         try {
             journal.append("PHOTO_START") {
@@ -7062,8 +7073,10 @@ private fun ocrGeomPadQuadMinusU(
 /**
  * Expand the blue quad to the 40-in-48 source window (4/s on −u/−v, remainder +u/+v),
  * warp that window, then [RecBufferFeed.scaleIsotropicNoPartial] into destW×48.
+ * Writes the warp into [scratch]'s `s` plane. [scratch]'s primary must not be [gray].
+ * Scheduled pump columns keep their current calls.
  */
-private fun ocrPumpFeedOriented40(
+internal fun ocrPumpFeedOriented40(
     gray: org.opencv.core.Mat,
     quad: ContentExpandUtils.OrientedQuad,
     scratch: BufferSet,

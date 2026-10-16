@@ -186,7 +186,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
         }
 
-        /** Release all shared det tiers + rec predictors (call before reload / after TIMEOUT). */
+        /**
+         * Release shared det tiers. Does not free [sharedRecognizerV3] or
+         * [sharedRecognizerNumeric]. [loadProductionModels] frees those itself
+         * before it replaces them.
+         */
         fun releaseAllPredictors(reason: String) {
             Log.i("PaddleLite", "releaseAllPredictors reason=$reason count_tiers=${sharedTiers.size}")
             val tiers = sharedTiers.toMap()
@@ -194,10 +198,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             for ((scale, pred) in tiers) {
                 releasePredictor(pred, "det_tier_$scale")
             }
-            releasePredictor(sharedRecognizerV3, "rec_v3")
-            releasePredictor(sharedRecognizerNumeric, "rec_numeric")
-            sharedRecognizerV3 = null
-            sharedRecognizerNumeric = null
             sharedDetectorLarge = null
             sharedDetectorSmall = null
             // Drop large host buffers so next load reallocates clean sizes for the path.
@@ -513,6 +513,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 )
             }
 
+            // Pack reload replaces the recognizers. Free the previous predictors first.
+            releasePredictor(sharedRecognizerV3, "rec_v3")
+            releasePredictor(sharedRecognizerNumeric, "rec_numeric")
+            sharedRecognizerV3 = null
+            sharedRecognizerNumeric = null
             config.setModelFromFile(recV3Path)
             sharedRecognizerV3 = PaddlePredictor.createPaddlePredictor(config)
                 ?: throw IllegalStateException("createPaddlePredictor rec_v3 null file=$recV3Path")

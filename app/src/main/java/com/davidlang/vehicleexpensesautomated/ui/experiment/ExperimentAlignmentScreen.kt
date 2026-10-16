@@ -57,6 +57,22 @@ import kotlin.math.min
 
 private const val TAG = "ExperimentAlignment"
 
+/** Kept while any of the four seed/deskew columns is not an exact digit match; trailing-digit relax still applies. */
+private val ALIGNMENT_RUN_FAILURE_PHOTOS: List<String> = listOf(
+    "PXL_20221121_195143240.dng",
+    "PXL_20240722_200247194.jpg",
+    "PXL_20250511_013420011.jpg",
+    "PXL_20250516_042433134.jpg",
+    "PXL_20260626_042425192.jpg",
+    "fuel_1787094393548.jpg",
+)
+
+private val ALIGNMENT_RUN_FAILURE_COLUMN_KEYS: Set<String> = setOf(
+    "ml_kit_deskew",
+    "paddle_raw_seed",
+    "paddle_deskew",
+)
+
 private fun logHeapState(context: Context, label: String) {
     val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
     val mi = ActivityManager.MemoryInfo()
@@ -128,7 +144,12 @@ fun ExperimentAlignmentScreen(
 
     if (!reportDir.exists()) reportDir.mkdirs()
 
-    fun startAlignJob(subsetMap: Map<String, Int>?, n: Int, label: String) {
+    fun startAlignJob(
+        subsetMap: Map<String, Int>?,
+        n: Int,
+        label: String,
+        columnKeys: Set<String>? = null,
+    ) {
         if (vehicles.isEmpty()) {
             status = "Error: No vehicles in DB."
             return
@@ -145,6 +166,7 @@ fun ExperimentAlignmentScreen(
                 context.applicationContext,
                 log,
                 subsetMap,
+                columnKeys,
             ) { res, p ->
                 val done = (p * n.toFloat()).toInt().coerceIn(1, n.coerceAtLeast(1))
                 progressCb(done, n.coerceAtLeast(1), res.photoName)
@@ -190,6 +212,28 @@ fun ExperimentAlignmentScreen(
                 subsetMap.size,
                 "Selected sample (${subsetMap.size} dash)…" +
                     if (missing > 0) " ($missing not on device)" else "",
+            )
+        }
+    }
+
+    val runFailures: () -> Unit = {
+        val subsetMap = SelectedSamplePhotos.subsetMapPresent(
+            experimentDir,
+            ALIGNMENT_RUN_FAILURE_PHOTOS,
+        )
+        Log.d(
+            TAG,
+            "Run failures: dir=${experimentDir.absolutePath} " +
+                "matched=${subsetMap.size}/${ALIGNMENT_RUN_FAILURE_PHOTOS.size}",
+        )
+        if (subsetMap.isEmpty()) {
+            status = "Run failures: 0 photos present in experiment_photos"
+        } else {
+            startAlignJob(
+                subsetMap,
+                subsetMap.size,
+                "Run failures (${subsetMap.size})…",
+                ALIGNMENT_RUN_FAILURE_COLUMN_KEYS,
             )
         }
     }
@@ -293,6 +337,11 @@ fun ExperimentAlignmentScreen(
                 fontWeight = FontWeight.Bold,
             )
         }
+        Button(
+            onClick = runFailures,
+            enabled = !isRunning && experimentDir.exists(),
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Run failures") }
         Text(
             "Selected sample = coverage subset (low→high alignment zoom). " +
                 "Dash photos only — no pump. Deep link: vehicleexpenses://experiment/align?auto=selected",
@@ -324,8 +373,21 @@ data class ReferenceCache(
 data class PipelineConfig(
     val key: String,
     val displayName: String,
+    val rawCrop: Boolean,
+    val paddleDet: Boolean,
     val getDeskewTime: (OdometerOcrUtils.DeskewResult) -> Long,
-    val getAngle: (OdometerOcrUtils.DeskewResult) -> Float
+    val getAngle: (OdometerOcrUtils.DeskewResult) -> Float,
+    val seedRec: Boolean = false,
+    /** Null = unpadded union of bare seeds (ML Kit raw seed). Non-null = rot-G-- pad then clip to red quad. */
+    val seedVert: Float? = null,
+)
+
+private data class AlignColumnRun(
+    val pathway: PhotoPathwayResult,
+    val winnerId: Int?,
+    val veto: Map<Int, VetoResult>,
+    val vehiclePathway: SingleVehiclePathwayResult?,
+    val snapMs: Long,
 )
 
 /**
@@ -402,6 +464,7 @@ suspend fun runAlignmentExperiment(
     context: Context,
     onLog: (String) -> Unit,
     subsetMap: Map<String, Int>?,
+    columnKeys: Set<String>? = null,
     onProgress: (PhotoResultSummary, Float) -> Unit
 ): File? = withContext(Dispatchers.IO) {
     val allPhotos = experimentDir.listFiles { f ->
@@ -488,19 +551,25 @@ suspend fun runAlignmentExperiment(
     val experimentRecSet320x48 = NativePaddleEngine.recBufferSet
     val experimentDetSet512x128 = NativePaddleEngine.square608
 
-    // Report columns: product det × 3 expand (char-aware / P / valley). J / L / V only.
-    // Shared on every column: PreferLen(vehicle digit count), prefer-Bin final pick, source-border rec.
-    // Face digits only (no rollover timeline in experiment).
-    // Silent mlAngle vehicle-ID lock before loop. See docs/obsolete/EXPERIMENT_ALIGNMENT_SETS.md.
-    val pipelines = listOf(
-        PipelineConfig("set_j", "Set J (prod+charAware)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
-        PipelineConfig("set_l", "Set L (prod+P-expand)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
-        PipelineConfig("set_v", "Set V (prod+valley)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
+    // Three columns. Each one vetoes from its own landmarks. Set J / L / V are not in this report.
+    // Deskew rotates the full image, then anchorAlign. Paddle seed columns pad and read; they do not warp.
+    // No silent vehicle-id lock.
+    val allColumns = listOf(
+        PipelineConfig("ml_kit_deskew", "ML Kit deskew", false, false, { it.mlTimeMs }, { it.mlAngle }, seedRec = false),
+        PipelineConfig(
+            "paddle_raw_seed", "Paddle raw seed", true, true, { 0L }, { 0f },
+            seedRec = true, seedVert = 0.40f,
+        ),
+        PipelineConfig("paddle_deskew", "Paddle deskew", false, true, { it.paddleOptimizedTimeMs }, { it.paddleOptimizedAngle }, seedRec = false),
     )
-    val harnessEngineNames = pipelines.map { "${it.displayName} Paddle" }
-    val pipelineNames = pipelines.map { it.displayName }
+    val columns = if (columnKeys == null) {
+        allColumns
+    } else {
+        allColumns.filter { it.key in columnKeys }
+    }
+    val columnNames = columns.map { it.displayName }
 
-    val alignColLabels = alignmentColumnLabels(pipelineNames, harnessEngineNames, emptyList())
+    val alignColLabels = alignmentColumnLabels(columnNames, emptyList(), emptyList())
     val alignMetaHtml =
         "<b>Run:</b> $timestamp | <b>Version:</b> ${BuildConfig.VERSION_NAME} | <b>Total:</b> $total"
     val footerHtml = ExperimentReportHtml.footer(
@@ -521,7 +590,7 @@ suspend fun runAlignmentExperiment(
         partFile.writeText(
             buildHtmlHeader(
                 timestamp, total, BuildConfig.VERSION_NAME, emptyList(),
-                harnessEngineNames, pipelineNames, alignColLabels, alignMetaHtml,
+                emptyList(), columnNames, alignColLabels, alignMetaHtml,
                 partIndex1, nParts, reportStem,
             ),
         )
@@ -529,7 +598,8 @@ suspend fun runAlignmentExperiment(
             for (i in photoRange) {
                 val f = photos[i]
                 val id = i + 1
-                val line = subsetMap?.get(f.name) ?: (i + 1)
+                // Subset button keeps full-run row; do not renumber the subset from 1.
+                val line = allPhotos.indexOfFirst { it.name == f.name } + 1
                 append(ReportCollapser.htmlBegin(id))
                 append(
                     "<tr data-photo='$line'><td colspan='${alignColLabels.size}'>" +
@@ -559,7 +629,8 @@ suspend fun runAlignmentExperiment(
     val collapseJob = collapser.start(this)
     try {
     photos.forEachIndexed { index, file ->
-        val originalLineNumber = subsetMap?.get(file.name) ?: (index + 1)
+        // Subset button keeps full-run row; do not renumber the subset from 1.
+        val originalLineNumber = allPhotos.indexOfFirst { it.name == file.name } + 1
         // Phase 116 Emergency Fix: Initialize photoResult early with "No Match" state
         // to prevent serializePhotoResultToJson crashes on failed identification.
         var photoResult: ProcessedPhotoResult? = ProcessedPhotoResult(file.name, emptyMap(), emptyMap(), emptyMap())
@@ -603,7 +674,6 @@ suspend fun runAlignmentExperiment(
                     longEdgeTarget = 256,
                 )
                 
-                val tilt = deskewResA.angle
                 val tMl = deskewResA.mlTimeMs
                 val tPd = deskewResA.paddleTimeMs
 
@@ -643,212 +713,58 @@ suspend fun runAlignmentExperiment(
                 val pathways = mutableMapOf<String, PhotoPathwayResult>()
                 val vehiclePathways = mutableMapOf<Int, MutableMap<String, SingleVehiclePathwayResult>>()
                 val primaryVetoResultsMap = mutableMapOf<String, Map<Int, VetoResult>>()
-
-                var tDiscoveryTotalCombined = 0L
+                val columnWinnerId = mutableMapOf<String, Int?>()
                 var tSnapAlign = 0L
 
-                var globalWinnerId: Int? = null
-                var primaryVetoResultsGlobal: Map<Int, VetoResult> = emptyMap()
-                var ocrFirst: OcrResult? = null
-
-                // Silent vehicle-ID lock (formerly first pipeline Set A at mlAngle for multi-set parity).
-                // Same inputs as old set_a angle path: reset B, rotate mlAngle, discovery, Tier-1 veto.
-                // Do NOT write pathways["set_a"]; do NOT run ML iterative or Set A paddle iterative.
-                run {
-                    logAlignBufDiag("silent_id_lock_reset", "A.p", NativePaddleEngine.bufferSetA.p.mat, "B.p", NativePaddleEngine.bufferSetB.p.mat)
-                    NativePaddleEngine.bufferSetA.p.mat.copyTo(NativePaddleEngine.bufferSetB.p.mat)
-                    logAlignBufDiag("silent_id_lock_reset_uv", "A.p.uv", NativePaddleEngine.bufferSetA.p.uvMat, "B.p.uv", NativePaddleEngine.bufferSetB.p.uvMat)
-                    NativePaddleEngine.bufferSetA.p.uvMat.copyTo(NativePaddleEngine.bufferSetB.p.uvMat)
-                    rotate(NativePaddleEngine.bufferSetB, deskewResA.mlAngle)
-                    val tDiscLock0 = System.currentTimeMillis()
-                    val (ocrLock, queryLandmarksLock) = performLandmarkDiscovery(NativePaddleEngine.bufferSetB.p, context)
-                    tDiscoveryTotalCombined += System.currentTimeMillis() - tDiscLock0
-                    if (ocrFirst == null) {
-                        ocrFirst = ocrLock
-                    }
-                    val primaryVetoResultsLock = ImageAlignmentUtils.performTier1Veto(queryLandmarksLock, cachedRefs.map { it.vehicle }, "ML Kit")
-                    val winnerIdLock = primaryVetoResultsLock.entries.find { !it.value.isVetoed }?.key
-                    if (globalWinnerId == null) {
-                        globalWinnerId = winnerIdLock
-                        primaryVetoResultsGlobal = primaryVetoResultsLock
-                    }
-                }
-
-                // Set J / Set K report passes (shared deskew angle; expand path differs by pipelineKey).
-                pipelines.forEach { pipeline ->
-                    // Reset work buffer Set B by copying from ingested original Set A
-                    logAlignBufDiag("pipeline_reset", "A.p", NativePaddleEngine.bufferSetA.p.mat, "B.p", NativePaddleEngine.bufferSetB.p.mat)
-                    NativePaddleEngine.bufferSetA.p.mat.copyTo(NativePaddleEngine.bufferSetB.p.mat)
-                    logAlignBufDiag("pipeline_reset_uv", "A.p.uv", NativePaddleEngine.bufferSetA.p.uvMat, "B.p.uv", NativePaddleEngine.bufferSetB.p.uvMat)
-                    NativePaddleEngine.bufferSetA.p.uvMat.copyTo(NativePaddleEngine.bufferSetB.p.uvMat)
-
-                    val extraImages = mutableMapOf<String, String>()
-
-                    // Use stable Raw deskew for all remaining sets
-                    val currentDeskewRes = deskewResA
-                    val angle = pipeline.getAngle(currentDeskewRes)
-
-                    // Rotate work buffer Set B
-                    rotate(NativePaddleEngine.bufferSetB, angle)
-
-                    // Perform discovery on rotated work buffer Set B
-                    val tDisc0 = System.currentTimeMillis()
-                    val (ocr, queryLandmarks) = performLandmarkDiscovery(NativePaddleEngine.bufferSetB.p, context)
-                    val tDiscoveryTotal = System.currentTimeMillis() - tDisc0
-                    tDiscoveryTotalCombined += tDiscoveryTotal
-
-                    if (ocrFirst == null) {
-                        ocrFirst = ocr
-                    }
-
-                    val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarks, cachedRefs.map { it.vehicle }, "ML Kit")
-                    primaryVetoResultsMap[pipeline.key] = primaryVetoResults
-
-                    val winnerId = primaryVetoResults.entries.find { !it.value.isVetoed }?.key
-                    // Honor existing lock from silent mlAngle pass (same as multi-set: only set if still null)
-                    if (globalWinnerId == null) {
-                        globalWinnerId = winnerId
-                        primaryVetoResultsGlobal = primaryVetoResults
-                    }
-
-                    val globalWinnerRef = cachedRefs.find { it.vehicle.id == globalWinnerId }
-
-                    var alignedBase64 = ""
-                    val hMap = mutableMapOf<String, OcrHarnessResult>()
-                    var landmarksForAudit: List<TextBlock> = emptyList()
-                    val refinementTraces = mutableMapOf<String, RefinementTrace>()
-                    var alignResSuccess = false
-                    var alignResTimeMs = 0L
-                    val alignResMetadata = mutableMapOf<String, String>()
-
-                    if (globalWinnerRef != null) {
-                        val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarks, globalWinnerRef.curatedLandmarks)
-                        landmarksForAudit = queryLandmarksPrimary.filter { it.instanceId >= 0 }
-
-                        val alignRes = ImageAlignmentUtils.anchorAlign(
-                            NativePaddleEngine.bufferSetB,
-                            globalWinnerRef.curatedLandmarks,
-                            queryLandmarksPrimary,
-                            globalWinnerRef.vehicle,
-                            globalWinnerRef.width,
-                            globalWinnerRef.height,
-                            imgW,
-                            imgH,
-                            null
-                        )
-                        alignResSuccess = alignRes.success
-                        alignResTimeMs = alignRes.timeMs
-                        alignResMetadata.putAll(alignRes.metadata)
-
-                        // Always use the raw vehicle ICRS rect (ICRS invariant, matches cachedRefs/createCrop + refinement icrsToPixel paths) so box shows for !success cases too (Honda visibility) -- but only for vehicles with explicit crop set (no legacy 0/1)
-                        var odoIcrsRect: android.graphics.RectF? = null
-                        globalWinnerRef?.vehicle?.let { v ->
-                            if (v.odometerCropLeft != null && v.odometerCropTop != null && v.odometerCropRight != null && v.odometerCropBottom != null) {
-                                val icrsL = v.odometerCropLeft
-                                val icrsT = v.odometerCropTop
-                                val icrsR = v.odometerCropRight
-                                val icrsB = v.odometerCropBottom
-                                odoIcrsRect = RectF(icrsL, icrsT, icrsR, icrsB)
-                                alignResMetadata["odo_crop_icrs"] = "${icrsL},${icrsT},${icrsR},${icrsB}"
-                            }
-                        }
-                        // Pass raw ICRS qI via the single annotations param (List<Any>); conversion inside takeSnapshot using buffer srcW/srcH (unify plan).
-                        val (snap, tSnap) = OcrUtils.takeSnapshot(
-                            source = NativePaddleEngine.bufferSetB.p,
-                            sourceRect = null,
-                            targetW = 600,
-                            targetH = 450,
-                            annotations = if (odoIcrsRect != null) listOf(odoIcrsRect!!) else emptyList(),
-                            scratchArgb = null,
-                            scratchYuv = NativePaddleEngine.bufferSetB
-                        )
-                        alignedBase64 = snap
-                        tSnapAlign += tSnap
-
-                        // Refinement Loop (Always executed to provide diagnostic data)
-                        if (globalWinnerRef.vehicle.id >= 0) {
-                            // Hygiene: resize B to match dims used for final icrsToPixel after alignment transform. Pump unaffected.
-                            if (NativePaddleEngine.bufferSetB.p.mat.cols() != imgW || NativePaddleEngine.bufferSetB.p.mat.rows() != imgH) {
-                                NativePaddleEngine.bufferSetB.resize(imgW, imgH)
-                            }
-
-                            val iterativeStages = listOf("Raw", "Bin-Trials")
-
-                            // Expand: J char-aware | L P(INTERIOR_ENERGY+jump) | V valley.
-                            // All columns: PreferLen(digitCount), prefer-Bin final, source-border rec.
-                            runPaddleValleyIterative(
-                                "${pipeline.displayName} Paddle",
-                                NativePaddleEngine.bufferSetB,
-                                imgW,
-                                imgH,
-                                globalWinnerRef,
-                                vehicleBufferSets,
-                                experimentDetSet512x128,
-                                experimentRecSet320x48,
-                                paddleEngine,
-                                hMap,
-                                refinementTraces,
-                                isNumeric = true,
-                                iterativeStages,
-                                extraImages,
-                                useCharAware = usesCharAwareExpand(pipeline.key),
-                                pipelineKey = pipeline.key,
-                            )
-                        }
-                    }
-
-                    val photoPathway = PhotoPathwayResult(
-                        winnerName = globalWinnerRef?.vehicle?.name ?: "No match",
-
-                        tDeskewTotal = pipeline.getDeskewTime(currentDeskewRes),
-                        tDiscoveryTotal = tDiscoveryTotal,
-                        deskewedBase64 = alignedBase64,
-                        discoveryResult = ocr,
-                        discoveryLandmarks = queryLandmarks,
-                        harnessResults = hMap
+                // Each column keeps its own veto. Raw warps the crop only. Seed columns read the padded seed. Deskew rotates, then anchorAlign.
+                for (column in columns) {
+                    val ran = runAlignColumn(
+                        column, context, deskewResA, imgW, imgH, cachedRefs, vehicleBufferSets,
+                        experimentDetSet512x128, experimentRecSet320x48, paddleEngine,
+                        rotateBuffer = { set, angle -> rotate(set, angle) },
                     )
-                    pathways[pipeline.key] = photoPathway
-
-                    val alignmentTrace = AlignmentTraceResult(alignResSuccess, alignResTimeMs, alignedBase64, alignResMetadata)
-                    val vehiclePathway = SingleVehiclePathwayResult(alignmentTrace, refinementTraces, landmarksForAudit, hMap)
-
-                    if (globalWinnerRef != null) {
-                        val map = vehiclePathways.getOrPut(globalWinnerRef.vehicle.id) { mutableMapOf() }
-                        map[pipeline.key] = vehiclePathway
+                    pathways[column.key] = ran.pathway
+                    primaryVetoResultsMap[column.key] = ran.veto
+                    columnWinnerId[column.key] = ran.winnerId
+                    tSnapAlign += ran.snapMs
+                    val colWinner = cachedRefs.find { it.vehicle.id == ran.winnerId }
+                    if (colWinner != null && ran.vehiclePathway != null) {
+                        val map = vehiclePathways.getOrPut(colWinner.vehicle.id) { mutableMapOf() }
+                        map[column.key] = ran.vehiclePathway
                     }
                 }
 
-                val winnerRef = cachedRefs.find { it.vehicle.id == globalWinnerId }
+                val deskewWinnerId = columnWinnerId["ml_kit_deskew"]
+                val winnerRef = cachedRefs.find { it.vehicle.id == deskewWinnerId }
                 if (winnerRef != null) {
                     finalWinnerName = winnerRef.vehicle.name
                 }
 
-                val updatedPathways = pathways
-
-                // Build vehicleResultsMap
+                val deskewVeto = primaryVetoResultsMap["ml_kit_deskew"] ?: emptyMap()
+                val winnerIds = columnWinnerId.values.filterNotNull().toSet()
                 val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
                 cachedRefs.forEach { ref ->
-                    val isWinner = (ref.vehicle.id == globalWinnerId)
+                    val isWinner = ref.vehicle.id in winnerIds
                     val pathMap = vehiclePathways[ref.vehicle.id] ?: emptyMap()
+                    val veto = deskewVeto[ref.vehicle.id]
                     vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(
                         ref.vehicle.name,
-                        if (isWinner) "" else (primaryVetoResultsGlobal[ref.vehicle.id]?.reasonWord ?: "Vetoed"),
+                        if (isWinner) "" else (veto?.reasonWord ?: "Vetoed"),
                         0L, 0L,
                         pathMap,
-                        primaryVetoResultsGlobal[ref.vehicle.id]?.queryWords ?: emptyList(),
-                        primaryVetoResultsGlobal[ref.vehicle.id]?.myManifest?.toList() ?: emptyList(),
-                        primaryVetoResultsGlobal[ref.vehicle.id]?.vetoPool?.toList() ?: emptyList(),
-                        isWinner
+                        veto?.queryWords ?: emptyList(),
+                        veto?.myManifest?.toList() ?: emptyList(),
+                        veto?.vetoPool?.toList() ?: emptyList(),
+                        isWinner,
                     )
                 }
 
-                photoResult = ProcessedPhotoResult(file.name, updatedPathways, vehicleResultsMap, primaryVetoResultsGlobal)
+                photoResult = ProcessedPhotoResult(file.name, pathways, vehicleResultsMap, deskewVeto)
 
                 val rowHtml = buildHtmlRowDynamic(
                     originalLineNumber, file.name, imgW, imgH, meta.isDegraded, originalBase64,
-                    photoResult!!, vehicleResultsMap, cachedRefs, finalWinnerName, emptyList(),
-                    harnessEngineNames, (tMl + tPd), tDiscoveryTotalCombined,
-                    tilt, deskewResA, pipelines, meta.diagnostic
+                    photoResult!!, vehicleResultsMap, cachedRefs,
+                    deskewResA, columns, (tMl + tPd), meta.diagnostic,
                 )
 
                 ReportCollapser.publishCell(cellsDir, index + 1, rowHtml, "{}")
@@ -942,10 +858,9 @@ private fun serializePhotoResultToJson(
         // Top-level Metrics (outer convenience; nested pathways are authoritative per set)
         put(
             "winner",
-            photoResult.pathways["set_j"]?.winnerName
-                ?: photoResult.pathways["set_l"]?.winnerName
-                ?: photoResult.pathways["set_v"]?.winnerName
-                ?: "No match",
+            listOf("ml_kit_deskew", "paddle_deskew", "paddle_raw_seed").firstNotNullOfOrNull { key ->
+                photoResult.pathways[key]?.winnerName?.takeIf { it != "No match" }
+            } ?: "No match",
         )
 
 
@@ -1029,7 +944,7 @@ private fun serializePhotoResultToJson(
 
 
         val landmarksArray = JSONArray()
-        photoResult.pathways["set_j"]?.discoveryResult?.textBlocks?.forEach { block ->
+        photoResult.pathways["ml_kit_deskew"]?.discoveryResult?.textBlocks?.forEach { block ->
             val cleanedText = OdometerOcrUtils.cleanLandmarkString(block.text)
             if (cleanedText.isNotEmpty()) {
                 landmarksArray.put(JSONObject().apply {
@@ -1153,6 +1068,15 @@ private fun serializePathwayToJson(res: PhotoPathwayResult): JSONObject {
 
         put("t_deskew_ms", res.tDeskewTotal)
         put("t_discovery_ms", res.tDiscoveryTotal)
+        put("t_detect_ms", res.tDiscoveryTotal)
+        put("t_rotate_or_warp_ms", res.tDeskewTotal)
+        put("t_odo_read_ms", res.tOdoReadMs)
+        put("t_total_ms", res.tDiscoveryTotal + res.tDeskewTotal + res.tOdoReadMs)
+        if (res.similarity.isNotEmpty()) {
+            val sim = JSONObject()
+            res.similarity.forEach { (k, v) -> sim.put(k, v) }
+            put("similarity", sim)
+        }
         put("discovery_debug", res.discoveryResult.debugText)
 
         val harnessTimings = JSONObject()
@@ -1286,6 +1210,15 @@ private fun serializeAnnotations(anns: List<SnapshotAnnotation>): String {
     return arr.toString()
 }
 
+/** True when [keptGray] replaced the odometer luma. False means the caller still scale-crops. */
+private fun copyPrefilledGray(keptGray: org.opencv.core.Mat?, odo: BufferSet): Boolean {
+    if (keptGray == null || keptGray.empty()) return false
+    val dest = odo.p.mat
+    if (keptGray.cols() != dest.cols() || keptGray.rows() != dest.rows()) return false
+    keptGray.copyTo(dest)
+    return true
+}
+
 internal suspend fun runBinTrialsPaddle(
     odoBuffer: BufferSet,
     masterBuffer: BufferSet,
@@ -1299,6 +1232,7 @@ internal suspend fun runBinTrialsPaddle(
     pipelineKey: String = "",
     preferredDigitLen: Int = OdometerTracking.DEFAULT_DIGIT_COUNT,
     allowLenPlusOne: Boolean = true,
+    prefilledGray: org.opencv.core.Mat? = null,
 ): Pair<String, Map<String, String>> {
     val midpoints = findValleyMidpoints(rawBins)
     val trialsHtml = StringBuilder("<div style='border:1px solid #ccc; padding:4px; margin-top:4px;'><b>Bin-Trials:</b><br>")
@@ -1326,12 +1260,16 @@ internal suspend fun runBinTrialsPaddle(
     midpoints.forEachIndexed { vIdx, binIdx ->
         val threshold = binIdx * 4.0
 
-        // Step 1: Pull fresh raw grayscale crop from masterBuffer to odoBuffer.p
+        // Step 1: Pull fresh raw grayscale into odoBuffer.p. A prefilled raw warp skips the axis-aligned crop.
         // TEMP DIAGNOSTIC (2026-06-23) - remove after root cause fixed
-        Log.i("HIST_DIAG", "trial start vehicle=$vehicleId odoPre=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} srcCrop=${masterBuffer.c[vehicleId].mat.cols()}x${masterBuffer.c[vehicleId].mat.rows()}")
-        odoBuffer.p.clear()
-        RecBufferFeed.scaleCropToFitBuffer(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat)
-        Log.d("ALIGN_ODO_POP", "masterCrop=${masterBuffer.c[vehicleId].mat.cols()}x${masterBuffer.c[vehicleId].mat.rows()} -> odoTarget=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()}")
+        if (copyPrefilledGray(prefilledGray, odoBuffer)) {
+            Log.i("HIST_DIAG", "trial start vehicle=$vehicleId odoPre=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} prefilled")
+        } else {
+            Log.i("HIST_DIAG", "trial start vehicle=$vehicleId odoPre=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} srcCrop=${masterBuffer.c[vehicleId].mat.cols()}x${masterBuffer.c[vehicleId].mat.rows()}")
+            odoBuffer.p.clear()
+            RecBufferFeed.scaleCropToFitBuffer(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat)
+            Log.d("ALIGN_ODO_POP", "masterCrop=${masterBuffer.c[vehicleId].mat.cols()}x${masterBuffer.c[vehicleId].mat.rows()} -> odoTarget=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()}")
+        }
         Log.i("HIST_DIAG", "after resize+clear vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()}")
 
         // Step 2: Binarize into .s, then flip so .p = binary, .s = original grayscale (scratchpad).
@@ -1840,8 +1778,10 @@ internal suspend fun runBinTrialsPaddle(
 
     // Set winning binarization state (threshold from selected trial)
     if (winnerTrial != null) {
-        odoBuffer.p.clear()
-        RecBufferFeed.scaleCropToFitBuffer(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat)
+        if (!copyPrefilledGray(prefilledGray, odoBuffer)) {
+            odoBuffer.p.clear()
+            RecBufferFeed.scaleCropToFitBuffer(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat)
+        }
 
         odoBuffer.s.clear()
         org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, winnerTrial.thresh, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
@@ -1923,10 +1863,9 @@ private fun alignmentColumnLabels(
     strategies: List<String>,
 ): List<String> {
     val labels = mutableListOf("# &amp; Original")
-    pipelineNames.forEach { labels.add("Native Aligned $it") }
+    pipelineNames.forEach { labels.add(it) }
     harnessEngines.forEach { labels.add(it) }
     strategies.forEach { labels.add(it) }
-    labels.add("Refinement Consensus")
     return labels
 }
 
@@ -1965,16 +1904,10 @@ private fun buildHtmlRowDynamic(
     photoResult: ProcessedPhotoResult,
     vehicleResults: Map<Int, SingleVehicleResult>,
     cachedRefs: List<ReferenceCache>,
-    winnerName: String,
-    strategies: List<String>,
-    harnessEngines: List<String>,
-    tDeskew: Long,
-    tDiscovery: Long,
-    tilt: Float,
     deskewRes: OdometerOcrUtils.DeskewResult,
-    pipelines: List<PipelineConfig>,
+    columns: List<PipelineConfig>,
+    angleMs: Long,
     diagnostic: String = "",
-    extraImages: Map<String, String> = emptyMap(), useCharAware: Boolean = false
 ): String = buildString {
     val resHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: $diagnostic</small>" else ""
@@ -1985,109 +1918,52 @@ private fun buildHtmlRowDynamic(
     appendLine("<br><small>$fileName</small>")
     appendLine("<div class=\"orig-details\">")
     appendLine("<br><small>$resHtml</small>$diagHtml")
-    appendLine("<br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms")
+    appendLine("<br><b>Angle call:</b> ${angleMs}ms")
     appendLine("<br>ML: ${"%.1f".format(angMl)}&deg; | V3: ${"%.1f".format(angV3)}&deg; | CPP: ${"%.1f".format(angCpp)}&deg;")
     appendLine("<br><img src='data:image/jpeg;base64,$originalBase64'>")
-
-    // For Set G, show histograms in first column
-    if (extraImages.containsKey("hist1")) {
-        appendLine("<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${extraImages["hist1"]}'><br><small>Before Hist (Yellow=Stretch, Magenta=80%)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${extraImages["hist2"]}'><br><small>After Hist (Cyan=Original 80%)</small></td></tr></table>")
-    }
     appendLine("</div></td>")
 
-    val winnerRef = cachedRefs.find { it.vehicle.name == winnerName }; val vRes = winnerRef?.let { vehicleResults[it.vehicle.id] }
-
-    // Aligned Columns (Dynamic per Pipeline)
     var colIdx = 1
-    pipelines.forEach { pipeline ->
+    columns.forEach { column ->
         appendLine("<td data-col=\"$colIdx\">")
-        val pathRes = photoResult.pathways[pipeline.key]
+        val pathRes = photoResult.pathways[column.key]
         val alignedB64 = pathRes?.deskewedBase64 ?: ""
+        val winner = pathRes?.winnerName ?: "No match"
+        val winnerRef = cachedRefs.find { it.vehicle.name == winner }
+        val trace = winnerRef?.let { vehicleResults[it.vehicle.id]?.pathResults?.get(column.key)?.alignmentTrace }
+        val hRes = pathRes?.harnessResults?.get(column.displayName)
+            ?: pathRes?.harnessResults?.values?.firstOrNull()
+        val odo = hRes?.odometerValue?.takeIf { it.isNotBlank() } ?: "—"
+        val detectMs = pathRes?.tDiscoveryTotal ?: 0L
+        val geomMs = pathRes?.tDeskewTotal ?: 0L
+        val odoMs = pathRes?.tOdoReadMs ?: 0L
+        val total = detectMs + geomMs + odoMs
         if (alignedB64.isNotEmpty()) {
             appendLine("<img src='data:image/jpeg;base64,$alignedB64'><br>")
-            vRes?.pathResults?.get(pipeline.key)?.alignmentTrace?.let { trace ->
-                val s = trace.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
+        } else if (column.rawCrop) {
+            appendLine("<i>Raw crop not warped</i><br>")
+        } else {
+            appendLine("<i>Not Aligned</i><br>")
+        }
+        if (trace != null) {
+            val rot = trace.metadata["rotation_deg"]
+            if (rot != null) {
+                appendLine("<small>Rotation: $rot&deg;</small><br>")
+            }
+            val scale = trace.metadata["raw_scale"]?.toDoubleOrNull()
+            if (scale != null) {
                 val tx = trace.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
                 val ty = trace.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
-                appendLine("<div class='dump-details'><small>Native Warp (Cubic)<br>Scale: %.3f<br>TX: %.1f, TY: %.1f<br>Time: ${trace.timeMs}ms</small></div>".format(s, tx, ty))
+                appendLine("<div class='dump-details'><small>Scale: %.3f TX: %.1f TY: %.1f</small></div>".format(scale, tx, ty))
             }
-        } else {
-            appendLine("<i>Not Aligned</i>")
         }
+        appendLine("<b>$winner</b><br>")
+        appendLine("<b>$odo</b> ${total}ms<br>")
+        if (hRes != null) appendLine(hRes.htmlCell)
         appendLine("</td>")
         colIdx++
     }
-
-    val allReadings = mutableListOf<String>()
-    harnessEngines.forEach { engine ->
-        appendLine("<td data-col=\"$colIdx\">")
-        val hRes = vRes?.pathResults?.values?.firstNotNullOfOrNull { it.harnessResults[engine] }
-        if (hRes != null) {
-            appendLine("<div class='dump-details'><b>Time:</b> ${hRes.totalTimeMs}ms<br></div>")
-            appendLine(hRes.htmlCell)
-        } else {
-            appendLine("<i>No harness data</i>")
-        }
-        appendLine("</td>")
-        colIdx++
-    }
-
-    strategies.forEach { strat ->
-        appendLine("<td data-col=\"$colIdx\">")
-        if (vRes != null) {
-            // Check refinement traces across all paths (Take first one for now)
-            val trace = vRes.pathResults.values.firstNotNullOfOrNull { it.refinementTraces[strat] }
-            if (trace != null) {
-                appendLine("<div class='dump-details'><b>Time:</b> ${trace.timeMs}ms<br></div>")
-                trace.steps.forEach { step ->
-                    if (step.text?.isNotBlank() == true) allReadings.add(step.text)
-
-                    if (step.stageName == "Bin" && step.metadata.containsKey("best_plain_pre")) {
-                        val preCleanPlain = step.metadata["best_plain_pre"] ?: ""
-                        val preCleanAnnot = step.metadata["best_annotated_pre"] ?: ""
-                        val preRollingPlain = step.metadata["best_plain_pre_rolling"] ?: ""
-                        val postCleanPlain = step.metadata["best_plain_post"] ?: ""
-                        val postCleanAnnot = step.metadata["best_annotated_post"] ?: ""
-
-                        appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br>")
-                        appendLine("<b>Pre-Cleaned (Binarized Only):</b><br>")
-                        if (preCleanPlain.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$preCleanPlain'><br>")
-                        if (preCleanAnnot.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$preCleanAnnot'><br>")
-                        if (preRollingPlain.isNotEmpty()) {
-                            appendLine("<b>Pre-Rolling (After Size Filter, Before Rolling Filter):</b><br>")
-                            appendLine("<img src='data:image/jpeg;base64,$preRollingPlain'><br>")
-                        }
-                        appendLine("<b>Post-Cleaned (OCR Input):</b><br>")
-                        if (postCleanPlain.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$postCleanPlain'><br>")
-                        if (postCleanAnnot.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$postCleanAnnot'><br>")
-                    } else {
-                        appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br>")
-                        if (step.thumbB64.isNotEmpty()) {
-                            appendLine("<img src='data:image/jpeg;base64,${step.thumbB64}'>")
-                        }
-                    }
-
-                    if (step.metadata.containsKey("before_hist")) {
-                        appendLine("<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${step.metadata["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${step.metadata["after_hist"]}'><br><small>After</small></td></tr></table>")
-                    }
-
-                    val rawText = step.metadata["raw_text"]
-                    if (rawText != null) {
-                        appendLine("<br><small>Raw: $rawText</small>")
-                    }
-
-                    appendLine("${step.text ?: "---"}</div>")
-                }
-            } else appendLine("<i>No refinement data</i>")
-        } else appendLine("<i>No refinement data</i>")
-        appendLine("</td>")
-        colIdx++
-    }
-
-    appendLine("<td data-col=\"$colIdx\"><b>Winner:</b> $winnerName<br><br><b>Consensus:</b><br>")
-    val freq = allReadings.groupBy { it }.mapValues { it.value.size }.toList().sortedByDescending { it.second }
-    freq.forEach { (text, count) -> appendLine("<b>$text</b> ($count/48)<br>") }
-    appendLine("</td></tr>")
+    appendLine("</tr>")
 }
 
 private fun generateRunLengthHistogramB64(histStr: String?): String {
@@ -2284,6 +2160,501 @@ internal suspend fun performLandmarkDiscovery(input: Any, context: Context): Pai
 private fun JSONObject.putSafe(key: String, value: Double, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentAlignment", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
 private fun JSONObject.putSafe(key: String, value: Float, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentAlignment", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
 
+private data class AlignLandmarkDiscovery(
+    val ocr: OcrResult,
+    val landmarks: List<TextBlock>,
+    val seeds: List<TextBlock>,
+)
+
+private suspend fun discoverAlignLandmarks(
+    paddleDet: Boolean,
+    work: BufferSet.Slice,
+    context: Context,
+    imgW: Int,
+    imgH: Int,
+): AlignLandmarkDiscovery {
+    if (!paddleDet) {
+        val query = OcrHarness.runDiscovery(work, context)
+        val landmarks = OdometerOcrUtils.processRawLandmarks(
+            query.textBlocks, null, null, query.imageWidth, query.imageHeight,
+        )
+        return AlignLandmarkDiscovery(query, landmarks, query.textBlocks)
+    }
+    val blocks = MultiScaleDetRunner.productDetLandmarks2048(context, work.mat, 0.40f)
+    val landmarks = OdometerOcrUtils.processRawLandmarks(blocks, null, null, imgW, imgH)
+    val ocr = OcrResult(
+        engineName = "product_det",
+        debugText = landmarks.joinToString(" ") { it.text },
+        textBlocks = landmarks,
+        imageWidth = imgW,
+        imageHeight = imgH,
+    )
+    return AlignLandmarkDiscovery(ocr, landmarks, blocks)
+}
+
+private fun alignRedQuad(quad: List<Pair<Float, Float>>): ContentExpandUtils.OrientedQuad {
+    val p = FloatArray(8)
+    for (i in 0 until 4) {
+        p[i * 2] = quad[i].first
+        p[i * 2 + 1] = quad[i].second
+    }
+    return ContentExpandUtils.OrientedQuad(p)
+}
+
+/** Rot-G-- recognition pads for paddle columns (four-point seeds only; not clipped to the odo quad). */
+private fun alignPaddleRotGPadAnnotations(seeds: List<TextBlock>): List<SnapshotAnnotation> {
+    val out = ArrayList<SnapshotAnnotation>()
+    for (block in seeds) {
+        if (block.points.size < 4) continue
+        val seed = alignSeedQuad(block)
+        val padded = ContentExpandUtils.calculatedOrientedUv(
+            seed,
+            0.40f,
+            SET_G_UV_LEFT_FRAC,
+            SET_G_UV_RIGHT_FRAC,
+        )
+        val p = padded.pts
+        for (i in 0 until 4) {
+            val j = (i + 1) % 4
+            out.add(
+                SnapshotAnnotation(
+                    p[i * 2].toInt(),
+                    p[i * 2 + 1].toInt(),
+                    p[j * 2].toInt(),
+                    p[j * 2 + 1].toInt(),
+                    Shape.LINE,
+                    AnnYuv.YELLOW,
+                    2,
+                ),
+            )
+        }
+    }
+    return out
+}
+
+/** Bare seed. ML Kit blocks with no points use the four corners of the AABB. */
+private fun alignSeedQuad(block: TextBlock): ContentExpandUtils.OrientedQuad {
+    if (block.points.size >= 4) {
+        val p = FloatArray(8)
+        for (i in 0 until 4) {
+            p[i * 2] = block.points[i].x.toFloat()
+            p[i * 2 + 1] = block.points[i].y.toFloat()
+        }
+        return ContentExpandUtils.orientedFromPoints8(p)
+    }
+    return ContentExpandUtils.orientedFromAabb(block.boundingBox)
+}
+
+private fun alignSeedDigitText(debugText: String): String = debugText.trim().filter { it.isDigit() }
+
+private fun alignSeedProbStats(perCharProbs: String): Pair<Float, Float> {
+    val vals = perCharProbs.split(",").mapNotNull { part ->
+        val colon = part.indexOf(':')
+        if (colon < 0) null else part.substring(colon + 1).trim().toFloatOrNull()
+    }
+    if (vals.isEmpty()) return 0f to 0f
+    return vals.sum() to (vals.minOrNull() ?: 0f)
+}
+
+private fun alignSeedMatJpegB64(mat: org.opencv.core.Mat): String {
+    val buf = org.opencv.core.MatOfByte()
+    return try {
+        if (!org.opencv.imgcodecs.Imgcodecs.imencode(".jpg", mat, buf)) "" else {
+            Base64.encodeToString(buf.toArray(), Base64.NO_WRAP)
+        }
+    } catch (_: Exception) {
+        ""
+    } finally {
+        buf.release()
+    }
+}
+
+private data class AlignSeedRecRun(
+    val harness: OcrHarnessResult,
+    val trace: RefinementTrace,
+)
+
+/**
+ * Union of seeds overlapping [crop], clipped to the red odometer quad, read once from [gray].
+ * [seedVert] null: bare seeds only (ML Kit). Non-null: each overlapping bare seed is rot-G-- padded
+ * (side fractions 0.54 / 0.55), then the padded quads are unioned and clipped.
+ * The feed scratch is buffer set A. No overlap returns null: empty odometer, no rec image.
+ */
+private suspend fun readAlignSeedRec(
+    seeds: List<TextBlock>,
+    crop: ContentExpandUtils.OrientedQuad,
+    gray: org.opencv.core.Mat,
+    recBuffer: BufferSet,
+    paddleEngine: NativePaddleEngine,
+    displayName: String,
+    seedVert: Float?,
+    preferredDigitLen: Int,
+): AlignSeedRecRun? {
+    val bare = seeds.map { alignSeedQuad(it) }
+    val clipped = if (seedVert == null) {
+        ContentExpandUtils.unionOrientedSeedsClippedToCrop(bare, crop)
+    } else {
+        val overlapping = bare.filter { ContentExpandUtils.clipOrientedSeedToConvexQuad(it, crop) != null }
+        if (overlapping.isEmpty()) {
+            null
+        } else {
+            val padded = overlapping.map { seed ->
+                ContentExpandUtils.calculatedOrientedUv(
+                    seed,
+                    seedVert,
+                    SET_G_UV_LEFT_FRAC,
+                    SET_G_UV_RIGHT_FRAC,
+                )
+            }
+            ContentExpandUtils.unionOrientedSeedsClippedToCrop(padded, crop)
+        }
+    } ?: return null
+    val fed = ocrPumpFeedOriented40(
+        gray, clipped, NativePaddleEngine.bufferSetA, recBuffer,
+    ) ?: return null
+    val slice = recBuffer.c[fed.recCropId]
+    val tH0 = System.currentTimeMillis()
+    try {
+        val rawSnap = PumpCostVolUtils.snapRecCrop(recBuffer, fed.recCropId, fed.targetW, fed.targetH)
+
+        val tRaw0 = System.currentTimeMillis()
+        val rawDigits = paddleEngine.recognizeNumericDecimal(slice)
+        val rawMs = System.currentTimeMillis() - tRaw0
+        val rawText = alignSeedDigitText(rawDigits.debugText)
+
+        val tBin0 = System.currentTimeMillis()
+        val stats = getHistStats(slice.mat)
+        val midpoints = findValleyMidpoints(stats.rawBins)
+        data class BinTrial(val text: String, val sumProb: Float, val minProb: Float, val snap: String)
+        val trials = mutableListOf<BinTrial>()
+        midpoints.forEach { binIdx ->
+            val threshold = binIdx * 4.0
+            val binMat = org.opencv.core.Mat()
+            org.opencv.imgproc.Imgproc.threshold(
+                slice.mat, binMat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY,
+            )
+            try {
+                val dig = paddleEngine.recognizeNumericDecimal(binMat)
+                val text = alignSeedDigitText(dig.debugText)
+                if (text.isEmpty()) return@forEach
+                val (sumP, minP) = alignSeedProbStats(dig.perCharProbs)
+                trials.add(BinTrial(text, sumP, minP, alignSeedMatJpegB64(binMat)))
+            } finally {
+                binMat.release()
+            }
+        }
+        val binMs = System.currentTimeMillis() - tBin0
+
+        val highQual = trials.filter { it.minProb >= 0.40f }
+        val binWinner =
+            if (highQual.isNotEmpty()) highQual.maxByOrNull { it.sumProb }
+            else trials.maxByOrNull { it.sumProb }
+        val binText = binWinner?.text ?: ""
+        val binSnap = binWinner?.snap ?: rawSnap
+
+        val steps = listOf(
+            OcrStepResult("Raw", rawSnap, null, rawText),
+            OcrStepResult("Bin-Trials", binSnap, null, binText),
+        )
+        val bestOdo = OdometerOcrUtils.pickBestOdometer(
+            steps,
+            preferredLen = preferredDigitLen,
+            allowLenPlusOne = true,
+            preferBin = true,
+        )
+        val totalMs = System.currentTimeMillis() - tH0
+
+        val recImgRaw = if (rawSnap.isNotEmpty()) "<img src='data:image/jpeg;base64,$rawSnap'><br>" else ""
+        val recImgBin = if (binSnap.isNotEmpty()) "<img src='data:image/jpeg;base64,$binSnap'><br>" else ""
+        val htmlCell = buildString {
+            append("<div class='ocr-step'><b>Raw:</b> ($rawMs ms)<br>${rawText.ifEmpty { "---" }}<br>$recImgRaw</div>")
+            append("<div class='ocr-step'><b>Bin-Trials:</b> ($binMs ms)<br>${binText.ifEmpty { "---" }}<br>$recImgBin</div>")
+        }
+        val jsonStages = com.google.gson.JsonObject()
+        jsonStages.add(
+            "Raw",
+            com.google.gson.JsonObject().apply {
+                addProperty("text", rawText)
+                addProperty("time", rawMs)
+            },
+        )
+        jsonStages.add(
+            "Bin-Trials",
+            com.google.gson.JsonObject().apply {
+                addProperty("text", binText)
+                addProperty("time", binMs)
+            },
+        )
+        val harness = OcrHarnessResult(
+            htmlHeader = displayName,
+            htmlCell = htmlCell,
+            jsonSection = com.google.gson.JsonObject().apply {
+                addProperty("odometer", bestOdo ?: "")
+                add("stages", jsonStages)
+            },
+            odometerValue = bestOdo,
+            thumbB64 = rawSnap.ifEmpty { null },
+            totalTimeMs = totalMs,
+        )
+        return AlignSeedRecRun(harness, RefinementTrace(displayName, totalMs, steps))
+    } finally {
+        slice.release()
+    }
+}
+
+/**
+ * One report column. Deskew rotates the full work buffer, then anchorAlign and the Set V valley read.
+ * Raw discovers on the unrotated copy, solves a similarity, and warps only the odometer crop.
+ * Seed columns use that same photo and red quad, then pad, clip, and read. They do not warp.
+ */
+private suspend fun runAlignColumn(
+    column: PipelineConfig,
+    context: Context,
+    deskewRes: OdometerOcrUtils.DeskewResult,
+    imgW: Int,
+    imgH: Int,
+    cachedRefs: List<ReferenceCache>,
+    vehicleBufferSets: Map<Int, BufferSet>,
+    experimentDetSet512x128: BufferSet,
+    experimentRecSet320x48: BufferSet,
+    paddleEngine: NativePaddleEngine,
+    rotateBuffer: suspend (BufferSet, Float) -> Long,
+): AlignColumnRun {
+    val work = NativePaddleEngine.bufferSetB
+    val src = NativePaddleEngine.bufferSetA
+    logAlignBufDiag("column_reset", "A.p", src.p.mat, "B.p", work.p.mat)
+    src.p.mat.copyTo(work.p.mat)
+    logAlignBufDiag("column_reset_uv", "A.p.uv", src.p.uvMat, "B.p.uv", work.p.uvMat)
+    src.p.uvMat.copyTo(work.p.uvMat)
+
+    var tRotate = 0L
+    if (!column.rawCrop) {
+        tRotate = rotateBuffer(work, column.getAngle(deskewRes))
+    }
+
+    val tDisc0 = System.currentTimeMillis()
+    val discovery = discoverAlignLandmarks(column.paddleDet, work.p, context, imgW, imgH)
+    val ocr = discovery.ocr
+    val queryLandmarks = discovery.landmarks
+    val tDiscovery = System.currentTimeMillis() - tDisc0
+
+    val veto = ImageAlignmentUtils.performTier1Veto(
+        queryLandmarks, cachedRefs.map { it.vehicle }, "ML Kit",
+    )
+    val winnerId = veto.entries.find { !it.value.isVetoed }?.key
+    val winnerRef = cachedRefs.find { it.vehicle.id == winnerId }
+
+    var alignedBase64 = ""
+    val hMap = mutableMapOf<String, OcrHarnessResult>()
+    var landmarksForAudit: List<TextBlock> = emptyList()
+    val refinementTraces = mutableMapOf<String, RefinementTrace>()
+    var alignResSuccess = false
+    var alignResTimeMs = 0L
+    val alignResMetadata = mutableMapOf<String, String>()
+    var tSnap = 0L
+    var vehiclePathway: SingleVehiclePathwayResult? = null
+
+    if (winnerRef != null) {
+        val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(
+            queryLandmarks, winnerRef.curatedLandmarks,
+        )
+        landmarksForAudit = queryLandmarksPrimary.filter { it.instanceId >= 0 }
+        val v = winnerRef.vehicle
+        if (column.rawCrop) {
+            val sim = ImageAlignmentUtils.rawSimilarity(
+                winnerRef.curatedLandmarks,
+                queryLandmarksPrimary,
+                v,
+                winnerRef.width,
+                winnerRef.height,
+                imgW,
+                imgH,
+            )
+            val odo = vehicleBufferSets[v.id]
+            var warped = false
+            if (!column.seedRec) {
+                val tWarp0 = System.currentTimeMillis()
+                warped = if (odo == null || !sim.success) {
+                    false
+                } else {
+                    ImageAlignmentUtils.warpOdometerCrop(
+                        work, odo, sim, v, winnerRef.width, winnerRef.height, imgW, imgH,
+                    )
+                }
+                alignResSuccess = warped
+                alignResTimeMs = System.currentTimeMillis() - tWarp0
+            }
+            alignResMetadata.putAll(sim.metadata)
+            val quad = ImageAlignmentUtils.odometerQuadQueryPixels(sim, v, imgW, imgH)
+            val quadAnns = if (!sim.success || quad == null) {
+                emptyList()
+            } else {
+                (0 until 4).map { i ->
+                    val a = quad[i]
+                    val b = quad[(i + 1) % 4]
+                    SnapshotAnnotation(
+                        a.first.toInt(),
+                        a.second.toInt(),
+                        b.first.toInt(),
+                        b.second.toInt(),
+                        Shape.LINE,
+                        AnnYuv.RED,
+                        2,
+                    )
+                }
+            }
+            val padAnns = if (column.paddleDet) alignPaddleRotGPadAnnotations(discovery.seeds) else emptyList()
+            val (snap, snapMs) = OcrUtils.takeSnapshot(
+                source = work.p,
+                sourceRect = null,
+                targetW = 600,
+                targetH = 450,
+                annotations = quadAnns + padAnns,
+                scratchArgb = null,
+                scratchYuv = work,
+            )
+            alignedBase64 = snap
+            tSnap = snapMs
+            if (column.seedRec) {
+                if (quad != null) {
+                    val read = readAlignSeedRec(
+                        discovery.seeds,
+                        alignRedQuad(quad),
+                        work.p.mat,
+                        experimentRecSet320x48,
+                        paddleEngine,
+                        column.displayName,
+                        column.seedVert,
+                        OdometerTracking.digitCount(v),
+                    )
+                    if (read != null) {
+                        hMap[column.displayName] = read.harness
+                        refinementTraces[column.displayName] = read.trace
+                    }
+                }
+            } else if (odo != null && warped) {
+                val keptGray = odo.p.mat.clone()
+                try {
+                    runPaddleValleyIterative(
+                        column.displayName,
+                        work,
+                        imgW,
+                        imgH,
+                        winnerRef,
+                        vehicleBufferSets,
+                        experimentDetSet512x128,
+                        experimentRecSet320x48,
+                        paddleEngine,
+                        hMap,
+                        refinementTraces,
+                        isNumeric = true,
+                        stages = listOf("Raw", "Bin-Trials"),
+                        extraImages = emptyMap(),
+                        useCharAware = false,
+                        pipelineKey = "set_v",
+                        prefilledOdo = true,
+                        prefilledGray = keptGray,
+                    )
+                } finally {
+                    keptGray.release()
+                }
+            }
+        } else {
+            val alignRes = ImageAlignmentUtils.anchorAlign(
+                work,
+                winnerRef.curatedLandmarks,
+                queryLandmarksPrimary,
+                v,
+                winnerRef.width,
+                winnerRef.height,
+                imgW,
+                imgH,
+                null,
+            )
+            alignResSuccess = alignRes.success
+            alignResTimeMs = alignRes.timeMs
+            alignResMetadata.putAll(alignRes.metadata)
+
+            val icrsL = v.odometerCropLeft
+            val icrsT = v.odometerCropTop
+            val icrsR = v.odometerCropRight
+            val icrsB = v.odometerCropBottom
+            val odoIcrsRect = if (icrsL != null && icrsT != null && icrsR != null && icrsB != null) {
+                alignResMetadata["odo_crop_icrs"] = "$icrsL,$icrsT,$icrsR,$icrsB"
+                RectF(icrsL, icrsT, icrsR, icrsB)
+            } else {
+                null
+            }
+            val padAnns = if (column.paddleDet) alignPaddleRotGPadAnnotations(discovery.seeds) else emptyList()
+            val odoAnns = if (odoIcrsRect != null) listOf(odoIcrsRect) else emptyList()
+            val (snap, snapMs) = OcrUtils.takeSnapshot(
+                source = work.p,
+                sourceRect = null,
+                targetW = 600,
+                targetH = 450,
+                annotations = odoAnns + padAnns,
+                scratchArgb = null,
+                scratchYuv = work,
+            )
+            alignedBase64 = snap
+            tSnap = snapMs
+
+            if (v.id >= 0) {
+                if (work.p.mat.cols() != imgW || work.p.mat.rows() != imgH) {
+                    work.resize(imgW, imgH)
+                }
+                runPaddleValleyIterative(
+                    column.displayName,
+                    work,
+                    imgW,
+                    imgH,
+                    winnerRef,
+                    vehicleBufferSets,
+                    experimentDetSet512x128,
+                    experimentRecSet320x48,
+                    paddleEngine,
+                    hMap,
+                    refinementTraces,
+                    isNumeric = true,
+                    stages = listOf("Raw", "Bin-Trials"),
+                    extraImages = emptyMap(),
+                    useCharAware = false,
+                    pipelineKey = "set_v",
+                )
+            }
+        }
+        vehiclePathway = SingleVehiclePathwayResult(
+            AlignmentTraceResult(alignResSuccess, alignResTimeMs, alignedBase64, alignResMetadata),
+            refinementTraces,
+            landmarksForAudit,
+            hMap,
+        )
+    }
+
+    val similarity = if (column.rawCrop && alignResMetadata.containsKey("scale")) {
+        mapOf(
+            "scale" to alignResMetadata.getValue("scale"),
+            "rotation_deg" to alignResMetadata.getValue("rotation_deg"),
+            "tx" to alignResMetadata.getValue("tx"),
+            "ty" to alignResMetadata.getValue("ty"),
+        )
+    } else {
+        emptyMap()
+    }
+    val odoReadMs = hMap[column.displayName]?.totalTimeMs ?: 0L
+    val pathway = PhotoPathwayResult(
+        winnerName = winnerRef?.vehicle?.name ?: "No match",
+        tDeskewTotal = if (column.rawCrop) alignResTimeMs else tRotate,
+        tDiscoveryTotal = tDiscovery,
+        deskewedBase64 = alignedBase64,
+        discoveryResult = ocr,
+        discoveryLandmarks = queryLandmarks,
+        harnessResults = hMap,
+        tOdoReadMs = odoReadMs,
+        similarity = similarity,
+    )
+    return AlignColumnRun(pathway, winnerId, veto, vehiclePathway, tSnap)
+}
 
 internal suspend fun runPaddleValleyIterative(
     displayName: String,
@@ -2302,6 +2673,8 @@ internal suspend fun runPaddleValleyIterative(
     extraImages: Map<String, String> = emptyMap(),
     useCharAware: Boolean = false,
     pipelineKey: String = "",
+    prefilledOdo: Boolean = false,
+    prefilledGray: org.opencv.core.Mat? = null,
 ) {
     val preferredDigitLen = OdometerTracking.digitCount(winnerRef.vehicle)
     // Alignment has no per-photo last-fill: allow face+1 so rollover-edge photos stay selectable.
@@ -2339,10 +2712,12 @@ internal suspend fun runPaddleValleyIterative(
 
         when (masterBuffer) {
             is BufferSet -> {
-                odoBuffer.p.clear()
-                RecBufferFeed.scaleCropToFitBuffer(
-                    masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat,
-                )
+                if (!(prefilledOdo && copyPrefilledGray(prefilledGray, odoBuffer))) {
+                    odoBuffer.p.clear()
+                    RecBufferFeed.scaleCropToFitBuffer(
+                        masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat,
+                    )
+                }
             }
         }
 
@@ -2372,6 +2747,7 @@ internal suspend fun runPaddleValleyIterative(
                 pipelineKey,
                 preferredDigitLen = preferredDigitLen,
                 allowLenPlusOne = allowLenPlusOne,
+                prefilledGray = if (prefilledOdo) prefilledGray else null,
             )
             trialsHtmlStr = tHtml
             stageMeta["trials_html"] = trialsHtmlStr

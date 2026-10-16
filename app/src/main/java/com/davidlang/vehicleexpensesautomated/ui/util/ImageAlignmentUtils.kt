@@ -16,8 +16,12 @@ import org.opencv.imgproc.Imgproc
 import org.opencv.video.Video
 import org.opencv.calib3d.Calib3d
 import kotlin.math.abs
-import kotlin.math.sqrt
+import kotlin.math.ceil
+import kotlin.math.cos
+import kotlin.math.min
 import kotlin.math.pow
+import kotlin.math.sin
+import kotlin.math.sqrt
 import org.json.JSONArray
 import org.json.JSONObject
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
@@ -64,6 +68,21 @@ data class AnchorResult(
     val timeMs: Long = 0,
     val metadata: Map<String, String> = emptyMap(),
     val message: String = ""
+)
+
+/**
+ * Similarity that maps query ICRS onto reference ICRS: scale, rotation degrees, tx, ty.
+ * Does not warp. Deskew stays on [ImageAlignmentUtils.anchorAlign].
+ */
+data class RawSimilarity(
+    val success: Boolean,
+    val scale: Float,
+    val rotationDeg: Float,
+    val tx: Float,
+    val ty: Float,
+    val timeMs: Long = 0,
+    val message: String = "",
+    val metadata: Map<String, String> = emptyMap(),
 )
 
 object ImageAlignmentUtils {
@@ -386,6 +405,332 @@ object ImageAlignmentUtils {
         }
     }
 
+    /**
+     * Pair similarity for a raw column. Drops pairs whose rotation is more than 4° from the
+     * median pair rotation. Does not apply [anchorAlign]'s absolute 4° drop and does not warp.
+     * Consensus averages scale, rotation, tx, and ty with the same distance and odometer-bracket weights.
+     * tx/ty are ICRS, with the pair rotation included so the similarity maps the first anchor onto its reference.
+     */
+    fun rawSimilarity(
+        refLandmarks: List<TextBlock>,
+        queryLandmarks: List<TextBlock>,
+        vehicle: Vehicle,
+        refW: Int,
+        refH: Int,
+        queW: Int,
+        queH: Int,
+    ): RawSimilarity {
+        val t0 = System.currentTimeMillis()
+        val icrsTargetY = if (vehicle.odometerCropTop != null && vehicle.odometerCropBottom != null) {
+            (vehicle.odometerCropTop!! + vehicle.odometerCropBottom!!) / 2.0f
+        } else 0f
+        val confirmedPairs = queryLandmarks.filter { it.instanceId >= 0 && it.boundingBox.width() > 0 }
+            .mapNotNull { queMark ->
+                val refMark = refLandmarks.find {
+                    it.text == queMark.text && it.instanceId == queMark.instanceId && it.boundingBox.width() > 0
+                }
+                if (refMark != null) refMark to queMark else null
+            }
+        val candidates = mutableListOf<AnchorCandidate>()
+        if (confirmedPairs.size >= 2) {
+            for (i in confirmedPairs.indices) {
+                for (j in i + 1 until confirmedPairs.size) {
+                    val r1 = confirmedPairs[i].first
+                    val r2 = confirmedPairs[j].first
+                    val q1 = confirmedPairs[i].second
+                    val q2 = confirmedPairs[j].second
+                    val r1Icrs = IcrsMath.pixelToIcrs(r1.boundingBox.centerX().toFloat(), r1.boundingBox.centerY().toFloat(), refW, refH)
+                    val r2Icrs = IcrsMath.pixelToIcrs(r2.boundingBox.centerX().toFloat(), r2.boundingBox.centerY().toFloat(), refW, refH)
+                    val q1Icrs = IcrsMath.pixelToIcrs(q1.boundingBox.centerX().toFloat(), q1.boundingBox.centerY().toFloat(), queW, queH)
+                    val q2Icrs = IcrsMath.pixelToIcrs(q2.boundingBox.centerX().toFloat(), q2.boundingBox.centerY().toFloat(), queW, queH)
+                    val refDist = Math.sqrt((r1Icrs.x - r2Icrs.x).toDouble().pow(2.0) + (r1Icrs.y - r2Icrs.y).toDouble().pow(2.0))
+                    val queDist = Math.sqrt((q1Icrs.x - q2Icrs.x).toDouble().pow(2.0) + (q1Icrs.y - q2Icrs.y).toDouble().pow(2.0))
+                    if (queDist > 0) {
+                        val s = (refDist / queDist).toFloat()
+                        val rot = normDeg(Math.toDegrees(Math.atan2((r2Icrs.y - r1Icrs.y).toDouble(), (r2Icrs.x - r1Icrs.x).toDouble()) - Math.atan2((q2Icrs.y - q1Icrs.y).toDouble(), (q2Icrs.x - q1Icrs.x).toDouble())).toFloat())
+                        val rad = Math.toRadians(rot.toDouble())
+                        val cth = cos(rad).toFloat()
+                        val sth = sin(rad).toFloat()
+                        val rx = cth * q1Icrs.x - sth * q1Icrs.y
+                        val ry = sth * q1Icrs.x + cth * q1Icrs.y
+                        val tx = r1Icrs.x - (s * rx)
+                        val ty = r1Icrs.y - (s * ry)
+                        candidates.add(AnchorCandidate("Raw", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, "", (r1Icrs.y + r2Icrs.y) / 2f, r1Icrs.y, r2Icrs.y))
+                    }
+                }
+            }
+        }
+        if (candidates.isEmpty()) {
+            return RawSimilarity(false, 0f, 0f, 0f, 0f, System.currentTimeMillis() - t0, "No valid anchors.")
+        }
+        val kept = largestRotationCluster(candidates, icrsTargetY)
+        if (kept.isEmpty()) {
+            return RawSimilarity(false, 0f, 0f, 0f, 0f, System.currentTimeMillis() - t0, "No pairs within 4° of median rotation.")
+        }
+        val medianRot = medianAngle(kept.map { it.rotation })
+        var sumScale = 0.0
+        var sumRot = 0.0
+        var sumTx = 0.0
+        var sumTy = 0.0
+        var totalW = 0.0
+        for (c in kept) {
+            val isBracketed = (c.y1Ref - icrsTargetY) * (c.y2Ref - icrsTargetY) < 0
+            val bracketBonus = if (isBracketed) 5.0 else 1.0
+            val vDist = abs(c.cyRef - icrsTargetY)
+            val w = (c.distance * bracketBonus) / (vDist + 0.05)
+            sumScale += c.scale * w
+            sumRot += normDeg(c.rotation - medianRot) * w
+            sumTx += c.tx * w
+            sumTy += c.ty * w
+            totalW += w
+        }
+        val finalScale = if (totalW > 0) (sumScale / totalW).toFloat() else kept.map { it.scale }.median()
+        val finalRot = if (totalW > 0) normDeg((sumRot / totalW).toFloat() + medianRot) else medianRot
+        val finalTx = if (totalW > 0) (sumTx / totalW).toFloat() else kept.map { it.tx }.median()
+        val finalTy = if (totalW > 0) (sumTy / totalW).toFloat() else kept.map { it.ty }.median()
+        val metadata = mapOf(
+            "scale" to finalScale.toString(),
+            "rotation_deg" to "%.2f".format(finalRot),
+            "tx" to finalTx.toString(),
+            "ty" to finalTy.toString(),
+            "raw_scale" to finalScale.toString(),
+            "raw_tx" to finalTx.toString(),
+            "raw_ty" to finalTy.toString(),
+            "pairs_kept" to kept.size.toString(),
+            "pairs_all" to candidates.size.toString(),
+        )
+        return RawSimilarity(
+            success = finalScale.isFinite() && finalScale > 1e-6f && finalRot.isFinite() && finalTx.isFinite() && finalTy.isFinite(),
+            scale = finalScale,
+            rotationDeg = finalRot,
+            tx = finalTx,
+            ty = finalTy,
+            timeMs = System.currentTimeMillis() - t0,
+            message = "Raw consensus (%d/%d)".format(kept.size, candidates.size),
+            metadata = metadata,
+        )
+    }
+
+    /**
+     * Samples the outlined odometer quad from [src] into [odo.p.mat].
+     * Corners stay in [odometerQuadQueryPixels] order: left-top, right-top, right-bottom, left-bottom.
+     * Reference top is the top of the buffer. UV is neutral 128. Does not warp the full frame.
+     */
+    fun warpOdometerCrop(
+        src: BufferSet,
+        odo: BufferSet,
+        sim: RawSimilarity,
+        vehicle: Vehicle,
+        @Suppress("UNUSED_PARAMETER") refW: Int,
+        @Suppress("UNUSED_PARAMETER") refH: Int,
+        queW: Int,
+        queH: Int,
+    ): Boolean {
+        if (!sim.success || !sim.scale.isFinite() || sim.scale <= 1e-6f) return false
+        if (!sim.rotationDeg.isFinite() || !sim.tx.isFinite() || !sim.ty.isFinite()) return false
+        val srcY = src.p.mat
+        val dstY = odo.p.mat
+        if (srcY.empty() || dstY.empty()) return false
+        if (srcY.cols() != queW || srcY.rows() != queH) return false
+        val quad = odometerQuadQueryPixels(sim, vehicle, queW, queH) ?: return false
+        val pts = floatArrayOf(
+            quad[0].first, quad[0].second,
+            quad[1].first, quad[1].second,
+            quad[2].first, quad[2].second,
+            quad[3].first, quad[3].second,
+        )
+        val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
+            srcY,
+            ContentExpandUtils.OrientedQuad(pts),
+            dstY,
+            targetH = 0,
+        )
+        if (!ok) return false
+        if (!odo.p.uvMat.empty()) {
+            odo.p.uvMat.setTo(Scalar(128.0, 128.0))
+        }
+        Log.i(
+            "RAW_CROP",
+            "warp scale=%.4f rot=%.2f write=%dx%d buf=%dx%d".format(
+                sim.scale, sim.rotationDeg, dstY.cols(), dstY.rows(), dstY.cols(), dstY.rows(),
+            ),
+        )
+        return true
+    }
+
+    /**
+     * Four corners of the vehicle odometer ICRS rect in query pixels.
+     * Same inverse similarity as [warpOdometerCrop]. Order: left-top, right-top, right-bottom, left-bottom.
+     * Null when the similarity is not finite, scale is not positive, or the vehicle has no odometer rect.
+     */
+    fun odometerQuadQueryPixels(
+        sim: RawSimilarity,
+        vehicle: Vehicle,
+        queW: Int,
+        queH: Int,
+    ): List<Pair<Float, Float>>? {
+        if (!sim.scale.isFinite() || sim.scale <= 0f) return null
+        if (!sim.rotationDeg.isFinite() || !sim.tx.isFinite() || !sim.ty.isFinite()) return null
+        val left = vehicle.odometerCropLeft ?: return null
+        val top = vehicle.odometerCropTop ?: return null
+        val right = vehicle.odometerCropRight ?: return null
+        val bottom = vehicle.odometerCropBottom ?: return null
+        val theta = Math.toRadians(sim.rotationDeg.toDouble())
+        val cth = cos(theta)
+        val sth = sin(theta)
+        val scale = sim.scale.toDouble()
+        val tx = sim.tx.toDouble()
+        val ty = sim.ty.toDouble()
+        val k = minOf(queW, queH).toDouble() / scale
+        val cxq = queW / 2.0
+        val cyq = queH / 2.0
+        fun corner(ix: Float, iy: Float): Pair<Float, Float> {
+            val dx = ix.toDouble() - tx
+            val dy = iy.toDouble() - ty
+            val px = k * (cth * dx + sth * dy) + cxq
+            val py = k * (-sth * dx + cth * dy) + cyq
+            return px.toFloat() to py.toFloat()
+        }
+        return listOf(
+            corner(left, top),
+            corner(right, top),
+            corner(right, bottom),
+            corner(left, bottom),
+        )
+    }
+
+    private fun odoIcrsRect(vehicle: Vehicle, refW: Int, refH: Int): RectF {
+        val l = vehicle.odometerCropLeft
+        val t = vehicle.odometerCropTop
+        val r = vehicle.odometerCropRight
+        val b = vehicle.odometerCropBottom
+        return if (l != null && t != null && r != null && b != null) {
+            RectF(l, t, r, b)
+        } else {
+            IcrsMath.fullImageIcrsRect(refW, refH)
+        }
+    }
+
+    /** Same top-left fit as [RecBufferFeed.scaleCropToFitBuffer]. */
+    private fun fittedWriteSize(srcW: Int, srcH: Int, destW: Int, destH: Int): Pair<Int, Int> {
+        if (srcW < 1 || srcH < 1 || destW < 1 || destH < 1) return 0 to 0
+        val sFitW = destW.toFloat() / srcW
+        val sFitH = destH.toFloat() / srcH
+        val s = min(sFitW, sFitH)
+        if (s <= 0f) return 0 to 0
+        var writeW = destW
+        while (writeW > 0 && ceil((writeW + 1.0) / s).toInt() > srcW) writeW--
+        var writeH = destH
+        while (writeH > 0 && ceil((writeH + 1.0) / s).toInt() > srcH) writeH--
+        if (writeW < 1 || writeH < 1) return 0 to 0
+        return writeW to writeH
+    }
+
+    /** Circular median. A shared tilt stays one cluster, including past ±180. */
+    private fun medianAngle(angles: List<Float>): Float {
+        if (angles.isEmpty()) return 0f
+        val origin = angles[0]
+        val shifted = angles.map { normDeg(it - origin) }
+        return normDeg(shifted.median() + origin)
+    }
+
+    private fun normDeg(d: Float): Float {
+        var x = d % 360f
+        if (x < 0f) x += 360f
+        if (x >= 360f) x -= 360f
+        if (x > 180f) x -= 360f
+        return x
+    }
+
+    private fun angDiff(a: Float, b: Float): Float = abs(normDeg(a - b))
+
+    /** Largest set of pair rotations that lie in some ±4° window around their circular median. Tie: greater [pairClusterWeight]. */
+    private fun largestRotationCluster(candidates: List<AnchorCandidate>, icrsTargetY: Float): List<AnchorCandidate> {
+        if (candidates.isEmpty()) return emptyList()
+        var bestCluster = emptyList<AnchorCandidate>()
+        var bestSize = 0
+        var bestWeight = -1.0
+        for (seed in candidates) {
+            var cluster = candidates.filter { angDiff(it.rotation, seed.rotation) <= 4f }
+            while (true) {
+                val med = medianAngle(cluster.map { it.rotation })
+                val next = candidates.filter { angDiff(it.rotation, med) <= 4f }
+                if (next.size == cluster.size && next.toSet() == cluster.toSet()) {
+                    cluster = next
+                    break
+                }
+                cluster = next
+            }
+            val w = pairClusterWeight(cluster, icrsTargetY)
+            if (cluster.size > bestSize || (cluster.size == bestSize && w > bestWeight)) {
+                bestSize = cluster.size
+                bestWeight = w
+                bestCluster = cluster
+            }
+        }
+        return bestCluster
+    }
+
+    private fun pairClusterWeight(cluster: List<AnchorCandidate>, icrsTargetY: Float): Double {
+        var total = 0.0
+        for (c in cluster) {
+            val isBracketed = (c.y1Ref - icrsTargetY) * (c.y2Ref - icrsTargetY) < 0
+            val bracketBonus = if (isBracketed) 5.0 else 1.0
+            val vDist = abs(c.cyRef - icrsTargetY)
+            total += (c.distance * bracketBonus) / (vDist + 0.05)
+        }
+        return total
+    }
+
+    private fun letterStrippedQueryWords(queryLandmarks: List<TextBlock>): List<String> =
+        queryLandmarks.map { it.text.trim() }
+            .mapNotNull { raw ->
+                if (raw.none { it.isLetter() }) null
+                else raw.filter { !it.isDigit() }.trim().takeIf { it.isNotEmpty() }
+            }
+            .sorted()
+
+    private fun evaluateTier1Veto(
+        queryWordsList: List<String>,
+        allVehicles: List<Vehicle>,
+        vehicleLandmarks: Map<Int, Set<String>>,
+    ): Map<Int, VetoResult> {
+        val queryWordsSet = queryWordsList.toSet()
+        return allVehicles.associate { currentVehicle ->
+            val myWords = vehicleLandmarks[currentVehicle.id] ?: emptySet()
+            val otherWordsPool = vehicleLandmarks.filter { it.key != currentVehicle.id }.values.flatten().toSet()
+            val vetoPool = otherWordsPool - myWords
+            val triggers = queryWordsSet.intersect(vetoPool).sorted()
+
+            currentVehicle.id to VetoResult(
+                isVetoed = triggers.isNotEmpty(),
+                reasonWord = if (triggers.isNotEmpty()) triggers.joinToString(", ") else "",
+                tierReached = 0,
+                queryWords = queryWordsList,
+                myManifest = myWords.toList().sorted(),
+                vetoPool = vetoPool.toList().sorted(),
+            )
+        }
+    }
+
+    private fun applyOneVsManyRescue(
+        results: Map<Int, VetoResult>,
+        allVehicles: List<Vehicle>,
+    ): Map<Int, VetoResult> {
+        if (!results.values.all { it.isVetoed }) return results
+        val triggerCounts = results.mapValues { (_, res) -> if (res.reasonWord.isEmpty()) 0 else res.reasonWord.split(", ").size }
+        val vehiclesWithOneTrigger = triggerCounts.filter { it.value == 1 }.keys.toList()
+        val otherVehiclesHaveManyTriggers = triggerCounts.filter { it.key !in vehiclesWithOneTrigger }.all { it.value >= 3 }
+        if (vehiclesWithOneTrigger.size == 1 && otherVehiclesHaveManyTriggers && allVehicles.size > 1) {
+            val rescuedId = vehiclesWithOneTrigger[0]
+            val rescuedResult = results[rescuedId]!!
+            val newResults = results.toMutableMap()
+            newResults[rescuedId] = rescuedResult.copy(isVetoed = false, reasonWord = "[RESCUED 1 vs 3+] Was: ${rescuedResult.reasonWord}")
+            return newResults
+        }
+        return results
+    }
+
     private fun dist(a: TextBlock, b: TextBlock): Double {
         val dx = (a.boundingBox.centerX() - b.boundingBox.centerX()).toDouble()
         val dy = (a.boundingBox.centerY() - b.boundingBox.centerY()).toDouble()
@@ -422,38 +767,28 @@ object ImageAlignmentUtils {
 
     fun performTier1Veto(queryLandmarks: List<TextBlock>, allVehicles: List<Vehicle>, engineName: String): Map<Int, VetoResult> {
         val queryWordsList = queryLandmarks.map { it.text.trim() }.sorted()
-        val queryWordsSet = queryWordsList.toSet()
         val vehicleLandmarks = allVehicles.associate { it.id to getLandmarksFromJson(it.landmarkTextBlocksJson, engineName) }
 
-        val initialResults = allVehicles.associate { currentVehicle ->
-            val myWords = vehicleLandmarks[currentVehicle.id] ?: emptySet()
-            val otherWordsPool = vehicleLandmarks.filter { it.key != currentVehicle.id }.values.flatten().toSet()
-            val vetoPool = otherWordsPool - myWords
-            val triggers = queryWordsSet.intersect(vetoPool).sorted()
-
-            currentVehicle.id to VetoResult(
-                isVetoed = triggers.isNotEmpty(),
-                reasonWord = if (triggers.isNotEmpty()) triggers.joinToString(", ") else "",
-                tierReached = 0,
-                queryWords = queryWordsList,
-                myManifest = myWords.toList().sorted(),
-                vetoPool = vetoPool.toList().sorted()
-            )
+        val firstResults = applyOneVsManyRescue(
+            evaluateTier1Veto(queryWordsList, allVehicles, vehicleLandmarks),
+            allVehicles,
+        )
+        if (!firstResults.values.all { it.isVetoed }) {
+            return firstResults
         }
 
-        if (initialResults.values.all { it.isVetoed }) {
-            val triggerCounts = initialResults.mapValues { (_, res) -> if (res.reasonWord.isEmpty()) 0 else res.reasonWord.split(", ").size }
-            val vehiclesWithOneTrigger = triggerCounts.filter { it.value == 1 }.keys.toList()
-            val otherVehiclesHaveManyTriggers = triggerCounts.filter { it.key !in vehiclesWithOneTrigger }.all { it.value >= 3 }
-            if (vehiclesWithOneTrigger.size == 1 && otherVehiclesHaveManyTriggers && allVehicles.size > 1) {
-                val rescuedId = vehiclesWithOneTrigger[0]
-                val rescuedResult = initialResults[rescuedId]!!
-                val newResults = initialResults.toMutableMap()
-                newResults[rescuedId] = rescuedResult.copy(isVetoed = false, reasonWord = "[RESCUED 1 vs 3+] Was: ${rescuedResult.reasonWord}")
-                return newResults
-            }
+        val letterWords = letterStrippedQueryWords(queryLandmarks)
+        if (letterWords.isEmpty()) {
+            return firstResults
         }
-        return initialResults
+        val letterResults = applyOneVsManyRescue(
+            evaluateTier1Veto(letterWords, allVehicles, vehicleLandmarks),
+            allVehicles,
+        )
+        if (letterResults.values.count { !it.isVetoed } == 1) {
+            return letterResults
+        }
+        return firstResults
     }
 
     fun isBlockInCrop(block: TextBlock, crop: android.graphics.RectF?, imgW: Int, imgH: Int): Boolean {

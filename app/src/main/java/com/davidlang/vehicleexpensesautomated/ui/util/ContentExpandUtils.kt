@@ -608,6 +608,159 @@ object ContentExpandUtils {
         ).toQuad()
     }
 
+    /**
+     * Clip one oriented [seed] to one convex [crop]. Both are four corners.
+     * Intersect them. The result keeps the seed u/v axes and uses only the u and v
+     * span of that intersection, so it is still four corners. A seed already inside
+     * the crop is unchanged. No overlap returns null. Does not reorder with [quadPtsTlTrBrBl].
+     */
+    fun clipOrientedSeedToConvexQuad(seed: OrientedQuad, crop: OrientedQuad): OrientedQuad? {
+        val seedPts = seed.copyPts()
+        val cropPts = crop.copyPts()
+        if (quadCornersInside(cropPts, seedPts)) return seed
+        val box = OrientedBox.fromQuad(seed) ?: return null
+        val inter = convexQuadIntersect(seedPts, cropPts)
+        if (inter.size < 3) return null
+        var u0 = Float.POSITIVE_INFINITY
+        var u1 = Float.NEGATIVE_INFINITY
+        var v0 = Float.POSITIVE_INFINITY
+        var v1 = Float.NEGATIVE_INFINITY
+        for (i in inter.indices) {
+            val (u, v) = box.proj(inter[i].first, inter[i].second)
+            if (u < u0) u0 = u
+            if (u > u1) u1 = u
+            if (v < v0) v0 = v
+            if (v > v1) v1 = v
+        }
+        if (u1 - u0 < 1e-2f || v1 - v0 < 1e-2f) return null
+        fun c(u: Float, v: Float): FloatArray = floatArrayOf(
+            box.cx + u * box.ux + v * box.vx,
+            box.cy + u * box.uy + v * box.vy,
+        )
+        val a = c(u0, v0)
+        val b = c(u1, v0)
+        val d = c(u1, v1)
+        val e = c(u0, v1)
+        return OrientedQuad(floatArrayOf(a[0], a[1], b[0], b[1], d[0], d[1], e[0], e[1]))
+    }
+
+    /**
+     * One oriented quad in [crop]'s u/v frame that covers every seed clipped to [crop].
+     * Each [seeds] entry is clipped with [clipOrientedSeedToConvexQuad]; null clips are skipped.
+     * No overlap with [crop] returns null.
+     */
+    fun unionOrientedSeedsClippedToCrop(seeds: List<OrientedQuad>, crop: OrientedQuad): OrientedQuad? {
+        val cropBox = OrientedBox.fromQuad(crop) ?: return null
+        var u0 = Float.POSITIVE_INFINITY
+        var u1 = Float.NEGATIVE_INFINITY
+        var v0 = Float.POSITIVE_INFINITY
+        var v1 = Float.NEGATIVE_INFINITY
+        var any = false
+        for (seed in seeds) {
+            val clip = clipOrientedSeedToConvexQuad(seed, crop) ?: continue
+            any = true
+            for (i in 0 until 4) {
+                val (u, v) = cropBox.proj(clip.pts[i * 2], clip.pts[i * 2 + 1])
+                if (u < u0) u0 = u
+                if (u > u1) u1 = u
+                if (v < v0) v0 = v
+                if (v > v1) v1 = v
+            }
+        }
+        if (!any) return null
+        u0 = max(u0, cropBox.u0)
+        u1 = min(u1, cropBox.u1)
+        v0 = max(v0, cropBox.v0)
+        v1 = min(v1, cropBox.v1)
+        if (u1 - u0 < 1e-2f || v1 - v0 < 1e-2f) return null
+        return OrientedBox(
+            cropBox.cx, cropBox.cy, cropBox.ux, cropBox.uy, cropBox.vx, cropBox.vy,
+            u0, u1, v0, v1,
+        ).toQuad()
+    }
+
+    private fun quadPairs(pts: FloatArray): Array<Pair<Float, Float>> =
+        Array(4) { i -> pts[i * 2] to pts[i * 2 + 1] }
+
+    private fun polyPositive(poly: Array<Pair<Float, Float>>): Boolean {
+        var a = 0.0
+        for (i in poly.indices) {
+            val j = (i + 1) % poly.size
+            a += poly[i].first.toDouble() * poly[j].second - poly[j].first.toDouble() * poly[i].second
+        }
+        return a >= 0.0
+    }
+
+    /** Signed distance to the left of directed edge AB. [positive] crop winding keeps the interior on the left. */
+    private fun halfPlaneInside(
+        ax: Float, ay: Float, bx: Float, by: Float,
+        px: Float, py: Float, positive: Boolean,
+    ): Boolean {
+        val ex = bx - ax
+        val ey = by - ay
+        val len = hypot(ex.toDouble(), ey.toDouble()).toFloat().coerceAtLeast(1e-6f)
+        val signed = (ex * (py - ay) - ey * (px - ax)) / len
+        return if (positive) signed >= -0.05f else signed <= 0.05f
+    }
+
+    private fun quadCornersInside(crop: FloatArray, seed: FloatArray): Boolean {
+        val clip = quadPairs(crop)
+        val positive = polyPositive(clip)
+        for (i in 0 until 4) {
+            val x = seed[i * 2]
+            val y = seed[i * 2 + 1]
+            for (e in clip.indices) {
+                val a = clip[e]
+                val b = clip[(e + 1) % clip.size]
+                if (!halfPlaneInside(a.first, a.second, b.first, b.second, x, y, positive)) return false
+            }
+        }
+        return true
+    }
+
+    /** Sutherland–Hodgman. Vertices are seed corners inside the crop and edge crossings. */
+    private fun convexQuadIntersect(subject: FloatArray, clipPts: FloatArray): List<Pair<Float, Float>> {
+        val clip = quadPairs(clipPts)
+        val positive = polyPositive(clip)
+        var output = quadPairs(subject).toMutableList()
+        for (i in clip.indices) {
+            if (output.isEmpty()) return emptyList()
+            val input = output
+            output = ArrayList()
+            val ax = clip[i].first
+            val ay = clip[i].second
+            val bx = clip[(i + 1) % clip.size].first
+            val by = clip[(i + 1) % clip.size].second
+            var sx = input.last().first
+            var sy = input.last().second
+            for (e in input) {
+                val ex = e.first
+                val ey = e.second
+                val eIn = halfPlaneInside(ax, ay, bx, by, ex, ey, positive)
+                val sIn = halfPlaneInside(ax, ay, bx, by, sx, sy, positive)
+                if (eIn) {
+                    if (!sIn) edgeCross(sx, sy, ex, ey, ax, ay, bx, by)?.let { output.add(it) }
+                    output.add(ex to ey)
+                } else if (sIn) {
+                    edgeCross(sx, sy, ex, ey, ax, ay, bx, by)?.let { output.add(it) }
+                }
+                sx = ex
+                sy = ey
+            }
+        }
+        return output
+    }
+
+    private fun edgeCross(
+        x1: Float, y1: Float, x2: Float, y2: Float,
+        x3: Float, y3: Float, x4: Float, y4: Float,
+    ): Pair<Float, Float>? {
+        val den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+        if (abs(den) < 1e-6f) return null
+        val t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den
+        return (x1 + t * (x2 - x1)) to (y1 + t * (y2 - y1))
+    }
+
     fun orientedFromAabb(r: Rect): OrientedQuad {
         val l = r.left.toFloat()
         val t = r.top.toFloat()

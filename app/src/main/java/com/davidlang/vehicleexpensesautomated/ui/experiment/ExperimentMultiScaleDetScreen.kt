@@ -28,15 +28,15 @@ import com.davidlang.vehicleexpensesautomated.ui.util.MultiScaleDetRunner
 private const val TAG = "MultiScaleDetUI"
 
 /**
- * Multi-scale × multi-det experiment UI.
- * Jobs run on [ExperimentJobRunner] + FGS so leaving the screen/background does not cancel.
+ * Dash ML Kit plus product_det / rot-G-- at the runner long-edges.
+ * Jobs run on [ExperimentJobRunner] + FGS so leaving the screen does not cancel.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExperimentMultiScaleDetScreen(
     navController: NavHostController,
     autoStart: Boolean = false,
-    /** Deep link auto=selected — coverage pump+dash + expense seed. */
+    /** Deep link auto=selected — dash coverage sample. */
     autoSelectedSample: Boolean = false,
 ) {
     val context = LocalContext.current
@@ -47,7 +47,7 @@ fun ExperimentMultiScaleDetScreen(
     val arch = remember { MultiScaleDetRunner.modelArchForDevice() }
     val models = remember { MultiScaleDetRunner.availableModels(context, arch) }
     val selectedOnDevice = remember(photos) {
-        val want = SelectedSamplePhotos.MULTI_SCALE.toSet()
+        val want = SelectedSamplePhotos.DASH.toSet()
         photos.count { it.displayName in want || it.file.name in want }
     }
 
@@ -58,7 +58,7 @@ fun ExperimentMultiScaleDetScreen(
             "Done → ${jobState.resultPath}"
         jobState.kind == "multi_scale_det" && jobState.status == "failed" ->
             "FAILED: ${jobState.error}"
-        else -> "Ready — multi-scale × multi-det + expand P (FGS background-safe)"
+        else -> "Ready — dash ML Kit + paddle long-edge det/rec (FGS background-safe)"
     }
 
     fun startJob(
@@ -87,12 +87,12 @@ fun ExperimentMultiScaleDetScreen(
     fun startSelectedSample() {
         startJob(
             maxPhotos = null,
-            allowNames = SelectedSamplePhotos.MULTI_SCALE,
-            allowDomains = setOf("pump", "dash", "expense"),
+            allowNames = SelectedSamplePhotos.DASH,
+            allowDomains = setOf("dash"),
         )
     }
 
-    // Auto-start only if idle. Deep-link auto uses 5-photo smoke (full run is huge).
+    // auto=1 is the first-5 dash smoke. auto=selected is the dash sample.
     androidx.compose.runtime.LaunchedEffect(autoStart, autoSelectedSample) {
         if (ExperimentJobRunner.isRunning()) return@LaunchedEffect
         when {
@@ -107,18 +107,23 @@ fun ExperimentMultiScaleDetScreen(
             .padding(16.dp)
             .verticalScroll(rememberScrollState()),
     ) {
+        Text(
+            "Dash ML Kit + paddle long-edge det/rec",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+        )
         Text(status, style = MaterialTheme.typography.bodyMedium)
         Text(
-            "arch=$arch · models (${models.size}): ${models.joinToString()}\n" +
-                "Outers=${MultiScaleDetRunner.OUTER_SCALES} · strategies=single/square/hspan/vspan · " +
-                "rows=${MultiScaleDetRunner.effectiveRowCount()} · expand=P · threads=4 · " +
-                "deskew ang≥1/≥2 from u8 heat · FGS keeps the job alive if you leave this screen.",
+            "arch=$arch · product_det (${models.joinToString().ifEmpty { "missing" }})\n" +
+                "Long-edges=${MultiScaleDetRunner.OUTER_SCALES} · single feed · " +
+                "rows=${MultiScaleDetRunner.effectiveRowCount()} · " +
+                "rot-G-- vert 0.34 L/R 0.54/0.55 · no expand · no seed merge · " +
+                "FGS keeps the job alive if you leave this screen.",
             style = MaterialTheme.typography.labelSmall,
         )
         Text(
-            "Photos: ${photos.size} " +
-                "(pump=${counts["pump"] ?: 0}, dash=${counts["dash"] ?: 0}, " +
-                "expense=${counts["expense"] ?: 0}). Existing pump+dash; expense seeded from APK.",
+            "Dash photos: ${counts["dash"] ?: photos.size}. " +
+                "Full run is every dash photo. Pump and expense are not collected.",
             style = MaterialTheme.typography.labelSmall,
         )
         if (running) {
@@ -143,7 +148,7 @@ fun ExperimentMultiScaleDetScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                "Run full multi-scale × ${models.size} models (${photos.size} photos)",
+                "Run all dash photos (${photos.size})",
                 fontWeight = FontWeight.Bold,
             )
         }
@@ -152,7 +157,7 @@ fun ExperimentMultiScaleDetScreen(
             enabled = !ExperimentJobRunner.isRunning() && photos.isNotEmpty() && models.isNotEmpty(),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Smoke: first 5 photos only")
+            Text("Smoke: first 5 dash photos")
         }
         Button(
             onClick = { startSelectedSample() },
@@ -160,22 +165,21 @@ fun ExperimentMultiScaleDetScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                "Selected sample (pump+dash+expense ${SelectedSamplePhotos.MULTI_SCALE.size}; " +
-                    "on device $selectedOnDevice)",
+                "Selected dash sample (${SelectedSamplePhotos.DASH.size}; on device $selectedOnDevice)",
                 fontWeight = FontWeight.Bold,
             )
         }
         Text(
-            "Selected sample = coverage pump+dash + seeded expense " +
-                "(${SelectedSamplePhotos.EXPENSE.joinToString()}). " +
-                "Deep link: vehicleexpenses://experiment/multiscale_det?auto=selected",
+            "Selected sample = ${SelectedSamplePhotos.DASH.size} dash names. " +
+                "Deep link: vehicleexpenses://experiment/multiscale_det " +
+                "(auto=1 smoke, auto=selected dash sample).",
             style = MaterialTheme.typography.labelSmall,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Models: product + v4/v5 mobile only (no server; Lite max 4096). " +
-                "Expense domain uses box cap 2000 (else 200). " +
-                "Reports: …/multi_scale_det_reports/ flat multi_scale_det_*_<ts>.*; tray cells/ only.",
+            "One ML Kit pass on the raw photo and one on the deskewed copy. " +
+                "Each long-edge is one product_det square feed plus rot-G-- recognition " +
+                "on both grays. Reports: …/multi_scale_det_reports/.",
             style = MaterialTheme.typography.labelSmall,
         )
     }

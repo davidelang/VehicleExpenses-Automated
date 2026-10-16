@@ -80,7 +80,9 @@ data class PhotoPathwayResult(
     val deskewedBase64: String,
     val discoveryResult: OcrResult,
     val discoveryLandmarks: List<TextBlock>,
-    val harnessResults: Map<String, OcrHarnessResult> = emptyMap()
+    val harnessResults: Map<String, OcrHarnessResult> = emptyMap(),
+    val tOdoReadMs: Long = 0,
+    val similarity: Map<String, String> = emptyMap(),
 )
 
 data class ProcessedPhotoResult(

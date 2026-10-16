@@ -95,10 +95,9 @@ object SelectedSamplePhotos {
     )
 
     /**
-     * Multi-scale det "Selected sample": coverage pump+dash **plus** expense seed
-     * (expense exercises the higher heatmap box cap).
+     * Multi-scale det selected sample: dash coverage only.
      */
-    val MULTI_SCALE: List<String> = PUMP + DASH + EXPENSE
+    val MULTI_SCALE: List<String> = DASH
 
     private val IMAGE_EXTS = setOf("jpg", "jpeg", "png", "dng")
 
@@ -122,7 +121,10 @@ object SelectedSamplePhotos {
         return n to want.size
     }
 
-    /** Line-number map for alignment reports (1-based in list order among present). */
+    /**
+     * Membership map for subset experiment buttons: basename → placeholder int (list order among present).
+     * Report `#` / JSON `line_number` come from the full name-sorted photo directory in the experiment runner, not these values.
+     */
     fun subsetMapPresent(dir: File, want: List<String>): Map<String, Int> {
         return presentInOrder(dir, want).mapIndexed { i, name -> name to (i + 1) }.toMap()
     }

@@ -99,25 +99,24 @@ Metadata on expand columns: `content_expand_jump` / `content_expand_jump_frac` /
 ABI-split debug APKs ship only that pack + that ABI’s natives (`app-arm64-debug.apk` / `app-x86_64-debug.apk` / `app-armv7-debug.apk`).  
 Recorded in JSON `product_path` / `product_dir` and branch metadata. Run both devices in parallel; compare OCR, heats, and wall times (`t_total_flow_ms`, `t_pd_inference_*`).
 
-## Multi-scale det + expand P (device matrix)
+## Dash ML Kit + paddle long-edge det/rec
 
-**Screen:** drawer → **Multi-scale det + expand P** (`ExperimentMultiScaleDetScreen` / `MultiScaleDetRunner`).  
-**Deep link:** `vehicleexpenses://experiment/multiscale_det?auto=1`
+**Screen:** drawer → **Dash ML Kit + paddle long-edge det/rec** (`ExperimentMultiScaleDetScreen` / `MultiScaleDetRunner`).  
+**Deep link:** `vehicleexpenses://experiment/multiscale_det` — `auto=1` is the first 5 dash photos; `auto=selected` is `SelectedSamplePhotos.DASH`.
 
 | | |
 |--|--|
-| **Background** | Jobs use **`ExperimentJobRunner`** (app-scoped) + **`ExperimentForegroundService`** (dataSync FGS + partial wake lock) so leaving the UI does not cancel multi-hour runs. |
-| **Det models (columns)** | `product_det` only. v4/v5 mobile and server dets are unscheduled and not in the APK (`third_party/paddle/exp_det_ab_unscheduled/`). See `docs/obsolete/EXPERIMENT_DET_MODELS.md`. |
-| **Threads** | 4 |
-| **Scales (rows)** | long-edge matrix with strategy rows (single / square / hspan / vspan); maxLite caps product 2048 / v4 1504 |
-| **Tiling** | when outer > model maxLite: square / hspan / vspan with ≥30% overlap max-merge heat |
-| **Expand** | **P** = `ContentExpandUtils.Mode.INTERIOR_ENERGY`, `maxFrac=1.0`, jump **off** (option exists) |
-| **Overlay** | semi-transparent **red** heat fill + **red** seed rect + **blue** expand-P rect (BGR→RGB on export) |
-| **Photos** | Existing **pump_photos** + **dash_photos**; expense seeded from APK `experiment/receipt/PXL_20260809_094107925.jpg` |
-| **Reports** | `files/multi_scale_det_reports/` **flat** — `multi_scale_det_report_<ts>.html`, `results_<ts>.sparse`, `status/manifest/cursor_<ts>.*` filled by collapser (1 min ticks); tray only: `cells/` (pre-merge fragments, purged). No `run_*` subdirs. Fetch via `fetch_latest_reports.py`. |
-| **Pipeline** | Stage 1 skeleton → stage 2 **scale sets** (`4096` alone → `2048` alone → ≤1024); one predictor per model; global `bufferSetA/B` 4096² capacity; `MEM`/`DETECT_*` during detect; collapser row-major. |
+| **Background** | Jobs use **`ExperimentJobRunner`** (app-scoped) + **`ExperimentForegroundService`** (dataSync FGS + partial wake lock, kind `multi_scale_det`) so leaving the UI does not cancel the run. Collapser stays (60 s ticks). |
+| **Photos** | `dash_photos` only. No pump photos. No expense receipt seed. Full run is every dash photo. Smoke is the first 5. Selected sample is `SelectedSamplePhotos.DASH`. |
+| **ML Kit** | Once per photo on the ingested raw photo and once on one deskewed copy. `performLandmarkDiscovery`. Angle from `OdometerOcrUtils.calculateAverageTextAngle` at long-edge 256. Second buffer, same max-side as the master (4096 capacity), rotated by `OdometerOcrUtils.rotate(work, -mlAngle)`. HTML has two cells, raw and deskew, and each rowspans the long-edge rows. Each cell is a preview of that side’s gray (same preview cap as the paddle overlay) with the landmark bounding boxes drawn, then one landmark recognition string per line. The deskew cell also shows the angle and the rotation. No width, height, left, top, right, or bottom in the HTML. The sparse JSON still stores those box fields. |
+| **Long-edges** | Single feed, ascending: 224, 256, 384, 512, 608, 768, 1024, 2048. No 64 or 96. No 4096 detection row. No square, hspan, or vspan rows. No skip of outer &lt; 512. |
+| **Feed** | The runner’s square letterbox at that long-edge (resize so the long content edge is the requested side, then top-left `populateMonoUInt8` into a side×side tensor). Not `prepareScale` and not `deskewSetFor` (those clamp every long-edge above 256 onto 608). A 1024 cell’s feed side is 1024. |
+| **Detector** | `product_det` only. Threads 4. `HEATMAP_BOX_MIN_AREA_RECT`, heat u8 ≥ 1, grow 0, dilate 0, max boxes 200. `capped` when the count equals 200. Eight corners are the seed quad. No `pruneOrientedQuads`, `pruneRectsToTopN`, or `doCrossScaleRedboxFilter`. No union across long-edges. No interior-energy expand. |
+| **Recognition** | `ContentExpandUtils.calculatedOrientedUv` with Set rot-G-- vert 0.34, left 0.54, right 0.55. No seed merge. Raw gray: `recognizeRotGmmQuads` (`expRotGmmRecognize`) on that gray and the blue quads; store the as-is text. Deskew gray: for each blue quad, `ocrPumpFeedOriented40` then `anchoredEngineV3.recognize` on the rec crop; store `debugText`. Parked deskew Set G-- verts 0.1 / 0.2 / 0.4 are not this run. Each long-edge stores every seed and its recognition on both the raw gray and the deskewed gray. |
+| **Report cells** | Columns: photo, long-edge, ML Kit raw, ML Kit deskew, paddle raw, paddle deskew. Each paddle long-edge is its own raw cell and its own deskew cell. Each paddle cell is that side’s red-seed / blue-quad overlay, then one stored recognition string per blue box, in seed order, including an empty string (raw as-is, deskew `debugText`). No seed count, capped flag, feed size, content size, probabilities, u/v spans, AABBs, seed corners, or blue corners in the HTML. Sparse JSON under `multi_scale_det_reports/` still stores the ML Kit boxes and the paddle seed geometry, blue geometry, and probabilities, ML Kit once per photo. Flat files: `multi_scale_det_report_<ts>.html` (parts), `results_<ts>.sparse`, `status/manifest/cursor_<ts>.*`; tray only: `cells/`. |
+| **Unchanged** | Scheduled pump columns and Quick Fill stay on their current processors. |
 
-HTML layout: photo id column + scale column + **one cell per det model** (host-style matrix).
+A dash photo’s report has one ML Kit raw list, one ML Kit deskew list, and sixteen paddle lists (eight long-edges × raw and deskew).
 
 **Retired multi-set flows and dead helpers** (recover with tags + full catalog):
 
