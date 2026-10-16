@@ -88,7 +88,7 @@ Currency symbols on cost fields and **G/L** on volume fields are tappable: open 
 
 ## First-time setup: Manage Vehicles
 
-OCR and **automatic vehicle matching** work best after you register each vehicle with a **reference dashboard photo**, crop the odometer, and run **Discovery** so the app stores landmark text for that dash. (How landmarks are chosen and matched will be documented in more detail in a later update.)
+OCR and **automatic vehicle matching** work best after you register each vehicle with a **reference dashboard photo**, run **Discovery**, set the odometer crop from a paddle seed, and save landmarks for that dash. The screenshots below still show the older drag-draw crop UI; live behavior is seed-based — see [MANAGE_VEHICLES_DRAW.md](../obsolete/MANAGE_VEHICLES_DRAW.md).
 
 ### Open Manage Vehicles
 
@@ -100,11 +100,12 @@ Menu → **Manage Vehicles**. Choose a vehicle (or **Add New Vehicle**).
 
 1. Open the **Vehicle** dropdown → pick a vehicle or **Add New Vehicle**.
 2. Capture or pick a clear **reference dash photo** (full instrument cluster, well lit, phone roughly square-on). Use **Take Photo** or **Gallery**.
-3. Draw crops:
-   - **Odo Crop** — rectangle tightly around the odometer digits (button shows **Done Odo** while that mode is active).
-   - **Ignore Crop** — optional region to ignore (clock, radio, etc.).
-   - **Edit Crops** — adjust existing rectangles.
-4. Tap **Run Discovery** — multi-engine OCR finds landmark words outside the crops.
+3. Tap **Run Discovery** — paddle detection places yellow **seeds** on the photo (landmarks use the same `"ML Kit"` JSON as before).
+4. Set crops from seeds:
+   - **Odo Crop** → tap the seed over the odometer digits (button shows **Done Odo** while active).
+   - **Ignore Crop** (optional) → tap a seed over clock/radio/etc. to exclude that region from landmarks.
+   - **Edit Crops** — drag handles to adjust rectangles after seed placement.
+   - **Clear Crops** — removes both rectangles in memory; tap **Save Changes** / **Create Vehicle** to persist.
 5. Review with **Show Landmarks**. Use **Edit OCR** to fix misreads or **add** text that was missed.
 6. Fill **Vehicle Name** (required), plus make/model/year/plate as you like.
 7. Tap **Create Vehicle** or **Save Changes** (requires name + reference photo for a new vehicle).

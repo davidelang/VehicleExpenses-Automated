@@ -112,7 +112,7 @@ import com.davidlang.vehicleexpensesautomated.ui.settings.SyncingScreen
 import com.davidlang.vehicleexpensesautomated.ui.theme.VehicleExpensesAutomatedTheme
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
-import com.davidlang.vehicleexpensesautomated.ui.vehicle.ManageVehiclesScreen
+import com.davidlang.vehicleexpensesautomated.ui.vehicle.ManageVehicles2Screen
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import javax.inject.Inject
@@ -661,7 +661,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(innerPadding)
                             ) {
                                 composable("quickfill") { QuickFillupScreen(navController = navController) }
-                                composable("managevehicles") { ManageVehiclesScreen(navController = navController) }
+                                composable("managevehicles") { ManageVehicles2Screen(navController = navController) }
                                 composable("expense") {
                                     ExpenseEntryScreen(
                                         navController = navController,

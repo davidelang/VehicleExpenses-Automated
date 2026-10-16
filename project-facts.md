@@ -4,6 +4,9 @@ Cold-start map so agents do not hunt or invent wrong procedures. Anything discov
 
 Read in full early on startup/new cycle.
 
+## Manage Vehicles (drawer)
+- Route **`managevehicles`** is the paddle seed screen (`ManageVehicles2Screen` composable). The retired drag-crop screen is documented in `docs/obsolete/MANAGE_VEHICLES_DRAW.md`.
+
 ## App docs (master `docs/`)
 - `README.md` — GitHub front page
 - `docs/README.md` — index

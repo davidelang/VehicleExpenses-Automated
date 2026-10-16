@@ -10,7 +10,7 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 
 1. **Quick Fill-up** (`quickfill`) — start destination; camera/OCR fuel entry  
 2. **Start trip** (`triptracking`) — open-only trip segments as fuel rows with Trip Type  
-3. **Manage Vehicles** (`managevehicles`) — vehicles, reference dash photo, crops, landmarks  
+3. **Manage Vehicles** (`managevehicles`) — vehicles, reference dash photo, paddle discovery seeds, tap-to-set odo/ignore crops, landmarks (retired draw UI: [MANAGE_VEHICLES_DRAW.md](../obsolete/MANAGE_VEHICLES_DRAW.md))  
 4. **New expense** (`expense`) — non-fuel expenses (create; edit via `expense/{id}`)  
 5. **Reports** (`reports_lab`) — product reports hub (Lab); not experiment-gated  
 6. **Settings** (`settings`) — units, photos, debug QF, experiment gate  

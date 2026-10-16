@@ -206,7 +206,7 @@
 <p><strong>Via Reports hub (not main drawer):</strong> Expenses list · Fill history.</p>
 <hr />
 <h2 id="first-time-setup-manage-vehicles">First-time setup: Manage Vehicles</h2>
-<p>OCR and <strong>automatic vehicle matching</strong> work best after you register each vehicle with a <strong>reference dashboard photo</strong>, crop the odometer, and run <strong>Discovery</strong> so the app stores landmark text for that dash. (How landmarks are chosen and matched will be documented in more detail in a later update.)</p>
+<p>OCR and <strong>automatic vehicle matching</strong> work best after you register each vehicle with a <strong>reference dashboard photo</strong>, run <strong>Discovery</strong>, set the odometer crop from a paddle seed, and save landmarks for that dash. The screenshots below still show the older drag-draw crop UI; live behavior is seed-based — see <a href="../obsolete/MANAGE_VEHICLES_DRAW.md">MANAGE_VEHICLES_DRAW.md</a>.</p>
 <h3 id="open-manage-vehicles">Open Manage Vehicles</h3>
 <p>Menu → <strong>Manage Vehicles</strong>. Choose a vehicle (or <strong>Add New Vehicle</strong>).</p>
 <p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Manage Vehicles with reference dash, crops, and discovery" src="images/r1-manage-vehicles-crops.jpg" /></p>
@@ -214,11 +214,12 @@
 <ol>
 <li>Open the <strong>Vehicle</strong> dropdown → pick a vehicle or <strong>Add New Vehicle</strong>.</li>
 <li>Capture or pick a clear <strong>reference dash photo</strong> (full instrument cluster, well lit, phone roughly square-on). Use <strong>Take Photo</strong> or <strong>Gallery</strong>.</li>
-<li>Draw crops:<br />
-   - <strong>Odo Crop</strong> — rectangle tightly around the odometer digits (button shows <strong>Done Odo</strong> while that mode is active).<br />
-   - <strong>Ignore Crop</strong> — optional region to ignore (clock, radio, etc.).<br />
-   - <strong>Edit Crops</strong> — adjust existing rectangles.</li>
-<li>Tap <strong>Run Discovery</strong> — multi-engine OCR finds landmark words outside the crops.</li>
+<li>Tap <strong>Run Discovery</strong> — paddle detection places yellow <strong>seeds</strong> on the photo (landmarks use the same <code>"ML Kit"</code> JSON as before).</li>
+<li>Set crops from seeds:<br />
+   - <strong>Odo Crop</strong> → tap the seed over the odometer digits (button shows <strong>Done Odo</strong> while active).<br />
+   - <strong>Ignore Crop</strong> (optional) → tap a seed over clock/radio/etc. to exclude that region from landmarks.<br />
+   - <strong>Edit Crops</strong> — drag handles to adjust rectangles after seed placement.<br />
+   - <strong>Clear Crops</strong> — removes both rectangles in memory; tap <strong>Save Changes</strong> / <strong>Create Vehicle</strong> to persist.</li>
 <li>Review with <strong>Show Landmarks</strong>. Use <strong>Edit OCR</strong> to fix misreads or <strong>add</strong> text that was missed.</li>
 <li>Fill <strong>Vehicle Name</strong> (required), plus make/model/year/plate as you like.</li>
 <li>Tap <strong>Create Vehicle</strong> or <strong>Save Changes</strong> (requires name + reference photo for a new vehicle).</li>
