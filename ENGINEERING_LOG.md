@@ -11634,3 +11634,203 @@ Plan ocr-geom-rec-prep-not-sizes-20260921-0445-plan.md. Tag detect-ocr-work-2/bu
 - Ident7.kt ports ident7.py 3decbb97 (narrow-1 off, I7_MEDCAP=0) plus the run_ident line merge and the T=0.037 printed fallback.
 - Hook is after Set ink-color-tight-vsp and Set rot-color-tight-vsp in ExperimentPumpScreen. Same bitmap, ocrSourceRects, and candidates. Existing ink branch outputs and t_total_flow_ms are unchanged.
 - Human deploys and runs the 168-photo score. No pump run in this turn.
+
+## 2026-10-09 - Execute dash multi-scale ML Kit and paddle collection
+
+- Plan: dev-ai-interaction/plans/dash-multiscale-mlkit-paddle-20261009-0526-plan.md
+- Worktree: agent-1, branch test-new-paddle-landmarks
+- Status: APPROVED
+- Phase 1: dash photos only; ML Kit once on raw and deskew; product_det single feed plus rot-G-- rec at the listed long-edges; no seed merge, no expand P. No deploy.
+
+## 2026-10-09 - Dash multi-scale collection landed
+
+- Plan: dev-ai-interaction/plans/dash-multiscale-mlkit-paddle-20261009-0526-plan.md
+- Worktree: agent-1, branch test-new-paddle-landmarks
+- Status: CODE LANDED
+- Flows section matches the dash-only ML Kit and single-feed rot-G-- runner. No deploy.
+
+## 2026-10-09 - Dash multi-scale keep recognizer
+
+- **Status:** APPROVED
+- **Plan:** dev-ai-interaction/plans/dash-multiscale-keep-recognizer-20261009-1619-plan.md
+- **Activity:** Keep the startup recognizers across `releaseAllPredictors`. A pack reload in `loadProductionModels` still frees and replaces them. Raw multi-scale OCR stays `recognizeRotGmmQuads`. Deskew multi-scale OCR uses `ocrPumpFeedOriented40` and `anchoredEngineV3.recognize`. Drop long-edges 64 and 96.
+
+## 2026-10-09 - Dash multi-scale HTML columns
+
+- **Status:** APPROVED
+- **Plan:** dev-ai-interaction/plans/dash-multiscale-html-values-20261009-1708-plan.md
+- **Activity:** Split the dash multi-scale HTML into photo, long-edge, ML Kit raw, ML Kit deskew, paddle raw, and paddle deskew. Cells show the side image and recognition strings. Sparse JSON keeps boxes, geometry, and probabilities.
+
+## 2026-10-09 - Dash multi-scale HTML columns landed
+
+- **Status:** CODE LANDED
+- **Plan:** dev-ai-interaction/plans/dash-multiscale-html-values-20261009-1708-plan.md
+- **Activity:** HTML columns are photo, long-edge, ML Kit raw, ML Kit deskew, paddle raw, and paddle deskew. Each cell shows that side’s image and recognition strings. Sparse JSON still stores ML Kit boxes and paddle geometry and probabilities. Flows section matches. No deploy.
+
+## 2026-10-09 - Alignment four-column crop warp
+
+- **Activity:** Approved plan `dev-ai-interaction/plans/alignment-four-column-crop-warp-20261009-2348-plan.md`. Phase 1 replaces Set J / L / V with four columns. Each column uses its own veto. Deskew still rotates the full image, runs anchorAlign, and reads the odometer on the Set V valley path. Paddle columns discover landmarks with product_det at long-edge 2048 and rot-G--.
+- **Files:** `ExperimentAlignmentScreen.kt`, `MultiScaleDetRunner.kt`
+
+## 2026-10-10 - Alignment four-column crop warp continues
+
+- Plan: dev-ai-interaction/plans/alignment-four-column-crop-warp-20261009-2348-plan.md
+- Worktree: agent-1, branch test-new-paddle-landmarks. Status stays APPROVED.
+- 95064b78 already has four columns, each column's own veto, deskew anchorAlign, the Set V valley read, and product_det at long-edge 2048. ImageAlignmentUtils.kt was not in that commit. Raw columns still do not warp or read.
+- This session does not reset and does not revert 95064b78. Next is the raw similarity and the crop-buffer warp, then the column times. No deploy.
+
+## 2026-10-10 - Alignment column times
+
+- Plan: dev-ai-interaction/plans/alignment-four-column-crop-warp-20261009-2348-plan.md. Phase 3.
+- Each column JSON pathway stores t_detect_ms, t_rotate_or_warp_ms, t_odo_read_ms, and t_total_ms. The HTML total beside the odometer is that sum.
+- Raw geom time is the crop warp, not a full-image rotate. Raw pathways also store similarity scale, rotation_deg, tx, and ty. Deskew keeps the anchorAlign metadata on the alignment trace.
+- No deploy.
+
+## 2026-10-13 - Raw column main image odometer quad
+
+- Plan: dev-ai-interaction/plans/alignment-raw-main-image-odo-quad-20261013-1128-plan.md
+- Phase 1 maps the reference odometer rect through the raw similarity into query pixels. Phase 2 snapshots the unrotated photo with that quad. Deskew and the small crop thumbs stay as they are. No deploy.
+
+## 2026-10-13 - Raw odometer quad warp
+
+- Plan: dev-ai-interaction/plans/alignment-raw-odo-quad-warp-20261013-1151-plan.md
+- Phase 1: warpOdometerCrop samples odometerQuadQueryPixels (left-top, right-top, right-bottom, left-bottom) into odo.p.mat through warpQuadToHorizontalStrip. No quadPtsTlTrBrBl reorder. UV set to 128. The hand-built chroma affine is gone.
+- Phase 2: same function. Corner order is the drawn quad, so a several-degree tilt and a tens-of-degree tilt both keep the reference top at the top of the buffer. Deskew is untouched.
+- No deploy.
+
+## 2026-10-13 - Alignment raw seed to rec
+
+- Plan: dev-ai-interaction/plans/alignment-raw-seed-to-rec-20261013-1241-plan.md
+- Phase 1: product_det 2048 keeps each seed's eight photo-pixel corners on TextBlock.points, including empty rot-G text. Rot-G pads and veto strings stay as they are. No deploy.
+
+## 2026-10-13 - Alignment seed clip to odo quad
+
+- Plan: dev-ai-interaction/plans/alignment-raw-seed-to-rec-20261013-1241-plan.md
+- Phase 2: clipOrientedSeedToConvexQuad intersects one oriented seed with one convex crop. The result keeps the seed u/v axes and the u/v span of that intersection. A seed already inside is unchanged. No overlap returns null. Corners are not reordered with quadPtsTlTrBrBl. No deploy.
+
+## 2026-10-13 - Alignment raw seed columns
+
+- Plan: dev-ai-interaction/plans/alignment-raw-seed-to-rec-20261013-1241-plan.md
+- Phase 3: report columns are ML Kit raw, ML Kit raw seed, ML Kit deskew, Paddle raw, Paddle raw seed, Paddle deskew. Seed columns keep the unfiltered seeds, pad the largest in-quad seed with the rot-G factors, clip that pad to the red quad, and read it with ocrPumpFeedOriented40 plus recognizeNumericDecimal. Raw columns still warp and run the valley detect. No deploy.
+
+## 2026-10-13 - Alignment run failures button
+
+- Plan: dev-ai-interaction/plans/alignment-run-failures-button-20261013-1306-plan.md
+- Run failures uses the newest alignment_results_*.json and ground_truth_odo.json in experiment_reports. A photo is in the subset when any report column has neither Raw nor Bin-Trials equal to that photo's ground-truth digits. A ground-truth value ending in ? is skipped. Missing report, missing ground truth, or an empty subset sets status and does not start. No deploy.
+
+## 2026-10-13 - Alignment run failures fixed list
+
+- Plan: dev-ai-interaction/plans/alignment-run-failures-button-20261013-1306-plan.md
+- Restored ExperimentAlignmentScreen.kt worktree to 31dad8df before this edit. Run failures uses a fixed list of 11 photo names and startAlignJob for names present in experiment_photos. It does not read alignment_results or ground_truth_odo.json. No deploy.
+
+## 2026-10-13 - Alignment run failures button wired
+
+- Plan: dev-ai-interaction/plans/alignment-run-failures-button-20261013-1306-plan.md
+- Run failures button calls startAlignJob with ALIGNMENT_RUN_FAILURE_PHOTOS names present in experiment_photos; empty subset sets status and does not start. No deploy.
+
+## 2026-10-13 - Alignment subset full-run report rows
+
+- Plan alignment-subset-full-report-rows-20261013-1655: HTML/JSON/log `#` use `allPhotos.indexOfFirst` in `runAlignmentExperiment`; pump comments; `subsetMapPresent` KDoc clarified.
+
+## 2026-10-13 - Landmark dialog mutable bitmap
+
+- Decode reference photo with inMutable; filter failures still show photo; landmark grid when decode fails.
+
+## 2026-10-13 - alignment-veto-letters-and-raw-angle-cluster
+
+- Letter-stripped second veto pass when all vehicles vetoed after rescue; rawSimilarity uses largest ±4° rotation cluster with distance-weight tie-break.
+- Plan: dev-ai-interaction/plans/alignment-veto-letters-and-raw-angle-cluster-20261013-1732-plan.md
+- Commit: 3b384540; tag test-new-paddle-landmarks/builds
+
+## 2026-10-15 - Manage Vehicles odo buttons (no ignore crop)
+
+- Phase 1 start: replace Odo Crop / Edit Crops / Ignore Crop / Clear Crops with Edit Odo/Save and Clear Odo/Select Odo. This screen writes otherTextCrop* only as null. Help and tutorial drop Ignore Crop.
+
+## 2026-10-15 - Manage Vehicles crop Save/Clear must not reload the form
+
+- Fixup: crop Save/Clear still writes odometerCrop* and null otherTextCrop*, and includes the on-screen photo when it replaced the saved file. The hydration effect ignores that echo (updatedAt, blank sync id, cloudManifest) so unsaved name, make, model, year, plate, digits, rollover, landmarks, and seeds stay. Select Odo still does not write.
+- File: app/src/main/java/com/davidlang/vehicleexpensesautomated/ui/vehicle/ManageVehicles2Screen.kt
+- Plan: dev-ai-interaction/plans/manage-vehicles-odo-buttons-20261015-0212-plan.md
+
+## 2026-10-15 - manage-vehicles odo crop echo keeps discovery seeds
+
+- Plan: dev-ai-interaction/plans/manage-vehicles-odo-buttons-20261015-0212-plan.md
+- Crop Save/Clear changes vehicleHydrationKey. That cancelled open-vehicle paddle discovery, and the echo return did not start it again, so Select Odo had no seeds.
+- Discovery runs on the screen coroutine scope, not as a child of that LaunchedEffect, so a crop echo does not cancel it. If it is not still running for the on-screen photo and has not already settled, the echo starts it without hydrating the form.
+
+## 2026-10-15 - Manage Vehicles docs and screenshots
+
+- Phase 1 start: replace Ignore Crop / Edit Crops / Clear Crops wording in the manual and quick guide, and recapture Manage Vehicles shots from the deployed Pixel 6 Pro (raven, one tls transport). Help and tutorial already say Select Odo / Save. Do not change crop behavior. Do not deploy or reinstall.
+
+## 2026-10-15 - Manage Vehicles docs and screenshots landed
+
+- Manual and quick guide now say Run Discovery, Select Odo, tap the seed, adjust, Save, Edit Odo, and Clear Odo. The drag-draw screenshot sentence is gone. Help and tutorial strings were already Select Odo / Save and were left. Crop behavior was not changed.
+- Pixel 6 Pro (raven, tls transport adb-19231FDEE00BG9-6XI5do) versionName test-new-paddle-landmarks-start-84-gd5ea3c77+so45e4733a. Live buttons were Edit Odo and Clear Odo. No Ignore Crop button. Crops shot has yellow seeds and one blue odometer box. Landmarks dialog has no red ignore overlay. Name-field shots replace the old Ignore Crop frames. vehicle_dash.jpg is Quick Fill and was left.
+
+## 2026-10-15 - PR prepared for test-new-paddle-landmarks
+
+- PR prepared: dev-ai-interaction/PRs/PR-test-new-paddle-landmarks.md
+
+## 2026-10-15 - PR prepared for test-new-paddle-landmarks
+
+- PR prepared: dev-ai-interaction/PRs/PR-test-new-paddle-landmarks.md
+
+## 2026-10-15 - history rewrite redo (backup tag backup-test-new-paddle-landmarks kept)
+
+- Branch test-new-paddle-landmarks, reference backup-test-new-paddle-landmarks (01a397294).
+
+## 2026-10-15 - reset to e7f1d33ea done
+
+- Reset to merge-base with master; log kept; infra kept: 42 path(s).
+
+## 2026-10-15 - Archive five obsolete research notes.
+
+- Index the purged-engine and sandbox-researcher notes under docs/obsolete.
+
+## 2026-10-15 - Read alignment seeds as an overlap union with a 0.40 pad.
+
+- Alignment seed read is the overlap union inside the red quad, padded 0.40, with Raw and Bin-Trials columns, the failure subset, and the letter veto.
+
+## 2026-10-15 - Draw landmark OCR with Atkinson Hyperlegible.
+
+- Landmark OCR text uses Atkinson Hyperlegible, and the OFL notice is tracked.
+
+## 2026-10-15 - Decode landmarks with a greedy charset.
+
+- Landmark decode walks a greedy charset, and the slash-insensitive veto uses that text.
+
+## 2026-10-15 - Size landmark dialog text to the crop height.
+
+- Landmark dialog text is sized from the crop height.
+
+## 2026-10-15 - Remove and undo landmark rows in the editor.
+
+- The landmark editor removes a row and can undo that removal.
+
+## 2026-10-15 - Show the selected landmark box in red.
+
+- The landmark box that is selected is drawn in red.
+
+## 2026-10-15 - Write EXIF orientation from rotationDegrees and the accelerometer.
+
+- Saved photo EXIF orientation comes from rotationDegrees and the accelerometer.
+
+## 2026-10-15 - Make Manage Vehicles the paddle seed screen.
+
+- Manage Vehicles is the paddle seed screen: discovery, seeds under existing crops, and the 0.6/0.8 seed box. The retired drag-crop screen is docs/obsolete/MANAGE_VEHICLES_DRAW.md.
+
+## 2026-10-15 - Switch Manage Vehicles crops to Edit Odo, Save, Clear Odo, and Select Odo.
+
+- Manage Vehicles crops use Edit Odo, Save, Clear Odo, and Select Odo. Ignore crop is gone.
+
+## 2026-10-15 - Call the paddle seed reader from Quick Fill and batch dash.
+
+- Quick Fill, Start trip, and batch dash call the paddle seed reader.
+
+## 2026-10-15 - Remove ML Kit text recognition from experiments and Gradle.
+
+- Experiments and Gradle no longer use ML Kit text recognition. The iterative algorithm note is docs/obsolete/MLKIT_ITERATIVE_ALGORITHM.md.
+
+## 2026-10-15 - PR prepared
+
+- PR prepared, path dev-ai-interaction/PRs/PR-test-new-paddle-landmarks.md

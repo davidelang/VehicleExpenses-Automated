@@ -23,11 +23,10 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 ## OCR & Image Processing
 
 ### `OcrHarness.kt`
-- `OcrHarness` (Object): Production OCR orchestration (`runDiscovery`, `runAutoFillPipeline` = alignment Set V valley expand, `runPumpCostVolPipeline`).
+- `OcrHarness` (Object): Production OCR orchestration (`runAutoFillPipeline` = alignment Set V valley expand, `runPumpCostVolPipeline`).
 - `OcrHarnessResult`: Structured harness output for experiments and Quick Fill debug.
 
 ### `OcrEngine.kt`
-- `MlKitEngine`: Implementation of `OcrEngine` using Google's ML Kit.
 - `OcrResult`, `TextBlock`: Shared OCR result types.
 
 ### `NativePaddleEngine.kt`

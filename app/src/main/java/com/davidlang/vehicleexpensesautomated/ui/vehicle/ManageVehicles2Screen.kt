@@ -11,6 +11,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -37,27 +38,25 @@ import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.forManageList
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.LandmarkDebugDialog
+import com.davidlang.vehicleexpensesautomated.ui.components.LandmarkGlyphFont
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import org.opencv.core.CvType
+import org.opencv.core.Mat
+import org.opencv.imgproc.Imgproc
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-enum class CropEditMode {
-    IDLE,
-    CREATE_ODO,
-    CREATE_OTHER,
-    EDIT_CROPS
-}
-
-enum class DragHandle { NONE, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, TOP, BOTTOM, LEFT, RIGHT }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ManageVehiclesScreen(
+fun ManageVehicles2Screen(
     navController: NavHostController
 ) {
     val context = LocalContext.current
@@ -73,6 +72,21 @@ fun ManageVehiclesScreen(
 
     var selectedVehicleId by remember { mutableStateOf<Int?>(null) }
     var editingVehicle by remember { mutableStateOf<Vehicle?>(null) }
+    /**
+     * Row passed to the last crop Save/Clear. The hydration effect skips that echo so
+     * unsaved form fields and the on-screen photo are not replaced by the pre-edit row.
+     * Discovery is not a child of that effect: a crop echo must not cancel seeds already
+     * running, and must start them if the open-vehicle job never settled.
+     */
+    var cropPersistEcho by remember { mutableStateOf<Vehicle?>(null) }
+    /** Bumped so a stale discovery job cannot publish seeds after a newer one starts. */
+    val discoveryGen = remember { intArrayOf(0) }
+    var discoveryJob by remember { mutableStateOf<Job?>(null) }
+    var discoveryInFlightPhoto by remember { mutableStateOf<String?>(null) }
+    /** Photo whose open-vehicle discovery finished (including zero seeds). */
+    var discoverySettledPhoto by remember { mutableStateOf<String?>(null) }
+    /** Replacement-photo import owns discovery until it publishes seeds. */
+    var photoImportActive by remember { mutableStateOf(false) }
     var isNewVehicle by remember { mutableStateOf(false) }
 
     var name by remember { mutableStateOf("") }
@@ -90,14 +104,24 @@ fun ManageVehiclesScreen(
     var landmarkTextBlocksJson by remember { mutableStateOf<String?>(null) }
 
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
-    var otherTextCropRect by remember { mutableStateOf<Rect?>(null) }
     var editMode by remember { mutableStateOf(CropEditMode.IDLE) }
+    /** Select Odo: tap a yellow seed to place the odometer box. */
+    var odoSeedSelectActive by remember { mutableStateOf(false) }
     var imageSize by remember { mutableStateOf(Offset.Zero) }
     var originalImageSize by remember { mutableStateOf(Offset.Zero) }
 
     var showLandmarkCheck by remember { mutableStateOf(false) }
     var discoveryResults by remember { mutableStateOf<OcrResult?>(null) }
+    /** Full paddle seed list for overlay taps (unfiltered by odo/ignore crops). */
+    var seedBlocks by remember { mutableStateOf<List<TextBlock>>(emptyList()) }
     var isLoadingDiscovery by remember { mutableStateOf(false) }
+
+    fun landmarkJsonForSave(): String? {
+        val res = discoveryResults ?: return landmarkTextBlocksJson
+        val odoRectF = odometerCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
+        val filtered = res.filterByCrops(odoRectF, null)
+        return OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf("ML Kit" to filtered))
+    }
 
     // AUTO-SELECT FIRST VEHICLE
     LaunchedEffect(vehicles) {
@@ -160,75 +184,155 @@ fun ManageVehiclesScreen(
                 BitmapFactory.decodeFile(path, options)
                 originalImageSize = Offset(options.outWidth.toFloat(), options.outHeight.toFloat())
             } catch (e: Exception) {
-                Log.e("ManageVehicles", "Failed dimensions", e)
+                Log.e("ManageVehicles2", "Failed dimensions", e)
             }
         }
-        val (odo, other) = vehicleViewModel.getCrops(v)
+        val (odo, _) = vehicleViewModel.getCrops(v)
         odometerCropRect = odo
-        otherTextCropRect = other
 
-        discoveryResults = if (!landmarkTextBlocksJson.isNullOrEmpty() && originalImageSize != Offset.Zero) {
-            val map = OdometerOcrUtils.deserializeMultiEngineLandmarks(
-                landmarkTextBlocksJson!!,
-                originalImageSize.x.toInt(),
-                originalImageSize.y.toInt(),
-            )
-            map["ML Kit"] ?: map.values.firstOrNull()
-        } else {
-            null
+        discoveryResults = null
+        seedBlocks = emptyList()
+        discoverySettledPhoto = null
+    }
+
+    fun cancelOpenVehicleDiscovery() {
+        discoveryGen[0]++
+        discoveryJob?.cancel()
+        discoveryJob = null
+        discoveryInFlightPhoto = null
+        isLoadingDiscovery = false
+    }
+
+    /**
+     * Paddle seeds for [photoPath]. Parent is [scope], not the hydration effect, so a crop
+     * Save/Clear key change does not cancel it.
+     */
+    fun launchOpenVehicleDiscovery(photoPath: String) {
+        val gen = ++discoveryGen[0]
+        discoveryJob?.cancel()
+        discoveryInFlightPhoto = photoPath
+        isLoadingDiscovery = true
+        val job = scope.launch {
+            isLoadingDiscovery = true
+            try {
+                val rawResult = withContext(Dispatchers.Default) {
+                    val rawBmp = OdometerOcrUtils.decodeBitmapSafely(context, photoPath) ?: return@withContext null
+                    val uprightBmp = OdometerOcrUtils.rotateImageIfRequired(rawBmp, photoPath)
+                    try {
+                        runMv2PaddleDiscovery(context, uprightBmp)
+                    } finally {
+                        if (uprightBmp != rawBmp) uprightBmp.recycle()
+                        rawBmp.recycle()
+                    }
+                }
+                if (gen != discoveryGen[0]) return@launch
+                if (rawResult != null) {
+                    discoveryResults = rawResult
+                    seedBlocks = rawResult.textBlocks
+                    originalImageSize = Offset(rawResult.imageWidth.toFloat(), rawResult.imageHeight.toFloat())
+                    discoverySettledPhoto = photoPath
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("ManageVehicles2", "Hydrate paddle discovery failed", e)
+            } finally {
+                if (gen == discoveryGen[0]) {
+                    isLoadingDiscovery = false
+                    discoveryInFlightPhoto = null
+                }
+            }
         }
+        discoveryJob = job
     }
 
     LaunchedEffect(selectedVehicleId, vehicleHydrationKey) {
-        val id = selectedVehicleId ?: return@LaunchedEffect
+        val id = selectedVehicleId
+        val echo = cropPersistEcho
+        if (echo != null && (id == null || echo.id != id)) {
+            cropPersistEcho = null
+        }
+        if (id == null) {
+            cancelOpenVehicleDiscovery()
+            return@LaunchedEffect
+        }
         var v = vehicles.find { it.id == id } ?: return@LaunchedEffect
+        val pending = cropPersistEcho
+        if (pending != null && isCropPersistEcho(pending, v)) {
+            // Stamp and manifest bookkeeping only. Keep name, photo, landmarks, and seeds.
+            editingVehicle = v
+            val photo = referencePhotoUrl
+            val inFlight = discoveryJob?.isActive == true && discoveryInFlightPhoto == photo
+            if (!photo.isNullOrBlank() &&
+                seedBlocks.isEmpty() &&
+                discoverySettledPhoto != photo &&
+                !inFlight &&
+                !photoImportActive
+            ) {
+                launchOpenVehicleDiscovery(photo)
+            }
+            return@LaunchedEffect
+        }
+        if (pending != null) cropPersistEcho = null
         if (v.referenceDashPhotoUrl.isNullOrBlank() && !v.cloudManifest.isNullOrBlank()) {
             if (vehicleViewModel.ensureVehicleAssetsDownloaded(id)) {
                 v = vehicleViewModel.getVehicleById(id) ?: v
             }
         }
         hydrateFormFromVehicle(v)
+
+        val photoPath = referencePhotoUrl
+        if (photoPath.isNullOrBlank()) {
+            cancelOpenVehicleDiscovery()
+            return@LaunchedEffect
+        }
+        launchOpenVehicleDiscovery(photoPath)
     }
 
     fun processImportedPhoto(url: String) {
+        cancelOpenVehicleDiscovery()
+        photoImportActive = true
+        isLoadingDiscovery = true
         scope.launch(Dispatchers.IO) {
             try {
-                withContext(Dispatchers.Main) { isLoadingDiscovery = true }
-                val rawBmp = OdometerOcrUtils.decodeBitmapSafely(context, url) ?: return@launch
-                val rotatedBmp = OdometerOcrUtils.rotateImageIfRequired(rawBmp, url)
-                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(rotatedBmp)
-                val leveledBmp = if (Math.abs(deskewRes.angle) > 0.2f) {
-                    OdometerOcrUtils.rotateBitmap(rotatedBmp, -deskewRes.angle)
-                } else rotatedBmp
+                val rawBmp = OdometerOcrUtils.decodeBitmapSafely(context, url)
+                if (rawBmp == null) {
+                    withContext(Dispatchers.Main) {
+                        photoImportActive = false
+                        isLoadingDiscovery = false
+                    }
+                    return@launch
+                }
+                val uprightBmp = OdometerOcrUtils.rotateImageIfRequired(rawBmp, url)
 
-                val leveledFile = File(context.filesDir, "vehicle_ref_${System.currentTimeMillis()}.jpg")
-                leveledFile.outputStream().use { leveledBmp.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+                val refFile = File(context.filesDir, "vehicle_ref_${System.currentTimeMillis()}.jpg")
+                refFile.outputStream().use { uprightBmp.compress(Bitmap.CompressFormat.JPEG, 95, it) }
 
-                // Phase 55: Single ML Kit Discovery pass
-                val rawResult = OcrHarness.runDiscovery(leveledBmp, context)
-
-                // EXCLUDE CROP AREAS
-                val odoRectF = odometerCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
-                val otherRectF = otherTextCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
-                val filteredResult = rawResult.filterByCrops(odoRectF, otherRectF)
-
-                // Store manifest immediately
-                val landmarkJson = OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf("ML Kit" to filteredResult))
+                val rawResult = runMv2PaddleDiscovery(context, uprightBmp)
+                val landmarkJson = OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf("ML Kit" to rawResult))
 
                 withContext(Dispatchers.Main) {
-                    pickedPhotoUrl = leveledFile.absolutePath
-                    referencePhotoUrl = leveledFile.absolutePath
+                    pickedPhotoUrl = refFile.absolutePath
+                    referencePhotoUrl = refFile.absolutePath
                     landmarkTextBlocksJson = landmarkJson
-                    discoveryResults = filteredResult
-                    originalImageSize = Offset(leveledBmp.width.toFloat(), leveledBmp.height.toFloat())
+                    discoveryResults = rawResult
+                    seedBlocks = rawResult.textBlocks
+                    discoverySettledPhoto = refFile.absolutePath
+                    originalImageSize = Offset(uprightBmp.width.toFloat(), uprightBmp.height.toFloat())
+                    photoImportActive = false
                     isLoadingDiscovery = false
                 }
-                if (leveledBmp != rotatedBmp) leveledBmp.recycle()
-                if (rotatedBmp != rawBmp) rotatedBmp.recycle()
+                if (uprightBmp != rawBmp) uprightBmp.recycle()
                 rawBmp.recycle()
+            } catch (e: CancellationException) {
+                withContext(NonCancellable + Dispatchers.Main) { photoImportActive = false }
+                throw e
             } catch (e: Exception) {
-                Log.e("ManageVehicles", "Photo processing failed", e)
-                withContext(Dispatchers.Main) { isLoadingDiscovery = false }
+                Log.e("ManageVehicles2", "Photo processing failed", e)
+                withContext(Dispatchers.Main) {
+                    photoImportActive = false
+                    isLoadingDiscovery = false
+                }
             }
         }
     }
@@ -238,38 +342,76 @@ fun ManageVehiclesScreen(
             scope.launch {
                 try {
                     isLoadingDiscovery = true
-                    val rawBmp = withContext(Dispatchers.IO) {
-                        OdometerOcrUtils.decodeBitmapSafely(context, photoPathOrUri)
-                    } ?: return@launch
-                    val leveledBmp = OdometerOcrUtils.applyGrayscale(rawBmp)
-                    if (rawBmp != leveledBmp) rawBmp.recycle()
-
                     val rawResult = withContext(Dispatchers.Default) {
-                        OcrHarness.runDiscovery(leveledBmp, context)
-                    }
+                        val rawBmp = OdometerOcrUtils.decodeBitmapSafely(context, photoPathOrUri)
+                            ?: return@withContext null
+                        val uprightBmp = OdometerOcrUtils.rotateImageIfRequired(rawBmp, photoPathOrUri)
+                        try {
+                            runMv2PaddleDiscovery(context, uprightBmp)
+                        } finally {
+                            if (uprightBmp != rawBmp) uprightBmp.recycle()
+                            rawBmp.recycle()
+                        }
+                    } ?: return@launch
 
-                    val odoRectF = odometerCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
-                    val otherRectF = otherTextCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
-                    val filteredResult = rawResult.filterByCrops(odoRectF, otherRectF)
-
-                    landmarkTextBlocksJson = OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf("ML Kit" to filteredResult))
-
-                    discoveryResults = filteredResult
+                    landmarkTextBlocksJson =
+                        OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf("ML Kit" to rawResult))
+                    discoveryResults = rawResult
+                    seedBlocks = rawResult.textBlocks
                     showLandmarkCheck = true
-                    leveledBmp.recycle()
                     isLoadingDiscovery = false
                 } catch (e: Exception) {
-                    Log.e("ManageVehicles", "OCR failed", e)
+                    Log.e("ManageVehicles2", "OCR failed", e)
                     isLoadingDiscovery = false
                 }
             }
         }
     }
 
+    fun onSeedTapped(block: TextBlock) {
+        if (!odoSeedSelectActive) return
+        val imgW = originalImageSize.x.toInt()
+        val imgH = originalImageSize.y.toInt()
+        if (imgW <= 0 || imgH <= 0) return
+        odometerCropRect = mv2IcrsFromSeed(block, imgW, imgH)
+        odoSeedSelectActive = false
+        editMode = CropEditMode.EDIT_CROPS
+    }
+
+    /**
+     * Writes odo crop and null ignore. No row yet: keep the rect in memory.
+     * A replacement photo is included so the box is not stored on the previous file.
+     * Name and the other form fields stay in memory until Save Changes.
+     */
+    fun writeOdoCrop(rect: Rect?) {
+        if (isNewVehicle) return
+        val base = editingVehicle ?: return
+        val photo = referencePhotoUrl
+        val photoChanged = photo != base.referenceDashPhotoUrl
+        val written = base.copy(
+            referenceDashPhotoUrl = if (photoChanged) photo else base.referenceDashPhotoUrl,
+            cleanedReferenceDashPhotoUrl = if (photoChanged) photo else base.cleanedReferenceDashPhotoUrl,
+            odometerCropLeft = rect?.left,
+            odometerCropTop = rect?.top,
+            odometerCropRight = rect?.right,
+            odometerCropBottom = rect?.bottom,
+            otherTextCropLeft = null,
+            otherTextCropTop = null,
+            otherTextCropRight = null,
+            otherTextCropBottom = null,
+            landmarkTextBlocksJson = if (photoChanged) landmarkJsonForSave() else base.landmarkTextBlocksJson,
+        )
+        cropPersistEcho = written
+        editingVehicle = written
+        scope.launch {
+            vehicleViewModel.updateVehicle(written)
+        }
+    }
+
     RegisterPageHelp(
         title = "Manage Vehicles",
-        "Set up each vehicle once: reference dash photo → Odo Crop → Run Discovery → name → Create/Save. " +
-            "Crops and landmarks improve odometer OCR on Quick Fill. Menu → Help for a short walkthrough.",
+        "Reference photo (upright EXIF only) → Run Discovery → Select Odo → tap the seed → adjust → Save. " +
+            "Landmarks are stored under the existing JSON key. Menu → Help for walkthrough.",
     )
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         var dropdownExpanded by remember { mutableStateOf(false) }
@@ -281,8 +423,8 @@ fun ManageVehiclesScreen(
                 readOnly = true
             )
             ExposedDropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
-                vehicles.forEach { vehicle -> DropdownMenuItem(text = { Text(vehicle.name) }, onClick = { selectedVehicleId = vehicle.id; isNewVehicle = false; dropdownExpanded = false }) }
-                DropdownMenuItem(text = { Text("Add New Vehicle") }, onClick = { selectedVehicleId = null; editingVehicle = null; isNewVehicle = true; name = ""; make = ""; model = ""; year = ""; licensePlate = ""; odometerReading = ""; pickedPhotoUrl = null; referencePhotoUrl = null; landmarkTextBlocksJson = null; odometerCropRect = null; otherTextCropRect = null; dropdownExpanded = false })
+                vehicles.forEach { vehicle -> DropdownMenuItem(text = { Text(vehicle.name) }, onClick = { selectedVehicleId = vehicle.id; isNewVehicle = false; editMode = CropEditMode.IDLE; odoSeedSelectActive = false; dropdownExpanded = false }) }
+                DropdownMenuItem(text = { Text("Add New Vehicle") }, onClick = { selectedVehicleId = null; editingVehicle = null; isNewVehicle = true; name = ""; make = ""; model = ""; year = ""; licensePlate = ""; odometerReading = ""; pickedPhotoUrl = null; referencePhotoUrl = null; landmarkTextBlocksJson = null; odometerCropRect = null; editMode = CropEditMode.IDLE; odoSeedSelectActive = false; dropdownExpanded = false })
             }
         }
 
@@ -301,19 +443,53 @@ fun ManageVehiclesScreen(
                         onDismiss = { showFullPhoto = false },
                     )
                 }
-                EditCropsView(referencePhotoUrl!!, odometerCropRect, otherTextCropRect, originalImageSize, editMode,
+                EditCropsView(
+                    referencePhotoUrl!!,
+                    odometerCropRect,
+                    null,
+                    originalImageSize,
+                    editMode,
+                    seedSelectActive = odoSeedSelectActive,
+                    seedBlocks = seedBlocks,
+                    onSeedTapped = { block -> onSeedTapped(block) },
                     onSizeChanged = { imageSize = it },
-                    onCropChanged = { odo, other -> odometerCropRect = odo; otherTextCropRect = other })
+                    onCropChanged = { odo, _ -> odometerCropRect = odo },
+                )
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
-                    Button(onClick = { editMode = if (editMode == CropEditMode.CREATE_ODO) CropEditMode.IDLE else CropEditMode.CREATE_ODO }, modifier = Modifier.weight(1f)) {
-                        Text(if (editMode == CropEditMode.CREATE_ODO) "Done Odo" else "Odo Crop")
+                    Button(
+                        onClick = {
+                            if (editMode == CropEditMode.EDIT_CROPS) {
+                                val rect = odometerCropRect
+                                editMode = CropEditMode.IDLE
+                                odoSeedSelectActive = false
+                                writeOdoCrop(rect)
+                            } else if (odometerCropRect != null) {
+                                odoSeedSelectActive = false
+                                editMode = CropEditMode.EDIT_CROPS
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = editMode == CropEditMode.EDIT_CROPS || odometerCropRect != null,
+                    ) {
+                        Text(if (editMode == CropEditMode.EDIT_CROPS) "Save" else "Edit Odo")
                     }
-                    Button(onClick = { editMode = if (editMode == CropEditMode.EDIT_CROPS) CropEditMode.IDLE else CropEditMode.EDIT_CROPS }, modifier = Modifier.weight(1f)) {
-                        Text(if (editMode == CropEditMode.EDIT_CROPS) "Done Edit" else "Edit Crops")
-                    }
-                    Button(onClick = { editMode = if (editMode == CropEditMode.CREATE_OTHER) CropEditMode.IDLE else CropEditMode.CREATE_OTHER }, modifier = Modifier.weight(1f)) {
-                        Text(if (editMode == CropEditMode.CREATE_OTHER) "Done Ignore" else "Ignore Crop")
+                    Button(
+                        onClick = {
+                            if (odometerCropRect == null) {
+                                odometerCropRect = null
+                                editMode = CropEditMode.IDLE
+                                odoSeedSelectActive = true
+                            } else {
+                                odometerCropRect = null
+                                odoSeedSelectActive = false
+                                editMode = CropEditMode.IDLE
+                                writeOdoCrop(null)
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(if (odometerCropRect == null) "Select Odo" else "Clear Odo")
                     }
                 }
 
@@ -351,7 +527,7 @@ fun ManageVehiclesScreen(
                 }
 
                 if (discoveryResults != null) {
-                    Text("Discovery Results (Excluding Crop Areas):", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
+                    Text("Discovery Results (tap seed on photo for odo box):", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
                     Text("Tap card to see full debug pass", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
 
                     Surface(
@@ -368,7 +544,10 @@ fun ManageVehiclesScreen(
                                 Column(modifier = Modifier.padding(12.dp)) {
                                     Text(result.engineName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                     Text("Landmarks found: ${result.textBlocks.size}", style = MaterialTheme.typography.labelMedium)
-                                    Text(result.debugText, style = MaterialTheme.typography.bodySmall)
+                                    Text(
+                                        result.debugText,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = LandmarkGlyphFont),
+                                    )
                                 }
                             }
                         }
@@ -407,6 +586,7 @@ fun ManageVehiclesScreen(
                     scope.launch {
                         val dig = odometerDigitCount.toIntOrNull()?.coerceIn(3, 9) ?: 6
                         val rolls = odometerRolloverCount.toIntOrNull()?.coerceAtLeast(0) ?: 0
+                        val jsonToSave = landmarkJsonForSave()
                         if (isNewVehicle) {
                             vehicleViewModel.createNewVehicleWithReference(
                                 name,
@@ -417,9 +597,9 @@ fun ManageVehiclesScreen(
                                 referencePhotoUrl,
                                 referencePhotoUrl,
                                 odometerCropRect,
-                                otherTextCropRect,
+                                null,
                                 odometerReading.toIntOrNull() ?: 0,
-                                landmarkTextBlocksJson,
+                                jsonToSave,
                                 odometerDigitCount = dig,
                                 odometerRolloverCount = rolls,
                             )
@@ -437,11 +617,11 @@ fun ManageVehiclesScreen(
                                     odometerCropTop = odometerCropRect?.top,
                                     odometerCropRight = odometerCropRect?.right,
                                     odometerCropBottom = odometerCropRect?.bottom,
-                                    otherTextCropLeft = otherTextCropRect?.left,
-                                    otherTextCropTop = otherTextCropRect?.top,
-                                    otherTextCropRight = otherTextCropRect?.right,
-                                    otherTextCropBottom = otherTextCropRect?.bottom,
-                                    landmarkTextBlocksJson = landmarkTextBlocksJson,
+                                    otherTextCropLeft = null,
+                                    otherTextCropTop = null,
+                                    otherTextCropRight = null,
+                                    otherTextCropBottom = null,
+                                    landmarkTextBlocksJson = jsonToSave,
                                     odometerDigitCount = dig,
                                     odometerRolloverCount = rolls,
                                 )
@@ -462,7 +642,7 @@ fun ManageVehiclesScreen(
         LandmarkDebugDialog(
             photoPath = referencePhotoUrl,
             odometerCrop = odometerCropRect,
-            otherTextCrop = otherTextCropRect,
+            otherTextCrop = null,
             landmarks = res.textBlocks,
             odometerText = "N/A",
             engineName = res.engineName,
@@ -488,7 +668,18 @@ fun ManageVehiclesScreen(
 }
 
 @Composable
-private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, originalSize: Offset, editMode: CropEditMode, onSizeChanged: (Offset) -> Unit, onCropChanged: (Rect?, Rect?) -> Unit) {
+private fun EditCropsView(
+    photoUrl: String,
+    odoRect: Rect?,
+    otherRect: Rect?,
+    originalSize: Offset,
+    editMode: CropEditMode,
+    seedSelectActive: Boolean,
+    seedBlocks: List<TextBlock>,
+    onSeedTapped: (TextBlock) -> Unit,
+    onSizeChanged: (Offset) -> Unit,
+    onCropChanged: (Rect?, Rect?) -> Unit,
+) {
     // Crop rects (odoRect, otherRect, currentDragRect) are **always ICRS**.
     // Screen interaction uses transient image pixel coordinates via fitRect.
     // Never create or pass a 0-1 normalized Rect for crops.
@@ -515,6 +706,23 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                         scale = (scale * zoom).coerceIn(1f, 10f)
                         offset += pan
                     }
+                }
+            }
+            .pointerInput(seedSelectActive, viewSize, originalSize, scale, offset, seedBlocks) {
+                if (!seedSelectActive || seedBlocks.isEmpty() || originalSize.x <= 0f) return@pointerInput
+                detectTapGestures { tapOffset ->
+                    val center = Offset(viewSize.x / 2f, viewSize.y / 2f)
+                    val screenPos = (tapOffset - center - offset) / scale + center
+                    val pxW = viewSize.x
+                    val pxH = viewSize.y
+                    val fitRect = calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y)
+                    val imagePixel = adjustedScreenToImagePixel(screenPos, fitRect, originalSize)
+                    val hit = seedBlocks.firstOrNull { block ->
+                        val bb = block.boundingBox
+                        imagePixel.x >= bb.left && imagePixel.x <= bb.right &&
+                            imagePixel.y >= bb.top && imagePixel.y <= bb.bottom
+                    }
+                    hit?.let { onSeedTapped(it) }
                 }
             }
             .pointerInput(editMode, viewSize, originalSize, scale, offset, odoRect, otherRect) {
@@ -570,14 +778,7 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                         val pxW = viewSize.x; val pxH = viewSize.y
                         val fitRect = calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y)
                         val imgW = originalSize.x.toInt(); val imgH = originalSize.y.toInt()
-                        if (editMode == CropEditMode.CREATE_ODO || editMode == CropEditMode.CREATE_OTHER) {
-                            // Pure pixel path: screen -> image pixels (via fit) -> ICRS via pixelToIcrs. NEVER materializes 0-1 normalized crop Rect.
-                            val startImage = adjustedScreenToImagePixel(start, fitRect, originalSize)
-                            val endImage = adjustedScreenToImagePixel(end, fitRect, originalSize)
-                            val p1 = IcrsMath.pixelToIcrs(startImage.x, startImage.y, imgW, imgH)
-                            val p2 = IcrsMath.pixelToIcrs(endImage.x, endImage.y, imgW, imgH)
-                            currentDragRect = Rect(minOf(p1.x, p2.x), minOf(p1.y, p2.y), maxOf(p1.x, p2.x), maxOf(p1.y, p2.y))
-                        } else if (editMode == CropEditMode.EDIT_CROPS && activeHandle != DragHandle.NONE) {
+                        if (editMode == CropEditMode.EDIT_CROPS && activeHandle != DragHandle.NONE) {
                             val currentRect = if (activeCropIsOdo) odoRect else otherRect
                             currentRect?.let { r ->
                                 // ICRS rect -> image pixels via icrsToPixel -> screen via imagePixelToScreen (no 0-1 rect ever)
@@ -607,9 +808,11 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                         }
                     }, 
                     onDragEnd = { 
-                        currentDragRect?.let { final -> 
-                            if (editMode == CropEditMode.CREATE_ODO || (editMode == CropEditMode.EDIT_CROPS && activeCropIsOdo)) onCropChanged(final, otherRect)
-                            else onCropChanged(odoRect, final)
+                        currentDragRect?.let { final ->
+                            when {
+                                editMode == CropEditMode.EDIT_CROPS && activeCropIsOdo -> onCropChanged(final, otherRect)
+                                editMode == CropEditMode.EDIT_CROPS && !activeCropIsOdo -> onCropChanged(odoRect, final)
+                            }
                         }
                         currentDragRect = null; dragStart = null; activeHandle = DragHandle.NONE
                     }
@@ -633,9 +836,27 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                         val h = ((p2.y - p1.y) / origH) * fitRect.height
                         drawRect(color, Offset(left, top), androidx.compose.ui.geometry.Size(w, h), style = Stroke(4f / scale))
                     }
+                    fun drawPixelAabb(left: Float, top: Float, right: Float, bottom: Float, color: Color) {
+                        val origW = originalSize.x
+                        val origH = originalSize.y
+                        if (origW <= 0f || origH <= 0f) return
+                        val sx1 = fitRect.left + (left / origW) * fitRect.width
+                        val sy1 = fitRect.top + (top / origH) * fitRect.height
+                        val sx2 = fitRect.left + (right / origW) * fitRect.width
+                        val sy2 = fitRect.top + (bottom / origH) * fitRect.height
+                        drawRect(
+                            color,
+                            Offset(minOf(sx1, sx2), minOf(sy1, sy2)),
+                            androidx.compose.ui.geometry.Size(kotlin.math.abs(sx2 - sx1), kotlin.math.abs(sy2 - sy1)),
+                            style = Stroke(2f / scale),
+                        )
+                    }
+                    for (block in seedBlocks) {
+                        val bb = block.boundingBox
+                        drawPixelAabb(bb.left.toFloat(), bb.top.toFloat(), bb.right.toFloat(), bb.bottom.toFloat(), Color.Yellow)
+                    }
                     currentDragRect?.let { drawIcrsRect(it, Color.Green) }
                     odoRect?.let { drawIcrsRect(it, Color.Blue) }
-                    otherRect?.let { drawIcrsRect(it, Color.Red) }
                 }
             }
 
@@ -669,4 +890,88 @@ private fun imagePixelToScreen(imagePixel: Offset, fitRect: Rect, original: Offs
 private fun calculateFitImageRect(viewW: Float, viewH: Float, imgW: Float, imgH: Float): Rect {
     val aspect = imgW / imgH; val viewAspect = viewW / viewH
     return if (aspect > viewAspect) { val fitH = viewW / aspect; Rect(0f, (viewH - fitH) / 2f, viewW, (viewH + fitH) / 2f) } else { val fitW = viewH * aspect; Rect((viewW - fitW) / 2f, 0f, (viewW + fitW) / 2f, viewH) }
+}
+
+private fun mv2SeedQuad(block: TextBlock): ContentExpandUtils.OrientedQuad {
+    if (block.points.size >= 4) {
+        val p = FloatArray(8)
+        for (i in 0 until 4) {
+            p[i * 2] = block.points[i].x.toFloat()
+            p[i * 2 + 1] = block.points[i].y.toFloat()
+        }
+        return ContentExpandUtils.orientedFromPoints8(p)
+    }
+    return ContentExpandUtils.orientedFromAabb(block.boundingBox)
+}
+
+/**
+ * Crop Save/Clear echo: [incoming] matches [written] except stampForWrite
+ * (updatedAt, and sync id / origin when those were blank) and cloudManifest.
+ */
+private fun isCropPersistEcho(written: Vehicle, incoming: Vehicle): Boolean {
+    if (written.id != incoming.id) return false
+    if (written.syncId.isNotBlank() && written.syncId != incoming.syncId) return false
+    if (written.originDeviceId.isNotBlank() && written.originDeviceId != incoming.originDeviceId) return false
+    return written.copy(
+        updatedAt = incoming.updatedAt,
+        syncId = incoming.syncId,
+        originDeviceId = incoming.originDeviceId,
+        cloudManifest = incoming.cloudManifest,
+    ) == incoming
+}
+
+/** Axis-aligned ICRS crop rect from seed via rot-G-style UV pad (0.6 v, 0.8 L/R). */
+private fun mv2IcrsFromSeed(block: TextBlock, imgW: Int, imgH: Int): Rect {
+    val padded = ContentExpandUtils.calculatedOrientedUv(mv2SeedQuad(block), 0.6f, 0.8f, 0.8f)
+    val pts = padded.pts
+    var minX = Float.POSITIVE_INFINITY
+    var minY = Float.POSITIVE_INFINITY
+    var maxX = Float.NEGATIVE_INFINITY
+    var maxY = Float.NEGATIVE_INFINITY
+    for (i in 0 until 4) {
+        val x = pts[i * 2]
+        val y = pts[i * 2 + 1]
+        minX = minOf(minX, x)
+        minY = minOf(minY, y)
+        maxX = maxOf(maxX, x)
+        maxY = maxOf(maxY, y)
+    }
+    val p1 = IcrsMath.pixelToIcrs(minX, minY, imgW, imgH)
+    val p2 = IcrsMath.pixelToIcrs(maxX, maxY, imgW, imgH)
+    return Rect(minOf(p1.x, p2.x), minOf(p1.y, p2.y), maxOf(p1.x, p2.x), maxOf(p1.y, p2.y))
+}
+
+private fun bitmapToGrayMat(bitmap: Bitmap): Mat {
+    val tmp = Mat()
+    org.opencv.android.Utils.bitmapToMat(bitmap, tmp)
+    val gray = Mat()
+    if (tmp.channels() > 1) {
+        Imgproc.cvtColor(tmp, gray, Imgproc.COLOR_BGR2GRAY)
+    } else {
+        tmp.copyTo(gray)
+    }
+    tmp.release()
+    return gray
+}
+
+private suspend fun runMv2PaddleDiscovery(context: Context, bitmap: Bitmap): OcrResult {
+    val t0 = System.currentTimeMillis()
+    val work = OdometerOcrUtils.applyGrayscale(bitmap)
+    val w = work.width
+    val h = work.height
+    val gray = bitmapToGrayMat(work)
+    try {
+        val blocks = MultiScaleDetRunner.productDetLandmarks2048(context, gray, 0.40f)
+        val landmarks = OdometerOcrUtils.processRawLandmarks(blocks, null, null, w, h)
+        return OcrResult(
+            engineName = "ML Kit",
+            debugText = landmarks.joinToString(" ") { it.text },
+            textBlocks = landmarks,
+            imageWidth = w,
+            imageHeight = h,
+            discoveryTimeMs = System.currentTimeMillis() - t0,
+        )
+    } finally {
+        gray.release()
+    }
 }

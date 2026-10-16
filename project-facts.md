@@ -4,6 +4,9 @@ Cold-start map so agents do not hunt or invent wrong procedures. Anything discov
 
 Read in full early on startup/new cycle.
 
+## Manage Vehicles (drawer)
+- Route **`managevehicles`** is the paddle seed screen (`ManageVehicles2Screen` composable). The retired drag-crop screen is documented in `docs/obsolete/MANAGE_VEHICLES_DRAW.md`.
+
 ## Build and commit
 - Build: `./build_app`
 - Commit: `./build_app "<message>"|@<msg_file> <paths...>` (builds, then commits exactly the named paths and tags builds)

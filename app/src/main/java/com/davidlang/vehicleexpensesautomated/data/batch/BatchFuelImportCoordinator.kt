@@ -7,11 +7,12 @@ import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 // FuelLocationJson same package
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
-import com.davidlang.vehicleexpensesautomated.ui.experiment.AlignmentSetJRunner
 import com.davidlang.vehicleexpensesautomated.ui.experiment.PumpSetIRunner
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
+import com.davidlang.vehicleexpensesautomated.ui.util.ImageIngestionProvider
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
+import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerTracking
 import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifMetaReader
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookup
@@ -239,7 +240,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 onKickoff = { locationLookupsStarted++ },
             )
 
-            // --- Dash (Set J via AlignmentSetJRunner) ---
+            // --- Dash (paddle seed via OcrHarness.runAutoFillPipeline) ---
             for (file in dashFiles) {
                 coroutineContext.ensureActive()
                 if (cancelFlag.get()) {
@@ -1942,8 +1943,8 @@ class BatchFuelImportCoordinator @Inject constructor(
     }
 
     /**
-     * Dash: alignment **experiment Set J** pipeline via [AlignmentSetJRunner]
-     * (not [com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness.runAutoFillPipeline]).
+     * Dash: same paddle-seed pipeline as Quick Fill ([OcrHarness.runAutoFillPipeline]).
+     * EXIF upright is applied at ingest; no extra camera rotation.
      *
      * Photo path = **source file in place** (no copy into batch_import_photos).
      */
@@ -1973,11 +1974,39 @@ class BatchFuelImportCoordinator @Inject constructor(
         )
 
         val activeVehicles = vehicles.filter { !it.deleted }
-        val result = AlignmentSetJRunner.runOnePhoto(
+        val (imgW, imgH) = ImageIngestionProvider.probeDimensions(appContext, sourcePath)
+        if (imgW <= 0 || imgH <= 0) {
+            if (enqueuePendingOnFail) {
+                pending.add(
+                    BatchPendingItem(
+                        kind = BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE,
+                        message = "Bad image dimensions for ${file.name}",
+                        photoPath = sourcePath,
+                        durablePhotoPath = sourcePath,
+                        timestampMs = ts,
+                        latitude = meta.latitude,
+                        longitude = meta.longitude,
+                        accuracyM = meta.accuracyM,
+                    ),
+                )
+            }
+            return false
+        }
+        val master = NativePaddleEngine.bufferSetA
+        master.resize(imgW, imgH)
+        ImageIngestionProvider.ingestFromFile(appContext, sourcePath, master.p)
+
+        val lastByVehicle = activeVehicles.associate { v ->
+            v.id to fuelEntryRepository.getLastOdometerForVehicle(v.id)
+        }
+        val result = OcrHarness.runAutoFillPipeline(
             context = appContext,
-            photoFile = file,
-            vehicles = activeVehicles,
+            masterBuffer = master,
+            allVehicles = activeVehicles,
+            debug = false,
+            cameraRotationDegrees = 0,
             forcedVehicleId = forcedVehicleId,
+            lastTrackingByVehicleId = lastByVehicle,
         )
 
         if (result.vehicleId == null) {
@@ -1999,8 +2028,16 @@ class BatchFuelImportCoordinator @Inject constructor(
             return false
         }
 
-        val tracking = resolveTrackingOdometer(result.odometer, result.vehicleId, vehicles)
-        val odo = tracking?.first
+        result.newRolloverCount?.let { newCount ->
+            val vehicle = vehicles.find { it.id == result.vehicleId }
+                ?: vehicleRepository.getVehicleById(result.vehicleId)
+            if (vehicle != null && newCount > vehicle.odometerRolloverCount) {
+                vehicleRepository.updateVehicle(
+                    vehicle.copy(odometerRolloverCount = newCount),
+                )
+            }
+        }
+        val odo = result.odometer?.toIntOrNull()
         val photoJson = FuelPhotoJson.single("dash", sourcePath, ts)
 
         if (odo == null) {

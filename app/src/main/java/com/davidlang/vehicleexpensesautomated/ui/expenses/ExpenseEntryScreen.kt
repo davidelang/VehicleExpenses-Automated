@@ -74,6 +74,39 @@ import java.util.Locale
 
 private const val TAG = "ExpenseEntry"
 
+private fun surfaceRotationToDegrees(rotation: Int): Int = when (rotation) {
+    android.view.Surface.ROTATION_0 -> 0
+    android.view.Surface.ROTATION_90 -> 90
+    android.view.Surface.ROTATION_180 -> 180
+    android.view.Surface.ROTATION_270 -> 270
+    else -> 0
+}
+
+/** CameraX relative rotation for EXIF (matches [androidx.camera.core.ImageInfo.rotationDegrees]). */
+private fun relativeRotationDegreesForCapture(
+    context: android.content.Context,
+    listenerSurfaceRotation: Int,
+): Int {
+    val cameraManager =
+        context.getSystemService(android.content.Context.CAMERA_SERVICE) as android.hardware.camera2.CameraManager
+    val cameraId = cameraManager.cameraIdList.firstOrNull { id ->
+        val facing = cameraManager.getCameraCharacteristics(id)
+            .get(android.hardware.camera2.CameraCharacteristics.LENS_FACING)
+        facing == android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK
+    } ?: return 0
+    val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+    val sensorOrientation =
+        characteristics.get(android.hardware.camera2.CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+    val lensFacing = characteristics.get(android.hardware.camera2.CameraCharacteristics.LENS_FACING)
+        ?: android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK
+    val targetDegrees = surfaceRotationToDegrees(listenerSurfaceRotation)
+    return if (lensFacing == android.hardware.camera2.CameraCharacteristics.LENS_FACING_FRONT) {
+        (sensorOrientation + targetDegrees) % 360
+    } else {
+        (sensorOrientation - targetDegrees + 360) % 360
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExpenseEntryScreen(
@@ -130,6 +163,7 @@ private fun ExpenseEntryScreenBody(
     }
 
     var zoomControl by remember { mutableStateOf<CameraZoomControl?>(null) }
+    var listenerSurfaceRotation by remember { mutableIntStateOf(android.view.Surface.ROTATION_0) }
     var isPhotoSaving by remember { mutableStateOf(false) }
     var isDownloadingCloud by remember { mutableStateOf(false) }
     var photoStatus by remember { mutableStateOf<String?>(null) }
@@ -439,25 +473,11 @@ private fun ExpenseEntryScreenBody(
         rowLat = locForExif?.latitude
         rowLon = locForExif?.longitude
         rowAccuracyM = locForExif?.let { if (it.hasAccuracy()) it.accuracy.toDouble() else null }
-        var rotationDegrees = 0
-        try {
-            val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                context.display
-            } else {
-                @Suppress("DEPRECATION")
-                (context.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay
-            }
-            val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
-            imageCapture.targetRotation = rotation
-            rotationDegrees = when (rotation) {
-                android.view.Surface.ROTATION_0 -> 0
-                android.view.Surface.ROTATION_90 -> 90
-                android.view.Surface.ROTATION_180 -> 180
-                android.view.Surface.ROTATION_270 -> 270
-                else -> 0
-            }
+        val orientForExif = try {
+            relativeRotationDegreesForCapture(context, listenerSurfaceRotation)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to set target rotation", e)
+            Log.e(TAG, "Failed to compute capture rotation", e)
+            0
         }
 
         try {
@@ -484,7 +504,6 @@ private fun ExpenseEntryScreenBody(
                 contentValues
             ).setMetadata(captureMetadata).build()
 
-            val orientForExif = rotationDegrees
             imageCapture.takePicture(
                 outputOptions,
                 ContextCompat.getMainExecutor(context),
@@ -635,7 +654,8 @@ private fun ExpenseEntryScreenBody(
                 CameraPreview(
                     modifier = Modifier.fillMaxSize(),
                     imageCapture = imageCapture,
-                    onZoomControlChanged = { zoomControl = it }
+                    onZoomControlChanged = { zoomControl = it },
+                    onListenerSurfaceRotation = { listenerSurfaceRotation = it },
                 )
                 zoomControl?.let { zoom ->
                     if (zoom.availableRatios.size > 1) {

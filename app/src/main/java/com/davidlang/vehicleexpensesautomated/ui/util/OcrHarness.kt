@@ -108,9 +108,8 @@ object OcrHarness {
     }
 
     /**
-     * Unified entry point for Quick Fill (and Start trip dash OCR).
-     * Deskew → landmarks → vehicle ID → odometer. Default expand is alignment **Set V**
-     * (product det + valley), not Set J char-aware.
+     * Unified entry point for Quick Fill, Start trip, and batch dash OCR.
+     * Camera rotation only → product_det landmarks at 0.40 → Tier-1 ID → red-quad paddle seed read.
      */
     suspend fun runAutoFillPipeline(
         context: Context,
@@ -131,51 +130,40 @@ object OcrHarness {
          * [lastTrackingOdometer] wins if both set for the winner.
          */
         lastTrackingByVehicleId: Map<Int, Int?> = emptyMap(),
-        odoExpand: OdoExpandKind = OdoExpandKind.VALLEY,
+        @Suppress("UNUSED_PARAMETER") odoExpand: OdoExpandKind = OdoExpandKind.VALLEY,
     ): AutoFillResult {
         val t0 = System.currentTimeMillis()
         val jsonDebug = if (debug) JsonObject() else null
-        
+
         try {
-            // 0. Initial Snapshot
             onStage?.invoke("Original", masterBuffer.p.toBitmap())
 
-            // 1. Deskew (Paddle C++) - Optimized Version
-            val (optAngle, optTime) = OdometerOcrUtils.calculatePaddleAngleOptimized(masterBuffer.p)
-            
-            val totalAngle = cameraRotationDegrees.toFloat() - optAngle
-            val rotTime = OdometerOcrUtils.rotate(masterBuffer, totalAngle)
-            
+            val rotTime = if (cameraRotationDegrees != 0) {
+                OdometerOcrUtils.rotate(masterBuffer, cameraRotationDegrees.toFloat())
+            } else {
+                0L
+            }
             jsonDebug?.apply {
                 addProperty("camera_rotation", cameraRotationDegrees)
-                addProperty("deskew_angle", optAngle)
-                addProperty("total_rotation_angle", totalAngle)
-                addProperty("deskew_time_ms", optTime + rotTime)
-                addProperty("deskew_angle_calc_time_ms", optTime)
-                addProperty("deskew_rotate_time_ms", rotTime)
+                addProperty("rotate_time_ms", rotTime)
             }
-            onStage?.invoke("Deskewed", masterBuffer.p.toBitmap())
 
-            // 2. Landmark Discovery (ML Kit)
-            val (ocrDisc, queryLandmarks) = performLandmarkDiscovery(masterBuffer.p, context)
-            
+            val imgW = masterBuffer.width
+            val imgH = masterBuffer.height
+            val tDisc0 = System.currentTimeMillis()
+            val detBlocks = MultiScaleDetRunner.productDetLandmarks2048(
+                context, masterBuffer.p.mat, PaddleSeedOdo.SEED_VERT_PRODUCTION,
+            )
+            val queryLandmarks = OdometerOcrUtils.processRawLandmarks(
+                detBlocks, null, null, imgW, imgH,
+            )
+            val tDiscovery = System.currentTimeMillis() - tDisc0
             jsonDebug?.apply {
-                addProperty("discovery_text", ocrDisc.debugText)
-                addProperty("discovery_time_ms", ocrDisc.executionTimeMs)
-                val landmarksJson = JsonArray()
-                queryLandmarks.forEach { mark ->
-                    val obj = JsonObject()
-                    obj.addProperty("text", mark.text)
-                    obj.addProperty("conf", mark.confidence)
-                    val icrs = IcrsMath.pixelToIcrs(mark.boundingBox.centerX().toFloat(), mark.boundingBox.centerY().toFloat(), masterBuffer.width, masterBuffer.height)
-                    obj.addProperty("cx", icrs.x)
-                    obj.addProperty("cy", icrs.y)
-                    landmarksJson.add(obj)
-                }
-                add("discovery_landmarks", landmarksJson)
+                addProperty("discovery_text", queryLandmarks.joinToString(" ") { it.text })
+                addProperty("discovery_time_ms", tDiscovery)
+                addProperty("paddle_seed_vert", PaddleSeedOdo.SEED_VERT_PRODUCTION)
             }
 
-            // 3. Identification (Tier 1 Veto) — or forced vehicle for batch pending assign
             val engineName = "ML Kit"
             var vetoResults: Map<Int, VetoResult>? = null
             val winningVehicle = if (forcedVehicleId != null) {
@@ -213,40 +201,61 @@ object OcrHarness {
                 if (forcedVehicleId != null) addProperty("forced_vehicle", true)
             }
 
-            // 4. Extraction (Set V valley by default) — ref geometry = real reference dash
             val (refW, refH) = if (!winningVehicle.referenceDashPhotoUrl.isNullOrEmpty()) {
                 NativePaddleEngine.getReferenceDimensions(context, winningVehicle.referenceDashPhotoUrl)
             } else {
                 Pair(NativePaddleEngine.DEFAULT_REF_DASH_W, NativePaddleEngine.DEFAULT_REF_DASH_H)
             }
-            jsonDebug?.apply {
-                addProperty("ref_dash_w", refW)
-                addProperty("ref_dash_h", refH)
-            }
             val referenceLandmarks = winningVehicle.landmarkTextBlocksJson?.let {
-                OdometerOcrUtils.getFullLandmarksFromJson(it, "ML Kit", refW, refH)
+                OdometerOcrUtils.getFullLandmarksFromJson(it, engineName, refW, refH)
             } ?: emptyList()
 
             val lastTrack = lastTrackingOdometer
                 ?: lastTrackingByVehicleId[winningVehicle.id]
             val dc = OdometerTracking.digitCount(winningVehicle)
             val allowExtra = OdometerTracking.lastFillStartsWithNine(lastTrack, dc)
-            val setJResult = runSetJPipeline(
-                context, masterBuffer, winningVehicle, referenceLandmarks, queryLandmarks,
-                debug, onStage, refW, refH,
-                preferredDigitLen = dc,
-                allowLenPlusOne = allowExtra,
-                odoExpand = odoExpand,
-            )
 
-            val rawOdo = setJResult.odometerValue
+            val queryPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarks, referenceLandmarks)
+            val sim = ImageAlignmentUtils.rawSimilarity(
+                referenceLandmarks,
+                queryPrimary,
+                winningVehicle,
+                refW,
+                refH,
+                imgW,
+                imgH,
+            )
+            jsonDebug?.apply {
+                addProperty("raw_similarity_success", sim.success)
+                sim.metadata.forEach { (k, v) -> addProperty("sim_$k", v) }
+            }
+
+            val paddleEngine = NativePaddleEngine(context, "Numeric")
+            val recBuffer = NativePaddleEngine.recBufferSet
+            val quad = ImageAlignmentUtils.odometerQuadQueryPixels(sim, winningVehicle, imgW, imgH)
+            val rawOdo = if (quad != null) {
+                PaddleSeedOdo.readSeedRec(
+                    seeds = detBlocks,
+                    crop = PaddleSeedOdo.orientedRedQuad(quad),
+                    gray = masterBuffer.p.mat,
+                    recBuffer = recBuffer,
+                    paddleEngine = paddleEngine,
+                    displayName = "paddle_seed",
+                    seedVert = PaddleSeedOdo.SEED_VERT_PRODUCTION,
+                    preferredDigitLen = dc,
+                    allowLenPlusOne = allowExtra,
+                )?.odometerValue
+            } else {
+                null
+            }
+
             val resolved = rawOdo?.let {
                 OdometerTracking.resolveFromOcr(it, winningVehicle, lastTrack)
             }
-            
+
             jsonDebug?.apply {
-                add("set_j", setJResult.jsonSection)
-                addProperty("odo_expand", odoExpand.name)
+                addProperty("ref_dash_w", refW)
+                addProperty("ref_dash_h", refH)
                 addProperty("odo_digit_count", dc)
                 addProperty("odo_allow_len_plus_one", allowExtra)
                 addProperty("odo_last_tracking", lastTrack ?: -1)
@@ -260,9 +269,8 @@ object OcrHarness {
                 vehicleId = winningVehicle.id,
                 odometer = resolved?.trackingOdometer?.toString(),
                 newRolloverCount = resolved?.newRolloverCount,
-                debugJson = jsonDebug?.toString()
+                debugJson = jsonDebug?.toString(),
             )
-            
         } catch (e: Exception) {
             Log.e("OcrHarness", "AutoFill Pipeline failed", e)
             jsonDebug?.addProperty("exception", e.message)
@@ -433,26 +441,6 @@ object OcrHarness {
         }
     }
 
-    suspend fun runDiscovery(input: Any, context: Context): OcrResult {
-        val rawResult = MlKitEngine().recognize(input)
-
-        val cleanedBlocks = rawResult.textBlocks.map { block ->
-            block.copy(text = OdometerOcrUtils.cleanLandmarkString(block.text))
-        }.filter { it.text.isNotEmpty() }
-
-        val sanitizedResult = rawResult.copy(
-            textBlocks = cleanedBlocks,
-            debugText = cleanedBlocks.joinToString(" ") { it.text }
-        )
-
-        return sanitizedResult
-    }
-
-    private suspend fun performLandmarkDiscovery(slice: BufferSet.Slice, context: Context): Pair<OcrResult, List<TextBlock>> {
-        val ocr = runDiscovery(slice, context)
-        return Pair(ocr, ocr.textBlocks)
-    }
-
     /**
      * Production odometer extraction (Quick Fill / Start trip).
      *
@@ -460,7 +448,7 @@ object OcrHarness {
      * Raw on unfiltered det boxes, Bin-Trials nestFilter + PreferLen + prefer-Bin.
      * [odoExpand] [OdoExpandKind.VALLEY] = experiment Set V (`expandByValleyDiagnostic`).
      * [OdoExpandKind.CHAR_AWARE] = experiment Set J (connectSegmentsH union).
-     * Batch import still uses [com.davidlang.vehicleexpensesautomated.ui.experiment.AlignmentSetJRunner].
+     * Legacy Set J path; production Quick Fill / batch dash use [runAutoFillPipeline] + [PaddleSeedOdo].
      */
     suspend fun runSetJPipeline(
         context: Context,

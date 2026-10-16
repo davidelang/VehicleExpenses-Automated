@@ -29,10 +29,8 @@ To achieve 16KB page size compatibility, the build process must satisfy two core
 * **Not** a rebuild-from-source problem. Google ships CameraX AARs with natives; Jetpack rebuilds them regularly.
 * **Resolution:** Use CameraX **≥ 1.4** (community-confirmed for `libimage_processing_util_jni`); app targets **1.6.1** stable. Do not fork CameraX.
 
-### ML Kit text-recognition — **upgrade / wait**, not pin-build
-* Bundled `com.google.mlkit:text-recognition` latest published **16.0.1** (as of ML Kit release table). Arm64 native is already **0x4000** with that version; armv7 may still be 4KB.
-* Other ML Kit modules (e.g. digital-ink 19.0.0) explicitly noted 16KB in release notes; text-recognition has not needed a newer artifact than 16.0.1 yet.
-* **Unlike OpenCV:** no VE pin rebuild of ML Kit. Bump when Google publishes a newer text-recognition; Play’s hard gate is **64-bit** 16KB.
+### ML Kit text-recognition — **removed from app**
+* The Gradle dependency and bundled OCR pipeline are gone; production and experiments use Paddle. Landmark JSON still uses the string key `"ML Kit"`. See `docs/obsolete/DROP_MLKIT.md`.
 
 ### Go-based Rclone (`librclone.aar` / photo pin)
 * **Build System:** `third_party/rclone/` (`libpin.toml`, `scripts/build-photo-aar.sh`, Docker).

@@ -94,6 +94,9 @@ if [ "$#" -ge 1 ]; then
         if [ -e "$file" ]; then
             git add "$file"
             ADDED_COUNT=$((ADDED_COUNT + 1))
+        elif git ls-files --error-unmatch "$file" >/dev/null 2>&1; then
+            git add -u -- "$file"
+            ADDED_COUNT=$((ADDED_COUNT + 1))
         else
             echo "Warning: File '$file' not found. Skipping."
         fi

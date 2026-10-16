@@ -80,7 +80,9 @@ data class PhotoPathwayResult(
     val deskewedBase64: String,
     val discoveryResult: OcrResult,
     val discoveryLandmarks: List<TextBlock>,
-    val harnessResults: Map<String, OcrHarnessResult> = emptyMap()
+    val harnessResults: Map<String, OcrHarnessResult> = emptyMap(),
+    val tOdoReadMs: Long = 0,
+    val similarity: Map<String, String> = emptyMap(),
 )
 
 data class ProcessedPhotoResult(
@@ -169,32 +171,6 @@ enum class DiscoveryExpansion { UNCLIP, VALLEY }
 interface OcrEngine {
     val name: String
     suspend fun recognize(input: Any): OcrResult
-}
-
-class MlKitEngine : OcrEngine {
-    override val name = "ML Kit"
-    override suspend fun recognize(input: Any): OcrResult = withContext(Dispatchers.IO) {
-        val t0 = System.currentTimeMillis()
-
-        val image = when (input) {
-            is Bitmap -> com.google.mlkit.vision.common.InputImage.fromBitmap(input, 0)
-            is BufferSet.Slice -> {
-                val w = input.width
-                val h = input.height
-                com.google.mlkit.vision.common.InputImage.fromByteBuffer(
-                    input.nv21,
-                    w,
-                    h,
-                    0,
-                    com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
-                )
-            }
-            else -> throw IllegalArgumentException("Unsupported input type for MlKitEngine: ${input.javaClass.name}")
-        }
-
-        val res = OdometerOcrUtils.extractFromPhotoBitmapRaw(image)
-        res.copy(engineName = name, executionTimeMs = System.currentTimeMillis() - t0)
-    }
 }
 
 object OcrUtils {

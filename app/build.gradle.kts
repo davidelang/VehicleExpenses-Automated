@@ -243,9 +243,6 @@ dependencies {
     // fat libopencv_java4.so (core+imgproc+imgcodecs, 16KB pages) under jniLibs.
     // Do not re-add Maven org.opencv:opencv AAR — it ships full multi-ABI natives and would
     // override / bloat the pin .so.
-    // ML Kit Text Recognition (bundled). Latest published 16.0.1 — arm64 already 16KB;
-    // not like OpenCV (no pin rebuild). armv7 residual is secondary to Play's 64-bit gate.
-    implementation("com.google.mlkit:text-recognition:16.0.1")
     // Unit tests (LocationBlobOverlay / pure helpers) — agent-run via ./build_app … -- testDebugUnitTest
     // Robolectric: real org.json.JSONObject (android.jar stubs break encode/parse under JVM).
     testImplementation("junit:junit:4.13.2")

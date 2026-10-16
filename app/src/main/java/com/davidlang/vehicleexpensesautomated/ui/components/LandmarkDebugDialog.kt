@@ -8,6 +8,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -26,9 +27,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -74,7 +78,17 @@ fun LandmarkDebugDialog(
 
     // Local state for editing
     var editableLandmarks by remember { mutableStateOf(landmarks) }
+    var undoStack by remember { mutableStateOf<List<List<TextBlock>>>(emptyList()) }
+    var selectedIndex by remember { mutableStateOf<Int?>(null) }
     val focusManager = LocalFocusManager.current
+
+    LaunchedEffect(photoPath, landmarks) {
+        selectedIndex = null
+    }
+
+    fun pushUndoSnapshot() {
+        undoStack = undoStack + listOf(editableLandmarks)
+    }
 
     // Optimization Phase 37: Async image loading to prevent Main-thread stall
     var processedBitmap by remember { mutableStateOf<Bitmap?>(sourceImage) }
@@ -85,7 +99,10 @@ fun LandmarkDebugDialog(
             isImageLoading = true
             withContext(Dispatchers.IO) {
                 try {
-                    val options = BitmapFactory.Options().apply { inSampleSize = 1 }
+                    val options = BitmapFactory.Options().apply {
+                        inSampleSize = 1
+                        inMutable = true
+                    }
                     val raw = if (photoPath.startsWith("content://")) {
                         context.contentResolver.openInputStream(Uri.parse(photoPath))?.use {
                             BitmapFactory.decodeStream(it, null, options)
@@ -95,10 +112,12 @@ fun LandmarkDebugDialog(
                     } else null
 
                     if (raw != null) {
-                        // Apply heavy filters on background thread
-                        val filtered = OdometerOcrUtils.applyBilateral(OdometerOcrUtils.applyGrayscale(raw))
-                        processedBitmap = filtered
-                        raw.recycle()
+                        processedBitmap = try {
+                            OdometerOcrUtils.applyBilateral(OdometerOcrUtils.applyGrayscale(raw))
+                        } catch (e: Exception) {
+                            Log.e("LandmarkDialog", "Failed to filter image; showing decoded photo", e)
+                            raw
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e("LandmarkDialog", "Failed to load/process image", e)
@@ -130,10 +149,26 @@ fun LandmarkDebugDialog(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         if (!isEditing) {
-                            Button(onClick = { isEditing = true }, modifier = Modifier.padding(end = 4.dp)) { Text("Edit OCR") }
+                            Button(
+                                onClick = {
+                                    isEditing = true
+                                    undoStack = emptyList()
+                                },
+                                modifier = Modifier.padding(end = 4.dp),
+                            ) { Text("Edit OCR") }
                         } else {
+                            TextButton(
+                                onClick = {
+                                    if (undoStack.isNotEmpty()) {
+                                        editableLandmarks = undoStack.last()
+                                        undoStack = undoStack.dropLast(1)
+                                    }
+                                },
+                                enabled = undoStack.isNotEmpty(),
+                            ) { Text("Undo") }
                             IconButton(
                                 onClick = {
+                                    pushUndoSnapshot()
                                     val newList = editableLandmarks.toMutableList()
                                     newList.add(TextBlock("", android.graphics.Rect(0, 0, 0, 0)))
                                     editableLandmarks = newList
@@ -143,7 +178,11 @@ fun LandmarkDebugDialog(
                             Text(
                                 "💾",
                                 modifier = Modifier
-                                    .clickable { onLandmarksChanged(editableLandmarks); onDismiss() }
+                                    .clickable {
+                                        undoStack = emptyList()
+                                        onLandmarksChanged(editableLandmarks)
+                                        onDismiss()
+                                    }
                                     .padding(4.dp)
                             )
                         }
@@ -153,6 +192,7 @@ fun LandmarkDebugDialog(
                                 if (isEditing) {
                                     isEditing = false
                                     editableLandmarks = landmarks
+                                    undoStack = emptyList()
                                 } else {
                                     onDismiss()
                                 }
@@ -168,14 +208,15 @@ fun LandmarkDebugDialog(
                     }
                 } else {
                     val bitmap = processedBitmap
-                    if (bitmap != null) {
-                        val imgW = bitmap.width.toFloat()
-                        val imgH = bitmap.height.toFloat()
 
-                        var scale by remember { mutableStateOf(1f) }
-                        var offset by remember { mutableStateOf(Offset.Zero) }
+                    Column(modifier = Modifier.weight(1f)) {
+                        if (bitmap != null) {
+                            val imgW = bitmap.width.toFloat()
+                            val imgH = bitmap.height.toFloat()
 
-                        Column(modifier = Modifier.weight(1f)) {
+                            var scale by remember { mutableStateOf(1f) }
+                            var offset by remember { mutableStateOf(Offset.Zero) }
+
                             // IMAGE VIEW
                             Box(modifier = Modifier.fillMaxWidth().aspectRatio(imgW / imgH)) {
                                 Box(modifier = Modifier
@@ -190,7 +231,32 @@ fun LandmarkDebugDialog(
                                     }
                                 ) {
                                     Box(modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y)) {
-                                        Canvas(modifier = Modifier.fillMaxSize()) {
+                                        Canvas(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .pointerInput(editableLandmarks, imgW, imgH) {
+                                                    detectTapGestures { tapOffset ->
+                                                        val dw = size.width.toFloat()
+                                                        val dh = size.height.toFloat()
+                                                        editableLandmarks.forEachIndexed { index, lm ->
+                                                            if (lm.boundingBox.width() <= 0) return@forEachIndexed
+                                                            val nx = lm.boundingBox.left.toFloat() / imgW
+                                                            val ny = lm.boundingBox.top.toFloat() / imgH
+                                                            val nw = lm.boundingBox.width().toFloat() / imgW
+                                                            val nh = lm.boundingBox.height().toFloat() / imgH
+                                                            val topLeft = Offset(nx * dw, ny * dh)
+                                                            val rectSize = Size(nw * dw, nh * dh)
+                                                            if (
+                                                                tapOffset.x in topLeft.x..(topLeft.x + rectSize.width) &&
+                                                                tapOffset.y in topLeft.y..(topLeft.y + rectSize.height)
+                                                            ) {
+                                                                selectedIndex = index
+                                                                return@detectTapGestures
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                        ) {
                                             val dw = size.width; val dh = size.height
 
                                             drawImage(
@@ -209,14 +275,26 @@ fun LandmarkDebugDialog(
                                                 drawRect(color = color, topLeft = topLeft, size = rectSize, style = Stroke(2f))
                                             }
 
-                                            editableLandmarks.forEach { lm ->
-                                                if (lm.boundingBox.width() > 0) {
-                                                    val nx = lm.boundingBox.left.toFloat() / imgW; val ny = lm.boundingBox.top.toFloat() / imgH
-                                                    val nw = lm.boundingBox.width().toFloat() / imgW; val nh = lm.boundingBox.height().toFloat() / imgH
-                                                    val topLeft = Offset(nx * dw, ny * dh)
-                                                    val rectSize = Size(nw * dw, nh * dh)
-                                                    drawRect(color = Color.Yellow.copy(alpha = 0.3f), topLeft = topLeft, size = rectSize, style = Fill)
-                                                    drawRect(color = Color.Yellow, topLeft = topLeft, size = rectSize, style = Stroke(1f))
+                                            fun drawLandmarkBox(lm: TextBlock, fillColor: Color, strokeColor: Color, fillAlpha: Float) {
+                                                if (lm.boundingBox.width() <= 0) return
+                                                val nx = lm.boundingBox.left.toFloat() / imgW
+                                                val ny = lm.boundingBox.top.toFloat() / imgH
+                                                val nw = lm.boundingBox.width().toFloat() / imgW
+                                                val nh = lm.boundingBox.height().toFloat() / imgH
+                                                val topLeft = Offset(nx * dw, ny * dh)
+                                                val rectSize = Size(nw * dw, nh * dh)
+                                                drawRect(color = fillColor.copy(alpha = fillAlpha), topLeft = topLeft, size = rectSize, style = Fill)
+                                                drawRect(color = strokeColor, topLeft = topLeft, size = rectSize, style = Stroke(1f))
+                                            }
+
+                                            editableLandmarks.forEachIndexed { index, lm ->
+                                                if (index != selectedIndex) {
+                                                    drawLandmarkBox(lm, Color.Yellow, Color.Yellow, fillAlpha = 0.3f)
+                                                }
+                                            }
+                                            selectedIndex?.let { idx ->
+                                                editableLandmarks.getOrNull(idx)?.let { lm ->
+                                                    drawLandmarkBox(lm, Color.Red, Color.Red, fillAlpha = 0.3f)
                                                 }
                                             }
                                             odometerCrop?.let { drawIcrsRect(it, Color.Blue, fillAlpha = 0.5f) }
@@ -230,8 +308,9 @@ fun LandmarkDebugDialog(
                                     }
                                 }
                             }
+                        }
 
-                            LazyVerticalGrid(
+                        LazyVerticalGrid(
                                 columns = GridCells.Adaptive(minSize = 150.dp),
                                 modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
                                 contentPadding = PaddingValues(4.dp),
@@ -241,7 +320,9 @@ fun LandmarkDebugDialog(
                                 items(editableLandmarks.size) { index ->
                                     val lm = editableLandmarks[index]
                                     Surface(
-                                        modifier = Modifier.height(if (isEditing) 80.dp else 64.dp),
+                                        modifier = Modifier
+                                            .height(if (isEditing) 80.dp else 64.dp)
+                                            .clickable { selectedIndex = index },
                                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                                         shape = MaterialTheme.shapes.extraSmall,
                                         border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -253,9 +334,10 @@ fun LandmarkDebugDialog(
                                                 var crop by remember(zone) { mutableStateOf<Bitmap?>(null) }
 
                                                 DisposableEffect(zone, bitmap) {
-                                                    if (zone != null && zone.width() > 0 && zone.height() > 0) {
+                                                    val bmp = bitmap
+                                                    if (zone != null && bmp != null && zone.width() > 0 && zone.height() > 0) {
                                                         try {
-                                                            crop = Bitmap.createBitmap(bitmap, max(0, zone.left), max(0, zone.top), min(bitmap.width - zone.left, zone.width()), min(bitmap.height - zone.top, zone.height()))
+                                                            crop = Bitmap.createBitmap(bmp, max(0, zone.left), max(0, zone.top), min(bmp.width - zone.left, zone.width()), min(bmp.height - zone.top, zone.height()))
                                                         } catch (e: Exception) { Log.e("LandmarkDialog", "Crop failed", e) }
                                                     }
                                                     onDispose {
@@ -268,19 +350,24 @@ fun LandmarkDebugDialog(
                                             }
 
                                             Spacer(modifier = Modifier.width(8.dp))
-                                            Column(modifier = Modifier.weight(1f)) {
+                                            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                                                 if (isEditing) {
                                                     TextField(
                                                         value = lm.text,
                                                         onValueChange = { newText: String ->
+                                                            pushUndoSnapshot()
                                                             val newList = editableLandmarks.toMutableList()
                                                             newList[index] = lm.copy(text = newText)
                                                             editableLandmarks = newList
                                                         },
-                                                        textStyle = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontFamily = LandmarkGlyphFont,
+                                                        ),
                                                         modifier = Modifier
                                                             .fillMaxWidth()
                                                             .height(48.dp)
+                                                            .align(Alignment.CenterStart)
                                                             .focusProperties {
                                                                 up = FocusRequester.Cancel
                                                                 down = FocusRequester.Cancel
@@ -315,24 +402,38 @@ fun LandmarkDebugDialog(
                                                         keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                                                         singleLine = true
                                                     )
+                                                } else if (lm.text.isNotBlank()) {
+                                                    LandmarkCropHeightText(
+                                                        text = lm.text,
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .height(48.dp)
+                                                            .align(Alignment.CenterStart),
+                                                    )
                                                 } else {
-                                                    if (lm.text.isNotBlank()) Text(lm.text, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
-                                                    else Text("[Container]", style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp), fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.secondary)
+                                                    Text(
+                                                        "[Container]",
+                                                        modifier = Modifier.align(Alignment.CenterStart),
+                                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                                                        fontStyle = FontStyle.Italic,
+                                                        color = MaterialTheme.colorScheme.secondary,
+                                                    )
                                                 }
-
-                                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                    if (lm.boundingBox.width() > 0) MetricChip(color = Color.Yellow, w = lm.boundingBox.width().toFloat(), h = lm.boundingBox.height().toFloat())
-                                                }
+                                            }
+                                            if (isEditing) {
+                                                IconButton(
+                                                    onClick = {
+                                                        pushUndoSnapshot()
+                                                        editableLandmarks =
+                                                            editableLandmarks.toMutableList().apply { removeAt(index) }
+                                                    },
+                                                    modifier = Modifier.size(36.dp),
+                                                ) { Text("✕") }
                                             }
                                         }
                                     }
                                 }
                             }
-                        }
-                    } else {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("No image data available", color = MaterialTheme.colorScheme.error)
-                        }
                     }
                 }
             }
@@ -340,9 +441,38 @@ fun LandmarkDebugDialog(
     }
 }
 
+private val landmarkCropTextHeight = 48.sp
+
 @Composable
-private fun MetricChip(color: Color, w: Float, h: Float) {
-    Surface(color = color.copy(alpha = 0.15f), shape = MaterialTheme.shapes.extraSmall, border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.6f))) {
-        Text(text = "${w.toInt()}x${h.toInt()}", modifier = Modifier.padding(horizontal = 2.dp, vertical = 0.5.dp), style = TextStyle(fontSize = 7.sp, fontWeight = FontWeight.Black, color = color.copy(alpha = 0.9f)))
+private fun LandmarkCropHeightText(text: String, modifier: Modifier = Modifier) {
+    BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.CenterStart) {
+        val textMeasurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val maxWidthPx = with(density) { maxWidth.roundToPx().coerceAtLeast(1) }
+        val baseStyle = TextStyle(
+            fontFamily = LandmarkGlyphFont,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        val fontSize = remember(text, maxWidthPx) {
+            var sizeSp = landmarkCropTextHeight.value
+            while (sizeSp >= 8f) {
+                val measured = textMeasurer.measure(
+                    text,
+                    baseStyle.copy(fontSize = sizeSp.sp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip,
+                )
+                if (measured.size.width <= maxWidthPx) break
+                sizeSp -= 0.5f
+            }
+            sizeSp.sp
+        }
+        Text(
+            text,
+            style = baseStyle.copy(fontSize = fontSize),
+            maxLines = 1,
+            overflow = TextOverflow.Clip,
+        )
     }
 }

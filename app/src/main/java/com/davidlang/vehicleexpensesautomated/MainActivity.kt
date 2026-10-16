@@ -112,7 +112,7 @@ import com.davidlang.vehicleexpensesautomated.ui.settings.SyncingScreen
 import com.davidlang.vehicleexpensesautomated.ui.theme.VehicleExpensesAutomatedTheme
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
-import com.davidlang.vehicleexpensesautomated.ui.vehicle.ManageVehiclesScreen
+import com.davidlang.vehicleexpensesautomated.ui.vehicle.ManageVehicles2Screen
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import javax.inject.Inject
@@ -413,7 +413,7 @@ class MainActivity : ComponentActivity() {
                     currentRoute == "experiment_heatmap_stage" -> "Heatmap stage"
                     currentRoute == "experiment_multiscale_det" ||
                         currentRoute?.startsWith("experiment_multiscale_det") == true ->
-                        "Multi-scale det + expand P"
+                        "Dash paddle long-edge det/rec"
                     else -> "Vehicle Expenses"
                 }
 
@@ -537,7 +537,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                                 NavigationDrawerItem(
-                                    label = { Text("Multi-scale det + expand P") },
+                                    label = { Text("Dash paddle long-edge det/rec") },
                                     selected = false,
                                     onClick = {
                                         navController.navigate("experiment_multiscale_det?auto=")
@@ -661,7 +661,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(innerPadding)
                             ) {
                                 composable("quickfill") { QuickFillupScreen(navController = navController) }
-                                composable("managevehicles") { ManageVehiclesScreen(navController = navController) }
+                                composable("managevehicles") { ManageVehicles2Screen(navController = navController) }
                                 composable("expense") {
                                     ExpenseEntryScreen(
                                         navController = navController,
