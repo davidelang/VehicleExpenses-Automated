@@ -1,3 +1,8 @@
+**Obsolete:** yes
+**Last-in-tree commit:** `10e3004e` — last revision of the live iterative-algorithm spec at repo root
+**Removed in:** `d4126e01` / tag peel `obsolete-mlkit-text-recognition` (`9c8d531`) — ML Kit text recognition dropped from Gradle and Kotlin
+**Why removed:** The app no longer links Google ML Kit text recognition; production odometer and landmark reads use Paddle. See [DROP_MLKIT.md](DROP_MLKIT.md).
+
 # MLKitEngine Iterative OCR Algorithm Specification
 
 ## Foundational Mandates
@@ -56,4 +61,3 @@ Prepare the JSON section for this stage, capturing:
 
 ### Step 5: Results Consolidation
 After the loop completes, consolidate the text data, Base64 snapshots, and JSON metadata into an `OcrHarnessResult` and return it.
-

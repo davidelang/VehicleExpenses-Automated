@@ -14,7 +14,6 @@ import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentReportHtml
 import com.davidlang.vehicleexpensesautomated.ui.experiment.ReportCellRef
 import com.davidlang.vehicleexpensesautomated.ui.experiment.ReportCollapser
 import com.davidlang.vehicleexpensesautomated.ui.experiment.ocrPumpFeedOriented40
-import com.davidlang.vehicleexpensesautomated.ui.experiment.performLandmarkDiscovery
 import com.davidlang.vehicleexpensesautomated.ui.experiment.recognizeRotGmmQuads
 import java.io.File
 import java.io.FileOutputStream
@@ -38,8 +37,8 @@ import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 
 /**
- * Dash-only collection: ML Kit once on the raw photo and on one deskewed copy,
- * then product_det single-feed at each long-edge. Raw gray uses [recognizeRotGmmQuads].
+ * Dash-only collection: product_det single-feed at each long-edge on raw and deskewed gray.
+ * Raw gray uses [recognizeRotGmmQuads].
  * Deskew gray uses [ocrPumpFeedOriented40] and [VehicleExpensesApplication.anchoredEngineV3].
  * No seed merge and no interior-energy expand. Collapser + FGS job stay.
  *
@@ -293,12 +292,10 @@ object MultiScaleDetRunner {
         }
     }
 
-    private fun cellsPerPhoto(): Int = 1 + OUTER_SCALES.size
-
-    private fun mlkitId(photoIndex: Int): Int = photoIndex * cellsPerPhoto() + 1
+    private fun cellsPerPhoto(): Int = OUTER_SCALES.size
 
     private fun paddleId(photoIndex: Int, edgeIndex: Int): Int =
-        photoIndex * cellsPerPhoto() + 2 + edgeIndex
+        photoIndex * cellsPerPhoto() + 1 + edgeIndex
 
     private fun photoIndexForId(id: Int): Int = (id - 1) / cellsPerPhoto()
 
@@ -482,9 +479,8 @@ object MultiScaleDetRunner {
         val cursorFile = File(outDir, "multi_scale_det_cursor_$ts.txt")
         val cellOrder = ArrayList<ReportCellRef>(nCells)
         for (pi in photos.indices) {
-            cellOrder.add(ReportCellRef(mlkitId(pi), pi, 0, 0))
             for (ei in OUTER_SCALES.indices) {
-                cellOrder.add(ReportCellRef(paddleId(pi, ei), pi, ei + 1, 0))
+                cellOrder.add(ReportCellRef(paddleId(pi, ei), pi, ei, 0))
             }
         }
 
@@ -552,13 +548,8 @@ object MultiScaleDetRunner {
         }
 
         fun publishError(id: Int, photo: PhotoRef, kind: String, err: String, edge: Int? = null) {
-            val seam = if (kind == "mlkit") {
-                htmlColumnSeam(OUTER_SCALES.size, 3)
-            } else {
-                htmlColumnSeam(1, 5)
-            }
             val span = "<span class='stat' style='color:#f66'>${esc(err)}</span>"
-            val html = span + seam + span
+            val html = span + htmlColumnSeam(1, 3) + span
             val o = JSONObject()
                 .put("id", id)
                 .put("id_tag", idTag(id))
@@ -608,56 +599,30 @@ object MultiScaleDetRunner {
 
             for (pi in photos.indices) {
                 val ref = photos[pi]
-                val mlId = mlkitId(pi)
                 onProgress(cellsDone, nCells, ref.displayName)
                 onLog("PHOTO ${pi + 1}/$nPhotos ${ref.displayName}")
                 try {
                     if (!ingestPhotoToMaster(context, ref, m, MAX_SIDE, onLog)) {
-                        publishError(mlId, ref, "mlkit", "ingest_fail")
                         for (ei in OUTER_SCALES.indices) {
                             publishError(paddleId(pi, ei), ref, "paddle", "ingest_fail", OUTER_SCALES[ei])
                         }
                         continue
                     }
-                    val rawLm = try {
-                        performLandmarkDiscovery(m.p, context).second
-                    } catch (t: CancellationException) {
-                        throw t
-                    } catch (t: Throwable) {
-                        onLog("MLKIT_RAW_FAIL ${ref.displayName}: ${t.message}")
-                        emptyList()
-                    }
-                    var mlAngle = 0f
-                    var angleNote = ""
+                    var deskewAngle = 0f
                     try {
-                        mlAngle = OdometerOcrUtils.calculateAverageTextAngle(
+                        deskewAngle = OdometerOcrUtils.calculateAverageTextAngle(
                             m.p, DESKEW_LONG_EDGE,
-                        ).mlAngle
+                        ).angle
                     } catch (t: CancellationException) {
                         throw t
                     } catch (t: Throwable) {
-                        angleNote = t.message ?: "angle_fail"
-                        onLog("ANGLE_FAIL ${ref.displayName}: $angleNote")
+                        onLog("ANGLE_FAIL ${ref.displayName}: ${t.message ?: "angle_fail"}")
                     }
                     copyPrimary(m, d)
-                    OdometerOcrUtils.rotate(d, -mlAngle)
-                    val deskewLm = try {
-                        performLandmarkDiscovery(d.p, context).second
-                    } catch (t: CancellationException) {
-                        throw t
-                    } catch (t: Throwable) {
-                        onLog("MLKIT_DESKEW_FAIL ${ref.displayName}: ${t.message}")
-                        emptyList()
-                    }
+                    OdometerOcrUtils.rotate(d, -deskewAngle)
                     onLog(
-                        "MLKIT ${ref.displayName} raw=${rawLm.size} deskew=${deskewLm.size} " +
-                            "mlAngle=$mlAngle rot=${-mlAngle} image=${m.width}x${m.height}",
-                    )
-                    publish(
-                        mlId,
-                        mlkitHtml(m.p.mat, d.p.mat, rawLm, deskewLm, mlAngle, angleNote),
-                        mlkitJson(mlId, ref, mlAngle, m.width, m.height, rawLm, deskewLm, angleNote),
-                        "${ref.displayName} mlkit",
+                        "DESKEW ${ref.displayName} angle=$deskewAngle rot=${-deskewAngle} " +
+                            "image=${m.width}x${m.height}",
                     )
                     for (ei in OUTER_SCALES.indices) {
                         val le = OUTER_SCALES[ei]
@@ -681,7 +646,6 @@ object MultiScaleDetRunner {
                     onLog("PHOTO_FAIL ${ref.displayName}: ${t.javaClass.simpleName}: ${t.message}")
                     Log.e(TAG, "photo ${ref.displayName}", t)
                     val err = t.message ?: t.javaClass.simpleName
-                    publishError(mlId, ref, "mlkit", err)
                     for (ei in OUTER_SCALES.indices) {
                         publishError(paddleId(pi, ei), ref, "paddle", err, OUTER_SCALES[ei])
                     }
@@ -1039,49 +1003,6 @@ object MultiScaleDetRunner {
         return a
     }
 
-    private fun landmarkJson(b: TextBlock): JSONObject {
-        val r = b.boundingBox
-        return JSONObject()
-            .put("text", b.text)
-            .put("width", r.width())
-            .put("height", r.height())
-            .put("left", r.left)
-            .put("top", r.top)
-            .put("right", r.right)
-            .put("bottom", r.bottom)
-    }
-
-    private fun landmarksJson(blocks: List<TextBlock>): JSONArray {
-        val a = JSONArray()
-        for (b in blocks) a.put(landmarkJson(b))
-        return a
-    }
-
-    private fun mlkitJson(
-        id: Int,
-        photo: PhotoRef,
-        mlAngle: Float,
-        imageW: Int,
-        imageH: Int,
-        raw: List<TextBlock>,
-        deskew: List<TextBlock>,
-        angleNote: String,
-    ): String = JSONObject()
-        .put("id", id)
-        .put("id_tag", idTag(id))
-        .put("kind", "mlkit")
-        .put("photo", photo.displayName)
-        .put("domain", photo.domain)
-        .put("status", "ok")
-        .put("angle_deg", mlAngle.toDouble())
-        .put("rotation_deg", (-mlAngle).toDouble())
-        .put("angle_note", angleNote)
-        .put("image_w", imageW)
-        .put("image_h", imageH)
-        .put("raw", landmarksJson(raw))
-        .put("deskew", landmarksJson(deskew))
-        .toString()
-
     private fun seedJson(s: SeedRec): JSONObject = JSONObject()
         .put("text", s.text)
         .put("probs", s.probs)
@@ -1139,45 +1060,6 @@ object MultiScaleDetRunner {
         return "</td><td$span data-col='$dataCol'>"
     }
 
-    private fun landmarksHtml(blocks: List<TextBlock>): String {
-        val sb = StringBuilder()
-        sb.append("<div class='stat'>")
-        for (b in blocks) {
-            sb.append(esc(b.text)).append("<br>")
-        }
-        sb.append("</div>")
-        return sb.toString()
-    }
-
-    private fun mlkitSideHtml(gray: Mat, blocks: List<TextBlock>, angleLine: String): String {
-        val sb = StringBuilder()
-        if (angleLine.isNotEmpty()) {
-            sb.append("<div class='stat'>").append(angleLine).append("</div>")
-        }
-        val b64 = renderLandmarkOverlay(gray, blocks)
-        if (b64.isNotEmpty()) {
-            sb.append("<img src='data:image/jpeg;base64,").append(b64).append("' loading='lazy'/>")
-        }
-        sb.append(landmarksHtml(blocks))
-        return sb.toString()
-    }
-
-    private fun mlkitHtml(
-        rawGray: Mat,
-        deskewGray: Mat,
-        raw: List<TextBlock>,
-        deskew: List<TextBlock>,
-        mlAngle: Float,
-        angleNote: String,
-    ): String {
-        val note = if (angleNote.isEmpty()) "" else " (${esc(angleNote)})"
-        val angleLine = "angle=${"%.3f".format(Locale.US, mlAngle)}° " +
-            "rotate=${"%.3f".format(Locale.US, -mlAngle)}°$note"
-        return mlkitSideHtml(rawGray, raw, "") +
-            htmlColumnSeam(OUTER_SCALES.size, 3) +
-            mlkitSideHtml(deskewGray, deskew, angleLine)
-    }
-
     private fun sideHtml(side: SideSeeds): String {
         val sb = StringBuilder()
         if (side.error != null) {
@@ -1195,7 +1077,7 @@ object MultiScaleDetRunner {
     }
 
     private fun paddleHtml(raw: SideSeeds, deskew: SideSeeds): String =
-        sideHtml(raw) + htmlColumnSeam(1, 5) + sideHtml(deskew)
+        sideHtml(raw) + htmlColumnSeam(1, 3) + sideHtml(deskew)
 
     /** Red seed quad and blue rec quad on a preview of [gray]. */
     private fun renderQuadOverlay(gray: Mat, seeds: List<SeedRec>): String {
@@ -1241,46 +1123,6 @@ object MultiScaleDetRunner {
             throw t
         } catch (t: Throwable) {
             Log.w(TAG, "overlay: ${t.message}")
-            return ""
-        } finally {
-            small.release()
-            rgba.release()
-        }
-    }
-
-    /** Landmark boxes on a preview of [gray]. Same width cap as [renderQuadOverlay]. */
-    private fun renderLandmarkOverlay(gray: Mat, blocks: List<TextBlock>): String {
-        if (gray.empty()) return ""
-        val fullW = gray.cols()
-        val fullH = gray.rows()
-        if (fullW < 1 || fullH < 1) return ""
-        val scale = if (fullW > PREVIEW_MAX_W) PREVIEW_MAX_W.toFloat() / fullW else 1f
-        val pw = max(1, (fullW * scale).roundToInt())
-        val ph = max(1, (fullH * scale).roundToInt())
-        val small = Mat()
-        val rgba = Mat()
-        try {
-            Imgproc.resize(gray, small, Size(pw.toDouble(), ph.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
-            Imgproc.cvtColor(small, rgba, Imgproc.COLOR_GRAY2RGBA)
-            for (b in blocks) {
-                val r = b.boundingBox
-                Imgproc.rectangle(
-                    rgba,
-                    Point((r.left * scale).toDouble(), (r.top * scale).toDouble()),
-                    Point((r.right * scale).toDouble(), (r.bottom * scale).toDouble()),
-                    Scalar(0.0, 255.0, 0.0, 255.0),
-                    1,
-                )
-            }
-            val bmp = Bitmap.createBitmap(pw, ph, Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(rgba, bmp)
-            val b64 = OcrUtils.bitmapToBase64(bmp, 72)
-            bmp.recycle()
-            return b64
-        } catch (t: CancellationException) {
-            throw t
-        } catch (t: Throwable) {
-            Log.w(TAG, "landmark overlay: ${t.message}")
             return ""
         } finally {
             small.release()
@@ -1335,7 +1177,6 @@ object MultiScaleDetRunner {
                 .put("rot_g_right", SET_G_UV_RIGHT_FRAC.toDouble())
                 .put("expand", "none")
                 .put("seed_merge", "none")
-                .put("mlkit", "once per photo on raw and on deskew")
                 .put("n_photos", photos.size)
                 .put("n_cells", nCells)
                 .put("cells_per_photo", cellsPerPhoto())
@@ -1359,7 +1200,7 @@ object MultiScaleDetRunner {
     ) {
         val nRows = OUTER_SCALES.size
         val colLabels = listOf(
-            "photo", "long-edge", "ML Kit raw", "ML Kit deskew", "paddle raw", "paddle deskew",
+            "photo", "long-edge", "paddle raw", "paddle deskew",
         )
         val metaHtml =
             "<b>Run</b> $ts · <b>Device</b> ${Build.MODEL} · " +
@@ -1368,19 +1209,17 @@ object MultiScaleDetRunner {
         f.bufferedWriter().use { w ->
             w.append(
                 ExperimentReportHtml.documentHead(
-                    "Dash ML Kit + paddle det/rec $ts",
+                    "Dash paddle long-edge det/rec $ts",
                     ExperimentReportHtml.Kind.MULTISCALE,
                 ),
             )
-            w.appendLine("<h1>Dash ML Kit + paddle long-edge det/rec</h1>")
+            w.appendLine("<h1>Dash paddle long-edge det/rec</h1>")
             w.appendLine("<p class='meta'>$metaHtml</p>")
             w.appendLine(
                 "<p class='meta dump-details'>Dash photos only. Long-edges $OUTER_SCALES, " +
                     "one product_det square feed each (not the 608 clamp). " +
-                    "Columns: photo, long-edge, ML Kit raw, ML Kit deskew, paddle raw, paddle deskew. " +
-                    "ML Kit once per photo on the raw image and the deskewed copy " +
-                    "(angle at long-edge $DESKEW_LONG_EDGE, rotate −mlAngle). " +
-                    "Each ML Kit cell is that side’s preview with landmark boxes and recognition strings. " +
+                    "Columns: photo, long-edge, paddle raw, paddle deskew. " +
+                    "Deskew angle from paddle at long-edge $DESKEW_LONG_EDGE (rotate −angle). " +
                     "Each paddle cell is that side’s red-seed / blue-quad overlay and blue-box strings. " +
                     "rot-G-- vert $ROT_G_VERT left $SET_G_UV_LEFT_FRAC " +
                     "right $SET_G_UV_RIGHT_FRAC. No expand, no seed merge. " +
@@ -1397,7 +1236,6 @@ object MultiScaleDetRunner {
                 for (pi in photoRange) {
                     val ref = photos[pi]
                     val photoNum = pi + 1
-                    val mlId = mlkitId(pi)
                     for (ei in OUTER_SCALES.indices) {
                         val le = OUTER_SCALES[ei]
                         val id = paddleId(pi, ei)
@@ -1409,19 +1247,10 @@ object MultiScaleDetRunner {
                             )
                         }
                         w.append("<th class='scale' data-col='1'>$le</th>")
-                        if (ei == 0) {
-                            w.append("<td rowspan='$nRows' data-col='2' id='c${idTag(mlId)}'>")
-                            w.append(htmlBegin(mlId))
-                            w.append("<span class='stat pending'>… ${idTag(mlId)}</span>")
-                            w.append(htmlColumnSeam(nRows, 3))
-                            w.append("<span class='stat pending'>… ${idTag(mlId)}</span>")
-                            w.append(htmlEnd(mlId))
-                            w.append("</td>")
-                        }
-                        w.append("<td data-col='4' id='c${idTag(id)}'>")
+                        w.append("<td data-col='2' id='c${idTag(id)}'>")
                         w.append(htmlBegin(id))
                         w.append("<span class='stat pending'>… ${idTag(id)}</span>")
-                        w.append(htmlColumnSeam(1, 5))
+                        w.append(htmlColumnSeam(1, 3))
                         w.append("<span class='stat pending'>… ${idTag(id)}</span>")
                         w.append(htmlEnd(id))
                         w.append("</td>")
@@ -1447,7 +1276,7 @@ object MultiScaleDetRunner {
         nCells: Int,
     ) {
         f.bufferedWriter().use { w ->
-            w.appendLine("# dash multi-scale sparse results — ML Kit once per photo, paddle per long-edge")
+            w.appendLine("# dash multi-scale sparse results — paddle per long-edge")
             w.appendLine(
                 JSONObject()
                     .put("_meta", true)
@@ -1462,19 +1291,6 @@ object MultiScaleDetRunner {
             )
             for (pi in photos.indices) {
                 val ref = photos[pi]
-                val mlId = mlkitId(pi)
-                w.append(jsonBegin(mlId))
-                w.append(
-                    JSONObject()
-                        .put("id", mlId)
-                        .put("kind", "mlkit")
-                        .put("status", "pending")
-                        .put("photo", ref.displayName)
-                        .put("domain", ref.domain)
-                        .toString(),
-                )
-                w.append(jsonEnd(mlId))
-                w.append('\n')
                 for (ei in OUTER_SCALES.indices) {
                     val id = paddleId(pi, ei)
                     val le = OUTER_SCALES[ei]

@@ -11826,3 +11826,7 @@ Plan ocr-geom-rec-prep-not-sizes-20260921-0445-plan.md. Tag detect-ocr-work-2/bu
 ## 2026-10-15 - Call the paddle seed reader from Quick Fill and batch dash.
 
 - Quick Fill, Start trip, and batch dash call the paddle seed reader.
+
+## 2026-10-15 - Remove ML Kit text recognition from experiments and Gradle.
+
+- Experiments and Gradle no longer use ML Kit text recognition. The iterative algorithm note is docs/obsolete/MLKIT_ITERATIVE_ALGORITHM.md.

@@ -13,9 +13,6 @@ import android.graphics.RectF
 import android.net.Uri
 import android.util.Log
 import com.davidlang.vehicleexpensesautomated.VehicleExpensesApplication
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -26,7 +23,6 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -169,11 +165,6 @@ object OdometerOcrUtils {
         val tPrep = System.currentTimeMillis() - t0
         val results = mutableMapOf<String, EngineResult>()
 
-        val tMl0 = System.currentTimeMillis()
-        val mlRes = deskewMlKit(pack.dest.p.nv21, pack.dest.p.width, pack.dest.p.height, pack.pScale)
-        val tMl = System.currentTimeMillis() - tMl0
-        results["ML Kit"] = mlRes.copy(timesMs = listOf(tPrep, tMl))
-
         val tPd0 = System.currentTimeMillis()
         val pdRes = deskewPaddleDual(pack)
         val tPd = System.currentTimeMillis() - tPd0
@@ -181,43 +172,16 @@ object OdometerOcrUtils {
 
         val paddleCppAngle = pdRes.metadata["paddle_cpp_angle"]?.toFloatOrNull() ?: 0f
         return DeskewResult(
-            angle = mlRes.angle.coerceIn(-20f, 20f),
-            mlAngle = mlRes.angle,
-            mlTimeMs = results["ML Kit"]?.timesMs?.sum() ?: 0L,
+            angle = optAngle.coerceIn(-20f, 20f),
+            mlAngle = 0f,
+            mlTimeMs = 0L,
             paddleTimeMs = results["Paddle V3"]?.timesMs?.sum() ?: 0L,
             paddleCppAngle = paddleCppAngle,
             paddleOptimizedAngle = optAngle,
             paddleOptimizedTimeMs = optTime,
-            mlBlocks = mlRes.blocks,
+            mlBlocks = emptyList(),
             paddleBlocks = pdRes.blocks,
             paddleCppBlocks = pdRes.cppBlocks,
-            engines = results,
-            metadata = mapOf(
-                "t_prep_ms" to tPrep.toString(),
-                "deskew_long_edge" to pTargetSize.toString(),
-            ),
-        )
-    }
-
-    suspend fun calculateDeskewAngleMlOnly(input: Any, longEdgeTarget: Int = 2048): DeskewResult {
-        val t0 = System.currentTimeMillis()
-        val pTargetSize = longEdgeTarget.coerceIn(64, 2048)
-        val pack = packDeskewLetterbox(input, pTargetSize)
-        val tPrep = System.currentTimeMillis() - t0
-        val results = mutableMapOf<String, EngineResult>()
-        val tMl0 = System.currentTimeMillis()
-        val mlRes = deskewMlKit(pack.dest.p.nv21, pack.dest.p.width, pack.dest.p.height, pack.pScale)
-        val tMl = System.currentTimeMillis() - tMl0
-        results["ML Kit"] = mlRes.copy(timesMs = listOf(tPrep, tMl))
-        return DeskewResult(
-            angle = mlRes.angle.coerceIn(-20f, 20f),
-            mlAngle = mlRes.angle,
-            mlTimeMs = results["ML Kit"]?.timesMs?.sum() ?: 0L,
-            paddleTimeMs = 0L,
-            paddleCppAngle = 0f,
-            paddleOptimizedAngle = 0f,
-            paddleOptimizedTimeMs = 0L,
-            mlBlocks = mlRes.blocks,
             engines = results,
             metadata = mapOf(
                 "t_prep_ms" to tPrep.toString(),
@@ -266,21 +230,6 @@ object OdometerOcrUtils {
         val det = paddleEngine.detect(pack.dest, pack.S, pack.S, copyHeatmap = false)
         val cppAngle = det?.deskewAngleCpp(0.20f) ?: 0f
         return Pair(cppAngle, System.currentTimeMillis() - t0)
-    }
-
-    private suspend fun deskewMlKit(nv21: ByteBuffer, width: Int, height: Int, pScale: Float): EngineResult {
-        val tStart = System.currentTimeMillis()
-        val img = InputImage.fromByteBuffer(nv21, width, height, 0, InputImage.IMAGE_FORMAT_NV21)
-        val res = extractFromPhotoBitmapRaw(img)
-        val tDetect = System.currentTimeMillis() - tStart
-
-        val invScale = 1.0f / pScale
-        val scaledBlocks = res.textBlocks.map { block ->
-            val b = block.boundingBox
-            block.copy(boundingBox = android.graphics.Rect((b.left * invScale).toInt(), (b.top * invScale).toInt(), (b.right * invScale).toInt(), (b.bottom * invScale).toInt()))
-        }
-        val srcH = (height * invScale).toInt()
-        return EngineResult(calculateWeightedAverage(scaledBlocks, srcH), listOf(tDetect), scaledBlocks)
     }
 
     fun consolidateRects(fragments: List<android.graphics.Rect>, threshold: Float = 0.75f): List<android.graphics.Rect> {
@@ -482,33 +431,6 @@ object OdometerOcrUtils {
 
         return Triple(pWidth, pHeight, pScale)
     }
-
-    suspend fun extractFromPhotoBitmapRaw(image: com.google.mlkit.vision.common.InputImage): OcrResult {
-        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-        return try {
-            val visionText = recognizer.process(image).await()
-            val blocks = mutableListOf<TextBlock>()
-            val text = StringBuilder()
-            for (block in visionText.textBlocks) {
-                for (line in block.lines) {
-                    for (element in line.elements) {
-                        val hunk = element.text
-                        val box = element.boundingBox
-                        if (box != null) {
-                            val confidence = element.confidence ?: 0f
-                            blocks.add(TextBlock(hunk, box, line.angle, confidence = confidence))
-                            text.append(hunk).append(" ")
-                        }
-                    }
-                }
-            }
-            OcrResult(engineName = "ML Kit", debugText = text.toString().trim(), textBlocks = blocks, imageWidth = image.width, imageHeight = image.height)
-        } catch (e: Exception) {
-            Log.e("OdometerOcr", "ML Kit failed", e)
-            OcrResult(engineName = "ML Kit", debugText = "(ML Kit error: ${e.message})", imageWidth = image.width, imageHeight = image.height)
-        }
-    }
-
 
     private fun normalizeAngle(angle: Float): Float {
         // Maps angle to [-45, 45] range using 90-degree rotational symmetry
@@ -1092,32 +1014,6 @@ object OdometerOcrUtils {
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
-    suspend fun extractFromPhotoBitmap(bitmap: Bitmap): OcrResult {
-        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-        val image = InputImage.fromBitmap(bitmap, 0)
-        return try {
-            val visionText = recognizer.process(image).await()
-            val blocks = mutableListOf<TextBlock>()
-            val text = StringBuilder()
-            for (block in visionText.textBlocks) {
-                for (line in block.lines) {
-                    for (element in line.elements) {
-                        val hunk = element.text
-                        val box = element.boundingBox
-                        if (box != null) {
-                            blocks.add(TextBlock(hunk, box, line.angle))
-                            text.append(hunk).append(" ")
-                        }
-                    }
-                }
-            }
-            OcrResult(engineName = "ML Kit", debugText = text.toString().trim(), textBlocks = blocks, imageWidth = image.width, imageHeight = image.height)
-        } catch (e: Exception) {
-            Log.e("OdometerOcr", "ML Kit failed", e)
-            OcrResult(engineName = "ML Kit", debugText = "(ML Kit error: ${e.message})", imageWidth = image.width, imageHeight = image.height)
-        }
-    }
-
     fun addPadding(bitmap: Bitmap, padding: Int, color: Int = Color.BLACK): Bitmap {
         val out = Bitmap.createBitmap(bitmap.width + 2 * padding, bitmap.height + 2 * padding, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
@@ -1461,21 +1357,4 @@ object OdometerOcrUtils {
         return results
     }
 
-    suspend fun extractFromPhoto(photoPath: String): OcrResult = withContext(Dispatchers.IO) {
-        val rawBitmap = BitmapFactory.decodeFile(photoPath)
-        if (rawBitmap == null) return@withContext OcrResult(debugText = "Failed decode", originalPhotoPath = photoPath)
-        val rotated = rotateImageIfRequired(rawBitmap, photoPath)
-        val processed = applyBilateral(applyGrayscale(rotated))
-        val res = extractFromPhotoBitmap(processed)
-        res.copy(originalPhotoPath = photoPath)
-    }
-
-    suspend fun discoverLandmarks(photoPath: String, odometerCrop: RectF? = null, otherTextCrop: RectF? = null): List<TextBlock> = withContext(Dispatchers.IO) {
-        val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext emptyList()
-        val rotated = rotateImageIfRequired(rawBitmap, photoPath)
-        val processed = applyBilateral(rotated)
-        val ocrResult = extractFromPhotoBitmap(processed)
-        val landmarks = processRawLandmarks(ocrResult.textBlocks, odometerCrop, otherTextCrop, processed.width, processed.height)
-        landmarks
-    }
 }

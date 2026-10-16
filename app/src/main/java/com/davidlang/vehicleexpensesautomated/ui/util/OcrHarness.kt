@@ -441,26 +441,6 @@ object OcrHarness {
         }
     }
 
-    suspend fun runDiscovery(input: Any, context: Context): OcrResult {
-        val rawResult = MlKitEngine().recognize(input)
-
-        val cleanedBlocks = rawResult.textBlocks.map { block ->
-            block.copy(text = OdometerOcrUtils.cleanLandmarkString(block.text))
-        }.filter { it.text.isNotEmpty() }
-
-        val sanitizedResult = rawResult.copy(
-            textBlocks = cleanedBlocks,
-            debugText = cleanedBlocks.joinToString(" ") { it.text }
-        )
-
-        return sanitizedResult
-    }
-
-    private suspend fun performLandmarkDiscovery(slice: BufferSet.Slice, context: Context): Pair<OcrResult, List<TextBlock>> {
-        val ocr = runDiscovery(slice, context)
-        return Pair(ocr, ocr.textBlocks)
-    }
-
     /**
      * Production odometer extraction (Quick Fill / Start trip).
      *

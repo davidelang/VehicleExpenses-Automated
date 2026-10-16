@@ -413,7 +413,7 @@ class MainActivity : ComponentActivity() {
                     currentRoute == "experiment_heatmap_stage" -> "Heatmap stage"
                     currentRoute == "experiment_multiscale_det" ||
                         currentRoute?.startsWith("experiment_multiscale_det") == true ->
-                        "Dash ML Kit + paddle long-edge det/rec"
+                        "Dash paddle long-edge det/rec"
                     else -> "Vehicle Expenses"
                 }
 
@@ -537,7 +537,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                                 NavigationDrawerItem(
-                                    label = { Text("Dash ML Kit + paddle long-edge det/rec") },
+                                    label = { Text("Dash paddle long-edge det/rec") },
                                     selected = false,
                                     onClick = {
                                         navController.navigate("experiment_multiscale_det?auto=")

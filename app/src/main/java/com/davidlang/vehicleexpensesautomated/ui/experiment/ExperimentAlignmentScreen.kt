@@ -68,7 +68,6 @@ private val ALIGNMENT_RUN_FAILURE_PHOTOS: List<String> = listOf(
 )
 
 private val ALIGNMENT_RUN_FAILURE_COLUMN_KEYS: Set<String> = setOf(
-    "ml_kit_deskew",
     "paddle_raw_seed",
     "paddle_deskew",
 )
@@ -551,11 +550,10 @@ suspend fun runAlignmentExperiment(
     val experimentRecSet320x48 = NativePaddleEngine.recBufferSet
     val experimentDetSet512x128 = NativePaddleEngine.square608
 
-    // Three columns. Each one vetoes from its own landmarks. Set J / L / V are not in this report.
+    // Two columns. Each one vetoes from its own landmarks. Set J / L / V are not in this report.
     // Deskew rotates the full image, then anchorAlign. Paddle seed columns pad and read; they do not warp.
     // No silent vehicle-id lock.
     val allColumns = listOf(
-        PipelineConfig("ml_kit_deskew", "ML Kit deskew", false, false, { it.mlTimeMs }, { it.mlAngle }, seedRec = false),
         PipelineConfig(
             "paddle_raw_seed", "Paddle raw seed", true, true, { 0L }, { 0f },
             seedRec = true, seedVert = 0.40f,
@@ -674,8 +672,7 @@ suspend fun runAlignmentExperiment(
                     longEdgeTarget = 256,
                 )
                 
-                val tMl = deskewResA.mlTimeMs
-                val tPd = deskewResA.paddleTimeMs
+                val tDeskew = deskewResA.paddleTimeMs + deskewResA.paddleOptimizedTimeMs
 
                 // Phase 116: Independent High-Quality Rotation (Cubic)
                 suspend fun rotate(set: BufferSet, angle: Float): Long = withContext(Dispatchers.IO) {
@@ -734,13 +731,13 @@ suspend fun runAlignmentExperiment(
                     }
                 }
 
-                val deskewWinnerId = columnWinnerId["ml_kit_deskew"]
+                val deskewWinnerId = columnWinnerId["paddle_deskew"]
                 val winnerRef = cachedRefs.find { it.vehicle.id == deskewWinnerId }
                 if (winnerRef != null) {
                     finalWinnerName = winnerRef.vehicle.name
                 }
 
-                val deskewVeto = primaryVetoResultsMap["ml_kit_deskew"] ?: emptyMap()
+                val deskewVeto = primaryVetoResultsMap["paddle_deskew"] ?: emptyMap()
                 val winnerIds = columnWinnerId.values.filterNotNull().toSet()
                 val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
                 cachedRefs.forEach { ref ->
@@ -764,7 +761,7 @@ suspend fun runAlignmentExperiment(
                 val rowHtml = buildHtmlRowDynamic(
                     originalLineNumber, file.name, imgW, imgH, meta.isDegraded, originalBase64,
                     photoResult!!, vehicleResultsMap, cachedRefs,
-                    deskewResA, columns, (tMl + tPd), meta.diagnostic,
+                    deskewResA, columns, tDeskew, meta.diagnostic,
                 )
 
                 ReportCollapser.publishCell(cellsDir, index + 1, rowHtml, "{}")
@@ -858,7 +855,7 @@ private fun serializePhotoResultToJson(
         // Top-level Metrics (outer convenience; nested pathways are authoritative per set)
         put(
             "winner",
-            listOf("ml_kit_deskew", "paddle_deskew", "paddle_raw_seed").firstNotNullOfOrNull { key ->
+            listOf("paddle_deskew", "paddle_raw_seed").firstNotNullOfOrNull { key ->
                 photoResult.pathways[key]?.winnerName?.takeIf { it != "No match" }
             } ?: "No match",
         )
@@ -944,7 +941,7 @@ private fun serializePhotoResultToJson(
 
 
         val landmarksArray = JSONArray()
-        photoResult.pathways["ml_kit_deskew"]?.discoveryResult?.textBlocks?.forEach { block ->
+        photoResult.pathways["paddle_deskew"]?.discoveryResult?.textBlocks?.forEach { block ->
             val cleanedText = OdometerOcrUtils.cleanLandmarkString(block.text)
             if (cleanedText.isNotEmpty()) {
                 landmarksArray.put(JSONObject().apply {
@@ -2152,9 +2149,19 @@ private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<Od
 }
 
 internal suspend fun performLandmarkDiscovery(input: Any, context: Context): Pair<OcrResult, List<TextBlock>> {
-    val queryOcrDiscovery = OcrHarness.runDiscovery(input, context)
-    val landmarks = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight)
-    return Pair(queryOcrDiscovery, landmarks)
+    val slice = input as BufferSet.Slice
+    val blocks = MultiScaleDetRunner.productDetLandmarks2048(context, slice.mat, 0.40f)
+    val landmarks = OdometerOcrUtils.processRawLandmarks(
+        blocks, null, null, slice.width, slice.height,
+    )
+    val ocr = OcrResult(
+        engineName = "product_det",
+        debugText = landmarks.joinToString(" ") { it.text },
+        textBlocks = landmarks,
+        imageWidth = slice.width,
+        imageHeight = slice.height,
+    )
+    return Pair(ocr, landmarks)
 }
 
 private fun JSONObject.putSafe(key: String, value: Double, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentAlignment", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
@@ -2167,20 +2174,13 @@ private data class AlignLandmarkDiscovery(
 )
 
 private suspend fun discoverAlignLandmarks(
-    paddleDet: Boolean,
     work: BufferSet.Slice,
     context: Context,
     imgW: Int,
     imgH: Int,
+    rotGVert: Float,
 ): AlignLandmarkDiscovery {
-    if (!paddleDet) {
-        val query = OcrHarness.runDiscovery(work, context)
-        val landmarks = OdometerOcrUtils.processRawLandmarks(
-            query.textBlocks, null, null, query.imageWidth, query.imageHeight,
-        )
-        return AlignLandmarkDiscovery(query, landmarks, query.textBlocks)
-    }
-    val blocks = MultiScaleDetRunner.productDetLandmarks2048(context, work.mat, 0.40f)
+    val blocks = MultiScaleDetRunner.productDetLandmarks2048(context, work.mat, rotGVert)
     val landmarks = OdometerOcrUtils.processRawLandmarks(blocks, null, null, imgW, imgH)
     val ocr = OcrResult(
         engineName = "product_det",
@@ -2254,7 +2254,8 @@ private suspend fun runAlignColumn(
     }
 
     val tDisc0 = System.currentTimeMillis()
-    val discovery = discoverAlignLandmarks(column.paddleDet, work.p, context, imgW, imgH)
+    val rotGVert = column.seedVert ?: SET_G_ROT_VERT_FACTORS.first()
+    val discovery = discoverAlignLandmarks(work.p, context, imgW, imgH, rotGVert)
     val ocr = discovery.ocr
     val queryLandmarks = discovery.landmarks
     val tDiscovery = System.currentTimeMillis() - tDisc0

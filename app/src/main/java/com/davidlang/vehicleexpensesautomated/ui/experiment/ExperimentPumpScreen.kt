@@ -10120,21 +10120,7 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
             return@map hunk
         }
 
-        val res = if (engine == "ML Kit") {
-                val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(
-                recBuffer.p.nv21,
-                recBuffer.p.width,
-                recBuffer.p.height,
-                0,
-                com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
-                )
-                val ocrRes = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
-            // ML Kit 7-Segment Cleanup + Upside Down detection
-            val cleaned = OdometerOcrUtils.clean7SegmentDigits(ocrRes.debugText, Math.abs(angle) > 135f)
-            ocrRes.copy(debugText = cleaned)
-        } else {
-            paddleEngine.recognize(recBuffer.c[fed.recCropId])
-        }
+        val res = paddleEngine.recognize(recBuffer.c[fed.recCropId])
 
         recBuffer.c[fed.recCropId].release()
         PumpHunk(res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else "", hunk.rect)
