@@ -11806,3 +11806,7 @@ Plan ocr-geom-rec-prep-not-sizes-20260921-0445-plan.md. Tag detect-ocr-work-2/bu
 ## 2026-10-15 - Remove and undo landmark rows in the editor.
 
 - The landmark editor removes a row and can undo that removal.
+
+## 2026-10-15 - Show the selected landmark box in red.
+
+- The landmark box that is selected is drawn in red.

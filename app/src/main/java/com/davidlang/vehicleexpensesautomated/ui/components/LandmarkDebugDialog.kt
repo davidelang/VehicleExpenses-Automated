@@ -8,6 +8,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -78,7 +79,12 @@ fun LandmarkDebugDialog(
     // Local state for editing
     var editableLandmarks by remember { mutableStateOf(landmarks) }
     var undoStack by remember { mutableStateOf<List<List<TextBlock>>>(emptyList()) }
+    var selectedIndex by remember { mutableStateOf<Int?>(null) }
     val focusManager = LocalFocusManager.current
+
+    LaunchedEffect(photoPath, landmarks) {
+        selectedIndex = null
+    }
 
     fun pushUndoSnapshot() {
         undoStack = undoStack + listOf(editableLandmarks)
@@ -225,7 +231,32 @@ fun LandmarkDebugDialog(
                                     }
                                 ) {
                                     Box(modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y)) {
-                                        Canvas(modifier = Modifier.fillMaxSize()) {
+                                        Canvas(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .pointerInput(editableLandmarks, imgW, imgH) {
+                                                    detectTapGestures { tapOffset ->
+                                                        val dw = size.width.toFloat()
+                                                        val dh = size.height.toFloat()
+                                                        editableLandmarks.forEachIndexed { index, lm ->
+                                                            if (lm.boundingBox.width() <= 0) return@forEachIndexed
+                                                            val nx = lm.boundingBox.left.toFloat() / imgW
+                                                            val ny = lm.boundingBox.top.toFloat() / imgH
+                                                            val nw = lm.boundingBox.width().toFloat() / imgW
+                                                            val nh = lm.boundingBox.height().toFloat() / imgH
+                                                            val topLeft = Offset(nx * dw, ny * dh)
+                                                            val rectSize = Size(nw * dw, nh * dh)
+                                                            if (
+                                                                tapOffset.x in topLeft.x..(topLeft.x + rectSize.width) &&
+                                                                tapOffset.y in topLeft.y..(topLeft.y + rectSize.height)
+                                                            ) {
+                                                                selectedIndex = index
+                                                                return@detectTapGestures
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                        ) {
                                             val dw = size.width; val dh = size.height
 
                                             drawImage(
@@ -244,14 +275,26 @@ fun LandmarkDebugDialog(
                                                 drawRect(color = color, topLeft = topLeft, size = rectSize, style = Stroke(2f))
                                             }
 
-                                            editableLandmarks.forEach { lm ->
-                                                if (lm.boundingBox.width() > 0) {
-                                                    val nx = lm.boundingBox.left.toFloat() / imgW; val ny = lm.boundingBox.top.toFloat() / imgH
-                                                    val nw = lm.boundingBox.width().toFloat() / imgW; val nh = lm.boundingBox.height().toFloat() / imgH
-                                                    val topLeft = Offset(nx * dw, ny * dh)
-                                                    val rectSize = Size(nw * dw, nh * dh)
-                                                    drawRect(color = Color.Yellow.copy(alpha = 0.3f), topLeft = topLeft, size = rectSize, style = Fill)
-                                                    drawRect(color = Color.Yellow, topLeft = topLeft, size = rectSize, style = Stroke(1f))
+                                            fun drawLandmarkBox(lm: TextBlock, fillColor: Color, strokeColor: Color, fillAlpha: Float) {
+                                                if (lm.boundingBox.width() <= 0) return
+                                                val nx = lm.boundingBox.left.toFloat() / imgW
+                                                val ny = lm.boundingBox.top.toFloat() / imgH
+                                                val nw = lm.boundingBox.width().toFloat() / imgW
+                                                val nh = lm.boundingBox.height().toFloat() / imgH
+                                                val topLeft = Offset(nx * dw, ny * dh)
+                                                val rectSize = Size(nw * dw, nh * dh)
+                                                drawRect(color = fillColor.copy(alpha = fillAlpha), topLeft = topLeft, size = rectSize, style = Fill)
+                                                drawRect(color = strokeColor, topLeft = topLeft, size = rectSize, style = Stroke(1f))
+                                            }
+
+                                            editableLandmarks.forEachIndexed { index, lm ->
+                                                if (index != selectedIndex) {
+                                                    drawLandmarkBox(lm, Color.Yellow, Color.Yellow, fillAlpha = 0.3f)
+                                                }
+                                            }
+                                            selectedIndex?.let { idx ->
+                                                editableLandmarks.getOrNull(idx)?.let { lm ->
+                                                    drawLandmarkBox(lm, Color.Red, Color.Red, fillAlpha = 0.3f)
                                                 }
                                             }
                                             odometerCrop?.let { drawIcrsRect(it, Color.Blue, fillAlpha = 0.5f) }
@@ -277,7 +320,9 @@ fun LandmarkDebugDialog(
                                 items(editableLandmarks.size) { index ->
                                     val lm = editableLandmarks[index]
                                     Surface(
-                                        modifier = Modifier.height(if (isEditing) 80.dp else 64.dp),
+                                        modifier = Modifier
+                                            .height(if (isEditing) 80.dp else 64.dp)
+                                            .clickable { selectedIndex = index },
                                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                                         shape = MaterialTheme.shapes.extraSmall,
                                         border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
