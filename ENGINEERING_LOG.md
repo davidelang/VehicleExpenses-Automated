@@ -11802,3 +11802,7 @@ Plan ocr-geom-rec-prep-not-sizes-20260921-0445-plan.md. Tag detect-ocr-work-2/bu
 ## 2026-10-15 - Size landmark dialog text to the crop height.
 
 - Landmark dialog text is sized from the crop height.
+
+## 2026-10-15 - Remove and undo landmark rows in the editor.
+
+- The landmark editor removes a row and can undo that removal.

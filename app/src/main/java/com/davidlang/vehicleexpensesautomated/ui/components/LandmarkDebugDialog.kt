@@ -77,7 +77,12 @@ fun LandmarkDebugDialog(
 
     // Local state for editing
     var editableLandmarks by remember { mutableStateOf(landmarks) }
+    var undoStack by remember { mutableStateOf<List<List<TextBlock>>>(emptyList()) }
     val focusManager = LocalFocusManager.current
+
+    fun pushUndoSnapshot() {
+        undoStack = undoStack + listOf(editableLandmarks)
+    }
 
     // Optimization Phase 37: Async image loading to prevent Main-thread stall
     var processedBitmap by remember { mutableStateOf<Bitmap?>(sourceImage) }
@@ -138,10 +143,26 @@ fun LandmarkDebugDialog(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         if (!isEditing) {
-                            Button(onClick = { isEditing = true }, modifier = Modifier.padding(end = 4.dp)) { Text("Edit OCR") }
+                            Button(
+                                onClick = {
+                                    isEditing = true
+                                    undoStack = emptyList()
+                                },
+                                modifier = Modifier.padding(end = 4.dp),
+                            ) { Text("Edit OCR") }
                         } else {
+                            TextButton(
+                                onClick = {
+                                    if (undoStack.isNotEmpty()) {
+                                        editableLandmarks = undoStack.last()
+                                        undoStack = undoStack.dropLast(1)
+                                    }
+                                },
+                                enabled = undoStack.isNotEmpty(),
+                            ) { Text("Undo") }
                             IconButton(
                                 onClick = {
+                                    pushUndoSnapshot()
                                     val newList = editableLandmarks.toMutableList()
                                     newList.add(TextBlock("", android.graphics.Rect(0, 0, 0, 0)))
                                     editableLandmarks = newList
@@ -151,7 +172,11 @@ fun LandmarkDebugDialog(
                             Text(
                                 "💾",
                                 modifier = Modifier
-                                    .clickable { onLandmarksChanged(editableLandmarks); onDismiss() }
+                                    .clickable {
+                                        undoStack = emptyList()
+                                        onLandmarksChanged(editableLandmarks)
+                                        onDismiss()
+                                    }
                                     .padding(4.dp)
                             )
                         }
@@ -161,6 +186,7 @@ fun LandmarkDebugDialog(
                                 if (isEditing) {
                                     isEditing = false
                                     editableLandmarks = landmarks
+                                    undoStack = emptyList()
                                 } else {
                                     onDismiss()
                                 }
@@ -284,6 +310,7 @@ fun LandmarkDebugDialog(
                                                     TextField(
                                                         value = lm.text,
                                                         onValueChange = { newText: String ->
+                                                            pushUndoSnapshot()
                                                             val newList = editableLandmarks.toMutableList()
                                                             newList[index] = lm.copy(text = newText)
                                                             editableLandmarks = newList
@@ -347,6 +374,16 @@ fun LandmarkDebugDialog(
                                                         color = MaterialTheme.colorScheme.secondary,
                                                     )
                                                 }
+                                            }
+                                            if (isEditing) {
+                                                IconButton(
+                                                    onClick = {
+                                                        pushUndoSnapshot()
+                                                        editableLandmarks =
+                                                            editableLandmarks.toMutableList().apply { removeAt(index) }
+                                                    },
+                                                    modifier = Modifier.size(36.dp),
+                                                ) { Text("✕") }
                                             }
                                         }
                                     }
