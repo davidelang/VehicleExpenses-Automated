@@ -92,6 +92,9 @@ object ImageAlignmentUtils {
         }
     }
 
+    /** Landmark text match key: stored JSON keeps `/`; reads may omit it (e.g. km/h vs kmh). */
+    private fun landmarkMatchKey(text: String): String = text.replace("/", "")
+
     fun disambiguateLandmarks(
         dashLandmarks: List<TextBlock>,
         refLandmarks: List<TextBlock>
@@ -109,23 +112,24 @@ object ImageAlignmentUtils {
         val refValid = refLandmarks.filter { it.boundingBox.width() > 0 && it.instanceId != -2 }
         if (dashValid.isEmpty() || refValid.isEmpty()) return dashLandmarks
 
-        val refTexts = refValid.map { it.text }.toSet()
-        val refUniqueMap = refValid.filter { it.instanceId == 0 }.associateBy { it.text }
+        val refTexts = refValid.map { landmarkMatchKey(it.text) }.toSet()
+        val refUniqueMap = refValid.filter { it.instanceId == 0 }.associateBy { landmarkMatchKey(it.text) }
 
         // Pass 1: Classification
         val results = dashValid.map { dashMark ->
-            val isPotential = dashMark.text in refTexts
+            val dashKey = landmarkMatchKey(dashMark.text)
+            val isPotential = dashKey in refTexts
             when {
                 !isPotential -> dashMark.copy(instanceId = -2)
-                refUniqueMap.containsKey(dashMark.text) -> dashMark.copy(instanceId = 0)
+                refUniqueMap.containsKey(dashKey) -> dashMark.copy(instanceId = 0)
                 else -> dashMark.copy(instanceId = -1)
             }
         }.toMutableList()
 
         // Pass 2: Veto/Collision Check (Unique landmarks that collide are vetoed)
-        val uniqueCounts = results.filter { it.instanceId == 0 }.groupBy { it.text }.mapValues { it.value.size }
+        val uniqueCounts = results.filter { it.instanceId == 0 }.groupBy { landmarkMatchKey(it.text) }.mapValues { it.value.size }
         for (i in results.indices) {
-            val text = results[i].text
+            val text = landmarkMatchKey(results[i].text)
             if (results[i].instanceId == 0 && (uniqueCounts[text] ?: 0) > 1) {
                 results[i] = results[i].copy(instanceId = -2)
             }
@@ -136,9 +140,9 @@ object ImageAlignmentUtils {
         // Pass 3: Triangulation Resolution
         if (results.count { it.instanceId >= 0 } < 2) {
             Log.d("DISAMB_TRACE", "  Pass 2: Insufficient anchors (${results.count { it.instanceId >= 0 }}). Searching for seed triangle...")
-            val dashCounts = dashValid.groupBy { it.text }.mapValues { it.value.size }
-            val refCounts = refValid.groupBy { it.text }.mapValues { it.value.size }
-            val commonTexts = dashValid.map { it.text }.toSet().intersect(refTexts)
+            val dashCounts = dashValid.groupBy { landmarkMatchKey(it.text) }.mapValues { it.value.size }
+            val refCounts = refValid.groupBy { landmarkMatchKey(it.text) }.mapValues { it.value.size }
+            val commonTexts = dashValid.map { landmarkMatchKey(it.text) }.toSet().intersect(refTexts)
 
             val seedPool = commonTexts.map { text ->
                 val dCount = dashCounts[text] ?: 0
@@ -151,8 +155,8 @@ object ImageAlignmentUtils {
             outer@for (i in seedPool.indices) {
                 for (j in i + 1 until seedPool.size) {
                     for (k in j + 1 until seedPool.size) {
-                        val d1s = results.filter { it.text == seedPool[i].first }; val d2s = results.filter { it.text == seedPool[j].first }; val d3s = results.filter { it.text == seedPool[k].first }
-                        val r1s = refValid.filter { it.text == seedPool[i].first }; val r2s = refValid.filter { it.text == seedPool[j].first }; val r3s = refValid.filter { it.text == seedPool[k].first }
+                        val d1s = results.filter { landmarkMatchKey(it.text) == seedPool[i].first }; val d2s = results.filter { landmarkMatchKey(it.text) == seedPool[j].first }; val d3s = results.filter { landmarkMatchKey(it.text) == seedPool[k].first }
+                        val r1s = refValid.filter { landmarkMatchKey(it.text) == seedPool[i].first }; val r2s = refValid.filter { landmarkMatchKey(it.text) == seedPool[j].first }; val r3s = refValid.filter { landmarkMatchKey(it.text) == seedPool[k].first }
 
                         for (d1 in d1s) for (d2 in d2s) for (d3 in d3s) {
                             val d12 = dist(d1, d2); val d23 = dist(d2, d3); val d31 = dist(d3, d1)
@@ -214,8 +218,8 @@ object ImageAlignmentUtils {
 
             if (bestP1 != null && bestP2 != null) {
                 val p1 = bestP1!!; val p2 = bestP2!!
-                val rP1 = refValid.find { it.text == p1.text && it.instanceId == p1.instanceId }!!
-                val rP2 = refValid.find { it.text == p2.text && it.instanceId == p2.instanceId }!!
+                val rP1 = refValid.find { landmarkMatchKey(it.text) == landmarkMatchKey(p1.text) && it.instanceId == p1.instanceId }!!
+                val rP2 = refValid.find { landmarkMatchKey(it.text) == landmarkMatchKey(p2.text) && it.instanceId == p2.instanceId }!!
                 val d12 = dist(p1, p2)
                 val r12 = dist(rP1, rP2)
 
@@ -228,7 +232,7 @@ object ImageAlignmentUtils {
                     val dPerim = d12 + d1c + d2c
                     if (dPerim == 0.0) continue
 
-                    val refCandidates = refValid.filter { it.text == dashMark.text }
+                    val refCandidates = refValid.filter { landmarkMatchKey(it.text) == landmarkMatchKey(dashMark.text) }
                     for (cand in refCandidates) {
                         val r1c = dist(rP1, cand); val r2c = dist(rP2, cand)
                         val rPerim = r12 + r1c + r2c
@@ -683,7 +687,7 @@ object ImageAlignmentUtils {
     }
 
     private fun letterStrippedQueryWords(queryLandmarks: List<TextBlock>): List<String> =
-        queryLandmarks.map { it.text.trim() }
+        queryLandmarks.map { landmarkMatchKey(it.text.trim()) }
             .mapNotNull { raw ->
                 if (raw.none { it.isLetter() }) null
                 else raw.filter { !it.isDigit() }.trim().takeIf { it.isNotEmpty() }
@@ -766,8 +770,10 @@ object ImageAlignmentUtils {
     }
 
     fun performTier1Veto(queryLandmarks: List<TextBlock>, allVehicles: List<Vehicle>, engineName: String): Map<Int, VetoResult> {
-        val queryWordsList = queryLandmarks.map { it.text.trim() }.sorted()
-        val vehicleLandmarks = allVehicles.associate { it.id to getLandmarksFromJson(it.landmarkTextBlocksJson, engineName) }
+        val queryWordsList = queryLandmarks.map { landmarkMatchKey(it.text.trim()) }.sorted()
+        val vehicleLandmarks = allVehicles.associate {
+            it.id to getLandmarksFromJson(it.landmarkTextBlocksJson, engineName).map { word -> landmarkMatchKey(word) }.toSet()
+        }
 
         val firstResults = applyOneVsManyRescue(
             evaluateTier1Veto(queryWordsList, allVehicles, vehicleLandmarks),

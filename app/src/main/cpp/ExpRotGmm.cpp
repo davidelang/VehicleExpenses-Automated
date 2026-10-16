@@ -354,6 +354,57 @@ std::string decodeFull(const float* data, int seqLen, int dictSize, const std::v
     return result.substr(b, result.find_last_not_of(' ') - b + 1);
 }
 
+bool isLandmarkDictChar(const std::string& ch) {
+    if (ch.size() != 1) return false;
+    const char c = ch[0];
+    if (c == ' ') return true;
+    if (c >= '0' && c <= '9') return true;
+    if (c >= 'A' && c <= 'Z') return true;
+    if (c >= 'a' && c <= 'z') return true;
+    return false;
+}
+
+std::vector<int> landmarkAllowedClassIndices(const std::vector<std::string>& dict) {
+    std::vector<int> allowed;
+    allowed.reserve(dict.size());
+    for (size_t i = 0; i < dict.size(); ++i) {
+        if (isLandmarkDictChar(dict[i])) allowed.push_back(static_cast<int>(i) + 1);
+    }
+    return allowed;
+}
+
+std::string decodeLandmark(
+    const float* data,
+    int seqLen,
+    int dictSize,
+    const std::vector<std::string>& dict,
+    const std::vector<int>& allowed,
+    std::string* probs
+) {
+    std::string result;
+    int lastIdx = -1;
+    for (int i = 0; i < seqLen; ++i) {
+        const float* row = data + static_cast<size_t>(i) * static_cast<size_t>(dictSize);
+        int maxIdx = 0;
+        float maxVal = row[0];
+        for (int classIdx : allowed) {
+            if (classIdx >= dictSize) continue;
+            const float v = row[classIdx];
+            if (v > maxVal) {
+                maxVal = v;
+                maxIdx = classIdx;
+            }
+        }
+        if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= static_cast<int>(dict.size())) {
+            const std::string& ch = dict[maxIdx - 1];
+            result.append(ch);
+            appendProb(probs, ch, maxVal);
+        }
+        lastIdx = maxIdx;
+    }
+    return result;
+}
+
 std::string decodeDecimal(const float* data, int seqLen, int dictSize, const std::vector<std::string>& dict, std::string* probs) {
     std::string result;
     int lastIdx = -1;
@@ -565,7 +616,8 @@ void bothDecodes(
     paddle::lite_api::PaddlePredictor& pred,
     const cv::Mat& mat,
     const std::vector<std::string>& dict,
-    RecRow* row
+    RecRow* row,
+    bool landmarkAsis
 ) {
     if (mat.cols < 1 || mat.cols > kRecMaxW || mat.rows != kRecH || mat.type() != CV_8UC1) {
         row->asis = "(Size Error)";
@@ -608,7 +660,12 @@ void bothDecodes(
         }
         const int seqLen = static_cast<int>(shape[1]);
         const int dictSize = static_cast<int>(shape[2]);
-        row->asis = decodeFull(data, seqLen, dictSize, dict, &row->asisProbs);
+        if (landmarkAsis) {
+            const std::vector<int> allowed = landmarkAllowedClassIndices(dict);
+            row->asis = decodeLandmark(data, seqLen, dictSize, dict, allowed, &row->asisProbs);
+        } else {
+            row->asis = decodeFull(data, seqLen, dictSize, dict, &row->asisProbs);
+        }
         row->digits = decodeDecimal(data, seqLen, dictSize, dict, &row->digitsProbs);
     } catch (const std::exception& ex) {
         __android_log_print(ANDROID_LOG_ERROR, "ExpRotGmm", "rec failed: %s", ex.what());
@@ -631,7 +688,8 @@ void recognizeOne(
     int rowIndex,
     paddle::lite_api::PaddlePredictor* pred,
     const std::vector<std::string>& dict,
-    RecRow* row
+    RecRow* row,
+    bool landmarkAsis
 ) {
     const BoxUv box = boxFromQuad(quad);
     if (!box.ok) return;
@@ -697,7 +755,7 @@ void recognizeOne(
         row->digits = "(Engine Error)";
         return;
     }
-    bothDecodes(*pred, dest, dict, row);
+    bothDecodes(*pred, dest, dict, row, landmarkAsis);
 }
 
 jstring toJString(JNIEnv* env, const std::string& s) {
@@ -774,8 +832,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_experiment_ExperimentPumpScreenKt
     jfloatArray quadPts,
     jobject recBuffer,
     jint scratchW,
-    jint scratchH
+    jint scratchH,
+    jboolean landmarkAlphabet
 ) {
+    const bool landmarkAsis = landmarkAlphabet == JNI_TRUE;
     const jsize len = quadPts ? env->GetArrayLength(quadPts) : 0;
     const int n = len >= 8 ? static_cast<int>(len / 8) : 0;
     std::vector<RecRow> rows(static_cast<size_t>(n));
@@ -798,7 +858,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_experiment_ExperimentPumpScreenKt
         }
         recognizeOne(
             env, gray, pts.data() + static_cast<size_t>(i) * 8, recBuffer,
-            scratchW, scratchH, bufW, bufH, i, pred.get(), dict, &rows[i]);
+            scratchW, scratchH, bufW, bufH, i, pred.get(), dict, &rows[i], landmarkAsis);
         env->PopLocalFrame(nullptr);
     }
     return newOut(env, rows);

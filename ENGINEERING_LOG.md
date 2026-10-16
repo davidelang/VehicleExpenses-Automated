@@ -11794,3 +11794,7 @@ Plan ocr-geom-rec-prep-not-sizes-20260921-0445-plan.md. Tag detect-ocr-work-2/bu
 ## 2026-10-15 - Draw landmark OCR with Atkinson Hyperlegible.
 
 - Landmark OCR text uses Atkinson Hyperlegible, and the OFL notice is tracked.
+
+## 2026-10-15 - Decode landmarks with a greedy charset.
+
+- Landmark decode walks a greedy charset, and the slash-insensitive veto uses that text.

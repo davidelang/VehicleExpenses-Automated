@@ -179,6 +179,7 @@ object MultiScaleDetRunner {
                 rec,
                 MAX_SIDE,
                 MAX_SIDE,
+                landmarkAlphabet = true,
             )
             val out = ArrayList<TextBlock>(n)
             for (i in aabbs.indices) {

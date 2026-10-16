@@ -92,6 +92,7 @@ private external fun expRotGmmRecognize(
     recBuffer: BufferSet,
     scratchW: Int,
     scratchH: Int,
+    landmarkAlphabet: Boolean,
 ): ExpRotGmmOut
 
 /** Same JNI symbol as [expRotGmmRecognize]. Scheduled pump columns do not call this. */
@@ -101,7 +102,8 @@ internal fun recognizeRotGmmQuads(
     recBuffer: BufferSet,
     scratchW: Int,
     scratchH: Int,
-): ExpRotGmmOut = expRotGmmRecognize(grayNativeObj, quadPts, recBuffer, scratchW, scratchH)
+    landmarkAlphabet: Boolean = false,
+): ExpRotGmmOut = expRotGmmRecognize(grayNativeObj, quadPts, recBuffer, scratchW, scratchH, landmarkAlphabet)
 
 private val SEED_INK_PROBE_FLOWS = listOf(
     "Set aabb-tight",
@@ -6659,6 +6661,7 @@ suspend fun runPumpExperiment(
                                 recHold,
                                 NativePaddleEngine.bufferSetB.s.width,
                                 NativePaddleEngine.bufferSetB.s.height,
+                                false,
                             )
                             val asis = ArrayList<String>(blueQuads.size)
                             val digits = ArrayList<String>(blueQuads.size)
