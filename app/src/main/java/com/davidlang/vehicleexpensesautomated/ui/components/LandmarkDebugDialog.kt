@@ -26,9 +26,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -276,7 +279,7 @@ fun LandmarkDebugDialog(
                                             }
 
                                             Spacer(modifier = Modifier.width(8.dp))
-                                            Column(modifier = Modifier.weight(1f)) {
+                                            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                                                 if (isEditing) {
                                                     TextField(
                                                         value = lm.text,
@@ -292,6 +295,7 @@ fun LandmarkDebugDialog(
                                                         modifier = Modifier
                                                             .fillMaxWidth()
                                                             .height(48.dp)
+                                                            .align(Alignment.CenterStart)
                                                             .focusProperties {
                                                                 up = FocusRequester.Cancel
                                                                 down = FocusRequester.Cancel
@@ -326,24 +330,22 @@ fun LandmarkDebugDialog(
                                                         keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                                                         singleLine = true
                                                     )
+                                                } else if (lm.text.isNotBlank()) {
+                                                    LandmarkCropHeightText(
+                                                        text = lm.text,
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .height(48.dp)
+                                                            .align(Alignment.CenterStart),
+                                                    )
                                                 } else {
-                                                    if (lm.text.isNotBlank()) {
-                                                        Text(
-                                                            lm.text,
-                                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                                fontSize = 12.sp,
-                                                                fontFamily = LandmarkGlyphFont,
-                                                            ),
-                                                            fontWeight = FontWeight.Bold,
-                                                            color = MaterialTheme.colorScheme.primary,
-                                                            maxLines = 1,
-                                                        )
-                                                    }
-                                                    else Text("[Container]", style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp), fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.secondary)
-                                                }
-
-                                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                    if (lm.boundingBox.width() > 0) MetricChip(color = Color.Yellow, w = lm.boundingBox.width().toFloat(), h = lm.boundingBox.height().toFloat())
+                                                    Text(
+                                                        "[Container]",
+                                                        modifier = Modifier.align(Alignment.CenterStart),
+                                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                                                        fontStyle = FontStyle.Italic,
+                                                        color = MaterialTheme.colorScheme.secondary,
+                                                    )
                                                 }
                                             }
                                         }
@@ -357,9 +359,38 @@ fun LandmarkDebugDialog(
     }
 }
 
+private val landmarkCropTextHeight = 48.sp
+
 @Composable
-private fun MetricChip(color: Color, w: Float, h: Float) {
-    Surface(color = color.copy(alpha = 0.15f), shape = MaterialTheme.shapes.extraSmall, border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.6f))) {
-        Text(text = "${w.toInt()}x${h.toInt()}", modifier = Modifier.padding(horizontal = 2.dp, vertical = 0.5.dp), style = TextStyle(fontSize = 7.sp, fontWeight = FontWeight.Black, color = color.copy(alpha = 0.9f)))
+private fun LandmarkCropHeightText(text: String, modifier: Modifier = Modifier) {
+    BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.CenterStart) {
+        val textMeasurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val maxWidthPx = with(density) { maxWidth.roundToPx().coerceAtLeast(1) }
+        val baseStyle = TextStyle(
+            fontFamily = LandmarkGlyphFont,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        val fontSize = remember(text, maxWidthPx) {
+            var sizeSp = landmarkCropTextHeight.value
+            while (sizeSp >= 8f) {
+                val measured = textMeasurer.measure(
+                    text,
+                    baseStyle.copy(fontSize = sizeSp.sp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip,
+                )
+                if (measured.size.width <= maxWidthPx) break
+                sizeSp -= 0.5f
+            }
+            sizeSp.sp
+        }
+        Text(
+            text,
+            style = baseStyle.copy(fontSize = fontSize),
+            maxLines = 1,
+            overflow = TextOverflow.Clip,
+        )
     }
 }

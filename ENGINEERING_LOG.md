@@ -11798,3 +11798,7 @@ Plan ocr-geom-rec-prep-not-sizes-20260921-0445-plan.md. Tag detect-ocr-work-2/bu
 ## 2026-10-15 - Decode landmarks with a greedy charset.
 
 - Landmark decode walks a greedy charset, and the slash-insensitive veto uses that text.
+
+## 2026-10-15 - Size landmark dialog text to the crop height.
+
+- Landmark dialog text is sized from the crop height.
