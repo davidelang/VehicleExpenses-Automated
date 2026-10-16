@@ -17,6 +17,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -49,10 +50,13 @@ fun CameraPreview(
     captureProfile: CameraCaptureProfile = CameraCaptureProfile.OCR_MEDIUM,
     /** YUV analysis consumer (Quick Fill / trip OCR). Null = Preview + ImageCapture only. */
     onImageCaptured: ((ImageProxy) -> Unit)? = null,
-    onZoomControlChanged: (CameraZoomControl?) -> Unit = {}
+    onZoomControlChanged: (CameraZoomControl?) -> Unit = {},
+    /** Latest Surface.ROTATION_* from [OrientationEventListener] (for screens without analysis). */
+    onListenerSurfaceRotation: (Int) -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val onListenerSurfaceRotationState = rememberUpdatedState(onListenerSurfaceRotation)
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
     val cameraExecutor: ExecutorService = remember { Executors.newSingleThreadExecutor() }
     var imageAnalysisState by remember { mutableStateOf<ImageAnalysis?>(null) }
@@ -90,6 +94,7 @@ fun CameraPreview(
     }
 
     DisposableEffect(imageAnalysisState, imageCapture) {
+        var listenerSurfaceRotation = Surface.ROTATION_0
         val listener = object : OrientationEventListener(context) {
             override fun onOrientationChanged(orientation: Int) {
                 if (orientation == ORIENTATION_UNKNOWN) return
@@ -99,6 +104,8 @@ fun CameraPreview(
                     in 225 until 315 -> Surface.ROTATION_90
                     else -> Surface.ROTATION_0
                 }
+                listenerSurfaceRotation = rotation
+                onListenerSurfaceRotationState.value(rotation)
                 try {
                     imageAnalysisState?.targetRotation = rotation
                     imageCapture.targetRotation = rotation
@@ -108,6 +115,7 @@ fun CameraPreview(
             }
         }
         if (listener.canDetectOrientation()) {
+            onListenerSurfaceRotationState.value(listenerSurfaceRotation)
             listener.enable()
         }
         onDispose {

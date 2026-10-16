@@ -11810,3 +11810,7 @@ Plan ocr-geom-rec-prep-not-sizes-20260921-0445-plan.md. Tag detect-ocr-work-2/bu
 ## 2026-10-15 - Show the selected landmark box in red.
 
 - The landmark box that is selected is drawn in red.
+
+## 2026-10-15 - Write EXIF orientation from rotationDegrees and the accelerometer.
+
+- Saved photo EXIF orientation comes from rotationDegrees and the accelerometer.

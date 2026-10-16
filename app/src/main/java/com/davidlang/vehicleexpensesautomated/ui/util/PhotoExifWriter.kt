@@ -173,7 +173,7 @@ object PhotoExifWriter {
         return String.format(Locale.US, "%s%02d:%02d", sign, h, m)
     }
 
-    /** Map display rotation degrees → EXIF orientation constant. */
+    /** Map clockwise upright degrees (CameraX [ImageInfo.rotationDegrees]) → EXIF orientation constant. */
     fun orientationTag(rotationDegrees: Int): Int {
         val norm = ((rotationDegrees % 360) + 360) % 360
         return when (norm) {

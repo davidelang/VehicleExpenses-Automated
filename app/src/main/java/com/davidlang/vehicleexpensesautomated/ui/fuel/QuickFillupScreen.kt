@@ -102,15 +102,6 @@ private fun photoTagForCaptureMode(captureMode: String): String {
     return if (captureMode == "pump") "pump" else "dash"
 }
 
-/** Surface.ROTATION_* → degrees for EXIF orientation. */
-private fun surfaceRotationToDegrees(rotation: Int): Int = when (rotation) {
-    android.view.Surface.ROTATION_0 -> 0
-    android.view.Surface.ROTATION_90 -> 90
-    android.view.Surface.ROTATION_180 -> 180
-    android.view.Surface.ROTATION_270 -> 270
-    else -> 0
-}
-
 /** Compact JSON array for FuelEntry.photoUrl; null if empty. */
 private fun sessionPhotosToJson(photos: Map<String, SessionPhoto>): String? {
     if (photos.isEmpty()) return null
@@ -333,6 +324,8 @@ fun QuickFillupScreen(
     var displayBitmap by remember { mutableStateOf<Bitmap?>(null) }
     val pumpOriginalJpeg = remember { mutableStateOf(ByteArray(0)) }
     var pumpViewRotation by remember { mutableIntStateOf(0) }
+    /** Latest analysis [androidx.camera.core.ImageInfo.rotationDegrees] for DCIM EXIF on shutter. */
+    var latestAnalysisRotationDegrees by remember { mutableIntStateOf(0) }
     val isProcessing = captureViewState == CaptureViewState.Processing
     val hasResults = captureViewState == CaptureViewState.Results
     var stageLabel by remember { mutableStateOf("") }
@@ -613,6 +606,7 @@ fun QuickFillupScreen(
                     imageCapture = imageCapture,
                     onZoomControlChanged = { zoomControl = it },
                     onImageCaptured = { imageProxy ->
+                        latestAnalysisRotationDegrees = imageProxy.imageInfo.rotationDegrees
                         if (capturePending) {
                             scope.launch(Dispatchers.Main.immediate) {
                                 capturePending = false
@@ -1452,20 +1446,7 @@ fun QuickFillupScreen(
         if (saveFuelPhotosNow) {
             isPhotoSaving = true
             photoSaveStatus = "Saving photo…"
-            var rotationDegrees = 0
-            try {
-                val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                    context.display
-                } else {
-                    @Suppress("DEPRECATION")
-                    (context.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay
-                }
-                val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
-                imageCapture.targetRotation = rotation
-                rotationDegrees = surfaceRotationToDegrees(rotation)
-            } catch (e: Exception) {
-                Log.e("QuickFill", "Failed to set target rotation", e)
-            }
+            val orientForExif = latestAnalysisRotationDegrees
 
             try {
                 val resolver = context.contentResolver
@@ -1490,7 +1471,6 @@ fun QuickFillupScreen(
                 ).setMetadata(captureMetadata).build()
 
                 val locForExif = deviceLocation
-                val orientForExif = rotationDegrees
                 imageCapture.takePicture(
                     outputOptions,
                     ContextCompat.getMainExecutor(context),
