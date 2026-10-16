@@ -11818,3 +11818,7 @@ Plan ocr-geom-rec-prep-not-sizes-20260921-0445-plan.md. Tag detect-ocr-work-2/bu
 ## 2026-10-15 - Make Manage Vehicles the paddle seed screen.
 
 - Manage Vehicles is the paddle seed screen: discovery, seeds under existing crops, and the 0.6/0.8 seed box. The retired drag-crop screen is docs/obsolete/MANAGE_VEHICLES_DRAW.md.
+
+## 2026-10-15 - Switch Manage Vehicles crops to Edit Odo, Save, Clear Odo, and Select Odo.
+
+- Manage Vehicles crops use Edit Odo, Save, Clear Odo, and Select Odo. Ignore crop is gone.

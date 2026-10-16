@@ -43,7 +43,10 @@ import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.imgproc.Imgproc
@@ -69,6 +72,21 @@ fun ManageVehicles2Screen(
 
     var selectedVehicleId by remember { mutableStateOf<Int?>(null) }
     var editingVehicle by remember { mutableStateOf<Vehicle?>(null) }
+    /**
+     * Row passed to the last crop Save/Clear. The hydration effect skips that echo so
+     * unsaved form fields and the on-screen photo are not replaced by the pre-edit row.
+     * Discovery is not a child of that effect: a crop echo must not cancel seeds already
+     * running, and must start them if the open-vehicle job never settled.
+     */
+    var cropPersistEcho by remember { mutableStateOf<Vehicle?>(null) }
+    /** Bumped so a stale discovery job cannot publish seeds after a newer one starts. */
+    val discoveryGen = remember { intArrayOf(0) }
+    var discoveryJob by remember { mutableStateOf<Job?>(null) }
+    var discoveryInFlightPhoto by remember { mutableStateOf<String?>(null) }
+    /** Photo whose open-vehicle discovery finished (including zero seeds). */
+    var discoverySettledPhoto by remember { mutableStateOf<String?>(null) }
+    /** Replacement-photo import owns discovery until it publishes seeds. */
+    var photoImportActive by remember { mutableStateOf(false) }
     var isNewVehicle by remember { mutableStateOf(false) }
 
     var name by remember { mutableStateOf("") }
@@ -86,11 +104,9 @@ fun ManageVehicles2Screen(
     var landmarkTextBlocksJson by remember { mutableStateOf<String?>(null) }
 
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
-    var otherTextCropRect by remember { mutableStateOf<Rect?>(null) }
     var editMode by remember { mutableStateOf(CropEditMode.IDLE) }
-    /** Odo / Ignore Crop on MV2: tap yellow seeds (not drag-draw). Mutually exclusive with each other. */
+    /** Select Odo: tap a yellow seed to place the odometer box. */
     var odoSeedSelectActive by remember { mutableStateOf(false) }
-    var ignoreSeedSelectActive by remember { mutableStateOf(false) }
     var imageSize by remember { mutableStateOf(Offset.Zero) }
     var originalImageSize by remember { mutableStateOf(Offset.Zero) }
 
@@ -103,8 +119,7 @@ fun ManageVehicles2Screen(
     fun landmarkJsonForSave(): String? {
         val res = discoveryResults ?: return landmarkTextBlocksJson
         val odoRectF = odometerCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
-        val otherRectF = otherTextCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
-        val filtered = res.filterByCrops(odoRectF, otherRectF)
+        val filtered = res.filterByCrops(odoRectF, null)
         return OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf("ML Kit" to filtered))
     }
 
@@ -172,17 +187,93 @@ fun ManageVehicles2Screen(
                 Log.e("ManageVehicles2", "Failed dimensions", e)
             }
         }
-        val (odo, other) = vehicleViewModel.getCrops(v)
+        val (odo, _) = vehicleViewModel.getCrops(v)
         odometerCropRect = odo
-        otherTextCropRect = other
 
         discoveryResults = null
         seedBlocks = emptyList()
+        discoverySettledPhoto = null
+    }
+
+    fun cancelOpenVehicleDiscovery() {
+        discoveryGen[0]++
+        discoveryJob?.cancel()
+        discoveryJob = null
+        discoveryInFlightPhoto = null
+        isLoadingDiscovery = false
+    }
+
+    /**
+     * Paddle seeds for [photoPath]. Parent is [scope], not the hydration effect, so a crop
+     * Save/Clear key change does not cancel it.
+     */
+    fun launchOpenVehicleDiscovery(photoPath: String) {
+        val gen = ++discoveryGen[0]
+        discoveryJob?.cancel()
+        discoveryInFlightPhoto = photoPath
+        isLoadingDiscovery = true
+        val job = scope.launch {
+            isLoadingDiscovery = true
+            try {
+                val rawResult = withContext(Dispatchers.Default) {
+                    val rawBmp = OdometerOcrUtils.decodeBitmapSafely(context, photoPath) ?: return@withContext null
+                    val uprightBmp = OdometerOcrUtils.rotateImageIfRequired(rawBmp, photoPath)
+                    try {
+                        runMv2PaddleDiscovery(context, uprightBmp)
+                    } finally {
+                        if (uprightBmp != rawBmp) uprightBmp.recycle()
+                        rawBmp.recycle()
+                    }
+                }
+                if (gen != discoveryGen[0]) return@launch
+                if (rawResult != null) {
+                    discoveryResults = rawResult
+                    seedBlocks = rawResult.textBlocks
+                    originalImageSize = Offset(rawResult.imageWidth.toFloat(), rawResult.imageHeight.toFloat())
+                    discoverySettledPhoto = photoPath
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("ManageVehicles2", "Hydrate paddle discovery failed", e)
+            } finally {
+                if (gen == discoveryGen[0]) {
+                    isLoadingDiscovery = false
+                    discoveryInFlightPhoto = null
+                }
+            }
+        }
+        discoveryJob = job
     }
 
     LaunchedEffect(selectedVehicleId, vehicleHydrationKey) {
-        val id = selectedVehicleId ?: return@LaunchedEffect
+        val id = selectedVehicleId
+        val echo = cropPersistEcho
+        if (echo != null && (id == null || echo.id != id)) {
+            cropPersistEcho = null
+        }
+        if (id == null) {
+            cancelOpenVehicleDiscovery()
+            return@LaunchedEffect
+        }
         var v = vehicles.find { it.id == id } ?: return@LaunchedEffect
+        val pending = cropPersistEcho
+        if (pending != null && isCropPersistEcho(pending, v)) {
+            // Stamp and manifest bookkeeping only. Keep name, photo, landmarks, and seeds.
+            editingVehicle = v
+            val photo = referencePhotoUrl
+            val inFlight = discoveryJob?.isActive == true && discoveryInFlightPhoto == photo
+            if (!photo.isNullOrBlank() &&
+                seedBlocks.isEmpty() &&
+                discoverySettledPhoto != photo &&
+                !inFlight &&
+                !photoImportActive
+            ) {
+                launchOpenVehicleDiscovery(photo)
+            }
+            return@LaunchedEffect
+        }
+        if (pending != null) cropPersistEcho = null
         if (v.referenceDashPhotoUrl.isNullOrBlank() && !v.cloudManifest.isNullOrBlank()) {
             if (vehicleViewModel.ensureVehicleAssetsDownloaded(id)) {
                 v = vehicleViewModel.getVehicleById(id) ?: v
@@ -190,37 +281,28 @@ fun ManageVehicles2Screen(
         }
         hydrateFormFromVehicle(v)
 
-        val photoPath = v.referenceDashPhotoUrl
-        if (photoPath.isNullOrBlank()) return@LaunchedEffect
-        isLoadingDiscovery = true
-        try {
-            val rawResult = withContext(Dispatchers.Default) {
-                val rawBmp = OdometerOcrUtils.decodeBitmapSafely(context, photoPath) ?: return@withContext null
-                val uprightBmp = OdometerOcrUtils.rotateImageIfRequired(rawBmp, photoPath)
-                try {
-                    runMv2PaddleDiscovery(context, uprightBmp)
-                } finally {
-                    if (uprightBmp != rawBmp) uprightBmp.recycle()
-                    rawBmp.recycle()
-                }
-            }
-            if (rawResult != null) {
-                discoveryResults = rawResult
-                seedBlocks = rawResult.textBlocks
-                originalImageSize = Offset(rawResult.imageWidth.toFloat(), rawResult.imageHeight.toFloat())
-            }
-        } catch (e: Exception) {
-            Log.e("ManageVehicles2", "Hydrate paddle discovery failed", e)
-        } finally {
-            isLoadingDiscovery = false
+        val photoPath = referencePhotoUrl
+        if (photoPath.isNullOrBlank()) {
+            cancelOpenVehicleDiscovery()
+            return@LaunchedEffect
         }
+        launchOpenVehicleDiscovery(photoPath)
     }
 
     fun processImportedPhoto(url: String) {
+        cancelOpenVehicleDiscovery()
+        photoImportActive = true
+        isLoadingDiscovery = true
         scope.launch(Dispatchers.IO) {
             try {
-                withContext(Dispatchers.Main) { isLoadingDiscovery = true }
-                val rawBmp = OdometerOcrUtils.decodeBitmapSafely(context, url) ?: return@launch
+                val rawBmp = OdometerOcrUtils.decodeBitmapSafely(context, url)
+                if (rawBmp == null) {
+                    withContext(Dispatchers.Main) {
+                        photoImportActive = false
+                        isLoadingDiscovery = false
+                    }
+                    return@launch
+                }
                 val uprightBmp = OdometerOcrUtils.rotateImageIfRequired(rawBmp, url)
 
                 val refFile = File(context.filesDir, "vehicle_ref_${System.currentTimeMillis()}.jpg")
@@ -235,14 +317,22 @@ fun ManageVehicles2Screen(
                     landmarkTextBlocksJson = landmarkJson
                     discoveryResults = rawResult
                     seedBlocks = rawResult.textBlocks
+                    discoverySettledPhoto = refFile.absolutePath
                     originalImageSize = Offset(uprightBmp.width.toFloat(), uprightBmp.height.toFloat())
+                    photoImportActive = false
                     isLoadingDiscovery = false
                 }
                 if (uprightBmp != rawBmp) uprightBmp.recycle()
                 rawBmp.recycle()
+            } catch (e: CancellationException) {
+                withContext(NonCancellable + Dispatchers.Main) { photoImportActive = false }
+                throw e
             } catch (e: Exception) {
                 Log.e("ManageVehicles2", "Photo processing failed", e)
-                withContext(Dispatchers.Main) { isLoadingDiscovery = false }
+                withContext(Dispatchers.Main) {
+                    photoImportActive = false
+                    isLoadingDiscovery = false
+                }
             }
         }
     }
@@ -279,24 +369,49 @@ fun ManageVehicles2Screen(
     }
 
     fun onSeedTapped(block: TextBlock) {
+        if (!odoSeedSelectActive) return
         val imgW = originalImageSize.x.toInt()
         val imgH = originalImageSize.y.toInt()
         if (imgW <= 0 || imgH <= 0) return
-        val icrs = mv2IcrsFromSeed(block, imgW, imgH)
-        when {
-            odoSeedSelectActive -> odometerCropRect = icrs
-            ignoreSeedSelectActive -> otherTextCropRect = icrs
-            else -> return
-        }
+        odometerCropRect = mv2IcrsFromSeed(block, imgW, imgH)
         odoSeedSelectActive = false
-        ignoreSeedSelectActive = false
         editMode = CropEditMode.EDIT_CROPS
+    }
+
+    /**
+     * Writes odo crop and null ignore. No row yet: keep the rect in memory.
+     * A replacement photo is included so the box is not stored on the previous file.
+     * Name and the other form fields stay in memory until Save Changes.
+     */
+    fun writeOdoCrop(rect: Rect?) {
+        if (isNewVehicle) return
+        val base = editingVehicle ?: return
+        val photo = referencePhotoUrl
+        val photoChanged = photo != base.referenceDashPhotoUrl
+        val written = base.copy(
+            referenceDashPhotoUrl = if (photoChanged) photo else base.referenceDashPhotoUrl,
+            cleanedReferenceDashPhotoUrl = if (photoChanged) photo else base.cleanedReferenceDashPhotoUrl,
+            odometerCropLeft = rect?.left,
+            odometerCropTop = rect?.top,
+            odometerCropRight = rect?.right,
+            odometerCropBottom = rect?.bottom,
+            otherTextCropLeft = null,
+            otherTextCropTop = null,
+            otherTextCropRight = null,
+            otherTextCropBottom = null,
+            landmarkTextBlocksJson = if (photoChanged) landmarkJsonForSave() else base.landmarkTextBlocksJson,
+        )
+        cropPersistEcho = written
+        editingVehicle = written
+        scope.launch {
+            vehicleViewModel.updateVehicle(written)
+        }
     }
 
     RegisterPageHelp(
         title = "Manage Vehicles",
-        "Reference photo (upright EXIF only) → Run Discovery (paddle seeds) → tap a seed for the odometer box → " +
-            "Ignore Crop if needed → name → Save. Landmarks are stored under the existing JSON key. Menu → Help for walkthrough.",
+        "Reference photo (upright EXIF only) → Run Discovery → Select Odo → tap the seed → adjust → Save. " +
+            "Landmarks are stored under the existing JSON key. Menu → Help for walkthrough.",
     )
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         var dropdownExpanded by remember { mutableStateOf(false) }
@@ -308,8 +423,8 @@ fun ManageVehicles2Screen(
                 readOnly = true
             )
             ExposedDropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
-                vehicles.forEach { vehicle -> DropdownMenuItem(text = { Text(vehicle.name) }, onClick = { selectedVehicleId = vehicle.id; isNewVehicle = false; dropdownExpanded = false }) }
-                DropdownMenuItem(text = { Text("Add New Vehicle") }, onClick = { selectedVehicleId = null; editingVehicle = null; isNewVehicle = true; name = ""; make = ""; model = ""; year = ""; licensePlate = ""; odometerReading = ""; pickedPhotoUrl = null; referencePhotoUrl = null; landmarkTextBlocksJson = null; odometerCropRect = null; otherTextCropRect = null; dropdownExpanded = false })
+                vehicles.forEach { vehicle -> DropdownMenuItem(text = { Text(vehicle.name) }, onClick = { selectedVehicleId = vehicle.id; isNewVehicle = false; editMode = CropEditMode.IDLE; odoSeedSelectActive = false; dropdownExpanded = false }) }
+                DropdownMenuItem(text = { Text("Add New Vehicle") }, onClick = { selectedVehicleId = null; editingVehicle = null; isNewVehicle = true; name = ""; make = ""; model = ""; year = ""; licensePlate = ""; odometerReading = ""; pickedPhotoUrl = null; referencePhotoUrl = null; landmarkTextBlocksJson = null; odometerCropRect = null; editMode = CropEditMode.IDLE; odoSeedSelectActive = false; dropdownExpanded = false })
             }
         }
 
@@ -331,61 +446,51 @@ fun ManageVehicles2Screen(
                 EditCropsView(
                     referencePhotoUrl!!,
                     odometerCropRect,
-                    otherTextCropRect,
+                    null,
                     originalImageSize,
                     editMode,
-                    seedSelectActive = odoSeedSelectActive || ignoreSeedSelectActive,
+                    seedSelectActive = odoSeedSelectActive,
                     seedBlocks = seedBlocks,
                     onSeedTapped = { block -> onSeedTapped(block) },
                     onSizeChanged = { imageSize = it },
-                    onCropChanged = { odo, other -> odometerCropRect = odo; otherTextCropRect = other },
+                    onCropChanged = { odo, _ -> odometerCropRect = odo },
                 )
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
                     Button(
                         onClick = {
-                            odoSeedSelectActive = !odoSeedSelectActive
-                            if (odoSeedSelectActive) {
-                                ignoreSeedSelectActive = false
+                            if (editMode == CropEditMode.EDIT_CROPS) {
+                                val rect = odometerCropRect
                                 editMode = CropEditMode.IDLE
+                                odoSeedSelectActive = false
+                                writeOdoCrop(rect)
+                            } else if (odometerCropRect != null) {
+                                odoSeedSelectActive = false
+                                editMode = CropEditMode.EDIT_CROPS
                             }
                         },
                         modifier = Modifier.weight(1f),
+                        enabled = editMode == CropEditMode.EDIT_CROPS || odometerCropRect != null,
                     ) {
-                        Text(if (odoSeedSelectActive) "Done Odo" else "Odo Crop")
+                        Text(if (editMode == CropEditMode.EDIT_CROPS) "Save" else "Edit Odo")
                     }
                     Button(
                         onClick = {
-                            odoSeedSelectActive = false
-                            ignoreSeedSelectActive = false
-                            editMode = if (editMode == CropEditMode.EDIT_CROPS) CropEditMode.IDLE else CropEditMode.EDIT_CROPS
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(if (editMode == CropEditMode.EDIT_CROPS) "Done Edit" else "Edit Crops")
-                    }
-                    Button(
-                        onClick = {
-                            ignoreSeedSelectActive = !ignoreSeedSelectActive
-                            if (ignoreSeedSelectActive) {
+                            if (odometerCropRect == null) {
+                                odometerCropRect = null
+                                editMode = CropEditMode.IDLE
+                                odoSeedSelectActive = true
+                            } else {
+                                odometerCropRect = null
                                 odoSeedSelectActive = false
                                 editMode = CropEditMode.IDLE
+                                writeOdoCrop(null)
                             }
                         },
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text(if (ignoreSeedSelectActive) "Done Ignore" else "Ignore Crop")
+                        Text(if (odometerCropRect == null) "Select Odo" else "Clear Odo")
                     }
-                }
-
-                Button(
-                    onClick = {
-                        odometerCropRect = null
-                        otherTextCropRect = null
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                ) {
-                    Text("Clear Crops")
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
@@ -492,7 +597,7 @@ fun ManageVehicles2Screen(
                                 referencePhotoUrl,
                                 referencePhotoUrl,
                                 odometerCropRect,
-                                otherTextCropRect,
+                                null,
                                 odometerReading.toIntOrNull() ?: 0,
                                 jsonToSave,
                                 odometerDigitCount = dig,
@@ -512,10 +617,10 @@ fun ManageVehicles2Screen(
                                     odometerCropTop = odometerCropRect?.top,
                                     odometerCropRight = odometerCropRect?.right,
                                     odometerCropBottom = odometerCropRect?.bottom,
-                                    otherTextCropLeft = otherTextCropRect?.left,
-                                    otherTextCropTop = otherTextCropRect?.top,
-                                    otherTextCropRight = otherTextCropRect?.right,
-                                    otherTextCropBottom = otherTextCropRect?.bottom,
+                                    otherTextCropLeft = null,
+                                    otherTextCropTop = null,
+                                    otherTextCropRight = null,
+                                    otherTextCropBottom = null,
                                     landmarkTextBlocksJson = jsonToSave,
                                     odometerDigitCount = dig,
                                     odometerRolloverCount = rolls,
@@ -537,7 +642,7 @@ fun ManageVehicles2Screen(
         LandmarkDebugDialog(
             photoPath = referencePhotoUrl,
             odometerCrop = odometerCropRect,
-            otherTextCrop = otherTextCropRect,
+            otherTextCrop = null,
             landmarks = res.textBlocks,
             odometerText = "N/A",
             engineName = res.engineName,
@@ -752,7 +857,6 @@ private fun EditCropsView(
                     }
                     currentDragRect?.let { drawIcrsRect(it, Color.Green) }
                     odoRect?.let { drawIcrsRect(it, Color.Blue) }
-                    otherRect?.let { drawIcrsRect(it, Color.Red) }
                 }
             }
 
@@ -798,6 +902,22 @@ private fun mv2SeedQuad(block: TextBlock): ContentExpandUtils.OrientedQuad {
         return ContentExpandUtils.orientedFromPoints8(p)
     }
     return ContentExpandUtils.orientedFromAabb(block.boundingBox)
+}
+
+/**
+ * Crop Save/Clear echo: [incoming] matches [written] except stampForWrite
+ * (updatedAt, and sync id / origin when those were blank) and cloudManifest.
+ */
+private fun isCropPersistEcho(written: Vehicle, incoming: Vehicle): Boolean {
+    if (written.id != incoming.id) return false
+    if (written.syncId.isNotBlank() && written.syncId != incoming.syncId) return false
+    if (written.originDeviceId.isNotBlank() && written.originDeviceId != incoming.originDeviceId) return false
+    return written.copy(
+        updatedAt = incoming.updatedAt,
+        syncId = incoming.syncId,
+        originDeviceId = incoming.originDeviceId,
+        cloudManifest = incoming.cloudManifest,
+    ) == incoming
 }
 
 /** Axis-aligned ICRS crop rect from seed via rot-G-style UV pad (0.6 v, 0.8 L/R). */

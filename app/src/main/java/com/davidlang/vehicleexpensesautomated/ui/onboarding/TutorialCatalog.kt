@@ -52,8 +52,8 @@ object TutorialCatalog {
                 ),
                 TutorialStep(
                     title = "Odo Crop & Run Discovery",
-                    body = "Draw Odo Crop around the odometer digits (optional Ignore Crop for clutter). " +
-                        "Tap Run Discovery and review landmarks. Edit OCR text if something was missed.",
+                    body = "Run Discovery, Select Odo, tap the seed, adjust, Save. " +
+                        "Review landmarks. Edit OCR text if something was missed.",
                     imageAsset = "tutorials/vehicle_crops.jpg",
                 ),
                 TutorialStep(

@@ -84,7 +84,7 @@ fun HelpScreen(navController: NavHostController? = null) {
         SectionTitle("1. Add a vehicle (do this first)")
         Bullet("Menu → Manage Vehicles → Vehicle dropdown → Add New Vehicle")
         Bullet("Take or pick a clear dashboard photo")
-        Bullet("Odo Crop around the odometer digits; optional Ignore Crop for clutter")
+        Bullet("Run Discovery, Select Odo, tap the seed, adjust, Save")
         Bullet("Run Discovery, review landmarks (Edit OCR to fix misses), enter a Vehicle Name")
         Bullet("Create Vehicle")
         Text(
