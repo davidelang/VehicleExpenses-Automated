@@ -32,7 +32,8 @@ android {
         applicationId = "com.davidlang.vehicleexpensesautomated"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
+        // Must increase on every Play upload (raise app/versionCode.txt before each ./build_app --bundle).
+        versionCode = file("versionCode.txt").readText().trim().toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Use orNull so a broken git state (bad refs after permission issues or worktree problems)
         // does not fail the entire configuration with "bash exit 128".
@@ -106,6 +107,18 @@ android {
             dimension = "abi"
             ndk { abiFilters += "x86_64" }
         }
+        // Play bundle only (./build_app --bundle runs bundlePlayRelease): all three ABIs in one AAB.
+        // Play splits natives per device; assets are not split, so every install carries all three
+        // model sets (NativePaddleEngine picks by primary ABI; file names do not collide).
+        create("play") {
+            dimension = "abi"
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        }
+    }
+    sourceSets {
+        getByName("play") {
+            assets.srcDirs("src/arm64/assets", "src/armv7/assets", "src/x86_64/assets")
+        }
     }
     // Default aapt ignore plus timestamped model leftovers (*.nb.bak.*).
     // Unscheduled dets live in third_party/paddle/exp_det_ab_unscheduled/ (not assets).
@@ -163,6 +176,11 @@ android {
             excludes.add("META-INF/NOTICE.txt")
         }
     }
+}
+
+// The play flavor is for the release bundle only; debug builds stay one APK per ABI.
+androidComponents {
+    beforeVariants(selector().withFlavor("abi" to "play").withBuildType("debug")) { it.enable = false }
 }
 
 // Hilt's javac task does not inherit kotlin.jvmToolchain; pin all JavaCompile to JDK 17 via Foojay.
