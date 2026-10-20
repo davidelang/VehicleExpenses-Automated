@@ -1,1610 +1,424 @@
 #!/bin/bash
-
-# Usage: ./deploy [alias1 alias2 ...]
-# If no arguments are provided, it deploys to all connected devices.
+# Install the last-built APKs on connected devices. Human-only: agents must not run this.
+# Authoritative copy: orchestration-example/build-examples/android-app/deploy
 #
-# Default: install the last produced *ABI-flavor* debug APK (from ./build_app
-# assembleDebug) via adb install -r. Picks app-arm64-debug.apk /
-# app-x86_64-debug.apk / app-armv7-debug.apk from ro.product.cpu.abi.
-# Does NOT recompile. Dirty git is OK. Version printed is the APK versionName.
+# Usage: ./deploy [-h|--help] [--test] [--clean] [--rebuild] [--launch] [device...] [-- gradle-flag...]
 #
-# To force a Gradle rebuild + install (wipe multi-user caches, --no-daemon
-# installArm64Debug / installX86_64Debug / installArmv7Debug):
-#   ./deploy --rebuild
-#   REBUILD=1 ./deploy
-#
-# Pass Gradle options after -- (only meaningful with --rebuild):
-#   ./deploy --rebuild -- --info --stacktrace
-#   ./deploy --rebuild tablet -- --debug
-#
-# To force uninstall first (e.g. to recover from signature mismatch after
-# switching build environments or previous release builds):
-#   UNINSTALL_FIRST=1 ./deploy
-# or
-#   ./deploy --clean
-#
-# To backup DB + test reference images the app reads (vehicle_expenses.db +
-# dash reference images (vehicle_ref_*.jpg) + pump pictures + alignment
-# experiment photos) + source zips in /sdcard/Download (amazon + pump zips,
-# saved as ve_source_zips.tar.gz), force uninstall+install, then restore.
-# Does NOT preserve experiment outputs (html/json reports in *_reports dirs).
-#   PRESERVE_DATA=1 ./deploy
-# or
-#   ./deploy --preserve-data
-#
-# To capture the same backup artifacts as --preserve-data without build,
-# uninstall, install, or restore (retrieval only):
-#   BACKUP=1 ./deploy
-# or
-#   ./deploy --backup
-#   ./deploy --fetch-data tablet
-# (--backup and --fetch-data are identical.)
-#
-# To restore backed-up data + source zips without building or uninstalling
-# (e.g. after you manually wipe the emulator userdata). User is responsible
-# for wiping the system image if desired before using --restore-data.
-#   RESTORE_DATA=1 ./deploy
-# or
-#   ./deploy --restore-data
-#   ./deploy --restore-data tablet
-#
-# To install data from any chosen backup dir (standalone; no build, no uninstall).
-# Use after a manual fresh install on a new emulator. Lists available backups if
-# no dir given. Pushes DB + refs + pump/alignment photos + source zips to all
-# devices or specified targets. User picks the backup (not tied to current DEV).
-#   INSTALL_DATA=1 ./deploy
-# or
-#   ./deploy --install-data
-#   ./deploy --install-data test-data-backups/<name>
-#   ./deploy --install-data test-data-backups/<name> tablet
-#
-# --restore-data and --install-data now bust Coil image cache (rm cache/*),
-# clear Room WAL/shm, touch vehicle_ref_*.jpg mtimes, write files/refdata_version.txt,
-# force-stop, and launch MainActivity with --activity-clear-task so ManageVehicles
-# shows the correct distinct Honda/Ford dash photos after a push (not stale Coil bitmaps).
-# Post-restore verify prints on-device md5 vs vehicle_refs.manifest and DB rows for id 1/2.
-#
-# To push specific phone-updated reference dash photos without a full backup (Honda/Ford):
-#   ./deploy --push-vehicle-refs /path/to/vehicle_ref_1778726321661.jpg /path/to/vehicle_ref_1778726533320.jpg
-#   ./deploy --push-vehicle-refs /path/to/dir/with/vehicle_ref_*.jpg tablet
-#   ./push-vehicle-refs.sh /path/to/dir tablet
-#   PUSH_VEHICLE_REFS_DIR=/path/to/dir ./deploy --push-vehicle-refs emulator
-# Expected md5 (phone refs): Honda vehicle_ref_1778726321661.jpg = 89912f28791fbbec046e62aedd9f474c;
-# Ford vehicle_ref_1778726533320.jpg = a077932aaa38780e404475cd1012ade8.
-# Crop coordinates in DB should be ICRS (raw pixels); legacy 0-1 values may still display if consistent.
-#
-# When capturing backups, optional VEHICLE_REFS_SOURCE_DIR=/local/dir skips device tar capture
-# and packages vehicle_ref_*.jpg from that dir (with vehicle_refs.manifest: size, mtime, md5).
-#
-# SAFETY: If PRESERVE_DATA is requested but a device has the app installed and
-# we fail to capture any backup data (DB or images), we will REFUSE to uninstall.
-# This prevents destroying your test data when backup or the subsequent build fails.
-#
-# Backups saved locally to ./test-data-backups/<device>-<timestamp>/
-# Requires debug build + run-as support on the device (typical for emulators).
-#
-# Note: Force uninstall will remove app data (DB, prefs, etc.) unless using
-# PRESERVE_DATA. Normal deploys (matching cert) update in-place without loss.
+# Which APKs: project.config apk_outputs (standard, the default) or apk_test_outputs (--test),
+# the same keys build_app builds. Each device gets the APK whose native code matches the
+# device's ro.product.cpu.abilist (first match in the device's preference order).
+# The app id comes from one place: the APKs themselves (SDK aapt2 dump packagename). Nothing
+# is hard-coded. Everything about the APKs is checked before the first adb call.
 
-PACKAGE_NAME="com.davidlang.vehicleexpensesautomated"
+set -euo pipefail
 
-deploy_usage() {
-  cat <<'EOF'
-Usage: ./deploy [options] [device-alias|device-id ...] [-- gradle-flags...]
-
-Install and deploy the debug APK. Default uses the last produced APK from
-./build_app (no recompile). With no device arguments, all connected online
-devices are targeted.
-
-Options:
-  -h, --help              Show this help and exit
-      --rebuild           Wipe multi-user build caches and run Gradle
-                          install<Abi>Debug (--no-daemon) for each device ABI.
-      --preserve-data     Backup app data, uninstall+reinstall, restore backup
-                          (refuses uninstall if backup capture fails)
-      --backup, --fetch-data
-                          Capture test data from device(s) only (same artifacts as
-                          --preserve-data backup step; no build/uninstall/restore)
-      --restore-data      Restore latest per-device backup only (no build/uninstall)
-      --install-data [DIR]
-                          Install data from a chosen backup dir (no build/uninstall).
-                          DIR may be test-data-backups/<name> or a short backup name.
-                          Lists available backups if DIR is omitted.
-      --clean             Force uninstall before install (signature recovery)
-      --push-vehicle-refs Push specific vehicle_ref_*.jpg files/dirs only
-      --push-test-data [DIR]
-                          Stream source zips from a backup dir to device
-                          /sdcard/Download via tar pipe (no local tar file).
-                          Reads source_zips/*.zip or *.zip in the backup dir.
-                          Uses latest backup with zips if DIR is omitted.
-
-Device aliases (see DEVICE_MAP in deploy script):
-  tablet, emulator        -> emulator-5554
-  Any other argument      -> treated as adb device id (e.g. emulator-5556)
-
-Environment variables (equivalent to flags where noted):
-  REBUILD=1               Same as --rebuild
-  PRESERVE_DATA=1         Same as --preserve-data
-  BACKUP=1, FETCH_DATA=1  Same as --backup / --fetch-data
-  RESTORE_DATA=1          Same as --restore-data
-  INSTALL_DATA=1          Same as --install-data (set SELECTED_BACKUP=... for DIR)
-  UNINSTALL_FIRST=1       Same as --clean
-  PUSH_VEHICLE_REFS_DIR   Default source dir for --push-vehicle-refs
-  VEHICLE_REFS_SOURCE_DIR Local dir of vehicle_ref_*.jpg when capturing backups
-
-Gradle passthrough (with --rebuild only):
-  ./deploy --rebuild [options] [devices...] -- --info --stacktrace
-
-Examples:
-  ./deploy
-  ./deploy tablet
-  ./deploy --rebuild
-  ./deploy --rebuild tablet -- --info
-  ./deploy --preserve-data emulator-5556
-  ./deploy --backup emulator-5556
-  ./deploy --fetch-data tablet
-  ./deploy --clean tablet
-  ./deploy --restore-data emulator-5556
-  ./deploy --install-data test-data-backups/adb-...-20260622-180409 emulator-5556
-  ./deploy --install-data adb-...-20260622-180409 emulator-5556
-  ./deploy --push-vehicle-refs /path/to/vehicle_ref_1778726321661.jpg tablet
-  ./deploy --push-test-data test-data-backups/emulator-5554-source-zips-... emulator-5556
-
-Environment: PUSH_TEST_DATA=1 (optional SELECTED_BACKUP=... for DIR)
-
-Backups live in ./test-data-backups/<device-or-source>-<timestamp>/ and may contain:
-  vehicle_expenses.db.bak, vehicle_refs.tar.gz, pump_photos.tar.gz,
-  alignment_photos.tar.gz, ve_source_zips.tar.gz
-
---install-data / --restore-data bust Coil cache, clear Room WAL, and relaunch the app.
-Requires debug build + run-as on the target device.
-EOF
-}
-
-is_backup_arg() {
-  local arg=$1
-  [ -n "$arg" ] || return 1
-  [ -d "$arg" ] || [ -d "test-data-backups/$arg" ] || [[ "$arg" == *test-data-backups* ]] || [[ "$arg" == *-[0-9][0-9][0-9][0-9][0-9][0-9]* ]]
-}
-
-resolve_backup_dir() {
-  local candidate=$1
-  if [ -d "$candidate" ]; then
-    printf '%s\n' "$candidate"
-  elif [ -d "test-data-backups/$candidate" ]; then
-    printf '%s\n' "test-data-backups/$candidate"
-  fi
-}
-
-list_available_backups() {
-  echo "Available backups:"
-  ls -td test-data-backups/* 2>/dev/null || echo "(none)"
-}
-
-backup_has_source_zips() {
-  local dir=$1
-  local src
-  src=$(resolve_source_zips_dir "$dir") || return 1
-  [ -n "$src" ]
-}
-
-latest_backup_with_source_zips() {
-  local dir
-  for dir in $(ls -td test-data-backups/* 2>/dev/null); do
-    if backup_has_source_zips "$dir"; then
-      printf '%s\n' "$dir"
-      return 0
-    fi
-  done
-  return 1
-}
-
-# Directory whose *.zip files are streamed to the device (no local tar artifact).
-resolve_source_zips_dir() {
-  local backup_dir=$1
-  shopt -s nullglob
-  local nested=("$backup_dir/source_zips"/*.zip)
-  local top=("$backup_dir"/*.zip)
-  shopt -u nullglob
-  if [ ${#nested[@]} -gt 0 ]; then
-    printf '%s\n' "$backup_dir/source_zips"
-    return 0
-  fi
-  if [ ${#top[@]} -gt 0 ]; then
-    printf '%s\n' "$backup_dir"
-    return 0
-  fi
-  return 1
-}
-
-push_source_zips_to_device() {
-  local DEV=$1
-  local BACKUP_DIR=$2
-  local SRC_DIR
-  local zip_count
-  SRC_DIR=$(resolve_source_zips_dir "$BACKUP_DIR") || {
-    echo "  [push-test-data] No *.zip in $BACKUP_DIR/source_zips/ or $BACKUP_DIR"
-    return 1
-  }
-  shopt -s nullglob
-  local zips=("$SRC_DIR"/*.zip)
-  zip_count=${#zips[@]}
-  shopt -u nullglob
-  echo "  [push-test-data] Streaming $zip_count zip(s) from $SRC_DIR to $DEV:/sdcard/Download (tar pipe, no local tar file)"
-  # Stream gzip tar to device stdin -> extract directly into Download.
-  if tar czf - -C "$SRC_DIR" . | adb -s "$DEV" shell 'mkdir -p /sdcard/Download && cd /sdcard/Download && tar xzf -'; then
-    :
-  else
-    echo "  [push-test-data] Direct tar pipe failed; retrying via transient /sdcard/ve_source_zips.tar.gz on device"
-    if ! tar czf - -C "$SRC_DIR" . | adb -s "$DEV" shell 'cat > /sdcard/ve_source_zips.tar.gz'; then
-      echo "  [push-test-data] Failed to stream tar to $DEV"
-      return 1
-    fi
-    if ! adb -s "$DEV" shell 'mkdir -p /sdcard/Download && cd /sdcard/Download && tar xzf /sdcard/ve_source_zips.tar.gz && rm -f /sdcard/ve_source_zips.tar.gz'; then
-      echo "  [push-test-data] Failed to extract streamed tar on $DEV"
-      adb -s "$DEV" shell 'rm -f /sdcard/ve_source_zips.tar.gz' 2>/dev/null || true
-      return 1
-    fi
-  fi
-  echo "  [push-test-data] Download zips on $DEV:"
-  adb -s "$DEV" shell 'ls -la /sdcard/Download/*.zip 2>/dev/null || true' 2>/dev/null || true
-}
-
-# Parse options with GNU getopt (long options). Remaining args: optional backup name,
-# device targets, optional --, then gradle flags.
-TARGETS=()
-PUSH_REF_PATHS=()
-GRADLE_ARGS=()
-PRESERVE_DATA=${PRESERVE_DATA:-false}
-UNINSTALL_FIRST=${UNINSTALL_FIRST:-false}
-RESTORE_DATA=${RESTORE_DATA:-false}
-INSTALL_DATA=${INSTALL_DATA:-false}
-PUSH_VEHICLE_REFS=${PUSH_VEHICLE_REFS:-false}
-PUSH_TEST_DATA=${PUSH_TEST_DATA:-false}
-BACKUP_ONLY=${BACKUP_ONLY:-false}
-SELECTED_BACKUP=${SELECTED_BACKUP:-}
-REBUILD=${REBUILD:-false}
-# Legacy fat APK path is obsolete; helpers below pick per-device flavor APKs.
-DEBUG_APK=""
-# Set after resolve; used for end-of-run version print (APK bake time, not live HEAD).
-DEPLOYED_VERSION=""
-
-if ! PARSED=$(getopt -o h -l help,rebuild,preserve-data,backup,fetch-data,restore-data,install-data,clean,push-vehicle-refs,push-test-data -- "$@"); then
-  deploy_usage
+if [ ! -f project.config ]; then
+  echo "ERROR: project.config missing in $(pwd); run deploy from the app worktree." >&2
   exit 1
 fi
-eval set -- "$PARSED"
-while true; do
-  case "$1" in
-    -h|--help)
-      deploy_usage
-      exit 0
-      ;;
-    --rebuild)
-      REBUILD=true
-      shift
-      ;;
-    --preserve-data)
-      PRESERVE_DATA=true
-      shift
-      ;;
-    --backup|--fetch-data)
-      BACKUP_ONLY=true
-      shift
-      ;;
-    --restore-data)
-      RESTORE_DATA=true
-      shift
-      ;;
-    --install-data)
-      INSTALL_DATA=true
-      shift
-      ;;
-    --clean)
-      UNINSTALL_FIRST=true
-      shift
-      ;;
-    --push-vehicle-refs)
-      PUSH_VEHICLE_REFS=true
-      shift
-      ;;
-    --push-test-data)
-      PUSH_TEST_DATA=true
-      shift
-      ;;
-    --)
-      shift
-      break
-      ;;
-    *)
-      break
-      ;;
-  esac
-done
-
-if { [ "$INSTALL_DATA" = "true" ] || [ "$PUSH_TEST_DATA" = "true" ]; } && [ $# -gt 0 ] && is_backup_arg "$1"; then
-  SELECTED_BACKUP="$1"
-  shift
-fi
-
-SEEN_DD=false
-for arg in "$@"; do
-  if $SEEN_DD; then
-    GRADLE_ARGS+=("$arg")
-  elif [ "$arg" = "--" ]; then
-    SEEN_DD=true
-  elif [ "$PUSH_VEHICLE_REFS" = "true" ] && { [ -f "$arg" ] || [ -d "$arg" ]; }; then
-    PUSH_REF_PATHS+=("$arg")
-  else
-    TARGETS+=("$arg")
-  fi
-done
-if [ ${#GRADLE_ARGS[@]} -gt 0 ]; then
-  echo "Passing Gradle flags: ${GRADLE_ARGS[*]}"
-fi
-
-# Normalize env-var truthiness (1/true/yes).
-truthy() {
-  case "${1,,}" in 1|true|yes) return 0 ;; esac
-  return 1
+# project.config value for key $1 (empty when unset).
+cfg() {
+  sed -n "/^$1=/{s/^$1=//;p;q}" project.config | tr -d '\r'
 }
-if truthy "${PRESERVE_DATA}"; then PRESERVE_DATA=true; fi
-if truthy "${UNINSTALL_FIRST}"; then UNINSTALL_FIRST=true; fi
-if truthy "${RESTORE_DATA}"; then RESTORE_DATA=true; fi
-if truthy "${INSTALL_DATA}"; then INSTALL_DATA=true; fi
-if truthy "${PUSH_VEHICLE_REFS}"; then PUSH_VEHICLE_REFS=true; fi
-if truthy "${PUSH_TEST_DATA}"; then PUSH_TEST_DATA=true; fi
-if truthy "${BACKUP}"; then BACKUP_ONLY=true; fi
-if truthy "${FETCH_DATA}"; then BACKUP_ONLY=true; fi
-if truthy "${REBUILD}"; then REBUILD=true; fi
 
-# Export so values survive the primary/ai-code re-execs that happen later.
-export PRESERVE_DATA
-export UNINSTALL_FIRST
-export RESTORE_DATA
-export INSTALL_DATA
-export PUSH_VEHICLE_REFS
-export PUSH_TEST_DATA
-export BACKUP_ONLY
-export SELECTED_BACKUP
-export REBUILD
-
-# Data-only modes never build; skip primary-user / group re-exec (avoids run-as-primary loops).
-DATA_ONLY_MODE=false
-if [ "$PUSH_TEST_DATA" = "true" ] || [ "$RESTORE_DATA" = "true" ] || \
-   [ "$INSTALL_DATA" = "true" ] || [ "$PUSH_VEHICLE_REFS" = "true" ] || \
-   [ "$BACKUP_ONLY" = "true" ]; then
-  DATA_ONLY_MODE=true
+PRIMARY_USER=$(cfg primary_user)
+if [ -z "$PRIMARY_USER" ]; then
+  echo "ERROR: primary_user unset in project.config" >&2
+  exit 1
+fi
+# adb keys and the adb server belong to the human user, not root.
+if [ "$EUID" -eq 0 ]; then
+  echo "Re-executing as $PRIMARY_USER (not root)..."
+  exec sudo -E -u "$PRIMARY_USER" "$0" "$@"
 fi
 
-# Ensure backups dir exists (for PRESERVE_DATA)
-mkdir -p test-data-backups 2>/dev/null || true
-
-# Load primary_user from project.config for portable primary developer identity (no hardcoded names).
-PRIMARY_USER=$(sed -n 's/^primary_user=//p' project.config 2>/dev/null | tr -d '\r' | head -1)
-PRIMARY_USER=${PRIMARY_USER:-dlang}
-CODER_USER=$(sed -n 's/^coder_user=//p' project.config 2>/dev/null | tr -d '\r' | head -1)
-CODER_USER=${CODER_USER:-ai-coder}
-CODE_GROUP=$(sed -n 's/^code_group=//p' project.config 2>/dev/null | tr -d '\r' | head -1)
-CODE_GROUP=${CODE_GROUP:-ai-code}
-
-# Re-exec as PRIMARY_USER (not root) if we started as root. This ensures we use
-# the primary developer's debug keystore (~/.android/debug.keystore) for consistent APK
-# signatures across builds/deploys. Running as root uses /root's keystore,
-# which produces a different certificate and triggers
-# INSTALL_FAILED_UPDATE_INCOMPATIBLE.
-if [ "$DATA_ONLY_MODE" = "true" ]; then
-  :
-elif [ "$EUID" -eq 0 ]; then
-  echo "Re-executing as $PRIMARY_USER (not root) for consistent signing keystore..."
-  if [ -x ./run-as-primary ]; then
-    exec ./run-as-primary "$0" "$@"
-  else
-    exec sudo -E -u "$PRIMARY_USER" "$0" "$@"
-  fi
-fi
-
-# Re-exec as PRIMARY_USER if not already running as them. This ensures all build/deploy
-# artifacts are consistently owned by the primary developer (dlang), preventing ownership
-# drift to ai-orchestrator/root and the resulting permission thrashing on cxx/logs/etc.
-CURRENT_USER=$(id -un)
-if [ "$DATA_ONLY_MODE" != "true" ] && [ "$CURRENT_USER" != "$PRIMARY_USER" ]; then
-  echo "Re-executing as $PRIMARY_USER for consistent ownership of build artifacts..."
-  if [ -x ./run-as-primary ]; then
-    exec ./run-as-primary "$0" "$@"
-  else
-    exec sudo -E -u "$PRIMARY_USER" "$0" "$@"
-  fi
-fi
-
-# Ensure group-writable creation for build artifacts and Gradle caches (664/2775 sources)
 umask 002
 
-# Both ai-shared and ai-code are required. Agent builds leave app/build and project
-# .gradle as ai-coder:ai-code 66x — without ai-code in *this process*, dlang cannot
-# write fileHashes.lock (EACCES). Do NOT use `sg ai-shared` alone: that only fixes
-# one primary GID and historically re-ran deploy still missing ai-code.
-if [ "$DATA_ONLY_MODE" != "true" ]; then
-  MISSING=""
-  for grp in ai-shared ai-code; do
-    if ! id -nG | grep -qw "$grp"; then MISSING="$MISSING $grp"; fi
-  done
-  if [ -n "$MISSING" ]; then
-    echo "ERROR: this shell is missing project group(s):$MISSING" >&2
-    echo "  Agent/build caches are group ai-code; git/sandbox need ai-shared." >&2
-    echo "  Fix (no full logout):  source ./env" >&2
-    echo "  Or open a shell from setup_agent (execs ve-refresh-shell)." >&2
-    echo "  Then re-run:  ./deploy" >&2
-    echo "  Do NOT:  sg ai-shared  (single-group; breaks multi-user deploy)" >&2
+for _role in planning_user coder_user; do
+  _u=$(cfg "$_role")
+  if [ -z "$_u" ]; then
+    echo "ERROR: $_role unset in project.config" >&2
     exit 1
+  fi
+  if [ "$(id -un)" = "$_u" ]; then
+    echo "ERROR: deploy is human-only; $_role ($_u) must not run it." >&2
+    exit 1
+  fi
+done
+
+# app/build is ai-code 2770 (build_app runs as coder_user); reading it needs the groups.
+MISSING=""
+for grp in ai-shared ai-code; do
+  if ! id -nG | grep -qw "$grp"; then MISSING="$MISSING $grp"; fi
+done
+if [ -n "$MISSING" ]; then
+  echo "ERROR: this shell is missing project group(s):$MISSING" >&2
+  echo "  Fix:  source ./env" >&2
+  exit 1
+fi
+
+usage() {
+  cat <<'USAGE'
+Usage: ./deploy [-h|--help] [--test] [--clean] [--rebuild] [--launch] [device...] [-- gradle-flag...]
+
+Install the last-built APKs with adb install -r. The default path does not compile.
+
+  --test       Install the test build (apk_test_outputs) instead of the standard build
+               (apk_outputs). Its app id is read from those APKs (e.g. a .test suffix).
+  --clean      Uninstall the APKs' own app id before install (UNINSTALL_FIRST=1). That
+               removes that app's data; no other package is touched. An app that is not
+               installed is reported and skipped; a failed uninstall stops that device.
+  --rebuild    Run ./build_app --standard (or --test) first (REBUILD=1). Gradle flags after
+               -- go to build_app.
+  --launch     Start the app's launcher activity after a successful install.
+  -h, --help   Print this usage and exit.
+
+Devices: tablet, emulator -> emulator-5554; phone -> deploy_serial= in project.config;
+anything else is an adb serial. With no device arguments, every online device.
+
+deploy stops before any adb call if aapt2 is missing or fails, if the APKs name different
+apps, or if they mix ABI-specific and universal APKs. After each install it checks
+(pm list packages, exact match) that the app id is installed. The deployed tag
+(deployed / <branch>/deployed; deployed-test for --test) moves only when every device
+succeeded. androidTest APKs in the outputs are not installed.
+USAGE
+}
+
+rebuild=0
+if [ "${REBUILD:-0}" = "1" ]; then rebuild=1; fi
+uninstall_first=0
+if [ "${UNINSTALL_FIRST:-0}" = "1" ]; then uninstall_first=1; fi
+mode="standard"
+launch=0
+device_args=()
+gradle_flags=()
+seen_dd=0
+for arg in "$@"; do
+  if [ "$seen_dd" -eq 1 ]; then
+    gradle_flags+=("$arg")
+    continue
+  fi
+  case "$arg" in
+    --) seen_dd=1 ;;
+    -h|--help) usage; exit 0 ;;
+    --test) mode="test" ;;
+    --clean) uninstall_first=1 ;;
+    --rebuild) rebuild=1 ;;
+    --launch) launch=1 ;;
+    -*)
+      echo "ERROR: unknown flag: $arg" >&2
+      usage >&2
+      exit 1
+      ;;
+    *) device_args+=("$arg") ;;
+  esac
+done
+if [ "$rebuild" -ne 1 ] && [ "${#gradle_flags[@]}" -gt 0 ]; then
+  echo "ERROR: gradle flags require --rebuild" >&2
+  exit 1
+fi
+
+# APK list for this mode (same keys and default as build_app).
+if [ "$mode" = test ]; then
+  read -r -a outputs <<< "$(cfg apk_test_outputs)"
+  if [ "${#outputs[@]}" -eq 0 ]; then
+    echo "ERROR: --test needs apk_test_outputs in project.config." >&2
+    exit 1
+  fi
+else
+  read -r -a outputs <<< "$(cfg apk_outputs)"
+  if [ "${#outputs[@]}" -eq 0 ]; then
+    outputs=( app/build/outputs/apk/debug/app-debug.apk )
   fi
 fi
 
-# Homes under this worktree. orch_root is read/seed only (keystore copy).
-_DEP_HERE="$(cd "$(dirname "$0")" && pwd)"
-if [ ! -f "$_DEP_HERE/ve-resolve-orch" ]; then
-  echo "ERROR: missing $_DEP_HERE/ve-resolve-orch (run ./update-rules.sh from orchestration root)." >&2
+if [ "$rebuild" -eq 1 ]; then
+  if [ "${#gradle_flags[@]}" -gt 0 ]; then
+    ./build_app "--$mode" -- "${gradle_flags[@]}"
+  else
+    ./build_app "--$mode"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# APK analysis (no adb yet).
+_DEPLOY_HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ ! -f "$_DEPLOY_HERE/ve-resolve-orch" ]; then
+  echo "ERROR: $_DEPLOY_HERE/ve-resolve-orch missing (needed to locate the SDK aapt2)" >&2
   exit 1
 fi
 # shellcheck source=/dev/null
-. "$_DEP_HERE/ve-resolve-orch"
-ve_resolve_orch "$_DEP_HERE" || exit 1
-ve_setup_worktree_build_homes "$_DEP_HERE" || exit 1
-ve_reset_gradle_daemon_dir || exit 1
-unset GRADLE_OPTS
+. "$_DEPLOY_HERE/ve-resolve-orch"
+if ! AAPT2=$(ve_aapt2_from_sdk "$_DEPLOY_HERE"); then
+  echo "ERROR: cannot locate the SDK aapt2 (sdk.dir in local.properties) to read the APKs" >&2
+  exit 1
+fi
 
-# Early recovery for build dir perms/ownership (prevents "Permission denied" on cxx logs,
-# configuration cache stale outputs, etc. from previous root/wrong-group runs).
-# This runs whenever you use ./deploy (which does the group re-exec).
-fix_build_dir_perms() {
-  if [ -d app/build ]; then
-    echo "  Fixing build dir perms (traversable + group writable)..."
-    # chmod parents first so we can traverse and fix deep cxx etc.
-    chmod -R u+rX,g+rX app/build 2>/dev/null || true
-    chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
-    # setgid on dirs for proper inheritance on new files (with umask 007 -> 660/770)
-    find app/build -type d -exec chmod 2770 {} + 2>/dev/null || true
-    find app/build -type f -exec chmod 660 {} + 2>/dev/null || true
-  fi
-}
-fix_build_dir_perms
-
-# Multi-user handoff: agent (ai-coder) builds leave app/build and project .gradle
-# owned by ai-coder:ai-code. chmod of foreign files often fails for non-owners;
-# setgid dirs (2770/2775) allow group members to unlink — wipe caches instead.
-# Policy: no Gradle daemon; clear KSP + project .gradle locks/hashes that cause
-# "fileHashes.lock (Permission denied)" when a prior user left the tree.
-# 2755 (umask 022) dirs owned by another user cannot be wiped by group members;
-# fail-fast rather than letting :app:kspDebugKotlin fail mid-build.
-prepare_build_tree_for_deploy() {
-  echo "  Preparing build tree for deploy (wipe KSP/incremental/.gradle locks; multi-user safe)..."
-  if [ -d app/build ]; then
-    chmod -R u+rX,g+rX app/build 2>/dev/null || true
-    chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
-  fi
-  rm -rf app/build/kspCaches app/build/intermediates app/build/generated 2>/dev/null || true
-
-  # Project .gradle (not GRADLE_USER_HOME): fileHashes.lock etc. after ai-coder builds
-  if [ -d .gradle ]; then
-    chmod -R u+rX,g+rX .gradle 2>/dev/null || true
-    chmod -R u+rwX,g+rwX .gradle 2>/dev/null || true
-    # Drop locks/version caches so this user can recreate them
-    find .gradle -name '*.lock' -delete 2>/dev/null || true
-    rm -rf .gradle/configuration-cache* 2>/dev/null || true
-    # If still not writable (missing group / sticky mess), wipe whole project .gradle
-    if ! touch .gradle/.ve_write_test 2>/dev/null; then
-      echo "  Project .gradle not writable by $(id -un) — removing for clean rebuild..."
-      rm -rf .gradle 2>/dev/null || true
-    else
-      rm -f .gradle/.ve_write_test
-      # Versioned fileHashes often still open/create as non-owner; drop 9.x caches if present
-      rm -rf .gradle/[0-9]* 2>/dev/null || true
-    fi
-  fi
-
-  # Residual KSP/incremental trees (2755 foreign-owned) block dlang deploy.
-  local residual=""
-  for d in app/build/kspCaches app/build/intermediates app/build/generated; do
-    if [ -e "$d" ]; then
-      residual="$residual $d"
-    fi
-  done
-  if [ -n "$residual" ]; then
-    echo "  Wipe incomplete (foreign 2755/non-group-writable dirs common):$residual"
-    echo "  Trying sudo -n -u ${CODER_USER} rm -rf on residual paths..."
-    # shellcheck disable=SC2086
-    if sudo -n -u "$CODER_USER" rm -rf $residual 2>/dev/null; then
-      residual=""
-      for d in app/build/kspCaches app/build/intermediates app/build/generated; do
-        if [ -e "$d" ]; then residual="$residual $d"; fi
-      done
-    fi
-  fi
-  if [ -n "$residual" ]; then
-    echo "ERROR: Cannot remove multi-user build caches (Gradle would fail at kspDebugKotlin)." >&2
-    echo "  Residual:$residual" >&2
-    echo "  Sample modes:" >&2
-    # shellcheck disable=SC2086
-    ls -ld $residual 2>/dev/null | head -10 >&2 || true
-    local sample
-    sample=$(find app/build/generated app/build/kspCaches app/build/intermediates -type d ! -perm -g+w 2>/dev/null | head -5)
-    if [ -n "$sample" ]; then
-      echo "  Non-group-writable dirs (need owner wipe or chown):" >&2
-      echo "$sample" | while read -r p; do ls -ld "$p" 2>/dev/null; done >&2
-    fi
-    echo "  Fix (pick one), then re-run ./deploy:" >&2
-    echo "    sudo -u ${CODER_USER} rm -rf app/build/generated app/build/kspCaches app/build/intermediates" >&2
-    echo "    sudo chown -R ${PRIMARY_USER}:${CODE_GROUP} app/build && find app/build -type d -exec chmod 2770 {} +" >&2
-    echo "  Ensure: id shows ${CODE_GROUP} (source ./env)." >&2
+apk_package() {
+  local apk="$1" out
+  if ! out=$("$AAPT2" dump packagename "$apk"); then
+    echo "ERROR: $AAPT2 dump packagename $apk failed; cannot determine the app id" >&2
     return 1
   fi
-  return 0
+  if ! [[ "$out" =~ ^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$ ]]; then
+    echo "ERROR: $AAPT2 dump packagename $apk printed '$out', not one application id" >&2
+    return 1
+  fi
+  printf '%s\n' "$out"
 }
 
-# Find aapt for reading versionName baked into the APK at assemble time.
-find_aapt() {
-  if command -v aapt >/dev/null 2>&1; then
-    command -v aapt
+apk_paths=()      # installable APKs (androidTest excluded)
+apk_abis=()       # space-separated native ABIs per APK; empty = universal (no native code)
+PKG=""
+PKG_FROM=""
+VERSION_NAME=""
+for apk in "${outputs[@]}"; do
+  if [[ "$apk" == */androidTest/* ]]; then
+    echo "Note: $apk is an androidTest APK; not installed by deploy."
+    continue
+  fi
+  if [ ! -f "$apk" ]; then
+    echo "ERROR: missing $apk; run ./build_app --$mode first, or pass --rebuild" >&2
+    exit 1
+  fi
+  pkg=$(apk_package "$apk")
+  if [ -z "$PKG" ]; then
+    PKG="$pkg"
+    PKG_FROM="$apk"
+  elif [ "$pkg" != "$PKG" ]; then
+    echo "ERROR: $PKG_FROM is $PKG but $apk is $pkg; rebuild so all APKs name the same app" >&2
+    exit 1
+  fi
+  if ! badging=$("$AAPT2" dump badging "$apk"); then
+    echo "ERROR: $AAPT2 dump badging $apk failed" >&2
+    exit 1
+  fi
+  abis=$(printf '%s\n' "$badging" | sed -n "s/^native-code: //p" | tr -d "'")
+  vname=$(printf '%s\n' "$badging" | sed -n "s/^package: .* versionName='\([^']*\)'.*/\1/p")
+  if [ -z "$VERSION_NAME" ]; then
+    VERSION_NAME="$vname"
+  elif [ "$vname" != "$VERSION_NAME" ]; then
+    echo "ERROR: $apk has versionName '$vname' but $PKG_FROM has '$VERSION_NAME'; rebuild" >&2
+    exit 1
+  fi
+  apk_paths+=("$apk")
+  apk_abis+=("$abis")
+done
+if [ "${#apk_paths[@]}" -eq 0 ]; then
+  echo "ERROR: no installable APK in the $mode outputs (${outputs[*]})" >&2
+  exit 1
+fi
+n_universal=0
+for abis in "${apk_abis[@]}"; do
+  if [ -z "$abis" ]; then n_universal=$((n_universal + 1)); fi
+done
+if [ "$n_universal" -gt 0 ] && [ "$n_universal" -ne "${#apk_paths[@]}" ]; then
+  echo "ERROR: the $mode outputs mix universal and ABI-specific APKs; list one kind in project.config" >&2
+  exit 1
+fi
+if [ "$n_universal" -gt 1 ]; then
+  echo "ERROR: the $mode outputs list $n_universal universal APKs; list exactly one" >&2
+  exit 1
+fi
+echo "App id: $PKG  versionName: $VERSION_NAME  ($mode build, from $PKG_FROM)"
+
+# APK for a device: $1 = comma-separated abilist in preference order.
+apk_for_abilist() {
+  local abilist="$1" abi i match n
+  if [ "$n_universal" -eq 1 ]; then
+    printf '%s\n' "${apk_paths[0]}"
     return 0
   fi
-  local sdk bt
-  sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
-  if [ -z "$sdk" ] && [ -f local.properties ]; then
-    sdk=$(sed -n 's/^sdk.dir=//p' local.properties 2>/dev/null | tr -d '\r' | head -1)
-    sdk=${sdk//\\/\/}
-  fi
-  if [ -n "$sdk" ] && [ -d "$sdk/build-tools" ]; then
-    bt=$(ls -d "$sdk/build-tools"/* 2>/dev/null | sort -V | tail -1)
-    if [ -n "$bt" ] && [ -x "$bt/aapt" ]; then
-      echo "$bt/aapt"
+  IFS=',' read -r -a dev_abis <<< "$abilist"
+  for abi in "${dev_abis[@]}"; do
+    match=""
+    n=0
+    for i in "${!apk_paths[@]}"; do
+      if [[ " ${apk_abis[$i]} " == *" $abi "* ]]; then
+        match="${apk_paths[$i]}"
+        n=$((n + 1))
+      fi
+    done
+    if [ "$n" -gt 1 ]; then
+      echo "ERROR: more than one APK contains ABI $abi; cannot choose" >&2
+      return 1
+    fi
+    if [ "$n" -eq 1 ]; then
+      printf '%s\n' "$match"
       return 0
     fi
-  fi
+  done
+  echo "ERROR: no APK matches device ABIs '$abilist' (APK ABIs: ${apk_abis[*]})" >&2
   return 1
 }
 
-# versionName at APK build time (git describe embedded by app/build.gradle.kts).
-debug_apk_for_flavor() {
-  echo "app/build/outputs/apk/$1/debug/app-$1-debug.apk"
+# True when package $2 is installed on device $1 (exact name; pm list filters by substring).
+pkg_installed() {
+  local list
+  if ! list=$(adb -s "$1" shell pm list packages "$2"); then
+    echo "ERROR: adb -s $1 shell pm list packages $2 failed" >&2
+    return 2
+  fi
+  printf '%s\n' "$list" | tr -d '\r' | grep -qx -- "package:$2"
 }
 
-device_abi_flavor() {
-  local abi
-  abi=$(adb -s "$1" shell getprop ro.product.cpu.abi 2>/dev/null | tr -d '\r')
-  case "$abi" in
-    arm64-v8a) echo arm64 ;;
-    armeabi-v7a|armeabi) echo armv7 ;;
-    x86_64|x86) echo x86_64 ;;
-    *)
-      echo "ERROR: unsupported cpu.abi '$abi' on $1" >&2
-      return 1
+# ---------------------------------------------------------------------------
+# Devices.
+if ! devices_text=$(adb devices); then
+  echo "ERROR: adb devices failed" >&2
+  exit 1
+fi
+connected=()
+while read -r serial state _; do
+  serial=${serial//$'\r'/}
+  state=${state//$'\r'/}
+  if [ "$state" = "device" ]; then
+    connected+=("$serial")
+  fi
+done <<< "$devices_text"
+
+map_serial() {
+  local s
+  case "$1" in
+    tablet|emulator) printf '%s\n' "emulator-5554" ;;
+    phone)
+      s=$(cfg deploy_serial)
+      if [ -z "$s" ]; then
+        echo "ERROR: alias 'phone' requires deploy_serial= in project.config" >&2
+        return 1
+      fi
+      printf '%s\n' "$s"
       ;;
+    *) printf '%s\n' "$1" ;;
   esac
 }
 
-debug_apk_for_device() {
-  local fl
-  fl=$(device_abi_flavor "$1") || return 1
-  debug_apk_for_flavor "$fl"
+selected=()
+add_selected() {
+  local s
+  for s in "${selected[@]}"; do
+    [ "$s" = "$1" ] && return 0
+  done
+  selected+=("$1")
 }
+if [ "${#device_args[@]}" -eq 0 ]; then
+  for serial in "${connected[@]}"; do
+    add_selected "$serial"
+  done
+else
+  for name in "${device_args[@]}"; do
+    mapped=$(map_serial "$name")
+    add_selected "$mapped"
+  done
+fi
+if [ "${#selected[@]}" -eq 0 ]; then
+  echo "ERROR: no online adb devices. Pass a serial or alias (tablet/emulator/phone)." >&2
+  exit 1
+fi
 
-install_task_for_flavor() {
-  case "$1" in
-    arm64) echo installArm64Debug ;;
-    armv7) echo installArmv7Debug ;;
-    x86_64) echo installX86_64Debug ;;
-    *) return 1 ;;
-  esac
-}
-
-any_flavor_debug_apk() {
-  local fl
-  for fl in arm64 x86_64 armv7; do
-    [ -f "$(debug_apk_for_flavor "$fl")" ] && return 0
+is_connected() {
+  local s
+  for s in "${connected[@]}"; do
+    [ "$s" = "$1" ] && return 0
   done
   return 1
 }
 
-first_flavor_debug_apk() {
-  local fl p
-  for fl in arm64 x86_64 armv7; do
-    p=$(debug_apk_for_flavor "$fl")
-    if [ -f "$p" ]; then
-      echo "$p"
-      return 0
-    fi
-  done
-  return 1
-}
+failed=0
+for serial in "${selected[@]}"; do
+  if ! is_connected "$serial"; then
+    echo "ERROR: $serial is not an online adb device" >&2
+    failed=1
+    continue
+  fi
+  if ! abilist=$(adb -s "$serial" shell getprop ro.product.cpu.abilist); then
+    echo "ERROR: could not read ro.product.cpu.abilist on $serial" >&2
+    failed=1
+    continue
+  fi
+  abilist=$(printf '%s' "$abilist" | tr -d '[:space:]')
+  if [ -z "$abilist" ]; then
+    echo "ERROR: $serial reports an empty ro.product.cpu.abilist" >&2
+    failed=1
+    continue
+  fi
+  if ! apk=$(apk_for_abilist "$abilist"); then
+    echo "ERROR: no APK for $serial" >&2
+    failed=1
+    continue
+  fi
+  echo "== $serial ($abilist): $apk"
 
-apk_version_name() {
-  local apk=${1:-}
-  if [ -z "$apk" ]; then
-    apk=$(first_flavor_debug_apk 2>/dev/null || true)
-  fi
-  local aapt_bin ver meta
-  if [ ! -f "$apk" ]; then
-    return 1
-  fi
-  if aapt_bin=$(find_aapt); then
-    ver=$("$aapt_bin" dump badging "$apk" 2>/dev/null | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)
-    if [ -n "$ver" ]; then
-      echo "$ver"
-      return 0
-    fi
-  fi
-  meta=$(dirname "$apk")/output-metadata.json
-  if [ -f "$meta" ]; then
-    ver=$(sed -n 's/.*"versionName"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$meta" 2>/dev/null | head -1)
-    if [ -n "$ver" ]; then
-      echo "$ver"
-      return 0
-    fi
-  fi
-  return 1
-}
-
-live_git_describe() {
-  local branch
-  branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
-  git describe --tags --match "${branch}-start" 2>/dev/null || git describe --always 2>/dev/null || echo "unknown"
-}
-
-# adb install last produced ABI-flavor debug APK (no Gradle).
-install_debug_apk() {
-  local device_id=$1
-  local apk
-  apk=$(debug_apk_for_device "$device_id") || return 1
-  if [ ! -f "$apk" ]; then
-    echo "ERROR: No last-built APK at $apk" >&2
-    echo "  Run ./build_app first (builds all ABI flavors)." >&2
-    return 1
-  fi
-  echo "  adb -s $device_id install -r $apk ($(du -h "$apk" | awk '{print $1}'))"
-  adb -s "$device_id" install -r "$apk"
-}
-
-# --rebuild path: wipe + Gradle install<Flavor>Debug for this device ABI.
-run_package_install() {
-  local device_id=${1:-}
-  local ver ret fl task apk
-
-  if [ "$REBUILD" != "true" ]; then
-    echo "ERROR: internal: run_package_install is for --rebuild only" >&2
-    return 1
-  fi
-  if [ -z "$device_id" ]; then
-    echo "ERROR: run_package_install requires a device serial (ABI flavor)" >&2
-    return 1
-  fi
-  if [ ! -x ./gradlew ]; then
-    echo "Error: ./gradlew not found or not executable (required for --rebuild)."
-    return 1
-  fi
-  fl=$(device_abi_flavor "$device_id") || return 1
-  task=$(install_task_for_flavor "$fl") || return 1
-  # Kill leftover file holders; wipe multi-user caches.
-  lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
-  sleep 1
-  if ! prepare_build_tree_for_deploy; then
-    echo "Deployment failed (build tree wipe)."
-    return 1
-  fi
-  echo "  --rebuild: Gradle $task (--no-daemon) for $device_id ($fl)..."
-  ve_reset_gradle_daemon_dir || return 1
-  local aapt2_bin
-  aapt2_bin=$(ve_aapt2_from_sdk "$_DEP_HERE") || return 1
-  if [ -n "${GRADLE_USER_HOME:-}" ] && [ -d "$GRADLE_USER_HOME" ]; then
-    find "$GRADLE_USER_HOME" -type f -name aapt2 -exec chmod u+rx,g+rx {} + 2>/dev/null || true
-  fi
-  (umask 007; ANDROID_SERIAL="$device_id" ./gradlew --no-daemon --no-configuration-cache \
-    -Pandroid.aapt2FromMavenOverride="$aapt2_bin" \
-    -Pkotlin.compiler.execution.strategy=in-process \
-    -Dkotlin.compiler.execution.strategy=in-process "${GRADLE_ARGS[@]}" "$task")
-  ret=$?
-  ve_reset_gradle_daemon_dir || return 1
-  repair_shared_cache
-  if [ $ret -ne 0 ]; then
-    return $ret
-  fi
-  apk=$(debug_apk_for_flavor "$fl")
-  if ver=$(apk_version_name "$apk"); then
-    DEPLOYED_VERSION="$ver"
-  else
-    DEPLOYED_VERSION=$(live_git_describe)
-  fi
-  echo "  Installed version (at APK build): $DEPLOYED_VERSION"
-  return 0
-}
-
-# Wipe only when recompiling as a different user; APK-first must preserve agent caches.
-if [ "$DATA_ONLY_MODE" != "true" ] && [ "$REBUILD" = "true" ]; then
-  if ! prepare_build_tree_for_deploy; then
-    echo "Aborting deploy: build tree not handoff-safe." >&2
-    exit 1
-  fi
-fi
-
-repair_shared_cache() {
-  # Post-build permission repair for this worktree only (not orch caches).
-  for gdir in .gradle app/build; do
-    if [ -d "$gdir" ]; then
-      echo "  Quick $gdir permission repair (group sync + setgid + ug+rwX)..."
-      chgrp -R ai-code "$gdir" 2>/dev/null || true
-      find "$gdir" -type d -exec chmod 2770 {} + 2>/dev/null || true
-      chmod -R ug+rwX,o-rwx "$gdir" 2>/dev/null || true
-    fi
-  done
-}
-
-# Best-effort fix for .git / worktree git state early (before any gradle exec that
-# computes versionName). Broken zero-SHA refs or wrong ownership (ai-orchestrator)
-# are common after permission thrashing.
-fix_git_perms() {
-  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    local main_git
-    main_git=$(git rev-parse --git-common-dir 2>/dev/null || echo .git)
-    echo "  Fixing .git/worktree perms (best effort, sudo ../fix-perms may still be needed for objects)..."
-    chmod -R u+rX,g+rX "$main_git" 2>/dev/null || true
-    chmod -R u+rwX,g+rwX "$main_git" 2>/dev/null || true
-    # Repair worktree metadata too
-    if [ -f .git ]; then
-      local wt_meta
-      wt_meta=$(sed 's/gitdir: //' .git)
-      if [ -d "$wt_meta" ]; then
-        chmod -R u+rX,g+rX "$wt_meta" 2>/dev/null || true
-        chmod -R u+rwX,g+rwX "$wt_meta" 2>/dev/null || true
-      fi
-    fi
-    # If the current branch ref is the all-zero broken state, remove the loose ref
-    # so git falls back to packed-refs (which usually has a good value).
-    local branch
-    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
-    if [ -n "$branch" ] && [ "$branch" != "HEAD" ]; then
-      local ref="$main_git/refs/heads/$branch"
-      if [ -f "$ref" ] && grep -q '^0\{40\}' "$ref" 2>/dev/null; then
-        echo "  Removing broken zero-SHA ref for $branch (will use packed-refs)..."
-        rm -f "$ref" 2>/dev/null || true
-      fi
-    fi
-  fi
-}
-fix_git_perms
-
-stop_gradle_daemons() {
-  echo "  Stopping Gradle daemons robustly..."
-  ./gradlew --stop >/dev/null 2>&1 || true
-
-  # Force-kill any BUSY or lingering daemons for the current Gradle version.
-  # --stop sometimes leaves BUSY ones or STOPPED that don't exit due to open files/locks/perm issues.
-  # We parse --status (which only shows current version) and kill the PIDs if they still exist.
-  while read -r pid status rest; do
-    case "$status" in
-      BUSY|STOPPED)
-        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-          echo "    Killing lingering Gradle daemon PID $pid ($status)..."
-          kill -TERM "$pid" 2>/dev/null || true
-          sleep 0.5
-          kill -9 "$pid" 2>/dev/null || true
-        fi
-        ;;
-    esac
-  done < <(./gradlew --status 2>/dev/null | awk 'NR>1 && $1 ~ /^[0-9]+$/ {print $1, $2}')
-
-  # Also kill any GradleDaemon processes that might be holding this project's build (defensive)
-  pkill -f "GradleDaemon.*$(pwd | sed 's/[][\.*^$()+?{}|]/\\&/g')" 2>/dev/null || true
-  sleep 1
-}
-# Policy: no Gradle daemon (build_app and deploy pass --no-daemon). stop_gradle_daemons
-# remains for recovery if a leftover daemon from old runs still holds files open.
-
-declare -A DEVICE_MAP
-DEVICE_MAP=(
-    ["tablet"]="emulator-5554"
-    ["emulator"]="emulator-5554"
-    # Add future physical devices here
-)
-
-# Build vehicle_refs.tar.gz + manifest from a local dir of vehicle_ref_*.jpg (e.g. phone-pulled refs).
-package_vehicle_refs_from_dir() {
-  local SRC=$1
-  local BDIR=$2
-  if [ ! -d "$SRC" ]; then
-    echo "    vehicle_refs source dir not found: $SRC"
-    return 1
-  fi
-  shopt -s nullglob
-  local refs=("$SRC"/vehicle_ref_*.jpg)
-  shopt -u nullglob
-  if [ ${#refs[@]} -eq 0 ]; then
-    echo "    No vehicle_ref_*.jpg in $SRC"
-    return 1
-  fi
-  {
-    echo "# vehicle_ref manifest: size_bytes mtime_epoch md5 filename"
-    for f in "${refs[@]}"; do
-      local bn sz mt sum
-      bn=$(basename "$f")
-      sz=$(wc -c < "$f" | tr -d ' ')
-      mt=$(stat -c %Y "$f" 2>/dev/null || echo 0)
-      sum=$(md5sum "$f" | awk '{print $1}')
-      echo "$sz $mt $sum $bn"
-    done
-  } > "$BDIR/vehicle_refs.manifest"
-  (cd "$SRC" && tar czf "$BDIR/vehicle_refs.tar.gz" vehicle_ref_*.jpg)
-  return 0
-}
-
-backup_test_data() {
-  local DEV=$1
-  if [ "$PRESERVE_DATA" != "true" ] && [ "$BACKUP_ONLY" != "true" ]; then return; fi
-  local TS=$(date +%Y%m%d-%H%M%S)
-  local BDIR="test-data-backups/${DEV}-${TS}"
-  local log_tag="[preserve]"
-  if [ "$BACKUP_ONLY" = "true" ]; then log_tag="[backup]"; fi
-  mkdir -p "$BDIR"
-  echo "  $log_tag Backing up test data for $DEV -> $BDIR"
-  # DB (vehicle_expenses.db from Room)
-  # Write temp copy inside private files/ (run-as can always write there), then stream via cat.
-  # This avoids /sdcard permission issues.
-  db_error=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
-    if [ -f databases/vehicle_expenses.db ]; then
-      cat databases/vehicle_expenses.db > files/ve_db.bak 2>&1 || echo __DB_WRITE_ERR__
-    else
-      echo __NO_DB__
-    fi
-  '" )
-  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_db.bak" > "$BDIR/vehicle_expenses.db.bak" 2>/dev/null; then
-    if [ -s "$BDIR/vehicle_expenses.db.bak" ]; then
-      echo "    Captured DB (vehicle_expenses.db.bak)"
-    else
-      echo "    DB backup produced 0-byte file"
-    fi
-  else
-    if adb -s "$DEV" shell "pm list packages $PACKAGE_NAME" 2>/dev/null | grep -q "$PACKAGE_NAME"; then
-      echo "    DB backup FAILED (app IS installed but run-as could not read databases/ — possible bad install state or permissions)"
-      [ -n "$db_error" ] && echo "      run-as error was: $db_error"
-    else
-      echo "    DB backup skipped/failed (app may not be installed or not debuggable)"
-    fi
-  fi
-  adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_db.bak" 2>/dev/null || true
-
-  # Dash/reference pictures the app reads (vehicle_ref_*.jpg written to context.filesDir)
-  # Optional: VEHICLE_REFS_SOURCE_DIR=/path/to/dir with phone-pulled vehicle_ref_*.jpg (skips device capture).
-  if [ -n "${VEHICLE_REFS_SOURCE_DIR:-}" ] && [ -d "$VEHICLE_REFS_SOURCE_DIR" ]; then
-    echo "    Using VEHICLE_REFS_SOURCE_DIR for dash/reference images: $VEHICLE_REFS_SOURCE_DIR"
-    if package_vehicle_refs_from_dir "$VEHICLE_REFS_SOURCE_DIR" "$BDIR"; then
-      echo "    Packaged dash/reference images from local dir (vehicle_refs.tar.gz + manifest)"
-    fi
-  else
-    # Write tar + manifest inside private files/ dir, then stream out with run-as cat.
-    dash_error=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
-      cd files 2>/dev/null || exit 0
-      if ls vehicle_ref_*.jpg >/dev/null 2>&1; then
-        {
-          echo \"# vehicle_ref manifest: size_bytes mtime_epoch md5 filename\"
-          for f in vehicle_ref_*.jpg; do
-            [ -f \"\$f\" ] || continue
-            sz=\$(wc -c < \"\$f\" | tr -d \" \")
-            mt=\$(stat -c %Y \"\$f\" 2>/dev/null || echo 0)
-            sum=\$(md5sum \"\$f\" 2>/dev/null | awk \"{print \\\$1}\")
-            echo \"\$sz \$mt \$sum \$f\"
-          done
-        } > ve_dash.manifest
-        tar czf ve_dash.tar.gz vehicle_ref_*.jpg 2>&1
-      fi
-    '" )
-    if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_dash.manifest" > "$BDIR/vehicle_refs.manifest" 2>/dev/null; then
-      if [ -s "$BDIR/vehicle_refs.manifest" ]; then
-        echo "    Captured dash/reference manifest (vehicle_refs.manifest)"
-      fi
-    fi
-    if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_dash.tar.gz" > "$BDIR/vehicle_refs.tar.gz" 2>/dev/null ; then
-      if [ -s "$BDIR/vehicle_refs.tar.gz" ]; then
-        echo "    Captured dash/reference images (vehicle_refs.tar.gz)"
-      fi
-    else
-      if [ -n "$dash_error" ]; then
-        echo "    Dash image backup note: $dash_error"
-      fi
-    fi
-    adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_dash.tar.gz files/ve_dash.manifest" 2>/dev/null || true
-  fi
-
-  # Pump pictures the app reads (inputs under getExternalFilesDir/pump_photos; reports live in sibling pump_reports and are excluded)
-  # Tar to private files/ dir (from external source), then stream via run-as cat.
-  pump_error=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
-    EXTDIR=\$(echo \$EXTERNAL_STORAGE 2>/dev/null || echo /sdcard)
-    PDIR=\"\$EXTDIR/Android/data/$PACKAGE_NAME/files/pump_photos\"
-    mkdir -p /data/data/$PACKAGE_NAME/files
-    cd \"\$PDIR\" 2>/dev/null || exit 0
-    tar czf /data/data/$PACKAGE_NAME/files/ve_pump.tar.gz . 2>&1 || true
-  '" )
-  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_pump.tar.gz" > "$BDIR/pump_photos.tar.gz" 2>/dev/null ; then
-    if [ -s "$BDIR/pump_photos.tar.gz" ]; then
-      echo "    Captured pump experiment photos (pump_photos.tar.gz)"
-    fi
-  else
-    if [ -n "$pump_error" ]; then
-      echo "    Pump image backup note: $pump_error"
-    fi
-  fi
-  adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_pump.tar.gz" 2>/dev/null || true
-
-  # Alignment experiment input images the app reads (from context.filesDir/experiment_photos; reports live in sibling experiment_reports and are excluded)
-  # Tar to private files/ dir, stream via run-as cat.
-  align_error=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
-    cd files 2>/dev/null || exit 0
-    if [ -d experiment_photos ]; then
-      cd experiment_photos
-      tar czf /data/data/$PACKAGE_NAME/files/ve_align.tar.gz . 2>&1 || true
-    fi
-  '" )
-  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_align.tar.gz" > "$BDIR/alignment_photos.tar.gz" 2>/dev/null ; then
-    if [ -s "$BDIR/alignment_photos.tar.gz" ]; then
-      echo "    Captured alignment experiment photos (alignment_photos.tar.gz)"
-    fi
-  else
-    if [ -n "$align_error" ]; then
-      echo "    Alignment image backup note: $align_error"
-    fi
-  fi
-  adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_align.tar.gz" 2>/dev/null || true
-
-  # Source zips in /sdcard/Download (amazon + pump zips for "Extract Downloaded ZIP")
-  # Tar via run-as from external Download dir, stream via run-as cat.
-  zip_error=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
-    EXTDIR=\$(echo \$EXTERNAL_STORAGE 2>/dev/null || echo /sdcard)
-    DDIR=\"\$EXTDIR/Download\"
-    mkdir -p /data/data/$PACKAGE_NAME/files
-    cd \"\$DDIR\" 2>/dev/null || exit 0
-    tar czf /data/data/$PACKAGE_NAME/files/ve_zips.tar.gz *.zip 2>&1 || true
-  '" )
-  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_zips.tar.gz" > "$BDIR/ve_source_zips.tar.gz" 2>/dev/null ; then
-    if [ -s "$BDIR/ve_source_zips.tar.gz" ]; then
-      echo "    Captured source zips from Download (ve_source_zips.tar.gz)"
-    fi
-  else
-    if [ -n "$zip_error" ]; then
-      echo "    Source zip backup note: $zip_error"
-    fi
-  fi
-  adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_zips.tar.gz" 2>/dev/null || true
-}
-
-# Post-restore hygiene for vehicle reference dash photos: bust Coil disk cache + Room WAL + mtime.
-post_restore_ref_hygiene() {
-  local DEV=$1
-  adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
-    rm -f databases/vehicle_expenses.db-shm databases/vehicle_expenses.db-wal 2>/dev/null || true
-    rm -rf cache/* 2>/dev/null || true
-    if [ -f files/vehicle_ref_\*.jpg ]; then rm -f files/vehicle_ref_\*.jpg; fi
-    for f in files/vehicle_ref_*.jpg; do
-      [ -f \"\$f\" ] || continue
-      touch \"\$f\"
-    done
-    date +%s > files/refdata_version.txt 2>/dev/null || true
-  '" 2>/dev/null || true
-}
-
-# Human label for known phone reference dash photos (Honda / Ford Van).
-ref_label_for_filename() {
-  case "$1" in
-    *1778726321661*) echo "Honda" ;;
-    *1778726533320*) echo "Ford Van" ;;
-    *) echo "" ;;
-  esac
-}
-
-# Known phone md5 for Honda/Ford reference dash jpgs (verification smoke).
-known_md5_for_filename() {
-  case "$1" in
-    *1778726321661*) echo "89912f28791fbbec046e62aedd9f474c" ;;
-    *1778726533320*) echo "a077932aaa38780e404475cd1012ade8" ;;
-    *) echo "" ;;
-  esac
-}
-
-# Verify on-device vehicle_ref_*.jpg md5 vs backup manifest; echo DB rows for Honda/Ford (id 1,2).
-verify_restored_vehicle_refs() {
-  local DEV=$1
-  local LATEST=$2
-  echo "  [verify] Vehicle reference dash photos on $DEV"
-  echo "  [smoke] ls -l files/vehicle_ref_*.jpg:"
-  adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'ls -l files/vehicle_ref_*.jpg 2>/dev/null || true'" 2>/dev/null || true
-  if [ -f "$LATEST/vehicle_refs.manifest" ] && [ -s "$LATEST/vehicle_refs.manifest" ]; then
-    while IFS= read -r line; do
-      case "$line" in \#*|"") continue ;; esac
-      local sz mt expected fn actual label
-      read -r sz mt expected fn <<< "$line"
-      label=$(ref_label_for_filename "$fn")
-      actual=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME md5sum files/$fn 2>/dev/null" 2>/dev/null | awk '{print $1}')
-      if [ -n "$actual" ] && [ "$actual" = "$expected" ]; then
-        if [ -n "$label" ]; then
-          echo "    OK ${label} ref md5=$actual matches backup manifest ($fn)"
-        else
-          echo "    OK $fn md5=$actual matches backup manifest"
-        fi
-      else
-        echo "    MISMATCH ${label:+$label }$fn device_md5=${actual:-missing} expected_md5=$expected"
-      fi
-    done < "$LATEST/vehicle_refs.manifest"
-  else
-    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'cd files 2>/dev/null && md5sum vehicle_ref_*.jpg 2>/dev/null || true'" 2>/dev/null | while read -r sum fn; do
-      [ -z "$sum" ] && continue
-      local bn label known
-      bn="${fn##*/}"
-      label=$(ref_label_for_filename "$bn")
-      known=$(known_md5_for_filename "$bn")
-      if [ -n "$known" ] && [ "$sum" = "$known" ]; then
-        echo "    OK ${label} ref md5=$sum matches expected phone ref ($bn)"
-      elif [ -n "$known" ]; then
-        echo "    MISMATCH ${label} ref device_md5=$sum expected_phone_md5=$known ($bn)"
-      else
-        echo "    $bn md5=$sum (no manifest to compare)"
-      fi
-    done
-  fi
-  local tmpdb
-  tmpdb=$(mktemp)
-  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat databases/vehicle_expenses.db" > "$tmpdb" 2>/dev/null && [ -s "$tmpdb" ]; then
-    if command -v sqlite3 >/dev/null 2>&1; then
-      while IFS='|' read -r vid vname vurl; do
-        echo "    DB id=$vid name=$vname referenceDashPhotoUrl=$vurl"
-      done < <(sqlite3 -separator '|' "$tmpdb" "SELECT id,name,referenceDashPhotoUrl FROM vehicles WHERE id IN (1,2) ORDER BY id;" 2>/dev/null || true)
-    else
-      echo "    (sqlite3 not available locally — skip DB row verify)"
-    fi
-  fi
-  rm -f "$tmpdb"
-  echo "  [smoke] Vehicle ref listing + md5/DB verify complete for $DEV"
-}
-
-# Stream a host file into app-private files/ via run-as stdin (run-as cannot read /sdcard).
-run_as_stream_to_files() {
-  local DEV=$1
-  local REMOTE_BASENAME=$2
-  local LOCAL_PATH=$3
-  adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p files && cat > files/$REMOTE_BASENAME'" < "$LOCAL_PATH"
-}
-
-push_one_vehicle_ref() {
-  local DEV=$1
-  local SRC=$2
-  local bn
-  bn=$(basename "$SRC")
-  case "$bn" in
-    vehicle_ref_*.jpg) ;;
-    *)
-      echo "    Skip $bn (must be named vehicle_ref_*.jpg)"
-      return 1
-      ;;
-  esac
-  echo "    Pushing $bn -> files/$bn on $DEV"
-  run_as_stream_to_files "$DEV" "$bn" "$SRC"
-  adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'chmod 660 files/$bn'" 2>/dev/null || true
-}
-
-# Lightweight push of phone-updated vehicle_ref_*.jpg by exact filename (no full backup/restore).
-push_vehicle_refs_to_device() {
-  local DEV=$1
-  shift
-  local paths=("$@")
-  if [ ${#paths[@]} -eq 0 ]; then
-    echo "  [push-refs] No ref paths provided for $DEV"
-    return 1
-  fi
-  echo "  [push-refs] Pushing vehicle reference dash photos to $DEV"
-  local pushed_any=false
-  for path in "${paths[@]}"; do
-    if [ -d "$path" ]; then
-      shopt -s nullglob
-      local jpgs=("$path"/vehicle_ref_*.jpg)
-      shopt -u nullglob
-      for jpg in "${jpgs[@]}"; do
-        if push_one_vehicle_ref "$DEV" "$jpg"; then pushed_any=true; fi
-      done
-    elif [ -f "$path" ]; then
-      if push_one_vehicle_ref "$DEV" "$path"; then pushed_any=true; fi
-    else
-      echo "    Path not found: $path"
-    fi
-  done
-  if [ "$pushed_any" != true ]; then
-    echo "  [push-refs] Nothing pushed to $DEV"
-    return 1
-  fi
-  post_restore_ref_hygiene "$DEV"
-  verify_restored_vehicle_refs "$DEV" "__push_only__"
-  adb -s "$DEV" shell "am force-stop $PACKAGE_NAME" 2>/dev/null || true
-  adb -s "$DEV" shell "am start -n $PACKAGE_NAME/.MainActivity --activity-clear-task" 2>/dev/null || true
-}
-
-restore_test_data() {
-  local DEV=$1; local EXPLICIT_BACKUP=$2
-  if [ "$PRESERVE_DATA" != "true" ] && [ "$RESTORE_DATA" != "true" ] && [ "$INSTALL_DATA" != "true" ]; then return; fi
-  local LATEST
-  if [ -n "$EXPLICIT_BACKUP" ]; then
-    LATEST="$EXPLICIT_BACKUP"
-  else
-    LATEST=$(ls -td test-data-backups/"${DEV}"-* 2>/dev/null | head -1)
-  fi
-  if [ -z "$LATEST" ]; then
-    if [ -n "$EXPLICIT_BACKUP" ]; then
-      echo "  [install] Backup directory not found or empty: $EXPLICIT_BACKUP"
-    else
-      echo "  [preserve] No backup found for $DEV, skipping restore"
-    fi
-    return
-  fi
-  # Only announce restore if the backup dir actually has content
-  has_content=false
-  if [ -f "$LATEST/vehicle_expenses.db.bak" ] && [ -s "$LATEST/vehicle_expenses.db.bak" ]; then has_content=true; fi
-  if [ -f "$LATEST/vehicle_refs.tar.gz" ] && [ -s "$LATEST/vehicle_refs.tar.gz" ]; then has_content=true; fi
-  if [ -f "$LATEST/pump_photos.tar.gz" ] && [ -s "$LATEST/pump_photos.tar.gz" ]; then has_content=true; fi
-  if [ -f "$LATEST/alignment_photos.tar.gz" ] && [ -s "$LATEST/alignment_photos.tar.gz" ]; then has_content=true; fi
-  if [ -f "$LATEST/ve_source_zips.tar.gz" ] && [ -s "$LATEST/ve_source_zips.tar.gz" ]; then has_content=true; fi
-
-  if [ "$has_content" = true ]; then
-    if [ "$INSTALL_DATA" = "true" ]; then
-      echo "  [install] Installing data for $DEV from $LATEST"
-    else
-      echo "  [preserve] Restoring test data for $DEV from $LATEST"
-    fi
-  fi
-
-  local restored_db=false
-  local restored_refs=false
-
-  # Restore DB (stream into app-private storage; run-as cannot read /sdcard)
-  if [ -f "$LATEST/vehicle_expenses.db.bak" ] && [ -s "$LATEST/vehicle_expenses.db.bak" ]; then
-    run_as_stream_to_files "$DEV" "ve_db.bak" "$LATEST/vehicle_expenses.db.bak"
-    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p databases && cp files/ve_db.bak databases/vehicle_expenses.db && chmod 660 databases/vehicle_expenses.db && rm -f files/ve_db.bak'" 2>/dev/null || true
-    restored_db=true
-  fi
-  # Restore dash/reference images (vehicle_ref_*.jpg)
-  if [ -f "$LATEST/vehicle_refs.tar.gz" ] && [ -s "$LATEST/vehicle_refs.tar.gz" ]; then
-    run_as_stream_to_files "$DEV" "ve_refs.tar.gz" "$LATEST/vehicle_refs.tar.gz"
-    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'cd files && tar xzf ve_refs.tar.gz && rm -f ve_refs.tar.gz'" 2>/dev/null || true
-    restored_refs=true
-  fi
-  # Restore pump pictures (input images the app reads from pump_photos)
-  if [ -f "$LATEST/pump_photos.tar.gz" ] && [ -s "$LATEST/pump_photos.tar.gz" ]; then
-    run_as_stream_to_files "$DEV" "ve_pump.tar.gz" "$LATEST/pump_photos.tar.gz"
-    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
-      EXTDIR=\$(echo \$EXTERNAL_STORAGE 2>/dev/null || echo /sdcard)
-      PDIR=\"\$EXTDIR/Android/data/$PACKAGE_NAME/files/pump_photos\"
-      mkdir -p \"\$PDIR\"
-      cd \"\$PDIR\" && tar xzf /data/data/$PACKAGE_NAME/files/ve_pump.tar.gz 2>/dev/null || true
-      rm -f /data/data/$PACKAGE_NAME/files/ve_pump.tar.gz
-    '" 2>/dev/null || true
-  fi
-  # Restore alignment experiment input images (the app reads these from files/experiment_photos)
-  if [ -f "$LATEST/alignment_photos.tar.gz" ] && [ -s "$LATEST/alignment_photos.tar.gz" ]; then
-    run_as_stream_to_files "$DEV" "ve_align.tar.gz" "$LATEST/alignment_photos.tar.gz"
-    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
-      mkdir -p files/experiment_photos
-      cd files/experiment_photos && tar xzf ../ve_align.tar.gz 2>/dev/null || true
-      rm -f ../ve_align.tar.gz
-    '" 2>/dev/null || true
-  fi
-  # Restore source zips to /sdcard/Download (shell user can read /sdcard; run-as cannot)
-  if [ -f "$LATEST/ve_source_zips.tar.gz" ] && [ -s "$LATEST/ve_source_zips.tar.gz" ]; then
-    adb -s "$DEV" push "$LATEST/ve_source_zips.tar.gz" /sdcard/ve_source_zips.tar.gz >/dev/null
-    adb -s "$DEV" shell "mkdir -p /sdcard/Download && cd /sdcard/Download && tar xzf /sdcard/ve_source_zips.tar.gz 2>/dev/null; rm -f /sdcard/ve_source_zips.tar.gz" 2>/dev/null || true
-  fi
-  # Post-restore cache bust + clean launch (Coil disk cache + Room WAL) when DB or refs were restored.
-  if [ "$restored_db" = true ] || [ "$restored_refs" = true ]; then
-    post_restore_ref_hygiene "$DEV"
-    verify_restored_vehicle_refs "$DEV" "$LATEST"
-  fi
-  adb -s "$DEV" shell "am force-stop $PACKAGE_NAME" 2>/dev/null || true
-  adb -s "$DEV" shell "am start -n $PACKAGE_NAME/.MainActivity --activity-clear-task" 2>/dev/null || true
-}
-
-run_push_test_data_mode() {
-  local BACKUP_TO_USE
-  echo "=== --push-test-data: push source zips to device Download (no build, no uninstall) ==="
-  BACKUP_TO_USE=$(resolve_backup_dir "$SELECTED_BACKUP")
-  if [ -z "$BACKUP_TO_USE" ]; then
-    BACKUP_TO_USE=$(latest_backup_with_source_zips || true)
-  fi
-  if [ -z "$BACKUP_TO_USE" ]; then
-    echo "No backup with source zips found (need source_zips/*.zip or *.zip in backup dir)."
-    list_available_backups
-    echo
-    echo "Usage: ./deploy --push-test-data [test-data-backups/<name>] [dev...]"
-    echo "Run ./deploy --help for more."
-    return 1
-  fi
-  if [ ${#TARGETS[@]} -eq 0 ]; then
-    mapfile -t ALL_DEVICES < <(adb devices | awk '$2 == "device" {print $1}')
-    if [ ${#ALL_DEVICES[@]} -eq 0 ]; then
-      echo "No connected devices found."
-      return 1
-    fi
-    for DEVICE_ID in "${ALL_DEVICES[@]}"; do
-      push_source_zips_to_device "$DEVICE_ID" "$BACKUP_TO_USE"
-    done
-  else
-    for TARGET in "${TARGETS[@]}"; do
-      if [ -z "$TARGET" ]; then continue; fi
-      DEVICE_ID="${DEVICE_MAP["$TARGET"]:-$TARGET}"
-      echo "Pushing test data zips to $TARGET ($DEVICE_ID)..."
-      push_source_zips_to_device "$DEVICE_ID" "$BACKUP_TO_USE"
-    done
-  fi
-  echo "=== --push-test-data complete ==="
-  return 0
-}
-
-run_backup_only_mode() {
-  echo "=== --backup/--fetch-data: capture test data from device(s) only (no build, no uninstall) ==="
-  if [ ${#TARGETS[@]} -eq 0 ]; then
-    mapfile -t ALL_DEVICES < <(adb devices | awk '$2 == "device" {print $1}')
-    if [ ${#ALL_DEVICES[@]} -eq 0 ]; then
-      echo "No connected devices found."
-      return 1
-    fi
-    for DEVICE_ID in "${ALL_DEVICES[@]}"; do
-      backup_test_data "$DEVICE_ID"
-    done
-  else
-    for TARGET in "${TARGETS[@]}"; do
-      if [ -z "$TARGET" ]; then continue; fi
-      DEVICE_ID="${DEVICE_MAP["$TARGET"]:-$TARGET}"
-      echo "Backing up from $TARGET ($DEVICE_ID)..."
-      backup_test_data "$DEVICE_ID"
-    done
-  fi
-  echo "=== --backup/--fetch-data complete ==="
-  return 0
-}
-
-if [ "$PUSH_TEST_DATA" = "true" ]; then
-  run_push_test_data_mode || exit 1
-  exit 0
-fi
-
-if [ "$PUSH_VEHICLE_REFS" = "true" ]; then
-  echo "=== --push-vehicle-refs: push specific vehicle_ref_*.jpg only (no build, no uninstall) ==="
-  if [ ${#PUSH_REF_PATHS[@]} -eq 0 ] && [ -n "${PUSH_VEHICLE_REFS_DIR:-}" ] && [ -d "$PUSH_VEHICLE_REFS_DIR" ]; then
-    PUSH_REF_PATHS=("$PUSH_VEHICLE_REFS_DIR")
-  fi
-  if [ ${#PUSH_REF_PATHS[@]} -eq 0 ]; then
-    echo "Usage: ./deploy --push-vehicle-refs /path/to/vehicle_ref_*.jpg [/path/to/dir] [tablet...]"
-    echo "   or: PUSH_VEHICLE_REFS_DIR=/path/to/dir ./deploy --push-vehicle-refs [tablet...]"
-    echo "   or: ./push-vehicle-refs.sh /path/to/dir [tablet...]"
-    exit 1
-  fi
-  if [ ${#TARGETS[@]} -eq 0 ]; then
-    mapfile -t ALL_DEVICES < <(adb devices | awk '$2 == "device" {print $1}')
-    if [ ${#ALL_DEVICES[@]} -eq 0 ]; then
-      echo "No connected devices found."
-      exit 1
-    fi
-    for DEVICE_ID in "${ALL_DEVICES[@]}"; do
-      push_vehicle_refs_to_device "$DEVICE_ID" "${PUSH_REF_PATHS[@]}"
-    done
-  else
-    for TARGET in "${TARGETS[@]}"; do
-      if [ -z "$TARGET" ]; then continue; fi
-      DEVICE_ID="${DEVICE_MAP["$TARGET"]:-$TARGET}"
-      echo "Pushing refs to $TARGET ($DEVICE_ID)..."
-      push_vehicle_refs_to_device "$DEVICE_ID" "${PUSH_REF_PATHS[@]}"
-    done
-  fi
-  echo "=== --push-vehicle-refs complete ==="
-  exit 0
-fi
-
-if [ "$RESTORE_DATA" = "true" ]; then
-  echo "=== --restore-data: standalone restore only (no build, no uninstall) ==="
-  if [ ${#TARGETS[@]} -eq 0 ]; then
-    mapfile -t ALL_DEVICES < <(adb devices | awk '$2 == "device" {print $1}')
-    if [ ${#ALL_DEVICES[@]} -eq 0 ]; then
-      echo "No connected devices found."
-      exit 1
-    fi
-    for DEVICE_ID in "${ALL_DEVICES[@]}"; do
-      restore_test_data "$DEVICE_ID"
-    done
-  else
-    for TARGET in "${TARGETS[@]}"; do
-      if [ -z "$TARGET" ]; then
-        echo "Warning: skipping empty target from args"
+  if [ "$uninstall_first" -eq 1 ]; then
+    if pkg_installed "$serial" "$PKG"; then
+      if ! adb -s "$serial" uninstall "$PKG"; then
+        echo "ERROR: adb uninstall $PKG failed on $serial" >&2
+        failed=1
         continue
       fi
-      DEVICE_ID="${DEVICE_MAP["$TARGET"]:-$TARGET}"
-      echo "Restoring to $TARGET ($DEVICE_ID)..."
-      restore_test_data "$DEVICE_ID"
-    done
-  fi
-  echo "=== --restore-data complete ==="
-  exit 0
-fi
-
-run_install_data_mode() {
-  local BACKUP_TO_USE
-  echo "=== --install-data: standalone data install from selected backup (no build, no uninstall) ==="
-  BACKUP_TO_USE=$(resolve_backup_dir "$SELECTED_BACKUP")
-  if [ -z "$BACKUP_TO_USE" ]; then
-    echo "No backup specified."
-    list_available_backups
-    echo
-    echo "Usage: ./deploy --install-data test-data-backups/<name> [dev...]"
-    echo "   or: ./deploy --install-data <short-backup-name> [dev...]"
-    echo "Run ./deploy --help for more."
-    return 1
-  fi
-  if [ ${#TARGETS[@]} -eq 0 ]; then
-    mapfile -t ALL_DEVICES < <(adb devices | awk '$2 == "device" {print $1}')
-    if [ ${#ALL_DEVICES[@]} -eq 0 ]; then
-      echo "No connected devices found."
-      return 1
-    fi
-    for DEVICE_ID in "${ALL_DEVICES[@]}"; do
-      restore_test_data "$DEVICE_ID" "$BACKUP_TO_USE"
-    done
-  else
-    for TARGET in "${TARGETS[@]}"; do
-      if [ -z "$TARGET" ]; then continue; fi
-      DEVICE_ID="${DEVICE_MAP["$TARGET"]:-$TARGET}"
-      echo "Installing to $TARGET ($DEVICE_ID)..."
-      restore_test_data "$DEVICE_ID" "$BACKUP_TO_USE"
-    done
-  fi
-  echo "=== --install-data complete ==="
-  return 0
-}
-
-if [ "$INSTALL_DATA" = "true" ]; then
-  run_install_data_mode || exit 1
-  exit 0
-fi
-
-if [ "$BACKUP_ONLY" = "true" ]; then
-  run_backup_only_mode || exit 1
-  exit 0
-fi
-
-OVERALL_SUCCESS=true
-
-if [ ${#TARGETS[@]} -eq 0 ]; then
-    echo "Deploying to all connected devices..."
-    # Discover all connected online devices so we can clear logcat on each
-    mapfile -t ALL_DEVICES < <(adb devices | awk '$2 == "device" {print $1}')
-    if [ ${#ALL_DEVICES[@]} -eq 0 ]; then
-        echo "No connected devices found."
-        OVERALL_SUCCESS=false
     else
-        # App worktree: need APK for default path, or gradlew for --rebuild.
-        if [ "$REBUILD" = "true" ] && [ ! -x ./gradlew ]; then
-            echo "Error: ./gradlew not found or not executable here (required for --rebuild)."
-            echo "Run from inside an app worktree, e.g.: cd master && ../deploy   or cd agent-1 && ../deploy"
-            echo "See README-multi-agent.md for the proper workflow."
-            OVERALL_SUCCESS=false
-        elif [ "$REBUILD" != "true" ] && ! any_flavor_debug_apk; then
-            echo "ERROR: No last-built ABI debug APK (app/build/outputs/apk/<abi>/debug/app-<abi>-debug.apk)"
-            echo "  Run ./build_app first, or use ./deploy --rebuild to compile+install."
-            echo "  (Run deploy from the app worktree that built the APK.)"
-            OVERALL_SUCCESS=false
-        elif [ ! -d app ]; then
-            echo "Error: no app/ directory here. Run from an app worktree."
-            OVERALL_SUCCESS=false
-        else
-            for DEVICE_ID in "${ALL_DEVICES[@]}"; do
-                backup_test_data "$DEVICE_ID"
-            done
-
-            # SAFETY: When PRESERVE_DATA is requested, we must NOT uninstall if we
-            # failed to capture the data (DB + reference images for dash/pump/alignment).
-            # This prevents "told to preserve, but deleted anyway and then build failed".
-            PRESERVE_ABORT=false
-            if [ "$PRESERVE_DATA" = "true" ]; then
-                for DEVICE_ID in "${ALL_DEVICES[@]}"; do
-                    LATEST=$(ls -td test-data-backups/"${DEVICE_ID}"-* 2>/dev/null | head -1 || true)
-                    has_backup=false
-                    if [ -n "$LATEST" ]; then
-                        if [ -f "$LATEST/vehicle_expenses.db.bak" ] && [ -s "$LATEST/vehicle_expenses.db.bak" ]; then
-                            has_backup=true
-                        fi
-                        for img in vehicle_refs.tar.gz pump_photos.tar.gz alignment_photos.tar.gz; do
-                            if [ -f "$LATEST/$img" ] && [ -s "$LATEST/$img" ]; then
-                                has_backup=true
-                                break
-                            fi
-                        done
-                    fi
-                    # Check if the package is currently installed on the device
-                    pkg_check=$(adb -s "$DEVICE_ID" shell "pm list packages $PACKAGE_NAME" 2>/dev/null || true)
-                    if echo "$pkg_check" | grep -q "$PACKAGE_NAME"; then
-                        if [ "$has_backup" != "true" ]; then
-                            echo "  [preserve] CRITICAL SAFETY ABORT: $DEVICE_ID has the app installed, but backup captured neither DB nor test images (dash refs / pump / alignment photos)."
-                            echo "  Refusing to uninstall — we will not destroy your data when backup failed."
-                            PRESERVE_ABORT=true
-                        fi
-                    fi
-                done
-            fi
-
-            if [ "${UNINSTALL_FIRST:-false}" = "1" ] || [ "${UNINSTALL_FIRST:-false}" = "true" ] || [ "$PRESERVE_DATA" = "true" ]; then
-                if [ "$PRESERVE_DATA" = "true" ] && [ "$PRESERVE_ABORT" = "true" ]; then
-                    echo "  [preserve] Skipping uninstalls to protect data (see CRITICAL SAFETY ABORT above)."
-                else
-                    for DEVICE_ID in "${ALL_DEVICES[@]}"; do
-                        echo "Uninstalling existing package on $DEVICE_ID..."
-                        adb -s "$DEVICE_ID" uninstall $PACKAGE_NAME || true
-                    done
-                fi
-            fi
-
-            if [ "$PRESERVE_DATA" = "true" ] && [ "$PRESERVE_ABORT" = "true" ]; then
-                echo "  [preserve] WARNING: App installed but no backup data captured (run-as couldn't read DB/images)."
-                echo "  Will still attempt in-place install (no uninstall was done)."
-            fi
-
-            if [ "$REBUILD" = "true" ]; then
-                for DEVICE_ID in "${ALL_DEVICES[@]}"; do
-                    if ! run_package_install "$DEVICE_ID"; then
-                        echo "Deployment to $DEVICE_ID failed."
-                        OVERALL_SUCCESS=false
-                    else
-                        restore_test_data "$DEVICE_ID"
-                    fi
-                done
-            else
-                # APK-first: each device gets its ABI flavor APK.
-                if ver=$(apk_version_name); then
-                    DEPLOYED_VERSION="$ver"
-                else
-                    DEPLOYED_VERSION="(unknown)"
-                fi
-                echo "Installing last built ABI APKs (per device cpu.abi)"
-                echo "  version (at APK build): $DEPLOYED_VERSION"
-                live=$(live_git_describe)
-                if [ "$DEPLOYED_VERSION" != "$live" ] && [ "$DEPLOYED_VERSION" != "(unknown)" ]; then
-                    echo "  note: APK version differs from current HEAD describe ($live) — expected if tree moved after build_app."
-                fi
-                for DEVICE_ID in "${ALL_DEVICES[@]}"; do
-                    if ! install_debug_apk "$DEVICE_ID"; then
-                        echo "Deployment to $DEVICE_ID failed."
-                        OVERALL_SUCCESS=false
-                    else
-                        restore_test_data "$DEVICE_ID"
-                    fi
-                done
-            fi
-
-            # Clear logcat on *every* device we deployed to (important for multi-device)
-            for DEVICE_ID in "${ALL_DEVICES[@]}"; do
-                echo "Clearing logcat on $DEVICE_ID..."
-                adb -s "$DEVICE_ID" logcat -c || echo "Warning: failed to clear logcat on $DEVICE_ID"
-            done
-        fi
+      rc=$?
+      if [ "$rc" -ne 1 ]; then failed=1; continue; fi
+      echo "$PKG is not installed on $serial; nothing to uninstall"
     fi
+  fi
+
+  if ! adb -s "$serial" install -r "$apk"; then
+    echo "ERROR: adb install -r failed on $serial" >&2
+    failed=1
+    continue
+  fi
+  if ! pkg_installed "$serial" "$PKG"; then
+    echo "ERROR: after installing $apk, $PKG is not installed on $serial (app id mismatch)" >&2
+    failed=1
+    continue
+  fi
+
+  if ! adb -s "$serial" logcat -c; then
+    echo "WARNING: adb logcat -c failed on $serial" >&2
+  fi
+  if [ "$launch" -eq 1 ]; then
+    if ! resolved=$(adb -s "$serial" shell cmd package resolve-activity --brief \
+        -a android.intent.action.MAIN -c android.intent.category.LAUNCHER "$PKG"); then
+      echo "ERROR: resolve-activity for $PKG failed on $serial" >&2
+      failed=1
+      continue
+    fi
+    component=$(printf '%s\n' "$resolved" | tr -d '\r' | sed -n '$p')
+    if [[ "$component" != "$PKG/"* ]]; then
+      echo "ERROR: no launcher activity for $PKG on $serial (got: $component)" >&2
+      failed=1
+      continue
+    fi
+    if ! started=$(adb -s "$serial" shell am start -n "$component"); then
+      echo "ERROR: am start -n $component failed on $serial" >&2
+      failed=1
+      continue
+    fi
+    printf '%s\n' "$started"
+    if printf '%s\n' "$started" | grep -q '^Error'; then
+      echo "ERROR: am start -n $component reported an error on $serial" >&2
+      failed=1
+      continue
+    fi
+    echo "Launched $component on $serial"
+  fi
+done
+
+if [ "$failed" -ne 0 ]; then
+  echo "ERROR: one or more devices failed; deployed tag left unchanged" >&2
+  exit 1
+fi
+
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+TAG_BASE="deployed"
+if [ "$mode" = test ]; then TAG_BASE="deployed-test"; fi
+if [ "$CURRENT_BRANCH" == "master" ]; then
+  TAG_NAME="$TAG_BASE"
 else
-    for TARGET in "${TARGETS[@]}"; do
-        if [ -z "$TARGET" ]; then
-            echo "Warning: skipping empty target from args"
-            continue
-        fi
-        # Resolve alias if it exists, otherwise use the target as the literal device ID
-        # Quote the subscript to safely handle empty TARGET (from arg parsing edge cases)
-        DEVICE_ID="${DEVICE_MAP["$TARGET"]:-$TARGET}"
-        
-        echo "Deploying to $TARGET ($DEVICE_ID)..."
-        if [ "$REBUILD" = "true" ] && [ ! -x ./gradlew ]; then
-            echo "Error: ./gradlew not found or not executable here (required for --rebuild)."
-            echo "cd into the worktree containing the app/ first."
-            OVERALL_SUCCESS=false
-            continue
-        elif [ "$REBUILD" != "true" ] && ! any_flavor_debug_apk; then
-            echo "ERROR: No last-built ABI debug APK (app/build/outputs/apk/<abi>/debug/)"
-            echo "  Run ./build_app first, or use ./deploy --rebuild to compile+install."
-            OVERALL_SUCCESS=false
-            continue
-        elif [ ! -d app ]; then
-            echo "Error: no app/ directory here. Run from an app worktree."
-            OVERALL_SUCCESS=false
-            continue
-        fi
-        backup_test_data "$DEVICE_ID"
-
-        # SAFETY: Same critical check as the all-devices path.
-        PRESERVE_ABORT=false
-        if [ "$PRESERVE_DATA" = "true" ]; then
-            LATEST=$(ls -td test-data-backups/"${DEVICE_ID}"-* 2>/dev/null | head -1 || true)
-            has_backup=false
-            if [ -n "$LATEST" ]; then
-                if [ -f "$LATEST/vehicle_expenses.db.bak" ] && [ -s "$LATEST/vehicle_expenses.db.bak" ]; then
-                    has_backup=true
-                fi
-                for img in vehicle_refs.tar.gz pump_photos.tar.gz alignment_photos.tar.gz; do
-                    if [ -f "$LATEST/$img" ] && [ -s "$LATEST/$img" ]; then
-                        has_backup=true
-                        break
-                    fi
-                done
-                if [ -f "$LATEST/ve_source_zips.tar.gz" ] && [ -s "$LATEST/ve_source_zips.tar.gz" ]; then has_backup=true; fi
-            fi
-            pkg_check=$(adb -s "$DEVICE_ID" shell "pm list packages $PACKAGE_NAME" 2>/dev/null || true)
-            if echo "$pkg_check" | grep -q "$PACKAGE_NAME"; then
-                if [ "$has_backup" != "true" ]; then
-                    echo "  [preserve] CRITICAL SAFETY ABORT: $DEVICE_ID has the app installed, but backup captured neither DB nor test images."
-                    echo "  Refusing to uninstall to protect your dash/pump/alignment data."
-                    PRESERVE_ABORT=true
-                fi
-            fi
-        fi
-
-        if [ "${UNINSTALL_FIRST:-false}" = "1" ] || [ "${UNINSTALL_FIRST:-false}" = "true" ] || [ "$PRESERVE_DATA" = "true" ]; then
-            if [ "$PRESERVE_DATA" = "true" ] && [ "$PRESERVE_ABORT" = "true" ]; then
-                echo "  [preserve] Skipping uninstall for $DEVICE_ID due to backup safety."
-            else
-                echo "Uninstalling existing package on $DEVICE_ID..."
-                adb -s "$DEVICE_ID" uninstall $PACKAGE_NAME || true
-            fi
-        fi
-
-        if [ "$PRESERVE_DATA" = "true" ] && [ "$PRESERVE_ABORT" = "true" ]; then
-            echo "  [preserve] WARNING: App installed but no backup data captured (run-as couldn't read DB/images)."
-            echo "  Will still attempt in-place install (no uninstall was done)."
-        fi
-
-        if [ "$REBUILD" = "true" ]; then
-            if ! run_package_install "$DEVICE_ID"; then
-                echo "Deployment to $TARGET ($DEVICE_ID) failed."
-                OVERALL_SUCCESS=false
-            else
-                restore_test_data "$DEVICE_ID"
-            fi
-        else
-            if [ -z "$DEPLOYED_VERSION" ]; then
-                if ver=$(apk_version_name); then
-                    DEPLOYED_VERSION="$ver"
-                else
-                    DEPLOYED_VERSION="(unknown)"
-                fi
-                echo "Installing last built ABI APK for this device"
-                echo "  version (at APK build): $DEPLOYED_VERSION"
-                live=$(live_git_describe)
-                if [ "$DEPLOYED_VERSION" != "$live" ] && [ "$DEPLOYED_VERSION" != "(unknown)" ]; then
-                    echo "  note: APK version differs from current HEAD describe ($live) — expected if tree moved after build_app."
-                fi
-            fi
-            if ! install_debug_apk "$DEVICE_ID"; then
-                echo "Deployment to $TARGET ($DEVICE_ID) failed."
-                OVERALL_SUCCESS=false
-            else
-                restore_test_data "$DEVICE_ID"
-            fi
-        fi
-        echo "Clearing logcat on $DEVICE_ID..."
-        adb -s "$DEVICE_ID" logcat -c || echo "Warning: failed to clear logcat on $DEVICE_ID"
-    done
+  TAG_NAME="${CURRENT_BRANCH}/$TAG_BASE"
 fi
-
-if [ "$OVERALL_SUCCESS" = true ]; then
-    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-    if [ "$CURRENT_BRANCH" == "master" ]; then
-        TAG_NAME="deployed"
-    else
-        TAG_NAME="${CURRENT_BRANCH}/deployed"
-    fi
-    echo "All deployments successful. Updating '$TAG_NAME' tag."
-    git tag -f "$TAG_NAME"
-    # Prefer version baked into the APK (git describe at assemble time).
-    if [ -n "$DEPLOYED_VERSION" ] && [ "$DEPLOYED_VERSION" != "(unknown)" ]; then
-        echo "$DEPLOYED_VERSION"
-    elif ver=$(apk_version_name 2>/dev/null); then
-        echo "$ver"
-    else
-        live_git_describe
-    fi
-    exit 0
-else
-    echo "One or more deployments failed. The 'deployed' tag was NOT updated."
-    exit 1
-fi
+echo "Install successful ($PKG $VERSION_NAME). Updating '$TAG_NAME' tag."
+git tag -f "$TAG_NAME"
+git describe --tags --always
+exit 0
