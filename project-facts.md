@@ -6,7 +6,7 @@ Read in full early on startup/new cycle.
 
 ## Build and commit
 - **Build type:** android-gradle
-- Build: `./build_app --standard` until the `qa` build type exists and `apk_test_tasks` points at the qa tasks; after that switch, `./build_app --standard --test`. Never `--play`: it needs David at a terminal.
+- Build: `./build_app --standard`, plus `--test` in a worktree whose project-facts.md declares `- **Test build:** qa` (agent-1). Never `--play`: it needs David at a terminal.
 - Commit: the same flags, then `"<message>"|@<msg_file> <paths...>` (commits exactly the named paths, builds, and tags builds)
 
 ## App docs (master `docs/`)
