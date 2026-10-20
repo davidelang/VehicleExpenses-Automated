@@ -8,6 +8,8 @@ Read in full early on startup/new cycle.
 - Route **`managevehicles`** is the paddle seed screen (`ManageVehicles2Screen` composable). The retired drag-crop screen is documented in `docs/obsolete/MANAGE_VEHICLES_DRAW.md`.
 
 ## Build and commit
+- **Standard build:** debug
+- **Test build:** none
 - Build: `./build_app --standard` until the `qa` build type exists and `apk_test_tasks` points at the qa tasks; after that switch, `./build_app --standard --test`. Never `--play`: it needs David at a terminal.
 - Commit: the same flags, then `"<message>"|@<msg_file> <paths...>` (commits exactly the named paths, builds, and tags builds)
 
