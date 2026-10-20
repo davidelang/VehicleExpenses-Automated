@@ -106,3 +106,9 @@ Update only with orientation facts valid for future work. Effort/plan details �
 - Stance: avoid native plan mode for multi-agent; capability_mode not general policy; personas held; memory ⊂ project-facts; `/goal` `/deep-research` workflows opt-in. Completeness Stop hook opt-in: `VE_STOP_COMPLETENESS=1` (`.grok/hooks/stop-completeness-gate.*`).
 - The coding model is the one in that OS user’s Grok config. `grok -c` keeps the stored session model. Planner launchers set `GROK_SUBAGENTS=0` and `GROK_WORKFLOWS=0`. Coder launchers set `GROK_WORKFLOWS=0`. Process is `AGENT_MANDATES.md`.
 - **Permission blocks:** authoritative rule is **`AGENT_MANDATES.md` §1.1** (report; do not work around). Orientation only here.
+
+## Review after implement
+- Record HEAD before the executor starts. Each phase: `git diff` that phase's paths against that phase's observable, then commit and build green before the next phase. Before handoff, re-read the plan once.
+- A plan line `Review: diff` starts one reviewer. Prompt is the plan path and `<recorded>..HEAD`. Diff that range only. Check the plan's Critical Files and Acceptance lines. Reply in chat. Do not diff `master..<branch>`.
+- A deletion, a doc edit, or a pin bump omits `Review: diff`.
+- A reviewer `STATUS: FAIL` names a bug: the executor fixes that bug, then the reviewer runs again on the new range.
