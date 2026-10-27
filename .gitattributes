@@ -39,6 +39,9 @@ filter-clean-config !filter
 ENGINEERING_LOG.md merge=ve-englog
 TODO.md merge=ve-special-ours
 project-facts.md merge=ve-special-ours
+# After the move the blobs live here; the root paths are symlinks.
+work-history/ENGINEERING_LOG.md merge=ve-englog
+work-history/TODO.md merge=ve-special-ours
 
 # Host-only unscheduled server dets (~84–109MB). Never APK assets.
 # GitHub LFS (not regular blobs). See docs/obsolete/EXPERIMENT_DET_MODELS.md
