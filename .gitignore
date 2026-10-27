@@ -106,7 +106,6 @@ alignment_results_*.json
 !app/src/main/assets/tflite/
 !app/src/main/assets/tflite/paddle/
 !app/src/main/assets/tflite/paddle/**
-!app/src/main/assets/atkinson-hyperlegible-OFL.txt
 
 .gemini/
 gha-creds-*.json
