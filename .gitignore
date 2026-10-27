@@ -125,3 +125,7 @@ third_party/*/*.local
 
 # Grok session/subagent worktree pool (local)
 grok-worktrees/
+# Generated at launch by .grok/lib/grok-launch-common.sh (role sandbox profile).
+.grok/sandbox.toml
+.grok/sandbox.toml.lock
+.grok/sandbox.toml.tmp
