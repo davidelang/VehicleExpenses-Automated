@@ -31,7 +31,7 @@ kotlin-daemon-*.out
 *.code-workspace
 
 # Dev / AI Interaction
-dev-ai-interaction/
+@@SANDBOX_PATH@@
 bin/
 lib/
 # Track Grok pack launcher library (not Android/native lib/)
