@@ -80,3 +80,5 @@ Vehicle preferred fuel grade/product field for future auto-assignment of loyalty
 third_party get-artifacts pick=smart (release/RC/nightly tiers) when from uses globs; fallback mtime
 
 - [ ] Create an iPhone version of the app
+
+Review the user manual against the current app (screenshots and behavior may be out of date)
