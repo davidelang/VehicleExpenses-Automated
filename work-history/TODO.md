@@ -78,3 +78,5 @@ extractmail: browser-based human-confirm extract helper (open file/email; avoid 
 Vehicle preferred fuel grade/product field for future auto-assignment of loyalty email fills
 
 third_party get-artifacts pick=smart (release/RC/nightly tiers) when from uses globs; fallback mtime
+
+- [ ] Create an iPhone version of the app
