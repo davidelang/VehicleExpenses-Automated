@@ -82,3 +82,5 @@ third_party get-artifacts pick=smart (release/RC/nightly tiers) when from uses g
 - [ ] Create an iPhone version of the app
 
 Review the user manual against the current app (screenshots and behavior may be out of date)
+
+- [ ] Test the remotetable (including Zoho Sheet) and rclone sync backends, after the code-review bugs are fixed (dev-ai-interaction/research/fix-plan-post-impl-20261028.md)
