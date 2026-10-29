@@ -21,7 +21,7 @@ This is the **full manual** (screenshots + every step). On the phone, **Menu →
 3. [Open the menu](#open-the-menu)
 4. [First-time setup: Manage Vehicles](#first-time-setup-manage-vehicles)
 5. [Backups and multi-device sync](#backups-and-multi-device-sync)
-6. [Quick Fill-up (fuel)](#quick-fill-up-fuel)
+6. [Fill (fuel)](#quick-fill-up-fuel)
 7. [Start trip](#start-trip)
 8. [Expenses](#expenses)
 9. [Reports](#reports)
@@ -52,13 +52,13 @@ These appear on the main screens. Knowing them saves a lot of hunting.
 | Top bar | **!** (red) | A spreadsheet or photo destination failed recently — open **Syncing** to fix |
 | Top bar | **☰ + ←** | Report children and Expenses list show **menu and back** together; Reports hub is menu only |
 | Settings / fuel edit | **←** | Back (settings spreadsheet/photo and fuel edit stay back-focused) |
-| Quick Fill | **White circle** (shutter) | Capture odometer or pump display for OCR |
-| Quick Fill | **Disk / Save** | Save the fill-up (needs a vehicle and at least one of odo / volume / cost) |
-| Quick Fill | **↕ arrows** (mode switch) | Toggle **odometer mode** vs **pump (cost/volume) mode**. Green border highlights the active field group |
-| Quick Fill | **↔ arrows** (between cost & volume) | Swap cost and volume if OCR put them in the wrong fields |
-| Quick Fill | **Zoom 1x / …** | Camera zoom ratios when the lens supports them |
-| Quick Fill (after capture) | **Refresh** on main button | Discard preview and return to live camera |
-| Quick Fill (while processing) | **X** on main button | Cancel in-progress capture/OCR |
+| Fill | **White circle** (shutter) | Capture odometer or pump display for OCR |
+| Fill | **Disk / Save** | Save the fill-up (needs a vehicle and at least one of odo / volume / cost) |
+| Fill | **↕ arrows** (mode switch) | Toggle **odometer mode** vs **pump (cost/volume) mode**. Green border highlights the active field group |
+| Fill | **↔ arrows** (between cost & volume) | Swap cost and volume if OCR put them in the wrong fields |
+| Fill | **Zoom 1x / …** | Camera zoom ratios when the lens supports them |
+| Fill (after capture) | **Refresh** on main button | Discard preview and return to live camera |
+| Fill (while processing) | **X** on main button | Cancel in-progress capture/OCR |
 | Expense | **Save** | Save the expense |
 | Expense | **Shutter circle** | Take a receipt photo |
 | Expense | **Gallery** | Pick a receipt image from the library |
@@ -78,7 +78,7 @@ Currency symbols on cost fields and **G/L** on volume fields are tappable: open 
 
 ![Navigation drawer](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/01-drawer.jpg)
 
-**Main drawer:** Quick Fill-up · Start trip · Manage Vehicles · New expense · **Reports** · Settings · Syncing · Help · About.
+**Main drawer:** Fill · Start trip · Manage Vehicles · New expense · **Reports** · Settings · Syncing · Help · About.
 
 **Experiment drawer** (qa build only, Settings → Show experiment screens): Alignment Experiment · Pump Experiment · **Import Old Pictures**. Debug and release do not include these screens.
 
@@ -117,9 +117,9 @@ After **Show Landmarks**, scroll the list and correct values. Engines sometimes 
 
 ### Typing without a perfect photo
 
-You can still use the app by selecting a vehicle and **typing** odometer, volume, and cost on Quick Fill — OCR is optional for every field. Gallery import works for the reference dash photo when you prefer not to shoot in-app.
+You can still use the app by selecting a vehicle and **typing** odometer, volume, and cost on Fill — OCR is optional for every field. Gallery import works for the reference dash photo when you prefer not to shoot in-app.
 
-**Tip:** After spreadsheet sync, vehicle definitions (crops, landmarks) live in the local database — you do not need to re-open Manage Vehicles for Quick Fill to use them.
+**Tip:** After spreadsheet sync, vehicle definitions (crops, landmarks) live in the local database — you do not need to re-open Manage Vehicles for Fill to use them.
 
 ---
 
@@ -223,25 +223,25 @@ Manual **Sync now** for photos is a full pass; background backup typically proce
 
 ---
 
-## Quick Fill-up (fuel)
+## Fill (fuel)
 
 This is the **home screen** when you open the app.
 
 ### Vehicle selection (usually automatic)
 
-You do **not** need to pick the vehicle first. When vehicles have **landmarks** set up in Manage Vehicles, Quick Fill **auto-detects which vehicle** from the dash image after you capture the odometer. You can still open the **Vehicle** dropdown to override if needed.
+You do **not** need to pick the vehicle first. When vehicles have **landmarks** set up in Manage Vehicles, Fill **auto-detects which vehicle** from the dash image after you capture the odometer. You can still open the **Vehicle** dropdown to override if needed.
 
 ### Aim at the odometer
 
 Stay in odometer mode and frame the cluster. Instruction: *Aim at odometer. Tap shutter to capture.*
 
-![Quick Fill — live camera on odometer (example dash image in preview)](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r3-quickfill-odo-live.jpg)
+![Fill — live camera on odometer (example dash image in preview)](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r3-quickfill-odo-live.jpg)
 
 ### After the odometer shutter
 
 OCR fills **Odo** and tries to match the vehicle from landmarks (review both if needed). The main button becomes **Retry** to re-shoot. Instruction summarizes the reading.
 
-![Quick Fill — odometer OCR result](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r4-quickfill-odo-result.jpg)
+![Fill — odometer OCR result](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r4-quickfill-odo-result.jpg)
 
 ### Pump mode (cost and volume)
 
@@ -249,9 +249,9 @@ OCR fills **Odo** and tries to match the vehicle from landmarks (review both if 
 2. Capture the pump totals. Cost and volume fields fill; use **↔** if they are swapped.
 3. Tap currency or **G/L** if needed, then **Save** (disk). Empty fields make a **partial fill** (still allowed).
 
-![Quick Fill — pump preview / totals (example pump image in preview)](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r5-quickfill-pump-result.jpg)
+![Fill — pump preview / totals (example pump image in preview)](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r5-quickfill-pump-result.jpg)
 
-You stay on Quick Fill for the next stop (fields clear after save). Work fully **offline**; sync runs later in the background when configured.
+You stay on Fill for the next stop (fields clear after save). Work fully **offline**; sync runs later in the background when configured.
 
 ### Manual entry (no camera / bad OCR)
 
@@ -298,7 +298,7 @@ Open a row from the list. Correct vendor, amount, category, vehicle, and descrip
 
 ## Start trip
 
-Menu → **Start trip** (after Quick Fill in the drawer). Capture or enter odometer, choose trip type, save with the **disk** icon. **Stop** is a shortcut for Personal now at the held GPS location. Use **ⓘ** for control reminders.
+Menu → **Start trip** (after Fill in the drawer). Capture or enter odometer, choose trip type, save with the **disk** icon. **Stop** is a shortcut for Personal now at the held GPS location. Use **ⓘ** for control reminders.
 
 ![Start trip](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/start-trip.jpg)
 
@@ -380,7 +380,7 @@ For destinations, prefer **Menu → Syncing**. Settings may still show summary r
 - **Currency** / **Volume unit** — app defaults (system or explicit). Changing volume unit with existing fuel data may offer a convert dialog.
 - **Dark mode**
 - **Setup tips** — re-open first-run vehicle / sync tutorials.
-- **Debug Quick Fill** / **Show experiment screens (dev)** — advanced; leave off for daily use. Experiment screens are not documented here.
+- **Debug Fill** / **Show experiment screens (dev)** — advanced; leave off for daily use. Experiment screens are not documented here.
 
 CSV **export/import** (ZIP of Vehicles / Expenses / Fuel tabs) is available from Settings when offered by the current build.
 

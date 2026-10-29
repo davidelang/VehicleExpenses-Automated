@@ -91,7 +91,7 @@ import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentAlignmentS
 import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentHeatmapStageScreen
 import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentMultiScaleDetScreen
 import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentPumpScreen
-import com.davidlang.vehicleexpensesautomated.ui.fuel.QuickFillupScreen
+import com.davidlang.vehicleexpensesautomated.ui.fuel.FillScreen
 import com.davidlang.vehicleexpensesautomated.ui.help.HelpScreen
 import com.davidlang.vehicleexpensesautomated.ui.import.ImportOldPicturesScreen
 
@@ -328,7 +328,7 @@ class MainActivity : ComponentActivity() {
                         navController.navigate(route) {
                             launchSingleTop = true
                             // Drop any restored settings stack so experiment is visible.
-                            popUpTo("quickfill") { inclusive = false }
+                            popUpTo("fill") { inclusive = false }
                         }
                     } catch (e: Exception) {
                         Log.e("MainActivity", "Deep link navigate failed for $route", e)
@@ -427,14 +427,14 @@ class MainActivity : ComponentActivity() {
                     if (userVehiclesEmpty != true) return@LaunchedEffect
                     // Only auto-open splash from home so we don't interrupt tutorials mid-flow.
                     // (Manual "Show first-run welcome" from Help/Settings still works.)
-                    if (currentRoute == "quickfill" || currentRoute == null) {
+                    if (currentRoute == "fill" || currentRoute == null) {
                         navController.navigate("onboarding") {
                             launchSingleTop = true
                         }
                     }
                 }
                 val title = when {
-                    currentRoute == "quickfill" -> "Quick Fill-up"
+                    currentRoute == "fill" -> "Fill"
                     currentRoute == "triptracking" -> "Start trip"
                     currentRoute == "managevehicles" -> "Manage Vehicles"
                     currentRoute == "expense" -> "New expense"
@@ -478,10 +478,10 @@ class MainActivity : ComponentActivity() {
                             ) {
                             Text("Vehicle Expenses", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
                             NavigationDrawerItem(
-                                label = { Text("Quick Fill-up") },
+                                label = { Text("Fill") },
                                 selected = false,
                                 onClick = {
-                                    navController.navigate("quickfill")
+                                    navController.navigate("fill")
                                     scope.launch { drawerState.close() }
                                 }
                             )
@@ -695,10 +695,10 @@ class MainActivity : ComponentActivity() {
                         Surface(modifier = Modifier.fillMaxSize()) {
                             NavHost(
                                 navController = navController,
-                                startDestination = "quickfill",
+                                startDestination = "fill",
                                 modifier = Modifier.padding(innerPadding)
                             ) {
-                                composable("quickfill") { QuickFillupScreen(navController = navController) }
+                                composable("fill") { FillScreen(navController = navController) }
                                 composable("managevehicles") { ManageVehicles2Screen(navController = navController) }
                                 composable("expense") {
                                     ExpenseEntryScreen(

@@ -59,6 +59,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
 
     val width: Int get() = _width
     val height: Int get() = _height
+    private val generation = java.util.concurrent.atomic.AtomicInteger(0)
 
     // Manager Functions
     fun flip() {
@@ -71,14 +72,55 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         }
     }
 
-    fun borrowYuv(y: ByteBuffer, u: ByteBuffer, v: ByteBuffer, yStride: Int, uvStride: Int, uPixelStride: Int, vPixelStride: Int) {
+    /**
+     * Copy one camera frame into this set. A release between the generation check and the
+     * write throws instead of touching a freed handle.
+     */
+    fun borrowYuv(
+        y: ByteBuffer,
+        u: ByteBuffer,
+        v: ByteBuffer,
+        yStride: Int,
+        uvStride: Int,
+        uPixelStride: Int,
+        vPixelStride: Int,
+    ) {
         (p as Instance).borrow(y, u, v, yStride, uvStride, uPixelStride, vPixelStride)
+    }
+
+    fun ingestCameraFrame(
+        y: ByteBuffer,
+        u: ByteBuffer,
+        v: ByteBuffer,
+        yStride: Int,
+        uvStride: Int,
+        uPixelStride: Int,
+        vPixelStride: Int,
+        frameW: Int,
+        frameH: Int,
+    ) {
+        val gen = generation.get()
+        if (frameW != _width || frameH != _height) resize(frameW, frameH)
+        if (generation.get() != gen) {
+            throw IllegalStateException("BufferSet released during ingest")
+        }
+        takeYuvPlanes(y, u, v, yStride, uvStride, uPixelStride, vPixelStride)
+        if (generation.get() != gen) {
+            throw IllegalStateException("BufferSet released during ingest")
+        }
+        normalizeYUV()
+    }
+
+    private fun takeYuvPlanes(y: ByteBuffer, u: ByteBuffer, v: ByteBuffer, yStride: Int, uvStride: Int, uPixelStride: Int, vPixelStride: Int) {
+        (p as Instance).borrow(y, u, v, yStride, uvStride, uPixelStride, vPixelStride)
+        managedCrops.values.forEach {
+            it.rebindToOwner()
+        }
     }
 
     fun resize(w: Int, h: Int) {
         if (w <= 0 || h <= 0) {
-            Log.e("BufferSet", "resize rejected: w=$w h=$h")
-            return
+            throw IllegalStateException("BufferSet.resize rejected: w=$w h=$h")
         }
         if (w == _width && h == _height) return
         instances[0].physicalResize(w, h)
@@ -115,6 +157,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int? = null): Int = p.createCrop(x, y, w, h, id)
 
     fun release() {
+        generation.incrementAndGet()
         managedCrops.values.forEach { it.disarm() }
         managedCrops.clear()
         instances[0].physicalRelease()
@@ -129,6 +172,9 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     fun unborrow() {
         (instances[0] as Instance).unborrow()
         (instances[1] as Instance).unborrow()
+        managedCrops.values.forEach {
+            it.rebindToOwner()
+        }
     }
 
     abstract class YuvHandle {

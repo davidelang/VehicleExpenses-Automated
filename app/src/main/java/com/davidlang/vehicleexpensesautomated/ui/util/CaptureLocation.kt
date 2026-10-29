@@ -72,9 +72,11 @@ object CaptureLocation {
                         Log.w(TAG, "getCurrentLocation failed: ${e.message}")
                         if (cont.isActive) cont.resume(null)
                     }
+                // kept: failure stays on this call so the screen or caller can continue
                 } catch (e: SecurityException) {
                     Log.w(TAG, "getCurrentLocation security: ${e.message}")
                     if (cont.isActive) cont.resume(null)
+                // kept: failure stays on this call so the screen or caller can continue
                 } catch (e: Exception) {
                     Log.w(TAG, "getCurrentLocation error: ${e.message}")
                     if (cont.isActive) cont.resume(null)
@@ -92,14 +94,17 @@ object CaptureLocation {
                             Log.w(TAG, "lastLocation failed: ${e.message}")
                             if (cont.isActive) cont.resume(null)
                         }
+                // kept: failure stays on this call so the screen or caller can continue
                 } catch (e: SecurityException) {
                     Log.w(TAG, "lastLocation security: ${e.message}")
                     if (cont.isActive) cont.resume(null)
+                // kept: failure stays on this call so the screen or caller can continue
                 } catch (e: Exception) {
                     Log.w(TAG, "lastLocation error: ${e.message}")
                     if (cont.isActive) cont.resume(null)
                 }
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "Fused path failed: ${e.message}")
             null
@@ -120,14 +125,17 @@ object CaptureLocation {
                 if (!lm.isProviderEnabled(p)) continue
                 val loc = try {
                     lm.getLastKnownLocation(p)
+                // kept: failure stays on this call so the screen or caller can continue
                 } catch (_: SecurityException) {
                     null
+                // kept: failure stays on this call so the screen or caller can continue
                 } catch (_: Exception) {
                     null
                 } ?: continue
                 if (best == null || loc.time > best.time) best = loc
             }
             best
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "LocationManager fallback failed: ${e.message}")
             null

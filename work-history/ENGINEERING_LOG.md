@@ -12447,3 +12447,8 @@ feature-group: label=''
 
 - A scored merge keeps the base sync id. Every sync point is read into Room before sheet writes. An unread fuel tab stays. Blank rows are dropped. A dash veto acts only when one vehicle survives.
 - Corrupt cells and missing photo markers persist, including a one-page missing receipt. The import coordinator that the qa screen calls stays in main.
+
+## 2026-10-29 - Fill capture and the Fill name
+
+- The fuel screen is Fill. Gallery save uses a .part file and does not overwrite or delete an existing photo. Capture keeps a JPEG, PNG, or TIFF header. Autofocus and a missing camera stay optional.
+- The user manual, the quick guide, the navigation map, and the README use the name Fill. DNG develop throws until the native path is linked.

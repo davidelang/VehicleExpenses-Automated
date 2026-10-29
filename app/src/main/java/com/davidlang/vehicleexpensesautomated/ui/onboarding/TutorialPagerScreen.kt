@@ -137,7 +137,7 @@ fun TutorialPagerScreen(
                         scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
                     } else {
                         navController.navigate(tutorial.endRoute) {
-                            popUpTo("quickfill") { inclusive = false }
+                            popUpTo("fill") { inclusive = false }
                             launchSingleTop = true
                         }
                     }

@@ -16,8 +16,7 @@ import kotlin.math.abs
  * EXIF capture time + GPS for batch import (file path) and gallery pick (content URI).
  *
  * Time priority: EXIF DateTimeOriginal/DateTime → filename heuristics → sane file mtime → null.
- * EXIF datetimes have no timezone; we parse as **device local** wall time → epoch ms
- * (OffsetTime* when present is not yet used for parse; writer stamps it for future-proofing).
+ * A stored OffsetTimeOriginal (or OffsetTime) is applied to that wall clock. Without an offset, parse stays device local.
  */
 data class PhotoExifMeta(
     val timestampMs: Long?,
@@ -26,6 +25,10 @@ data class PhotoExifMeta(
     val source: String,
     /** Horizontal positioning error in meters when EXIF provides it; else null. */
     val accuracyM: Double? = null,
+    /** Raw EXIF OffsetTime (`±HH:MM`) when present. */
+    val offsetTime: String? = null,
+    /** Raw EXIF OffsetTimeOriginal (`±HH:MM`) when present. */
+    val offsetTimeOriginal: String? = null,
 )
 
 object PhotoExifMetaReader {
@@ -64,6 +67,7 @@ object PhotoExifMetaReader {
         return try {
             val exif = ExifInterface(path)
             metaFromExif(exif, file.name, file.lastModified().takeIf { it > 0L })
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "EXIF read failed for $path: ${e.message}")
             val mtime = file.lastModified().takeIf { it > 0L }
@@ -100,6 +104,7 @@ object PhotoExifMetaReader {
                     } ?: PhotoExifMeta(null, null, null, "missing", null)
                 }
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "EXIF read failed for $uri: ${e.message}")
             val name = uri.lastPathSegment
@@ -145,7 +150,18 @@ object PhotoExifMetaReader {
             longitude = if (hasGps) latLong[1].toDouble() else null,
             source = source,
             accuracyM = accuracyM,
+            offsetTime = offsetAttr(exif, ExifInterface.TAG_OFFSET_TIME),
+            offsetTimeOriginal = offsetAttr(exif, ExifInterface.TAG_OFFSET_TIME_ORIGINAL),
         )
+    }
+
+    private fun offsetAttr(exif: ExifInterface, tag: String): String? {
+        return try {
+            exif.getAttribute(tag)?.trim()?.takeIf { it.isNotEmpty() }
+        // kept: failure stays on this call so the screen or caller can continue
+        } catch (_: Exception) {
+            null
+        }
     }
 
     /**
@@ -155,6 +171,7 @@ object PhotoExifMetaReader {
         return try {
             val raw = exif.getAttribute("GPSHPositioningError") ?: return null
             parseExifRational(raw)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             null
         }
@@ -174,11 +191,28 @@ object PhotoExifMetaReader {
     }
 
     private fun parseExifDateTime(exif: ExifInterface): Long? {
-        val raw = exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
-            ?: exif.getAttribute(ExifInterface.TAG_DATETIME)
-            ?: return null
+        val original = exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
+        val plain = exif.getAttribute(ExifInterface.TAG_DATETIME)
+        val raw = original ?: plain ?: return null
+        val offset = if (original != null) {
+            offsetAttr(exif, ExifInterface.TAG_OFFSET_TIME_ORIGINAL)
+                ?: offsetAttr(exif, ExifInterface.TAG_OFFSET_TIME)
+        } else {
+            offsetAttr(exif, ExifInterface.TAG_OFFSET_TIME)
+        }
+        return parseExifWall(raw, offset)
+    }
+
+    private fun parseExifWall(raw: String, offset: String?): Long? {
         return try {
-            EXIF_DT.parse(raw)?.time
+            if (offset != null && offset.matches(Regex("[+-]\\d{2}:\\d{2}"))) {
+                val fmt = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US)
+                fmt.timeZone = TimeZone.getTimeZone("GMT$offset")
+                fmt.parse(raw)?.time
+            } else {
+                EXIF_DT.parse(raw)?.time
+            }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             null
         }
@@ -343,6 +377,7 @@ object PhotoExifMetaReader {
             } else {
                 t
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             null
         }

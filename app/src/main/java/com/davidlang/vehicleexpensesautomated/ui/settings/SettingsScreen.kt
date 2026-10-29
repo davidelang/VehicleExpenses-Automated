@@ -30,7 +30,7 @@ import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentReportHtml
 import com.davidlang.vehicleexpensesautomated.ui.util.PumpOcrSettings
-import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
+import com.davidlang.vehicleexpensesautomated.ui.util.FillDebugStore
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.Dispatchers
@@ -174,8 +174,8 @@ fun SettingsScreen(navController: NavHostController) {
     var showClearDebugConfirm by remember { mutableStateOf(false) }
     var showDebugInfoDialog by remember { mutableStateOf(false) }
     var debugDataRefreshKey by remember { mutableIntStateOf(0) }
-    val debugSessions = remember(debugDataRefreshKey) { QuickFillDebugStore.listSessions(context) }
-    val crashReports = remember(debugDataRefreshKey) { QuickFillDebugStore.listCrashReports(context) }
+    val debugSessions = remember(debugDataRefreshKey) { FillDebugStore.listSessions(context) }
+    val crashReports = remember(debugDataRefreshKey) { FillDebugStore.listCrashReports(context) }
     val hasDebugData = debugSessions.isNotEmpty() || crashReports.isNotEmpty()
     val debugReportCount = debugSessions.size + crashReports.size
     var showSendReportPicker by remember { mutableStateOf(false) }
@@ -216,7 +216,7 @@ fun SettingsScreen(navController: NavHostController) {
 
     LaunchedEffect(debugMaxSessions) {
         prefs.edit().putInt("debug_quick_fill_max_sessions", debugMaxSessions.coerceIn(1, 50)).apply()
-        QuickFillDebugStore.pruneToMax(context)
+        FillDebugStore.pruneToMax(context)
     }
 
     LaunchedEffect(
@@ -765,7 +765,7 @@ fun SettingsScreen(navController: NavHostController) {
                                         },
                                     )
                                     Text(
-                                        QuickFillDebugStore.readSessionSummary(session),
+                                        FillDebugStore.readSessionSummary(session),
                                         style = MaterialTheme.typography.bodySmall,
                                     )
                                 }
@@ -797,7 +797,7 @@ fun SettingsScreen(navController: NavHostController) {
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        val attachments = QuickFillDebugStore.collectAttachmentFiles(
+                        val attachments = FillDebugStore.collectAttachmentFiles(
                             selectedSessionPaths,
                             selectedCrashPaths,
                         )
@@ -805,7 +805,7 @@ fun SettingsScreen(navController: NavHostController) {
                             Toast.makeText(context, "Select at least one item", Toast.LENGTH_SHORT).show()
                             return@TextButton
                         }
-                        val launched = QuickFillDebugStore.launchFailureReport(context, attachments)
+                        val launched = FillDebugStore.launchFailureReport(context, attachments)
                         if (launched) {
                             showSendReportPicker = false
                         } else {
@@ -878,7 +878,7 @@ fun SettingsScreen(navController: NavHostController) {
                 text = { Text("Deletes all Quick Fill debug sessions and crash reports.") },
                 confirmButton = {
                     TextButton(onClick = {
-                        QuickFillDebugStore.clearAllDebugData(context)
+                        FillDebugStore.clearAllDebugData(context)
                         debugDataRefreshKey++
                         showClearDebugConfirm = false
                         Toast.makeText(context, "Debug data cleared", Toast.LENGTH_SHORT).show()

@@ -8,7 +8,7 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 
 ## Drawer order (always visible)
 
-1. **Quick Fill-up** (`quickfill`) — start destination; camera/OCR fuel entry  
+1. **Fill** (`fill`) — start destination; camera/OCR fuel entry  
 2. **Start trip** (`triptracking`) — open-only trip segments as fuel rows with Trip Type  
 3. **Manage Vehicles** (`managevehicles`) — vehicles, reference dash photo, paddle discovery seeds, Select Odo / Edit Odo, landmarks (retired draw UI: [MANAGE_VEHICLES_DRAW.md](../obsolete/MANAGE_VEHICLES_DRAW.md))  
 4. **New expense** (`expense`) — non-fuel expenses (create; edit via `expense/{id}`)  
@@ -53,7 +53,7 @@ Priority if space is tight: menu/back → **Info** → `?N` → `!`.
 
 ## Page flows (selected)
 
-- **Quick Fill-up** / **New expense** — stay in place after save (drawer for Reports)  
+- **Fill** / **New expense** — stay in place after save (drawer for Reports)  
 - **Start trip** — writes trip-start fuel rows; no separate close column  
 - **Reports hub** → `reports_lab/time` (**Time based reports**), `expenses`, `fills`, `vehicle_summary`, `trips`; hub card → `expenselist`. Legacy routes `efficiency` / `cost_trends` / `monthly` redirect to `time`.  
 - **Syncing** → `settings/spreadsheet_sync`, `settings/photo_backup`  
@@ -61,7 +61,7 @@ Priority if space is tight: menu/back → **Info** → `?N` → `!`.
 
 ## Notes
 
-- **Start destination:** `quickfill`  
+- **Start destination:** `fill`  
 - **Product Reports** = Lab hub only (`reports_lab/*`).  
 - **Fill inventory** (Fuel History + Fill history report) excludes trip starts (`tripType` non-blank). Trip list is on Trip miles.  
 - Conflict resolution UI exists but is not drawer-linked.

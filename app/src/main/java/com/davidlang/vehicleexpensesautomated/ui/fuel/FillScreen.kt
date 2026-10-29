@@ -1,9 +1,12 @@
 package com.davidlang.vehicleexpensesautomated.ui.fuel
 
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Process
 import android.util.Log
 import android.widget.Toast
+import org.json.JSONObject
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.compose.foundation.Image
@@ -57,10 +60,13 @@ import com.davidlang.vehicleexpensesautomated.data.location.LocationLookup
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupKind
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
 import com.davidlang.vehicleexpensesautomated.data.location.StationMatch
+import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
+import com.davidlang.vehicleexpensesautomated.ui.util.BufferSet
 import com.davidlang.vehicleexpensesautomated.data.model.KnownStation
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.repository.forUserPicker
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
+import com.davidlang.vehicleexpensesautomated.ui.components.VehicleNotIdentifiedDialog
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
 import com.davidlang.vehicleexpensesautomated.ui.components.CaptureButtonState
 import com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField
@@ -72,30 +78,48 @@ import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
+import com.davidlang.vehicleexpensesautomated.ui.util.deviceHasCamera
+import com.davidlang.vehicleexpensesautomated.ui.util.FillFrameIngest
 import com.davidlang.vehicleexpensesautomated.ui.util.CaptureLocation
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.NetworkStatus
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifWriter
-import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
+import com.davidlang.vehicleexpensesautomated.ui.util.FillDebugStore
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 import java.io.File
 import java.util.Currency
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 import kotlin.math.min
 
 private enum class CaptureViewState { Live, Processing, Results }
 
+private class UnresolvedVehiclePick(
+    val survivorIds: List<Int>,
+    val cont: CancellableContinuation<Int?>,
+)
+
 private fun convertVolumeForSave(value: Double, fromUnit: String, toUnit: String): Double =
     VolumeUnits.convert(value, fromUnit, toUnit)
 
 /** In-memory photo pointer until FuelEntry Save (tag dash|pump). */
-private data class SessionPhoto(val uri: String, val ts: Long)
+private data class SessionPhoto(val uri: String, val ts: Long, val fallback: Boolean = false)
+
+/** Outlives Fill composition so a Camera-roll write is not cancelled on leave. */
+private val fillPhotoSaveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 /** Map captureMode odo→dash, pump→pump. */
 private fun photoTagForCaptureMode(captureMode: String): String {
@@ -115,94 +139,517 @@ private fun sessionPhotosToJson(photos: Map<String, SessionPhoto>): String? {
                 put("tag", tag)
                 put("uri", p.uri)
                 put("ts", p.ts)
+                if (p.fallback) put("fallback", true)
             }
         )
     }
     return arr.toString()
 }
 
-/** One-shot fallback: write a JPEG of [bitmap] into DCIM/Camera as fuel_*.jpg (same roll as stock Camera). */
-private fun saveBitmapToDcimCamera(context: android.content.Context, bitmap: Bitmap): android.net.Uri? {
+private fun saveBitmapToGallery(
+    context: android.content.Context,
+    mgr: com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager,
+    bitmap: Bitmap,
+    location: android.location.Location?,
+    rotationDegrees: Int,
+    userComment: String,
+): android.net.Uri? {
+    val bytes = java.io.ByteArrayOutputStream()
+    if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 92, bytes)) return null
+    val file = java.io.File(context.cacheDir, "fuel_${System.currentTimeMillis()}.jpg")
     return try {
-        val resolver = context.contentResolver
-        val contentValues = android.content.ContentValues().apply {
-            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "fuel_${System.currentTimeMillis()}.jpg")
-            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                put(
-                    android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
-                    android.os.Environment.DIRECTORY_DCIM + "/Camera"
-                )
-                put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
-            }
-        }
-        val uri = resolver.insert(
-            android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            contentValues
-        ) ?: return null
-        resolver.openOutputStream(uri)?.use { out ->
-            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)) {
-                throw IllegalStateException("JPEG compress failed")
-            }
-        } ?: run {
-            resolver.delete(uri, null, null)
-            return null
-        }
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            val done = android.content.ContentValues().apply {
-                put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
-            }
-            resolver.update(uri, done, null, null)
-        }
-        uri
+        file.writeBytes(bytes.toByteArray())
+        PhotoExifWriter.writeGpsAndOrientation(
+            context,
+            file.absolutePath,
+            location,
+            rotationDegrees,
+            userComment = userComment,
+        )
+        mgr.saveGalleryPhoto(file.name, "image/jpeg", file)
     } catch (e: Exception) {
-        Log.e("QuickFill", "Fallback DCIM/Camera save failed", e)
+        Log.e("Fill", "gallery save failed", e)
         null
+    } finally {
+        file.delete()
     }
 }
 
-/** Pump onError fallback: write already-encoded JPEG bytes into DCIM/Camera. */
-private fun saveJpegBytesToDcimCamera(context: android.content.Context, jpeg: ByteArray): android.net.Uri? {
+private fun saveJpegBytesToGallery(
+    context: android.content.Context,
+    mgr: com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager,
+    jpeg: ByteArray,
+    location: android.location.Location?,
+    rotationDegrees: Int,
+    userComment: String,
+): android.net.Uri? {
     if (jpeg.isEmpty()) return null
+    val file = java.io.File(context.cacheDir, "fuel_${System.currentTimeMillis()}.jpg")
     return try {
-        val resolver = context.contentResolver
-        val contentValues = android.content.ContentValues().apply {
-            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "fuel_${System.currentTimeMillis()}.jpg")
-            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                put(
-                    android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
-                    android.os.Environment.DIRECTORY_DCIM + "/Camera"
-                )
-                put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
-            }
-        }
-        val uri = resolver.insert(
-            android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            contentValues
-        ) ?: return null
-        resolver.openOutputStream(uri)?.use { out ->
-            out.write(jpeg)
-        } ?: run {
-            resolver.delete(uri, null, null)
-            return null
-        }
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            val done = android.content.ContentValues().apply {
-                put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
-            }
-            resolver.update(uri, done, null, null)
-        }
-        uri
+        file.writeBytes(jpeg)
+        PhotoExifWriter.writeGpsAndOrientation(
+            context,
+            file.absolutePath,
+            location,
+            rotationDegrees,
+            userComment = userComment,
+        )
+        mgr.saveGalleryPhoto(file.name, "image/jpeg", file)
     } catch (e: Exception) {
-        Log.e("QuickFill", "Fallback DCIM/Camera JPEG save failed", e)
+        Log.e("Fill", "gallery jpeg save failed", e)
         null
+    } finally {
+        file.delete()
+    }
+}
+
+
+private class FillCaptureArgs(
+    val captureModeState: MutableState<String>,
+    val debugMode: Boolean,
+    val context: android.content.Context,
+    val scope: CoroutineScope,
+    val vehicles: List<Vehicle>,
+    val fuelViewModel: FuelViewModel,
+    val vehicleViewModel: VehicleViewModel,
+    val bufferSetABusy: AtomicBoolean,
+    val vehicleDialogUp: AtomicBoolean,
+    val pumpOriginalJpeg: MutableState<ByteArray>,
+    val displayBitmapState: MutableState<Bitmap?>,
+    val stageLabelState: MutableState<String>,
+    val instructionLineState: MutableState<String>,
+    val selectedVehicleIdState: MutableState<Int?>,
+    val odometerState: MutableState<String>,
+    val gallonsState: MutableState<String>,
+    val costState: MutableState<String>,
+    val pumpViewRotationState: MutableIntState,
+    val watchdogUpState: MutableState<Boolean>,
+    val unresolvedVehicleState: MutableState<UnresolvedVehiclePick?>,
+    val capturePendingState: MutableState<Boolean>,
+    val captureViewStateState: MutableState<CaptureViewState>,
+    val sessionPhotos: MutableMap<String, SessionPhoto>,
+)
+
+private fun fillPickPhoto(
+    bitmap: Bitmap,
+    pickedUri: String,
+    savePhotos: Boolean,
+    photoTag: String,
+    args: FillCaptureArgs,
+) {
+    if (args.capturePendingState.value || !args.bufferSetABusy.compareAndSet(false, true)) {
+        Toast.makeText(args.context, "Still processing, try again", Toast.LENGTH_LONG).show()
+        bitmap.recycle()
+        return
+    }
+    args.capturePendingState.value = true
+    args.captureViewStateState.value = CaptureViewState.Processing
+    val bufferSet = NativePaddleEngine.bufferSetA
+    args.scope.launch {
+        val error = try {
+            withContext(Dispatchers.Default) {
+                try {
+                    FillFrameIngest.ingestFullBitmap(bufferSet, bitmap)
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+            null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            e
+        }
+        if (error != null) {
+            Log.e("Fill", "picked image ingest failed", error)
+            args.bufferSetABusy.set(false)
+            args.capturePendingState.value = false
+            args.captureViewStateState.value = CaptureViewState.Live
+            Toast.makeText(
+                args.context,
+                "Could not use picture: ${error.message}",
+                Toast.LENGTH_LONG,
+            ).show()
+            return@launch
+        }
+        val captureTimestamp = System.currentTimeMillis()
+        if (savePhotos) {
+            args.sessionPhotos[photoTag] = SessionPhoto(
+                uri = pickedUri,
+                ts = captureTimestamp,
+            )
+        }
+        continueFillCapture(args, bufferSet, 0, captureTimestamp)
+    }
+}
+
+private fun continueFillCapture(
+    args: FillCaptureArgs,
+    bufferSet: BufferSet,
+    rotation: Int,
+    captureTimestamp: Long,
+) {
+    val captureMode = args.captureModeState.value
+    val debugMode = args.debugMode
+    val context = args.context
+    val scope = args.scope
+    val vehicles = args.vehicles
+    val fuelViewModel = args.fuelViewModel
+    val vehicleViewModel = args.vehicleViewModel
+    val bufferSetABusy = args.bufferSetABusy
+    val vehicleDialogUp = args.vehicleDialogUp
+    val pumpOriginalJpeg = args.pumpOriginalJpeg
+    var displayBitmap by args.displayBitmapState
+    var stageLabel by args.stageLabelState
+    var instructionLine by args.instructionLineState
+    var selectedVehicleId by args.selectedVehicleIdState
+    var odometer by args.odometerState
+    var gallons by args.gallonsState
+    var cost by args.costState
+    var pumpViewRotation by args.pumpViewRotationState
+    var watchdogUp by args.watchdogUpState
+    var unresolvedVehicle by args.unresolvedVehicleState
+    var capturePending by args.capturePendingState
+    var captureViewState by args.captureViewStateState
+    if (captureMode == "odo") {
+        scope.launch(Dispatchers.Default) {
+            try {
+                val inputY: ByteArray?
+                val inputVu: ByteArray?
+                val inputJson: String?
+                if (debugMode) {
+                    val w = bufferSet.width
+                    val h = bufferSet.height
+                    val yLen = w * h
+                    val vuLen = w * (h / 2)
+                    val y = ByteArray(yLen)
+                    bufferSet.p.raw.get(y)
+                    val vu = ByteArray(vuLen)
+                    val nv21 = bufferSet.p.nv21
+                    nv21.position(yLen)
+                    nv21.get(vu)
+                    inputY = y
+                    inputVu = vu
+                    inputJson = JSONObject()
+                        .put("w", w)
+                        .put("h", h)
+                        .put("yRowStride", w)
+                        .put("uvRowStride", w)
+                        .put("uvPixelStride", 2)
+                        .put("format", "NV21")
+                        .put("rotationDegrees", rotation)
+                        .put("timestamp", captureTimestamp)
+                        .toString()
+                } else {
+                    inputY = null
+                    inputVu = null
+                    inputJson = null
+                }
+                val lastByVehicle = vehicles.associate { v ->
+                    v.id to fuelViewModel.getLastOdometerForVehicle(v.id)
+                }
+                var originalBmp: Bitmap? = null
+                val result = OcrHarness.runAutoFillPipeline(
+                    context = context,
+                    masterBuffer = bufferSet,
+                    allVehicles = vehicles,
+                    debug = debugMode,
+                    cameraRotationDegrees = rotation,
+                    onStage = { stage, _ ->
+                        scope.launch(Dispatchers.Main) {
+                            stageLabel = stage
+                        }
+                    },
+                    onOriginalFrame = { bmp ->
+                        originalBmp = bmp
+                        scope.launch(Dispatchers.Main) {
+                            displayBitmap = bmp
+                        }
+                    },
+                    lastTrackingByVehicleId = lastByVehicle,
+                    onUnresolvedVehicle = { survivorIds, vetoDebugJson ->
+                        val frame = originalBmp
+                        FillDebugStore.saveSession(
+                            context = context,
+                            mode = "odo",
+                            debugJson = vetoDebugJson,
+                            error = "Vehicle not identified",
+                            extraJpegBitmaps = emptyMap(),
+                        )
+                        suspendCancellableCoroutine { cont ->
+                            scope.launch(Dispatchers.Main) {
+                                instructionLine = "Vehicle not identified"
+                                NativePaddleEngine.heartbeat("vehicle_dialog_open")
+                                vehicleDialogUp.set(true)
+                                watchdogUp = false
+                                unresolvedVehicle = UnresolvedVehiclePick(
+                                    survivorIds,
+                                    cont,
+                                )
+                            }
+                        }
+                    },
+                )
+
+                scope.launch(Dispatchers.Main) {
+                    if (result.survivorIds != null) {
+                        if (vehicles.isEmpty()) {
+                            instructionLine = "Vehicle not identified"
+                            Toast.makeText(
+                                context,
+                                "Vehicle not identified",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                            if (result.debugJson != null) {
+                                val frame = originalBmp
+                                scope.launch(Dispatchers.IO) {
+                                    FillDebugStore.saveSession(
+                                        context = context,
+                                        mode = "odo",
+                                        debugJson = result.debugJson,
+                                        error = "Vehicle not identified",
+                                        extraJpegBitmaps = emptyMap(),
+                                    )
+                                }
+                            }
+                        }
+                    } else if (result.error != null) {
+                        instructionLine = result.error
+                        Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
+                    } else {
+                        result.vehicleId?.let { selectedVehicleId = it }
+                        // Tracking miles for FuelEntry.odometer
+                        result.odometer?.let { odometer = it }
+                        val vid = result.vehicleId
+                        val newRoll = result.newRolloverCount
+                        if (vid != null && newRoll != null) {
+                            val v = vehicles.find { it.id == vid }
+                                ?: vehicleViewModel.getVehicleById(vid)
+                            if (v != null && newRoll > v.odometerRolloverCount) {
+                                scope.launch(Dispatchers.IO) {
+                                    vehicleViewModel.updateVehicle(
+                                        v.copy(odometerRolloverCount = newRoll),
+                                    )
+                                }
+                            }
+                        }
+                        instructionLine = when {
+                            result.odometer != null ->
+                                "Odometer: ${result.odometer} (stored tracking). Review, then Save."
+                            else -> "Dash captured. Enter odometer if needed, or switch to pump."
+                        }
+                    }
+
+                    if (debugMode && result.debugJson != null && result.survivorIds == null) {
+                        val vId = result.vehicleId ?: selectedVehicleId
+                        val vName = vehicles.find { it.id == vId }?.name
+                        val previewSource = originalBmp
+                        val extraText = buildMap {
+                            result.detJson?.let { put("det.json", it) }
+                            result.recJson?.let { put("rec.json", it) }
+                            result.vetoJson?.let { put("veto.json", it) }
+                        }
+                        scope.launch(Dispatchers.IO) {
+                            val sidecars = if (previewSource != null) {
+                                mapOf("photo.jpg" to previewSource)
+                            } else {
+                                emptyMap()
+                            }
+                            FillDebugStore.saveSession(
+                                context = context,
+                                mode = "odo",
+                                debugJson = result.debugJson,
+                                vehicleId = vId,
+                                vehicleName = vName,
+                                odometer = result.odometer,
+                                error = result.error,
+                                extraJpegBitmaps = sidecars,
+                                inputY = inputY,
+                                inputVu = inputVu,
+                                inputJson = inputJson,
+                                extraText = extraText,
+                            )
+                        }
+                    }
+                }
+            // kept: failure stays on this call so the screen or caller can continue
+            } catch (e: CancellationException) {
+                throw e
+            // kept: failure stays on this call so the screen or caller can continue
+            } catch (e: Exception) {
+                Log.e("Fill", "OCR Pipeline failed", e)
+                scope.launch(Dispatchers.Main) {
+                    Toast.makeText(context, "OCR failed: ${e.localizedMessage ?: "Unknown error"}", Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                scope.launch(Dispatchers.Main) {
+                    bufferSetABusy.set(false)
+                    capturePending = false
+                    captureViewState = if (displayBitmap != null) {
+                        CaptureViewState.Results
+                    } else {
+                        CaptureViewState.Live
+                    }
+                }
+            }
+        }
+    } else {
+        scope.launch(Dispatchers.Default) {
+            try {
+                val inputY: ByteArray?
+                val inputVu: ByteArray?
+                val inputJson: String?
+                if (debugMode) {
+                    val w = bufferSet.width
+                    val h = bufferSet.height
+                    val yLen = w * h
+                    val vuLen = w * (h / 2)
+                    val y = ByteArray(yLen)
+                    bufferSet.p.raw.get(y)
+                    val vu = ByteArray(vuLen)
+                    val nv21 = bufferSet.p.nv21
+                    nv21.position(yLen)
+                    nv21.get(vu)
+                    inputY = y
+                    inputVu = vu
+                    inputJson = JSONObject()
+                        .put("w", w)
+                        .put("h", h)
+                        .put("yRowStride", w)
+                        .put("uvRowStride", w)
+                        .put("uvPixelStride", 2)
+                        .put("format", "NV21")
+                        .put("rotationDegrees", rotation)
+                        .put("timestamp", captureTimestamp)
+                        .toString()
+                } else {
+                    inputY = null
+                    inputVu = null
+                    inputJson = null
+                }
+                val viewRotation = rotation
+                withContext(Dispatchers.Main) {
+                    pumpViewRotation = viewRotation
+                }
+                var discoveryJpeg = ByteArray(0)
+                val result = OcrHarness.runPumpCostVolPipeline(
+                    context = context,
+                    masterBuffer = bufferSet,
+                    debug = debugMode,
+                    onStage = { stage, jpeg ->
+                        when (stage) {
+                            "discovery" -> {
+                                discoveryJpeg = jpeg
+                                val bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
+                                withContext(Dispatchers.Main) {
+                                    if (bmp != null) {
+                                        displayBitmap = bmp
+                                    }
+                                    if (pumpOriginalJpeg.value.isEmpty()) {
+                                        pumpOriginalJpeg.value = jpeg
+                                    }
+                                }
+                            }
+                            "final" -> {
+                                val bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
+                                if (bmp != null) {
+                                    withContext(Dispatchers.Main) {
+                                        displayBitmap = bmp
+                                    }
+                                }
+                            }
+                        }
+                    }
+                )
+                scope.launch(Dispatchers.Main) {
+                    if (result.error != null) {
+                        instructionLine = result.error
+                        Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
+                    } else {
+                        result.volume?.let { gallons = it }
+                        result.cost?.let { cost = it }
+                        val parts = buildList {
+                            result.cost?.let { add("cost $it") }
+                            result.volume?.let { add("volume $it") }
+                        }
+                        instructionLine = if (parts.isNotEmpty()) {
+                            "Pump: ${parts.joinToString(", ")}. Review fields, then Save."
+                        } else {
+                            "Pump photo captured. Enter cost/volume if needed, then Save."
+                        }
+                    }
+                    if (debugMode && result.debugJson != null) {
+                        val vId = selectedVehicleId
+                        val vName = vehicles.find { it.id == vId }?.name
+                        val discoveryForPreview = discoveryJpeg
+                        val extraText = buildMap {
+                            result.classifyJson?.let { put("classify.json", it) }
+                            result.scalesJson?.let { put("scales.json", it) }
+                        }
+                        scope.launch(Dispatchers.IO) {
+                            val jpegSidecars = buildMap<String, ByteArray> {
+                                if (discoveryForPreview.isNotEmpty()) {
+                                    put("photo.jpg", discoveryForPreview)
+                                }
+                            }
+                            val dir = FillDebugStore.saveSession(
+                                context = context,
+                                mode = "pump",
+                                debugJson = result.debugJson,
+                                vehicleId = vId,
+                                vehicleName = vName,
+                                cost = result.cost,
+                                volume = result.volume,
+                                error = result.error,
+                                extraJpegBytes = jpegSidecars,
+                                inputY = inputY,
+                                inputVu = inputVu,
+                                inputJson = inputJson,
+                                extraText = extraText,
+                            )
+                            val preview = File(dir, "photo.jpg")
+                            if (preview.isFile) {
+                                PhotoExifWriter.writeGpsAndOrientation(
+                                    context,
+                                    preview.absolutePath,
+                                    null,
+                                    viewRotation,
+                                )
+                            }
+                        }
+                    }
+                }
+            // kept: failure stays on this call so the screen or caller can continue
+            } catch (e: CancellationException) {
+                throw e
+            // kept: failure stays on this call so the screen or caller can continue
+            } catch (e: Exception) {
+                Log.e("Fill", "Pump OCR Pipeline failed", e)
+                scope.launch(Dispatchers.Main) {
+                    Toast.makeText(
+                        context,
+                        "Pump OCR failed: ${e.localizedMessage ?: "Unknown error"}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            } finally {
+                scope.launch(Dispatchers.Main) {
+                    bufferSetABusy.set(false)
+                    capturePending = false
+                    captureViewState = if (displayBitmap != null) {
+                        CaptureViewState.Results
+                    } else {
+                        CaptureViewState.Live
+                    }
+                }
+            }
+        }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun QuickFillupScreen(
+fun FillScreen(
     navController: NavHostController
 ) {
     val context = LocalContext.current
@@ -212,12 +659,16 @@ fun QuickFillupScreen(
     val scope = rememberCoroutineScope()
 
     val vehiclesRaw by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
-    // Exclude system Unassigned bucket from Quick Fill picker
+    // Exclude system Unassigned bucket from Fill picker
     val vehicles = remember(vehiclesRaw) { vehiclesRaw.forUserPicker() }
-    var selectedVehicleId by rememberSaveable { mutableStateOf<Int?>(null) }
-    var odometer by rememberSaveable { mutableStateOf("") }
-    var gallons by rememberSaveable { mutableStateOf("") }
-    var cost by rememberSaveable { mutableStateOf("") }
+    val selectedVehicleIdState = rememberSaveable { mutableStateOf<Int?>(null) }
+    var selectedVehicleId by selectedVehicleIdState
+    val odometerState = rememberSaveable { mutableStateOf("") }
+    var odometer by odometerState
+    val gallonsState = rememberSaveable { mutableStateOf("") }
+    var gallons by gallonsState
+    val costState = rememberSaveable { mutableStateOf("") }
+    var cost by costState
     var notes by rememberSaveable { mutableStateOf("") }
     /** Session photos keyed by tag (dash/pump); written to DB only on Save as JSON. */
     val sessionPhotos = remember { mutableStateMapOf<String, SessionPhoto>() }
@@ -319,23 +770,51 @@ fun QuickFillupScreen(
         locationLookupDone = true
     }
 
-    var captureViewState by rememberSaveable { mutableStateOf(CaptureViewState.Live) }
-    var capturePending by remember { mutableStateOf(false) }
-    var displayBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    val captureViewStateState = rememberSaveable { mutableStateOf(CaptureViewState.Live) }
+    var captureViewState by captureViewStateState
+    val capturePendingState = remember { mutableStateOf(false) }
+    var capturePending by capturePendingState
+    val bufferSetABusy = remember { AtomicBoolean(false) }
+    val displayBitmapState = remember { mutableStateOf<Bitmap?>(null) }
+    var displayBitmap by displayBitmapState
     val pumpOriginalJpeg = remember { mutableStateOf(ByteArray(0)) }
-    var pumpViewRotation by remember { mutableIntStateOf(0) }
+    val pumpViewRotationState = remember { mutableIntStateOf(0) }
+    var pumpViewRotation by pumpViewRotationState
     /** Latest analysis [androidx.camera.core.ImageInfo.rotationDegrees] for DCIM EXIF on shutter. */
     var latestAnalysisRotationDegrees by remember { mutableIntStateOf(0) }
     val isProcessing = captureViewState == CaptureViewState.Processing
     val hasResults = captureViewState == CaptureViewState.Results
-    var stageLabel by remember { mutableStateOf("") }
-    var instructionLine by remember {
+    val watchdogUpState = remember { mutableStateOf(false) }
+    var watchdogUp by watchdogUpState
+    val vehicleDialogUp = remember { AtomicBoolean(false) }
+    val unresolvedVehicleState = remember { mutableStateOf<UnresolvedVehiclePick?>(null) }
+    var unresolvedVehicle by unresolvedVehicleState
+    LaunchedEffect(isProcessing) {
+        if (!isProcessing) {
+            watchdogUp = false
+            return@LaunchedEffect
+        }
+        while (true) {
+            if (vehicleDialogUp.get()) {
+                watchdogUp = false
+                delay(250L)
+                continue
+            }
+            val silentMs = System.currentTimeMillis() - NativePaddleEngine.lastStageMs
+            watchdogUp = silentMs >= 15_000L
+            delay(if (silentMs >= 15_000L) 250L else 15_000L - silentMs)
+        }
+    }
+    val stageLabelState = remember { mutableStateOf("") }
+    var stageLabel by stageLabelState
+    val instructionLineState = remember {
         mutableStateOf("Aim at odometer. Tap shutter to capture.")
     }
+    var instructionLine by instructionLineState
     var isPhotoSaving by remember { mutableStateOf(false) }
 
     RegisterPageHelp(
-        title = "Quick Fill controls",
+        title = "Fill controls",
         "White circle — shutter (capture dash or pump).",
         "Disk — save the fill when fields are ready.",
         "↕ — switch odometer mode ↔ pump (cost/volume) mode.",
@@ -348,17 +827,14 @@ fun QuickFillupScreen(
 
     val prefs = remember { context.getSharedPreferences("vehicle_settings", android.content.Context.MODE_PRIVATE) }
     val debugMode = remember {
-        if (prefs.contains("debug_quick_fill")) {
-            prefs.getBoolean("debug_quick_fill", false)
-        } else {
-            prefs.getBoolean("debug_ocr_pipeline", false)
-        }
+        prefs.getBoolean("debug_capture", false)
     }
 
     // TODO: Settings should surface "use system" as the default option for currency/volume.
     val systemCurrencySymbol = remember {
         try {
             Currency.getInstance(Locale.getDefault()).getSymbol(Locale.getDefault())
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             "$"
         }
@@ -375,7 +851,8 @@ fun QuickFillupScreen(
         com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits.resolvedPreferredVolumeUnit(context)
     }
     val defaultVolumeUnit = preferredVolumeUnit
-    var captureMode by rememberSaveable { mutableStateOf("odo") }
+    val captureModeState = rememberSaveable { mutableStateOf("odo") }
+    var captureMode by captureModeState
     var currencySymbol by rememberSaveable { mutableStateOf(defaultCurrency) }
     var volumeUnit by rememberSaveable { mutableStateOf(defaultVolumeUnit) }
     var lastCaptureType by rememberSaveable { mutableStateOf("odo") }
@@ -569,12 +1046,40 @@ fun QuickFillupScreen(
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
             .build()
     }
+    val hasCamera = remember { deviceHasCamera(context) }
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
             selectedVehicleId = vehicles.first().id
         }
     }
+
+
+    val fillCapture = FillCaptureArgs(
+        captureModeState = captureModeState,
+        debugMode = debugMode,
+        context = context,
+        scope = scope,
+        vehicles = vehicles,
+        fuelViewModel = fuelViewModel,
+        vehicleViewModel = vehicleViewModel,
+        bufferSetABusy = bufferSetABusy,
+        vehicleDialogUp = vehicleDialogUp,
+        pumpOriginalJpeg = pumpOriginalJpeg,
+        displayBitmapState = displayBitmapState,
+        stageLabelState = stageLabelState,
+        instructionLineState = instructionLineState,
+        selectedVehicleIdState = selectedVehicleIdState,
+        odometerState = odometerState,
+        gallonsState = gallonsState,
+        costState = costState,
+        pumpViewRotationState = pumpViewRotationState,
+        watchdogUpState = watchdogUpState,
+        unresolvedVehicleState = unresolvedVehicleState,
+        capturePendingState = capturePendingState,
+        captureViewStateState = captureViewStateState,
+        sessionPhotos = sessionPhotos,
+    )
 
     val cameraOrCropArea = @Composable {
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
@@ -600,6 +1105,17 @@ fun QuickFillupScreen(
                         )
                     }
                 }
+            } else if (!hasCamera) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "No camera on this device",
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             } else {
                 CameraPreview(
                     modifier = Modifier.fillMaxSize(),
@@ -608,236 +1124,46 @@ fun QuickFillupScreen(
                     onImageCaptured = { imageProxy ->
                         latestAnalysisRotationDegrees = imageProxy.imageInfo.rotationDegrees
                         if (capturePending) {
-                            scope.launch(Dispatchers.Main.immediate) {
-                                capturePending = false
+                            if (!bufferSetABusy.compareAndSet(false, true)) {
+                                imageProxy.close()
+                                return@CameraPreview
                             }
 
+                            val bufferSet = NativePaddleEngine.bufferSetA
                             val planes = imageProxy.planes
                             val isDirect = planes.all { it.buffer.isDirect }
                             if (!isDirect) {
                                 imageProxy.close()
                                 scope.launch(Dispatchers.Main) {
+                                    bufferSetABusy.set(false)
+                                    capturePending = false
                                     captureViewState = CaptureViewState.Live
                                     Toast.makeText(context, "Error: Image buffer is not direct", Toast.LENGTH_LONG).show()
                                 }
                                 return@CameraPreview
                             }
 
-                            val bufferSet = NativePaddleEngine.bufferSetA
-                            if (bufferSet.width != imageProxy.width || bufferSet.height != imageProxy.height) {
-                                bufferSet.resize(imageProxy.width, imageProxy.height)
-                            }
-                            
-                            bufferSet.borrowYuv(
+                            bufferSet.ingestCameraFrame(
                                 planes[0].buffer,
                                 planes[1].buffer,
                                 planes[2].buffer,
                                 planes[0].rowStride,
                                 planes[1].rowStride,
                                 planes[1].pixelStride,
-                                planes[2].pixelStride
+                                planes[2].pixelStride,
+                                imageProxy.width,
+                                imageProxy.height,
                             )
-                            bufferSet.normalizeYUV()
 
                             val rotation = imageProxy.imageInfo.rotationDegrees
+                            val captureTimestamp = imageProxy.imageInfo.timestamp
                             imageProxy.close()
-
-                            if (captureMode == "odo") {
-                                scope.launch(Dispatchers.Default) {
-                                    try {
-                                        val lastByVehicle = vehicles.associate { v ->
-                                            v.id to fuelViewModel.getLastOdometerForVehicle(v.id)
-                                        }
-                                        var originalBmp: Bitmap? = null
-                                        var deskewedBmp: Bitmap? = null
-                                        val result = OcrHarness.runAutoFillPipeline(
-                                            context = context,
-                                            masterBuffer = bufferSet,
-                                            allVehicles = vehicles,
-                                            debug = debugMode,
-                                            cameraRotationDegrees = rotation,
-                                            onStage = { stage, bmp ->
-                                                when (stage) {
-                                                    "Original" -> originalBmp = bmp
-                                                    "Deskewed" -> deskewedBmp = bmp
-                                                }
-                                                scope.launch(Dispatchers.Main) {
-                                                    stageLabel = stage
-                                                    displayBitmap = bmp
-                                                }
-                                            },
-                                            lastTrackingByVehicleId = lastByVehicle,
-                                        )
-                                        
-                                        scope.launch(Dispatchers.Main) {
-                                            if (result.error != null) {
-                                                instructionLine = result.error
-                                                Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
-                                            } else {
-                                                result.vehicleId?.let { selectedVehicleId = it }
-                                                // Tracking miles for FuelEntry.odometer
-                                                result.odometer?.let { odometer = it }
-                                                val vid = result.vehicleId
-                                                val newRoll = result.newRolloverCount
-                                                if (vid != null && newRoll != null) {
-                                                    val v = vehicles.find { it.id == vid }
-                                                        ?: vehicleViewModel.getVehicleById(vid)
-                                                    if (v != null && newRoll > v.odometerRolloverCount) {
-                                                        scope.launch(Dispatchers.IO) {
-                                                            vehicleViewModel.updateVehicle(
-                                                                v.copy(odometerRolloverCount = newRoll),
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                                instructionLine = when {
-                                                    result.odometer != null ->
-                                                        "Odometer: ${result.odometer} (stored tracking). Review, then Save."
-                                                    else -> "Dash captured. Enter odometer if needed, or switch to pump."
-                                                }
-                                            }
-
-                                            if (debugMode && result.debugJson != null) {
-                                                val vId = result.vehicleId ?: selectedVehicleId
-                                                val vName = vehicles.find { it.id == vId }?.name
-                                                val sidecars = buildMap<String, Bitmap> {
-                                                    originalBmp?.let { put("original.jpg", it) }
-                                                    deskewedBmp?.let { put("deskewed.jpg", it) }
-                                                }
-                                                scope.launch(Dispatchers.IO) {
-                                                    QuickFillDebugStore.saveSession(
-                                                        context = context,
-                                                        mode = "odo",
-                                                        debugJson = result.debugJson,
-                                                        vehicleId = vId,
-                                                        vehicleName = vName,
-                                                        odometer = result.odometer,
-                                                        error = result.error,
-                                                        extraJpegBitmaps = sidecars,
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.e("QuickFill", "OCR Pipeline failed", e)
-                                        scope.launch(Dispatchers.Main) {
-                                            Toast.makeText(context, "OCR failed: ${e.localizedMessage ?: "Unknown error"}", Toast.LENGTH_LONG).show()
-                                        }
-                                    } finally {
-                                        scope.launch(Dispatchers.Main) {
-                                            captureViewState = if (displayBitmap != null) {
-                                                CaptureViewState.Results
-                                            } else {
-                                                CaptureViewState.Live
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                scope.launch(Dispatchers.Default) {
-                                    try {
-                                        val viewRotation = rotation
-                                        withContext(Dispatchers.Main) {
-                                            pumpViewRotation = viewRotation
-                                        }
-                                        var originalJpeg = ByteArray(0)
-                                        var discoveryJpeg = ByteArray(0)
-                                        var finalJpeg = ByteArray(0)
-                                        val result = OcrHarness.runPumpCostVolPipeline(
-                                            context = context,
-                                            masterBuffer = bufferSet,
-                                            debug = debugMode,
-                                            onStage = { stage, jpeg ->
-                                                when (stage) {
-                                                    "original" -> {
-                                                        originalJpeg = jpeg
-                                                        withContext(Dispatchers.Main) {
-                                                            pumpOriginalJpeg.value = jpeg
-                                                        }
-                                                    }
-                                                    "discovery", "final" -> {
-                                                        if (stage == "discovery") discoveryJpeg = jpeg else finalJpeg = jpeg
-                                                        val bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
-                                                        if (bmp != null) {
-                                                            withContext(Dispatchers.Main) {
-                                                                displayBitmap = bmp
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        )
-                                        scope.launch(Dispatchers.Main) {
-                                            if (result.error != null) {
-                                                instructionLine = result.error
-                                                Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
-                                            } else {
-                                                result.volume?.let { gallons = it }
-                                                result.cost?.let { cost = it }
-                                                val parts = buildList {
-                                                    result.cost?.let { add("cost $it") }
-                                                    result.volume?.let { add("volume $it") }
-                                                }
-                                                instructionLine = if (parts.isNotEmpty()) {
-                                                    "Pump: ${parts.joinToString(", ")}. Review fields, then Save."
-                                                } else {
-                                                    "Pump photo captured. Enter cost/volume if needed, then Save."
-                                                }
-                                            }
-                                            if (debugMode && result.debugJson != null) {
-                                                val vId = selectedVehicleId
-                                                val vName = vehicles.find { it.id == vId }?.name
-                                                val jpegSidecars = buildMap<String, ByteArray> {
-                                                    if (originalJpeg.isNotEmpty()) put("original.jpg", originalJpeg)
-                                                    if (discoveryJpeg.isNotEmpty()) put("discovery.jpg", discoveryJpeg)
-                                                    if (finalJpeg.isNotEmpty()) put("final.jpg", finalJpeg)
-                                                }
-                                                scope.launch(Dispatchers.IO) {
-                                                    val dir = QuickFillDebugStore.saveSession(
-                                                        context = context,
-                                                        mode = "pump",
-                                                        debugJson = result.debugJson,
-                                                        vehicleId = vId,
-                                                        vehicleName = vName,
-                                                        cost = result.cost,
-                                                        volume = result.volume,
-                                                        error = result.error,
-                                                        extraJpegBytes = jpegSidecars,
-                                                    )
-                                                    for (name in listOf("original.jpg", "discovery.jpg", "final.jpg")) {
-                                                        val f = File(dir, name)
-                                                        if (f.isFile) {
-                                                            PhotoExifWriter.writeGpsAndOrientation(
-                                                                context,
-                                                                f.absolutePath,
-                                                                null,
-                                                                viewRotation,
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.e("QuickFill", "Pump OCR Pipeline failed", e)
-                                        scope.launch(Dispatchers.Main) {
-                                            Toast.makeText(
-                                                context,
-                                                "Pump OCR failed: ${e.localizedMessage ?: "Unknown error"}",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                        }
-                                    } finally {
-                                        scope.launch(Dispatchers.Main) {
-                                            captureViewState = if (displayBitmap != null) {
-                                                CaptureViewState.Results
-                                            } else {
-                                                CaptureViewState.Live
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            continueFillCapture(
+                                fillCapture,
+                                bufferSet,
+                                rotation,
+                                captureTimestamp,
+                            )
                         } else {
                             imageProxy.close()
                         }
@@ -1083,7 +1409,7 @@ fun QuickFillupScreen(
                                 it.recycle()
                             }
                         }
-                        // Stay on Quick Fill for back-to-back fills: blank fields + live camera.
+                        // Stay on Fill for back-to-back fills: blank fields + live camera.
                         odometer = ""
                         cost = ""
                         gallons = ""
@@ -1423,9 +1749,11 @@ fun QuickFillupScreen(
         } // BoxWithConstraints
     }
 
-    val onShutterClick = {
+    val onShutterClick = shutter@{
+        if (!hasCamera) return@shutter
         lastCaptureType = captureMode
         pumpOriginalJpeg.value = ByteArray(0)
+        NativePaddleEngine.heartbeat("capture_accepted")
         captureViewState = CaptureViewState.Processing
         capturePending = true
         // Do not clear other tags' session photos on shutter; re-shot tag is replaced on success.
@@ -1436,39 +1764,27 @@ fun QuickFillupScreen(
         if (playSound) {
             try {
                 android.media.MediaActionSound().play(android.media.MediaActionSound.SHUTTER_CLICK)
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
-                Log.e("QuickFill", "Failed to play shutter sound", e)
+                Log.e("Fill", "Failed to play shutter sound", e)
             }
         }
 
         // Live prefs each shutter so Settings toggle applies same session.
-        val saveFuelPhotosNow = prefs.getBoolean("save_fuel_photos", true)
+        val saveFuelPhotosNow = prefs.getBoolean("save_fuel_photos", true) || debugMode
         if (saveFuelPhotosNow) {
             isPhotoSaving = true
             photoSaveStatus = "Saving photo…"
             val orientForExif = latestAnalysisRotationDegrees
+            val captureFile = java.io.File(context.cacheDir, "fuel_${System.currentTimeMillis()}.jpg")
 
             try {
-                val resolver = context.contentResolver
-                val contentValues = android.content.ContentValues().apply {
-                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "fuel_${System.currentTimeMillis()}.jpg")
-                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                        put(
-                            android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
-                            android.os.Environment.DIRECTORY_DCIM + "/Camera"
-                        )
-                    }
-                }
-
                 val captureMetadata = ImageCapture.Metadata().apply {
                     location = deviceLocation
                 }
-                val outputOptions = ImageCapture.OutputFileOptions.Builder(
-                    resolver,
-                    android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    contentValues
-                ).setMetadata(captureMetadata).build()
+                val outputOptions = ImageCapture.OutputFileOptions.Builder(captureFile)
+                    .setMetadata(captureMetadata)
+                    .build()
 
                 val locForExif = deviceLocation
                 imageCapture.takePicture(
@@ -1476,84 +1792,119 @@ fun QuickFillupScreen(
                     ContextCompat.getMainExecutor(context),
                     object : ImageCapture.OnImageSavedCallback {
                         override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                            val savedUri = output.savedUri
-                            android.util.Log.i("QuickFill", "Photo saved directly to MediaStore: $savedUri")
-                            if (savedUri == null) {
-                                photoSaveStatus = "Photo save failed — entry will have no photo"
-                                Toast.makeText(
-                                    context,
-                                    "Could not save fuel photo to Camera roll: missing MediaStore URI",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            } else {
-                                val captureTs = System.currentTimeMillis()
-                                PhotoExifWriter.writeGpsAndOrientation(
-                                    context,
-                                    savedUri,
-                                    locForExif,
-                                    orientForExif,
-                                    timestampMs = captureTs,
-                                    userComment = "ve:tag=$photoTag",
-                                )
-                                sessionPhotos[photoTag] = SessionPhoto(
-                                    uri = savedUri.toString(),
-                                    ts = captureTs
-                                )
-                                photoSaveStatus = null
-                                Toast.makeText(context, "Photo saved to Camera", Toast.LENGTH_SHORT).show()
+                            val mainExecutor = ContextCompat.getMainExecutor(context)
+                            fillPhotoSaveScope.launch {
+                                try {
+                                    val captureTs = System.currentTimeMillis()
+                                    PhotoExifWriter.writeGpsAndOrientation(
+                                        context,
+                                        captureFile.absolutePath,
+                                        locForExif,
+                                        orientForExif,
+                                        timestampMs = captureTs,
+                                        userComment = "ve:tag=$photoTag",
+                                    )
+                                    val savedUri = settingsViewModel.photoStorageManager.saveGalleryPhoto(
+                                        captureFile.name,
+                                        "image/jpeg",
+                                        captureFile,
+                                    )
+                                    android.util.Log.i("Fill", "Photo saved: $savedUri")
+                                    mainExecutor.execute {
+                                        sessionPhotos[photoTag] = SessionPhoto(
+                                            uri = savedUri.toString(),
+                                            ts = captureTs,
+                                        )
+                                        photoSaveStatus = null
+                                        Toast.makeText(context, "Photo saved", Toast.LENGTH_SHORT).show()
+                                        isPhotoSaving = false
+                                    }
+                                } catch (e: Exception) {
+                                    android.util.Log.e("Fill", "Photo save failed", e)
+                                    mainExecutor.execute {
+                                        photoSaveStatus = "Photo save failed — entry will have no photo"
+                                        Toast.makeText(
+                                            context,
+                                            "Could not save fuel photo: ${e.message ?: e}",
+                                            Toast.LENGTH_LONG,
+                                        ).show()
+                                        isPhotoSaving = false
+                                    }
+                                } finally {
+                                    captureFile.delete()
+                                }
                             }
-                            isPhotoSaving = false
                         }
                         override fun onError(exception: ImageCaptureException) {
-                            android.util.Log.e("QuickFill", "Photo capture failed", exception)
+                            captureFile.delete()
+                            android.util.Log.e("Fill", "Photo capture failed", exception)
                             val pumpBytes = if (photoTag == "pump") pumpOriginalJpeg.value else ByteArray(0)
-                            val fallbackBmp = displayBitmap
-                            val fallbackUri = if (pumpBytes.isNotEmpty()) {
-                                saveJpegBytesToDcimCamera(context, pumpBytes)
-                            } else if (fallbackBmp != null && !fallbackBmp.isRecycled) {
-                                saveBitmapToDcimCamera(context, fallbackBmp)
+                            val screenBmp = displayBitmap
+                            val fallbackCopy = if (pumpBytes.isEmpty() && screenBmp != null && !screenBmp.isRecycled) {
+                                screenBmp.copy(screenBmp.config ?: Bitmap.Config.ARGB_8888, false)
                             } else {
                                 null
                             }
-                            if (fallbackUri != null) {
-                                val captureTs = System.currentTimeMillis()
-                                PhotoExifWriter.writeGpsAndOrientation(
-                                    context,
-                                    fallbackUri,
-                                    locForExif,
-                                    orientForExif,
-                                    timestampMs = captureTs,
-                                    userComment = "ve:tag=$photoTag",
-                                )
-                                sessionPhotos[photoTag] = SessionPhoto(
-                                    uri = fallbackUri.toString(),
-                                    ts = captureTs
-                                )
-                                photoSaveStatus = null
-                                Toast.makeText(
-                                    context,
-                                    "Photo saved to Camera (fallback frame)",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            } else {
-                                photoSaveStatus = "Photo save failed — entry will have no photo"
-                                Toast.makeText(
-                                    context,
-                                    "Could not save fuel photo to Camera roll: ${exception.message ?: exception}",
-                                    Toast.LENGTH_LONG
-                                ).show()
+                            val mainExecutor = ContextCompat.getMainExecutor(context)
+                            fillPhotoSaveScope.launch {
+                                try {
+                                    val gallery = settingsViewModel.photoStorageManager
+                                    val tag = "ve:tag=$photoTag"
+                                    val fallbackUri = if (pumpBytes.isNotEmpty()) {
+                                        saveJpegBytesToGallery(
+                                            context, gallery, pumpBytes, locForExif, orientForExif, tag,
+                                        )
+                                    } else if (fallbackCopy != null && !fallbackCopy.isRecycled) {
+                                        saveBitmapToGallery(
+                                            context, gallery, fallbackCopy, locForExif, orientForExif, tag,
+                                        )
+                                    } else {
+                                        null
+                                    }
+                                    if (fallbackUri != null) {
+                                        val captureTs = System.currentTimeMillis()
+                                        mainExecutor.execute {
+                                            sessionPhotos[photoTag] = SessionPhoto(
+                                                uri = fallbackUri.toString(),
+                                                ts = captureTs,
+                                                fallback = true,
+                                            )
+                                            photoSaveStatus = null
+                                            Toast.makeText(
+                                                context,
+                                                "Photo saved to gallery (fallback frame)",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                            isPhotoSaving = false
+                                        }
+                                    } else {
+                                        mainExecutor.execute {
+                                            photoSaveStatus = "Photo save failed — entry will have no photo"
+                                            Toast.makeText(
+                                                context,
+                                                "Could not save fuel photo to gallery: ${exception.message ?: exception}",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                            isPhotoSaving = false
+                                        }
+                                    }
+                                } finally {
+                                    if (fallbackCopy != null && !fallbackCopy.isRecycled) {
+                                        fallbackCopy.recycle()
+                                    }
+                                }
                             }
-                            isPhotoSaving = false
                         }
                     }
                 )
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
-                Log.e("QuickFill", "Photo takePicture setup failed", e)
+                Log.e("Fill", "Photo takePicture setup failed", e)
                 photoSaveStatus = "Photo save failed — entry will have no photo"
                 isPhotoSaving = false
                 Toast.makeText(
                     context,
-                    "Could not save fuel photo to Camera roll: ${e.message ?: e}",
+                    "Could not save fuel photo to gallery: ${e.message ?: e}",
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -1581,12 +1932,25 @@ fun QuickFillupScreen(
             displayBitmap != null -> CaptureViewState.Results
             else -> CaptureViewState.Live
         }
+        val captureButtonState = if (isProcessing && watchdogUp) {
+            CaptureButtonState.Restart
+        } else {
+            mainButtonState.toCaptureButtonState()
+        }
         val onMainButtonClick = {
             when (mainButtonState) {
                 CaptureViewState.Live -> onShutterClick()
                 CaptureViewState.Processing -> {
-                    capturePending = false
-                    captureViewState = CaptureViewState.Live
+                    if (watchdogUp) {
+                        val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
+                        if (launch != null) {
+                            val component = launch.component
+                            if (component != null) {
+                                context.startActivity(Intent.makeRestartActivityTask(component))
+                                Process.killProcess(Process.myPid())
+                            }
+                        }
+                    }
                 }
                 CaptureViewState.Results -> {
                     displayBitmap = null
@@ -1626,9 +1990,18 @@ fun QuickFillupScreen(
                         )
                     }
                     RoundCaptureButton(
-                        viewState = mainButtonState.toCaptureButtonState(),
+                        viewState = captureButtonState,
                         onClick = onMainButtonClick,
                     )
+                    FillGalleryButton(enabled = !isProcessing) { uri, bmp ->
+                        fillPickPhoto(
+                            bitmap = bmp,
+                            pickedUri = uri.toString(),
+                            savePhotos = prefs.getBoolean("save_fuel_photos", true) || debugMode,
+                            photoTag = photoTagForCaptureMode(captureMode),
+                            args = fillCapture,
+                        )
+                    }
                     // Save in B — landscape branch
                     saveButtonContent(Modifier.wrapContentWidth())
                 }
@@ -1654,9 +2027,18 @@ fun QuickFillupScreen(
                 ) {
                     saveButtonContent(Modifier.wrapContentWidth())
                     RoundCaptureButton(
-                        viewState = mainButtonState.toCaptureButtonState(),
+                        viewState = captureButtonState,
                         onClick = onMainButtonClick,
                     )
+                    FillGalleryButton(enabled = !isProcessing) { uri, bmp ->
+                        fillPickPhoto(
+                            bitmap = bmp,
+                            pickedUri = uri.toString(),
+                            savePhotos = prefs.getBoolean("save_fuel_photos", true) || debugMode,
+                            photoTag = photoTagForCaptureMode(captureMode),
+                            args = fillCapture,
+                        )
+                    }
                     IconButton(
                         onClick = onModeSwitchClick,
                         enabled = !isProcessing,
@@ -1791,6 +2173,26 @@ fun QuickFillupScreen(
             }
         }
     }
+    unresolvedVehicle?.let { req ->
+        VehicleNotIdentifiedDialog(
+            vehicles = vehicles,
+            survivorIds = req.survivorIds,
+            onSelect = { id ->
+                NativePaddleEngine.heartbeat("vehicle_dialog_close")
+                vehicleDialogUp.set(false)
+                watchdogUp = false
+                unresolvedVehicle = null
+                if (req.cont.isActive) req.cont.resume(id)
+            },
+            onDismiss = {
+                NativePaddleEngine.heartbeat("vehicle_dialog_close")
+                vehicleDialogUp.set(false)
+                watchdogUp = false
+                unresolvedVehicle = null
+                if (req.cont.isActive) req.cont.resume(null)
+            },
+        )
+    }
 }
 
 private fun CaptureViewState.toCaptureButtonState(): CaptureButtonState = when (this) {
@@ -1813,7 +2215,7 @@ private fun SymbolLabel(
 }
 
 /**
- * Quick Fill 4×4 numeric keypad (both orientations).
+ * Fill 4×4 numeric keypad (both orientations).
  *
  * ```
  * 1  2  3  ⌫

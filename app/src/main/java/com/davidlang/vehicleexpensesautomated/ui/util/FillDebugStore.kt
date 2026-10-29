@@ -4,7 +4,10 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import androidx.core.content.FileProvider
+import com.davidlang.vehicleexpensesautomated.BuildConfig
+import com.davidlang.vehicleexpensesautomated.testOnlyBuild
 import org.json.JSONObject
 import java.io.File
 import java.io.PrintWriter
@@ -12,16 +15,16 @@ import java.io.StringWriter
 import java.util.UUID
 
 /**
- * App-private Quick Fill debug session storage under [debugRoot].
+ * App-private Fill debug session storage under [debugRoot].
  * Crash tombstones live under [crashRoot] (written by application uncaught handler).
  */
-object QuickFillDebugStore {
+object FillDebugStore {
     private const val PREFS_NAME = "vehicle_settings"
-    private const val MAX_SESSIONS_KEY = "debug_quick_fill_max_sessions"
+    private const val MAX_SESSIONS_KEY = "debug_fill_max_sessions"
     private const val DEFAULT_MAX_SESSIONS = 10
     private const val DEFAULT_MAX_CRASH_REPORTS = 10
     private const val CRASH_PREFIX = "crash_"
-    const val DEBUG_DIR_NAME = "quick_fill_debug"
+    const val DEBUG_DIR_NAME = "fill_debug"
     const val CRASH_DIR_NAME = "crash_reports"
     const val REPORT_EMAIL = "david@lang.hm"
     const val REPORT_SUBJECT = "vehicle expenses failure report"
@@ -54,8 +57,10 @@ object QuickFillDebugStore {
             meta.optString("cost").takeIf { it.isNotEmpty() }?.let { parts.add("cost $it") }
             meta.optString("volume").takeIf { it.isNotEmpty() }?.let { parts.add("vol $it") }
             if (parts.isEmpty()) sessionDir.name else parts.joinToString(" · ")
-        } catch (_: Exception) {
-            sessionDir.name
+        // kept: failure stays on this call so the screen or caller can continue
+        } catch (e: Exception) {
+            android.util.Log.e("FillDebug", "summary unreadable ${sessionDir.name}", e)
+            "${sessionDir.name} · summary unreadable"
         }
     }
 
@@ -93,6 +98,10 @@ object QuickFillDebugStore {
         error: String? = null,
         extraJpegBitmaps: Map<String, Bitmap> = emptyMap(),
         extraJpegBytes: Map<String, ByteArray> = emptyMap(),
+        inputY: ByteArray? = null,
+        inputVu: ByteArray? = null,
+        inputJson: String? = null,
+        extraText: Map<String, String> = emptyMap(),
     ): File {
         ensureDirs(context)
         val timestampMs = System.currentTimeMillis()
@@ -109,6 +118,25 @@ object QuickFillDebugStore {
             cost?.let { put("cost", it) }
             volume?.let { put("volume", it) }
             error?.let { put("error", it) }
+            val abi = Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
+            put("versionName", BuildConfig.VERSION_NAME)
+            put("paddleSoStamp", BuildConfig.PADDLE_SO_STAMP)
+            put("abi", abi)
+            put(
+                "paddleSoSha",
+                when (abi) {
+                    "arm64-v8a" -> BuildConfig.PADDLE_SO_ARM64_V8A
+                    "armeabi-v7a" -> BuildConfig.PADDLE_SO_ARMEABI_V7A
+                    "x86_64" -> BuildConfig.PADDLE_SO_X86_64
+                    else -> ""
+                },
+            )
+            put("testBuild", testOnlyBuild())
+            put("manufacturer", Build.MANUFACTURER)
+            put("model", Build.MODEL)
+            if (Build.VERSION.SDK_INT >= 31) {
+                put("socModel", Build.SOC_MODEL)
+            }
         }
         File(sessionDir, "meta.json").writeText(meta.toString(2))
         File(sessionDir, "debug.json").writeText(debugJson)
@@ -119,6 +147,14 @@ object QuickFillDebugStore {
         }
         extraJpegBytes.forEach { (name, bytes) ->
             File(sessionDir, name).writeBytes(bytes)
+        }
+        if (inputY != null && inputVu != null && inputJson != null) {
+            File(sessionDir, "input.y").writeBytes(inputY)
+            File(sessionDir, "input.vu").writeBytes(inputVu)
+            File(sessionDir, "input.json").writeText(inputJson)
+        }
+        extraText.forEach { (name, text) ->
+            File(sessionDir, name).writeText(text)
         }
 
         pruneToMax(context)

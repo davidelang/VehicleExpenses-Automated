@@ -1,6 +1,6 @@
 # Vehicle Expenses Automated
 
-Camera-first tracking for fuel fill-ups and other vehicle expenses. Quick Fill reads the dashboard odometer and the pump display, matches the vehicle from the dash, and records the station from the phone’s location. Expenses, trips, and reports stay on the device. Spreadsheet sync and photo backup use accounts you control.
+Camera-first tracking for fuel fill-ups and other vehicle expenses. Fill reads the dashboard odometer and the pump display, matches the vehicle from the dash, and records the station from the phone’s location. Expenses, trips, and reports stay on the device. Spreadsheet sync and photo backup use accounts you control.
 
 ## Read next
 

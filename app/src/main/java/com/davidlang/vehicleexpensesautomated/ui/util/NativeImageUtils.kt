@@ -36,6 +36,14 @@ object NativeImageUtils {
      * Fast JNI linear copy from ARGB Bitmap to any 1-channel Mat of matching size.
      * Extracts the Red channel (luminance) directly into native memory.
      */
+    fun nativeDevelopDngToJpeg(fd: Int, outPath: String, quality: Int) {
+        throw IllegalStateException("DNG develop is not linked in this build")
+    }
+
+    fun nativeDevelopDngToBitmap(fd: Int): Bitmap {
+        throw IllegalStateException("DNG develop is not linked in this build")
+    }
+
     fun syncMatFromArgb(src: Bitmap, dstMat: Mat) {
         if (src.width != dstMat.cols() || src.height != dstMat.rows()) {
             throw IllegalArgumentException("Dimension mismatch: Bitmap=${src.width}x${src.height}, Mat=${dstMat.cols()}x${dstMat.rows()}")

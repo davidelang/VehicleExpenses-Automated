@@ -14,8 +14,8 @@ Short everyday guide. Use the full manual for first-time setup with screenshots.
 
 ## What the app does
 
-- **Quick Fill-up** — camera OCR for odometer and pump cost/volume, or manual entry; **vehicle auto-detects from dash landmarks** (no need to pick vehicle first).
-- **Start trip** — open/switch tax-style trip segments (Business / Personal / …) as fuel rows with **Trip Type** (drawer after Quick Fill).
+- **Fill** — camera OCR for odometer and pump cost/volume, or manual entry; **vehicle auto-detects from dash landmarks** (no need to pick vehicle first).
+- **Start trip** — open/switch tax-style trip segments (Business / Personal / …) as fuel rows with **Trip Type** (drawer after Fill).
 - **Manage Vehicles** — reference dash photo; **Run Discovery** (paddle seeds on the photo); **Select Odo**, tap the seed on the digits, adjust the handles, **Save**. **Edit Odo** adjusts a box that is already there. **Clear Odo** removes it, and the button then reads **Select Odo**. Landmarks stored under the same JSON key as before.
 - **Expenses** — non-fuel costs with optional receipt photos (New expense in drawer; list via **Reports** hub).
 - **Reports** — product reports hub (Lab): **Time based reports** (one chart), expenses, fill history (fills only), vehicle summary, **Trip miles**. Trip starts are **not** counted as fills. Expense list and fill inventory open from hub cards.
@@ -35,15 +35,15 @@ Short everyday guide. Use the full manual for first-time setup with screenshots.
 | Shutter (white circle) | Capture for OCR / receipt |
 | Disk | Save fill or expense / start trip |
 | Stop (Start trip) | Personal now at this location |
-| ↕ (Quick Fill) | Switch odometer ↔ pump mode |
-| ↔ (Quick Fill) | Swap cost ↔ volume |
+| ↕ (Fill) | Switch odometer ↔ pump mode |
+| ↔ (Fill) | Swap cost ↔ volume |
 | 🔍 (sync forms) | Browse Drive for sheet or folder |
 | ← | Back from Settings / Syncing / Reports child / fuel edit |
 
 ## Getting started
 
 1. **Manage Vehicles** → Add New Vehicle → dash photo → **Run Discovery** → **Select Odo** → tap the seed on the digits → adjust the handles → **Save** → **Show Landmarks** / fix OCR → name → Create.
-2. **Quick Fill-up** → shutter on odometer (vehicle matches from landmarks) → **↕** → shutter on pump → **Save**. Works offline. Use **ⓘ** for control reminders.
+2. **Fill** → shutter on odometer (vehicle matches from landmarks) → **↕** → shutter on pump → **Save**. Works offline. Use **ⓘ** for control reminders.
 3. Optional multi-device / backup: open **Syncing** → **Spreadsheet Sync** / **Photo Backup**. New device into an **existing** cluster: sign in and open the **same** shared sheet + photo folder (Help → **Connect existing setup** tutorial); stand-alone first setup is **Add a vehicle**.
 
 ## Units

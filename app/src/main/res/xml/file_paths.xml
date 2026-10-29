@@ -2,6 +2,7 @@
 <paths>
     <!-- App-private files: quick_fill_debug/, crash_reports/, etc. -->
     <files-path name="internal_files" path="." />
+    <cache-path name="cache" path="." />
     <!-- CSV export zips under getExternalFilesDir("Downloads") -->
     <external-files-path name="downloads" path="Downloads/" />
 </paths>

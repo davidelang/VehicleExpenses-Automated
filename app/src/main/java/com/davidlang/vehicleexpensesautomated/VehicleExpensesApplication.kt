@@ -22,7 +22,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.RcloneRuntime
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdBackfill
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncManager
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
-import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
+import com.davidlang.vehicleexpensesautomated.ui.util.FillDebugStore
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -73,7 +73,7 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
         val defaultUncaughtHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
-                QuickFillDebugStore.writeCrashTombstone(applicationContext, throwable)
+                FillDebugStore.writeCrashTombstone(applicationContext, throwable)
             } catch (e: Exception) {
                 android.util.Log.e("VehicleExpensesApp", "Failed to write crash tombstone", e)
             }

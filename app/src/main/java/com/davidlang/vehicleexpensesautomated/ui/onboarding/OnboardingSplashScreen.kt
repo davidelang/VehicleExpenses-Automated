@@ -90,7 +90,7 @@ fun OnboardingSplashScreen(navController: NavHostController) {
         Spacer(Modifier.height(8.dp))
         TextButton(
             onClick = {
-                navController.navigate("quickfill") {
+                navController.navigate("fill") {
                     popUpTo("onboarding") { inclusive = true }
                     launchSingleTop = true
                 }

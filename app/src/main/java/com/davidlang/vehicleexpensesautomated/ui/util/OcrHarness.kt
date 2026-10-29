@@ -21,14 +21,21 @@ data class AutoFillResult(
     /** Updated [com.davidlang.vehicleexpensesautomated.data.model.Vehicle.odometerRolloverCount] if wrap detected. */
     val newRolloverCount: Int? = null,
     val error: String? = null,
-    val debugJson: String? = null
+    val debugJson: String? = null,
+    /** Vehicles still in the dash match after a veto. Null when no veto ran. */
+    val survivorIds: List<Int>? = null,
+    val detJson: String? = null,
+    val recJson: String? = null,
+    val vetoJson: String? = null,
 )
 
 data class PumpCostVolResult(
     val cost: String? = null,
     val volume: String? = null,
     val error: String? = null,
-    val debugJson: String? = null
+    val debugJson: String? = null,
+    val classifyJson: String? = null,
+    val scalesJson: String? = null,
 )
 
 /** Quick Fill detect: original JPEG, discovery JPEG, blue quads (n×8), blue AABBs (n×4). */
@@ -130,6 +137,8 @@ object OcrHarness {
          */
         lastTrackingByVehicleId: Map<Int, Int?> = emptyMap(),
         @Suppress("UNUSED_PARAMETER") odoExpand: OdoExpandKind = OdoExpandKind.VALLEY,
+        @Suppress("UNUSED_PARAMETER") onOriginalFrame: (suspend (Bitmap) -> Unit)? = null,
+        @Suppress("UNUSED_PARAMETER") onUnresolvedVehicle: (suspend (List<Int>, String) -> Int?)? = null,
     ): AutoFillResult {
         val t0 = System.currentTimeMillis()
         val jsonDebug = if (debug) JsonObject() else null

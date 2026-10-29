@@ -11,7 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.BuildConfig
-import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
+import com.davidlang.vehicleexpensesautomated.ui.util.FillDebugStore
 import com.davidlang.vehicleexpensesautomated.ui.util.UserManualDocs
 import com.davidlang.vehicleexpensesautomated.ui.util.buildFeedbackSeedBody
 
@@ -42,7 +42,7 @@ fun AboutScreen() {
                 onClick = {
                     val intent = Intent(Intent.ACTION_SENDTO).apply {
                         data = Uri.parse("mailto:")
-                        putExtra(Intent.EXTRA_EMAIL, arrayOf(QuickFillDebugStore.REPORT_EMAIL))
+                        putExtra(Intent.EXTRA_EMAIL, arrayOf(FillDebugStore.REPORT_EMAIL))
                         putExtra(Intent.EXTRA_SUBJECT, "Vehicle Expenses feedback")
                         putExtra(Intent.EXTRA_TEXT, buildFeedbackSeedBody(context))
                     }
@@ -52,7 +52,7 @@ fun AboutScreen() {
                         // Fallback for clients that only handle ACTION_SEND
                         val send = Intent(Intent.ACTION_SEND).apply {
                             type = "message/rfc822"
-                            putExtra(Intent.EXTRA_EMAIL, arrayOf(QuickFillDebugStore.REPORT_EMAIL))
+                            putExtra(Intent.EXTRA_EMAIL, arrayOf(FillDebugStore.REPORT_EMAIL))
                             putExtra(Intent.EXTRA_SUBJECT, "Vehicle Expenses feedback")
                             putExtra(Intent.EXTRA_TEXT, buildFeedbackSeedBody(context))
                         }

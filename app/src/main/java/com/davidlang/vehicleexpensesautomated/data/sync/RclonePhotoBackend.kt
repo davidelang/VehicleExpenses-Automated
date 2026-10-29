@@ -48,6 +48,7 @@ class RclonePhotoBackend @Inject constructor(
                 }
                 val message = runWriteListReadProbeTest(dest.id, config, label)
                 PhotoBackupResult(true, message)
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 android.util.Log.e(TAG, "Rclone backend test failed destId=${dest.id}", e)
                 val message = if (dest.provider == PhotoProvider.ONEDRIVE) {
@@ -100,21 +101,14 @@ class RclonePhotoBackend @Inject constructor(
             ?: throw RcloneException("Rclone destination not configured")
         runtime.setConfigForDest(dest.id, config)
         if (useMediaStore) {
-            val uri = photoStorage.createMediaStoreUri(localFileName, photoType)
-                ?: throw IllegalStateException("Cannot create MediaStore URI")
             val tempFile = File(context.cacheDir, "rclone_dl_$localFileName")
             try {
                 downloadToLocalFile(config, objectKey, tempFile.parentFile!!.absolutePath, tempFile.name)
-                context.contentResolver.openOutputStream(uri)?.use { out ->
-                    tempFile.inputStream().use { input -> input.copyTo(out) }
-                } ?: throw IllegalStateException("Cannot open MediaStore output")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    val contentValues = ContentValues().apply {
-                        put(MediaStore.MediaColumns.IS_PENDING, 0)
-                    }
-                    context.contentResolver.update(uri, contentValues, null, null)
-                }
-                uri.toString()
+                photoStorage.saveGalleryPhoto(
+                    localFileName,
+                    PhotoStorageManager.mimeForGalleryName(localFileName),
+                    tempFile,
+                ).toString()
             } finally {
                 tempFile.delete()
             }
@@ -191,6 +185,7 @@ class RclonePhotoBackend @Inject constructor(
                         put("remote", probeName)
                     }.toString(),
                 )
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 android.util.Log.d(TAG, "Probe delete best-effort failed: ${e.message}")
                 deleteSkipped = true

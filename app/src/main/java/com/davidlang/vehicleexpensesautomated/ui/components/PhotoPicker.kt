@@ -2,6 +2,8 @@ package com.davidlang.vehicleexpensesautomated.ui.components
 
 import android.net.Uri
 import android.widget.Toast
+import androidx.core.content.FileProvider
+import java.io.File
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -29,6 +31,7 @@ fun PhotoPicker(
     val scope = rememberCoroutineScope()
 
     var photoUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingCaptureFile by remember { mutableStateOf<File?>(null) }
     var previewUrl by remember { mutableStateOf(currentPhotoUrl) }
     var loadingPath by remember { mutableStateOf<String?>(null) }
 
@@ -43,15 +46,16 @@ fun PhotoPicker(
     ) { success ->
         if (success && photoUri != null) {
             scope.launch {
-                previewUrl = null // Immediate clear for loading state
+                previewUrl = null
                 loadingPath = "Processing camera photo..."
-                val savedUrl = photoStorageManager.savePhoto(photoUri!!, "photo_${System.currentTimeMillis()}.jpg", photoType)
-                if (savedUrl != null) {
-                    onPhotoUrlChanged(savedUrl)
-                } else {
+                val file = pendingCaptureFile
+                if (file == null || !file.isFile) {
                     loadingPath = null
                     Toast.makeText(context, "Failed to save photo", Toast.LENGTH_SHORT).show()
+                    return@launch
                 }
+                val saved = photoStorageManager.saveGalleryPhoto(file.name, "image/jpeg", file)
+                onPhotoUrlChanged(saved.toString())
             }
         }
     }
@@ -63,13 +67,17 @@ fun PhotoPicker(
             scope.launch {
                 previewUrl = null // Immediate clear for loading state
                 loadingPath = it.path ?: "Loading from gallery..."
-                val savedUrl = photoStorageManager.savePhoto(it, "photo_${System.currentTimeMillis()}.jpg", photoType)
-                if (savedUrl != null) {
-                    onPhotoUrlChanged(savedUrl)
-                } else {
+                val name = "photo_${System.currentTimeMillis()}.jpg"
+                val file = File(context.cacheDir, name)
+                context.contentResolver.openInputStream(it)?.use { input ->
+                    file.outputStream().use { out -> input.copyTo(out) }
+                } ?: run {
                     loadingPath = null
                     Toast.makeText(context, "Failed to save photo", Toast.LENGTH_SHORT).show()
+                    return@launch
                 }
+                val saved = photoStorageManager.saveGalleryPhoto(name, "image/jpeg", file)
+                onPhotoUrlChanged(saved.toString())
             }
         }
     }
@@ -96,13 +104,15 @@ fun PhotoPicker(
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = {
-                val uri = photoStorageManager.createMediaStoreUri("photo_${System.currentTimeMillis()}.jpg", photoType)
-                if (uri != null) {
-                    photoUri = uri
-                    cameraLauncher.launch(uri)
-                } else {
-                    Toast.makeText(context, "Failed to create photo storage location", Toast.LENGTH_SHORT).show()
-                }
+                val file = File(context.cacheDir, "photo_${System.currentTimeMillis()}.jpg")
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file,
+                )
+                pendingCaptureFile = file
+                photoUri = uri
+                cameraLauncher.launch(uri)
             }, modifier = Modifier.weight(1f)) {
                 Text("📸 Take Photo")
             }
