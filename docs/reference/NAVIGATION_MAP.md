@@ -20,6 +20,8 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 
 ## Drawer — experiment gate only (`show_experiment_screens`)
 
+These routes are registered only on the qa build (VE Test). Debug and release do not compile the experiment or import screens.
+
 Order under the toggle (Settings):
 
 1. **Alignment Experiment** (`experiment`)  

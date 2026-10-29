@@ -12413,3 +12413,10 @@ feature-group: label=''
 ## 2026-10-29 - Remove dead code from the code review.
 
 - Deleted the unwired conflict screen, unused Room tabular backends, Set J, the parallel sheet id path, the other-text crop, unused OCR helpers and Sheets methods, and the replaced report screens. The open TODO is a future resolution screen and does not mention the removed stub.
+
+## 2026-10-29 - Move experiments onto the qa build
+
+- The qa build is the side-by-side test app. Experiment screens, import-old-pictures, the experiment foreground service, and pump_ocr_geom_boxes.json live in the qa source set. Debug and release register no experiment routes. ExperimentPrecisionAbScreen is removed.
+- Standard manifests strip the foreground-service permissions and WorkManager's foreground service. The qa manifest puts those permissions and the experiment service back.
+- The pump JNI helpers stay in main. Production code still calls them, and the native symbol is ExperimentPumpScreenKt.expRotGmmRecognize. native_ocr_qa stays out until its C++ sources exist. Other helpers and assets that production code still reads stay in main.
+- project-facts Test build is qa. The build command is ./build_app --standard --test.

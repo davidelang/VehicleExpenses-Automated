@@ -49,7 +49,6 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
-import android.content.SharedPreferences
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -65,12 +64,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
-import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportPendingStore
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import androidx.navigation.navDeepLink
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.data.repository.forUserPicker
@@ -87,14 +84,8 @@ import com.davidlang.vehicleexpensesautomated.ui.components.rememberPageHelpCont
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryMode
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseListScreen
-import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentAlignmentScreen
-import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentHeatmapStageScreen
-import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentPrecisionAbScreen
-import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentMultiScaleDetScreen
-import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentPumpScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.QuickFillupScreen
 import com.davidlang.vehicleexpensesautomated.ui.help.HelpScreen
-import com.davidlang.vehicleexpensesautomated.ui.import.ImportOldPicturesScreen
 
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelEditScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelHistoryScreen
@@ -239,51 +230,15 @@ class MainActivity : ComponentActivity() {
                 val context = androidx.compose.ui.platform.LocalContext.current
                 var backfillComplete by remember { mutableStateOf(syncIdBackfill.isBackfillDone()) }
                 var syncFailureVisible by remember { mutableStateOf(false) }
-                var pendingReviewCount by remember { mutableStateOf(0) }
 
                 fun refreshChromeIndicators() {
                     syncFailureVisible = SyncFailureStore(context).hasAnyFailure()
-                    pendingReviewCount = BatchImportPendingStore.count(context)
                 }
 
                 LaunchedEffect(backfillComplete, navController.currentBackStackEntry) {
                     refreshChromeIndicators()
                 }
 
-                // Explicit deep-link routing for experiment automation:
-                // adb shell am start -a android.intent.action.VIEW \
-                //   -d 'vehicleexpenses://experiment/align?auto=first10'
-                val deepLinkKey = intent?.dataString
-                LaunchedEffect(backfillComplete, deepLinkKey) {
-                    if (!backfillComplete) return@LaunchedEffect
-                    val data = intent?.data ?: return@LaunchedEffect
-                    if (data.scheme != "vehicleexpenses" || data.host != "experiment") return@LaunchedEffect
-                    val path = data.path.orEmpty()
-                    val auto = data.getQueryParameter("auto").orEmpty()
-                    val q = if (auto.isNotEmpty()) "?auto=$auto" else ""
-                    val route = when {
-                        path.contains("align") -> "experiment$q"
-                        path.contains("multiscale") || path.contains("multi_scale") ->
-                            "experiment_multiscale_det$q"
-                        path.contains("pump") -> "experiment_pump$q"
-                        path.contains("heatmap") || path.contains("preprocess") ||
-                            path.contains("odo-export") || path.contains("deskew") ->
-                            "experiment_heatmap_stage$q"
-                        else -> return@LaunchedEffect
-                    }
-                    // Let NavHost finish composing before navigating.
-                    delay(400)
-                    Log.i("MainActivity", "Deep link navigate → $route from $data")
-                    try {
-                        navController.navigate(route) {
-                            launchSingleTop = true
-                            // Drop any restored settings stack so experiment is visible.
-                            popUpTo("quickfill") { inclusive = false }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("MainActivity", "Deep link navigate failed for $route", e)
-                    }
-                }
 
                 // Refresh yellow ? when app returns to foreground (after merge/answer/sync)
                 val lifecycleOwner = LocalLifecycleOwner.current
@@ -340,21 +295,6 @@ class MainActivity : ComponentActivity() {
                     return@VehicleExpensesAutomatedTheme
                 }
 
-                val experimentPrefs = remember {
-                    context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
-                }
-                var showExperimentScreens by remember {
-                    mutableStateOf(experimentPrefs.getBoolean("show_experiment_screens", false))
-                }
-                DisposableEffect(experimentPrefs) {
-                    val listener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
-                        if (key == "show_experiment_screens") {
-                            showExperimentScreens = prefs.getBoolean("show_experiment_screens", false)
-                        }
-                    }
-                    experimentPrefs.registerOnSharedPreferenceChangeListener(listener)
-                    onDispose { experimentPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
-                }
 
                 val pageHelpController = rememberPageHelpController()
 
@@ -390,8 +330,6 @@ class MainActivity : ComponentActivity() {
                     currentRoute == "expense" -> "New expense"
                     currentRoute?.startsWith("expense/") == true -> "Edit expense"
                     currentRoute == "expenselist" -> "Expense list"
-                    currentRoute == "import" ||
-                        currentRoute?.startsWith("import") == true -> "Import Old Pictures"
                     currentRoute == "reports_lab" ||
                         currentRoute?.startsWith("reports_lab/") == true -> "Reports"
                     currentRoute == "fuelhistory" -> "Fuel History"
@@ -404,16 +342,6 @@ class MainActivity : ComponentActivity() {
                     currentRoute == "about" -> "About"
                     currentRoute == "onboarding" -> "Welcome"
                     currentRoute?.startsWith("tutorial/") == true -> "Setup tips"
-                    currentRoute == "experiment" ||
-                        currentRoute?.startsWith("experiment?") == true -> "Alignment Experiment"
-                    currentRoute == "experiment_pump" ||
-                        currentRoute?.startsWith("experiment_pump") == true -> "Gas Pump Extraction Experiment"
-                    currentRoute == "experiment_precision_ab" ||
-                        currentRoute?.startsWith("experiment_precision_ab") == true -> "Precision suite"
-                    currentRoute == "experiment_heatmap_stage" -> "Heatmap stage"
-                    currentRoute == "experiment_multiscale_det" ||
-                        currentRoute?.startsWith("experiment_multiscale_det") == true ->
-                        "Dash paddle long-edge det/rec"
                     else -> "Vehicle Expenses"
                 }
 
@@ -501,59 +429,6 @@ class MainActivity : ComponentActivity() {
                                     scope.launch { drawerState.close() }
                                 }
                             )
-                            if (showExperimentScreens) {
-                                NavigationDrawerItem(
-                                    label = { Text("Alignment Experiment") },
-                                    selected = false,
-                                    onClick = {
-                                        navController.navigate("experiment?auto=")
-                                        scope.launch { drawerState.close() }
-                                    }
-                                )
-                                NavigationDrawerItem(
-                                    label = { Text("Pump Experiment") },
-                                    selected = false,
-                                    onClick = {
-                                        navController.navigate("experiment_pump?auto=")
-                                        scope.launch { drawerState.close() }
-                                    }
-                                )
-                                NavigationDrawerItem(
-                                    label = { Text("Precision suite") },
-                                    selected = false,
-                                    onClick = {
-                                        // No auto= — phone product SO is FP16-tailored; auto-loading
-                                        // fp32 models SIGABRT'd on open. User taps Run after open.
-                                        navController.navigate("experiment_precision_ab?auto=")
-                                        scope.launch { drawerState.close() }
-                                    }
-                                )
-                                NavigationDrawerItem(
-                                    label = { Text("Heatmap stage") },
-                                    selected = false,
-                                    onClick = {
-                                        navController.navigate("experiment_heatmap_stage")
-                                        scope.launch { drawerState.close() }
-                                    }
-                                )
-                                NavigationDrawerItem(
-                                    label = { Text("Dash paddle long-edge det/rec") },
-                                    selected = false,
-                                    onClick = {
-                                        navController.navigate("experiment_multiscale_det?auto=")
-                                        scope.launch { drawerState.close() }
-                                    }
-                                )
-                                // Import is experiment-gated in drawer; top-bar ?N review still routes to import.
-                                NavigationDrawerItem(
-                                    label = { Text("Import Old Pictures") },
-                                    selected = false,
-                                    onClick = {
-                                        navController.navigate("import")
-                                        scope.launch { drawerState.close() }
-                                    }
-                                )
-                            }
                             } // scrollable Column
                         }
                     }
@@ -580,28 +455,6 @@ class MainActivity : ComponentActivity() {
                                 actions = {
                                     // Priority if tight: drawer/back + Info (leading) already placed;
                                     // trailing badges only: ?N then !
-                                    if (pendingReviewCount > 0) {
-                                        IconButton(
-                                            onClick = {
-                                                navController.navigate("import?review=1") {
-                                                    launchSingleTop = true
-                                                }
-                                            },
-                                            modifier = Modifier
-                                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                                                .semantics {
-                                                    contentDescription = "Review questions"
-                                                },
-                                        ) {
-                                            Text(
-                                                if (pendingReviewCount > 99) "?99+"
-                                                else "?$pendingReviewCount",
-                                                style = MaterialTheme.typography.titleMedium,
-                                                color = MaterialTheme.colorScheme.tertiary,
-                                                maxLines = 1,
-                                            )
-                                        }
-                                    }
                                     if (syncFailureVisible) {
                                         IconButton(
                                             onClick = { navController.navigate("syncing") },
@@ -676,22 +529,6 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                                 composable("expenselist") { ExpenseListScreen(navController = navController) }
-                                composable(
-                                    route = "import?review={review}",
-                                    arguments = listOf(
-                                        navArgument("review") {
-                                            type = NavType.StringType
-                                            defaultValue = "0"
-                                        },
-                                    ),
-                                ) { entry ->
-                                    val expandReview =
-                                        entry.arguments?.getString("review") == "1"
-                                    ImportOldPicturesScreen(
-                                        navController = navController,
-                                        expandReview = expandReview,
-                                    )
-                                }
 
                                 composable("triptracking") { TripTrackingScreen(navController = navController) }
                                 composable("reports_lab") { ReportsLabHubScreen(navController = navController) }
@@ -749,119 +586,6 @@ class MainActivity : ComponentActivity() {
                                 }
                                 composable("help") { HelpScreen(navController = navController) }
                                 composable("about") { AboutScreen() }
-                                composable(
-                                    route = "experiment?auto={auto}",
-                                    arguments = listOf(
-                                        navArgument("auto") {
-                                            type = NavType.StringType
-                                            defaultValue = ""
-                                            nullable = true
-                                        },
-                                    ),
-                                    deepLinks = listOf(
-                                        navDeepLink {
-                                            uriPattern = "vehicleexpenses://experiment/align?auto={auto}"
-                                        },
-                                        navDeepLink {
-                                            uriPattern = "vehicleexpenses://experiment/align"
-                                        },
-                                    ),
-                                ) { entry ->
-                                    val auto = entry.arguments?.getString("auto").orEmpty()
-                                    ExperimentAlignmentScreen(
-                                        navController = navController,
-                                        autoFirst10 = auto == "first10",
-                                        autoSelectedSample =
-                                            auto == "selected" || auto == "selected_sample",
-                                    )
-                                }
-                                composable(
-                                    route = "experiment_pump?auto={auto}",
-                                    arguments = listOf(
-                                        navArgument("auto") {
-                                            type = NavType.StringType
-                                            defaultValue = ""
-                                            nullable = true
-                                        },
-                                    ),
-                                    deepLinks = listOf(
-                                        navDeepLink {
-                                            uriPattern = "vehicleexpenses://experiment/pump?auto={auto}"
-                                        },
-                                        navDeepLink {
-                                            uriPattern = "vehicleexpenses://experiment/pump"
-                                        },
-                                    ),
-                                ) { entry ->
-                                    val auto = entry.arguments?.getString("auto").orEmpty()
-                                    ExperimentPumpScreen(
-                                        navController = navController,
-                                        autoFirst10 = auto == "first10",
-                                        autoL1Debug = auto == "l1debug",
-                                        autoHorizAffected = auto == "horiz" || auto == "horiz_affected",
-                                        autoProdInkFail = auto == "prodinkfail" || auto == "inkfail",
-                                        autoMixedFail = auto == "mixedfail",
-                                        autoDetDump = auto == "detdump" || auto == "detboxes",
-                                        autoSelectedSample =
-                                            auto == "selected" || auto == "selected_sample",
-                                    )
-                                }
-                                composable(
-                                    route = "experiment_precision_ab?auto={auto}",
-                                    arguments = listOf(
-                                        navArgument("auto") {
-                                            type = NavType.StringType
-                                            defaultValue = ""
-                                            nullable = true
-                                        },
-                                    ),
-                                    deepLinks = listOf(
-                                        navDeepLink {
-                                            uriPattern =
-                                                "vehicleexpenses://experiment/precision_ab?auto={auto}"
-                                        },
-                                    ),
-                                ) { entry ->
-                                    val auto = entry.arguments?.getString("auto").orEmpty()
-                                    ExperimentPrecisionAbScreen(
-                                        navController = navController,
-                                        autoMode = auto,
-                                    )
-                                }
-                                composable("experiment_heatmap_stage") {
-                                    ExperimentHeatmapStageScreen(
-                                        navController = navController,
-                                        vehicleRepository = vehicleRepository,
-                                    )
-                                }
-                                composable(
-                                    route = "experiment_multiscale_det?auto={auto}",
-                                    arguments = listOf(
-                                        navArgument("auto") {
-                                            type = NavType.StringType
-                                            defaultValue = ""
-                                            nullable = true
-                                        },
-                                    ),
-                                    deepLinks = listOf(
-                                        navDeepLink {
-                                            uriPattern =
-                                                "vehicleexpenses://experiment/multiscale_det?auto={auto}"
-                                        },
-                                        navDeepLink {
-                                            uriPattern =
-                                                "vehicleexpenses://experiment/multiscale_det"
-                                        },
-                                    ),
-                                ) { entry ->
-                                    val auto = entry.arguments?.getString("auto").orEmpty()
-                                    ExperimentMultiScaleDetScreen(
-                                        navController = navController,
-                                        autoStart = auto == "1" || auto == "true" || auto == "run",
-                                        autoSelectedSample =
-                                            auto == "selected" || auto == "selected_sample",
-                                    )
-                                }
                             }
                         }
                     }

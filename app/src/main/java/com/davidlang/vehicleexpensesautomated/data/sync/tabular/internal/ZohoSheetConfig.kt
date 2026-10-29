@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.data.sync.tabular.internal
 
+import com.davidlang.vehicleexpensesautomated.BuildConfig
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
 import org.json.JSONObject
 
@@ -43,7 +44,8 @@ data class ZohoSheetConfig(
         const val DEFAULT_API_DOMAIN = "https://sheet.zoho.com"
         const val DEFAULT_ACCOUNTS_SERVER = "https://accounts.zoho.com"
         val OAUTH_SCOPES = "ZohoSheet.dataAPI.READ,ZohoSheet.dataAPI.UPDATE"
-        val REDIRECT_URI = "vehicleexpenses://zoho/oauth"
+        // Per build type (vehicleexpenses / vehicleexpensestest). Register each with Zoho.
+        val REDIRECT_URI = BuildConfig.APP_SCHEME + "://zoho/oauth"
 
         fun parse(json: String, targetId: String = ""): ZohoSheetConfig? {
             if (json.isBlank() && targetId.isBlank()) return null

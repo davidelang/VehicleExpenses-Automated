@@ -113,9 +113,33 @@ android {
         ignoreAssetsPattern =
             "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:*.bak*"
     }
+    // debug: the real app. qa: side-by-side test app. release matches debug.
     buildTypes {
+        getByName("debug") {
+            buildConfigField("boolean", "TEST_BUILD", "false")
+            buildConfigField("String", "APP_SCHEME", "\"vehicleexpenses\"")
+            manifestPlaceholders["appLabel"] = "VehicleExpenses"
+            manifestPlaceholders["appScheme"] = "vehicleexpenses"
+            manifestPlaceholders["msalSignatureHash"] = "PLACEHOLDER_SIGNATURE_HASH"
+        }
+        create("qa") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".test"
+            versionNameSuffix = "-test"
+            matchingFallbacks += listOf("debug")
+            buildConfigField("boolean", "TEST_BUILD", "true")
+            buildConfigField("String", "APP_SCHEME", "\"vehicleexpensestest\"")
+            manifestPlaceholders["appLabel"] = "VE Test"
+            manifestPlaceholders["appScheme"] = "vehicleexpensestest"
+            manifestPlaceholders["msalSignatureHash"] = "PLACEHOLDER_SIGNATURE_HASH"
+        }
         release {
             isMinifyEnabled = false
+            buildConfigField("boolean", "TEST_BUILD", "false")
+            buildConfigField("String", "APP_SCHEME", "\"vehicleexpenses\"")
+            manifestPlaceholders["appLabel"] = "VehicleExpenses"
+            manifestPlaceholders["appScheme"] = "vehicleexpenses"
+            manifestPlaceholders["msalSignatureHash"] = "PLACEHOLDER_SIGNATURE_HASH"
         }
     }
     compileOptions {

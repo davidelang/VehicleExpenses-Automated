@@ -22,7 +22,7 @@ Short everyday guide. Use the full manual for first-time setup with screenshots.
 - **Settings** — units, currency, local photo prefs, debug/experiment gates (not the main sync summary).
 - **Syncing** — spreadsheet + photo destination summary, **Sync now**, Details on failures, entry to Spreadsheet Sync / Photo Backup.
 
-**Advanced / experiment drawer (Settings → Show experiment screens):** Alignment Experiment, Pump Experiment, **Import Old Pictures**. Import is not on the main drawer when the gate is off; yellow **`?N`** still opens import review when questions are pending.
+**Advanced / experiment drawer (qa build only, Settings → Show experiment screens):** Alignment Experiment, Pump Experiment, **Import Old Pictures**. Debug and release do not include these screens. On qa, Import is not on the drawer when the gate is off; yellow **`?N`** still opens import review when questions are pending.
 
 ## Icons (cheat sheet)
 

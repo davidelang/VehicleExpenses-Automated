@@ -9,8 +9,8 @@ Read in full early on startup/new cycle.
 
 ## Build and commit
 - **Standard build:** debug
-- **Test build:** none
-- Build: `./build_app --standard`. Never `--play`.
+- **Test build:** qa
+- Build: `./build_app --standard --test`. Never `--play`.
 - Commit: the same flags, then `"<message>"|@<msg_file> <paths...>` (builds, then commits exactly the named paths and tags builds)
 
 ## App docs (master `docs/`)

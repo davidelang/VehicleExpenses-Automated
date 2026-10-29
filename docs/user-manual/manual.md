@@ -80,7 +80,7 @@ Currency symbols on cost fields and **G/L** on volume fields are tappable: open 
 
 **Main drawer:** Quick Fill-up · Start trip · Manage Vehicles · New expense · **Reports** · Settings · Syncing · Help · About.
 
-**Experiment drawer** (Settings → Show experiment screens): Alignment Experiment · Pump Experiment · **Import Old Pictures**.
+**Experiment drawer** (qa build only, Settings → Show experiment screens): Alignment Experiment · Pump Experiment · **Import Old Pictures**. Debug and release do not include these screens.
 
 **Via Reports hub (not main drawer):** Expenses list · Fill history.
 

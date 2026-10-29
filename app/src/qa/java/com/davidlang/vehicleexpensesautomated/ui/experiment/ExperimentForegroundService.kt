@@ -13,6 +13,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.davidlang.vehicleexpensesautomated.BuildConfig
 import com.davidlang.vehicleexpensesautomated.MainActivity
 import com.davidlang.vehicleexpensesautomated.R
 
@@ -26,6 +27,9 @@ class ExperimentForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!BuildConfig.TEST_BUILD) {
+            throw IllegalStateException("ExperimentForegroundService is qa-only")
+        }
         val kind = intent?.getStringExtra(EXTRA_KIND) ?: "experiment"
         ensureChannel()
         val notification = buildNotification(kind)
@@ -127,6 +131,9 @@ class ExperimentForegroundService : Service() {
         const val EXTRA_KIND = "kind"
 
         fun start(context: Context, kind: String) {
+            if (!BuildConfig.TEST_BUILD) {
+                throw IllegalStateException("ExperimentForegroundService is qa-only")
+            }
             val i = Intent(context, ExperimentForegroundService::class.java)
                 .putExtra(EXTRA_KIND, kind)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -137,6 +144,7 @@ class ExperimentForegroundService : Service() {
         }
 
         fun stop(context: Context) {
+            if (!BuildConfig.TEST_BUILD) return
             context.stopService(Intent(context, ExperimentForegroundService::class.java))
         }
     }
