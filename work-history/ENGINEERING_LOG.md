@@ -12409,3 +12409,7 @@ feature-group: label=''
 ## 2026-10-29 - reset to 794f43d6a done
 
 - Reset to merge-base with master; log kept; infra kept: 71 path(s).
+
+## 2026-10-29 - Remove dead code from the code review.
+
+- Deleted the unwired conflict screen, unused Room tabular backends, Set J, the parallel sheet id path, the other-text crop, unused OCR helpers and Sheets methods, and the replaced report screens. The open TODO is a future resolution screen and does not mention the removed stub.

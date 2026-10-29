@@ -147,14 +147,6 @@ fun ManageVehicles2Screen(
             append('|')
             append(v.odometerCropBottom)
             append('|')
-            append(v.otherTextCropLeft)
-            append('|')
-            append(v.otherTextCropTop)
-            append('|')
-            append(v.otherTextCropRight)
-            append('|')
-            append(v.otherTextCropBottom)
-            append('|')
             append(v.referenceDashPhotoUrl)
             append('|')
             append(v.cleanedReferenceDashPhotoUrl)
@@ -187,8 +179,7 @@ fun ManageVehicles2Screen(
                 Log.e("ManageVehicles2", "Failed dimensions", e)
             }
         }
-        val (odo, _) = vehicleViewModel.getCrops(v)
-        odometerCropRect = odo
+        odometerCropRect = vehicleViewModel.getCrops(v)
 
         discoveryResults = null
         seedBlocks = emptyList()
@@ -379,7 +370,7 @@ fun ManageVehicles2Screen(
     }
 
     /**
-     * Writes odo crop and null ignore. No row yet: keep the rect in memory.
+     * Writes odo crop. No row yet: keep the rect in memory.
      * A replacement photo is included so the box is not stored on the previous file.
      * Name and the other form fields stay in memory until Save Changes.
      */
@@ -395,10 +386,6 @@ fun ManageVehicles2Screen(
             odometerCropTop = rect?.top,
             odometerCropRight = rect?.right,
             odometerCropBottom = rect?.bottom,
-            otherTextCropLeft = null,
-            otherTextCropTop = null,
-            otherTextCropRight = null,
-            otherTextCropBottom = null,
             landmarkTextBlocksJson = if (photoChanged) landmarkJsonForSave() else base.landmarkTextBlocksJson,
         )
         cropPersistEcho = written
@@ -597,7 +584,6 @@ fun ManageVehicles2Screen(
                                 referencePhotoUrl,
                                 referencePhotoUrl,
                                 odometerCropRect,
-                                null,
                                 odometerReading.toIntOrNull() ?: 0,
                                 jsonToSave,
                                 odometerDigitCount = dig,
@@ -617,10 +603,6 @@ fun ManageVehicles2Screen(
                                     odometerCropTop = odometerCropRect?.top,
                                     odometerCropRight = odometerCropRect?.right,
                                     odometerCropBottom = odometerCropRect?.bottom,
-                                    otherTextCropLeft = null,
-                                    otherTextCropTop = null,
-                                    otherTextCropRight = null,
-                                    otherTextCropBottom = null,
                                     landmarkTextBlocksJson = jsonToSave,
                                     odometerDigitCount = dig,
                                     odometerRolloverCount = rolls,
@@ -642,7 +624,6 @@ fun ManageVehicles2Screen(
         LandmarkDebugDialog(
             photoPath = referencePhotoUrl,
             odometerCrop = odometerCropRect,
-            otherTextCrop = null,
             landmarks = res.textBlocks,
             odometerText = "N/A",
             engineName = res.engineName,
@@ -962,7 +943,7 @@ private suspend fun runMv2PaddleDiscovery(context: Context, bitmap: Bitmap): Ocr
     val gray = bitmapToGrayMat(work)
     try {
         val blocks = MultiScaleDetRunner.productDetLandmarks2048(context, gray, 0.40f)
-        val landmarks = OdometerOcrUtils.processRawLandmarks(blocks, null, null, w, h)
+        val landmarks = OdometerOcrUtils.processRawLandmarks(blocks, null, w, h)
         return OcrResult(
             engineName = "ML Kit",
             debugText = landmarks.joinToString(" ") { it.text },

@@ -75,7 +75,6 @@ object MultiScaleDetRunner {
     /** @deprecated use [OUTER_SCALES]. */
     val SCALES: List<Int> get() = OUTER_SCALES
 
-    fun effectiveScales(): List<Int> = OUTER_SCALES
 
     fun effectiveRowCount(): Int = OUTER_SCALES.size
 

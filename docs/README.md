@@ -54,6 +54,6 @@ Locked. If the code and the spec disagree, the code is wrong. Edits need a strat
 
 ## obsolete
 
-What we tried, how it worked, and why we stopped. Includes old classifier rules, old odometer notes, saved Paddle PR text, the JNI-mismatch investigation, the parallel harness note, two history notes (merge postmortem, oversize-blob purge), and [MANAGE_VEHICLES_DRAW.md](obsolete/MANAGE_VEHICLES_DRAW.md) (retired drag-crop Manage Vehicles screen).
+What we tried, how it worked, and why we stopped. Includes old classifier rules, old odometer notes, saved Paddle PR text, the JNI-mismatch investigation, the parallel harness note, two history notes (merge postmortem, oversize-blob purge), [MANAGE_VEHICLES_DRAW.md](obsolete/MANAGE_VEHICLES_DRAW.md) (retired drag-crop Manage Vehicles screen), and [RETIRED_OTHER_TEXT_CROP.md](obsolete/RETIRED_OTHER_TEXT_CROP.md) (retired ignore / otherText crop).
 
 Purged-engine and sandbox-researcher archives (see also [DISCOVERY_ENGINES.md](obsolete/DISCOVERY_ENGINES.md) for OCR engine history): [DROP_MLKIT.md](obsolete/DROP_MLKIT.md), [MLKIT_ITERATIVE_ALGORITHM.md](obsolete/MLKIT_ITERATIVE_ALGORITHM.md), [TFLITE_CTC_DECODER.md](obsolete/TFLITE_CTC_DECODER.md), [TFLITE_DETECTION_POST_PROCESSOR.md](obsolete/TFLITE_DETECTION_POST_PROCESSOR.md), [TESSERACT_CROP_SWEEP_RESULTS.md](obsolete/TESSERACT_CROP_SWEEP_RESULTS.md), [GEMINI-researcher-prompt.md](obsolete/GEMINI-researcher-prompt.md) (not repo `GEMINI.md`), [TODO-researcher.md](obsolete/TODO-researcher.md) (not repo `TODO.md`).

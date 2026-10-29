@@ -5,7 +5,6 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.RectF
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,9 +15,7 @@ import org.opencv.imgproc.Imgproc
 import org.opencv.video.Video
 import org.opencv.calib3d.Calib3d
 import kotlin.math.abs
-import kotlin.math.ceil
 import kotlin.math.cos
-import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -601,33 +598,6 @@ object ImageAlignmentUtils {
             corner(right, bottom),
             corner(left, bottom),
         )
-    }
-
-    private fun odoIcrsRect(vehicle: Vehicle, refW: Int, refH: Int): RectF {
-        val l = vehicle.odometerCropLeft
-        val t = vehicle.odometerCropTop
-        val r = vehicle.odometerCropRight
-        val b = vehicle.odometerCropBottom
-        return if (l != null && t != null && r != null && b != null) {
-            RectF(l, t, r, b)
-        } else {
-            IcrsMath.fullImageIcrsRect(refW, refH)
-        }
-    }
-
-    /** Same top-left fit as [RecBufferFeed.scaleCropToFitBuffer]. */
-    private fun fittedWriteSize(srcW: Int, srcH: Int, destW: Int, destH: Int): Pair<Int, Int> {
-        if (srcW < 1 || srcH < 1 || destW < 1 || destH < 1) return 0 to 0
-        val sFitW = destW.toFloat() / srcW
-        val sFitH = destH.toFloat() / srcH
-        val s = min(sFitW, sFitH)
-        if (s <= 0f) return 0 to 0
-        var writeW = destW
-        while (writeW > 0 && ceil((writeW + 1.0) / s).toInt() > srcW) writeW--
-        var writeH = destH
-        while (writeH > 0 && ceil((writeH + 1.0) / s).toInt() > srcH) writeH--
-        if (writeW < 1 || writeH < 1) return 0 to 0
-        return writeW to writeH
     }
 
     /** Circular median. A shared tilt stays one cluster, including past ±180. */

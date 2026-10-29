@@ -125,9 +125,9 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 SyncDestinationScope.ENABLED -> store.enabledSpreadsheet()
             }
             if (destinations.isEmpty()) {
-                val dest = resolveLegacyOrPrimaryDest(store)
+                val dest = store.spreadsheetDestination()
                 val targetId = resolveTargetId(dest)
-                if (targetId.isBlank()) {
+                if (dest == null || targetId.isBlank()) {
                     val message = when (scope) {
                         SyncDestinationScope.ENABLED -> "No enabled spreadsheet destinations"
                         SyncDestinationScope.CONFIGURED -> "Spreadsheet not configured"
@@ -403,26 +403,6 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         return count
     }
 
-    private fun resolveLegacyOrPrimaryDest(store: SyncDestinationStore): SpreadsheetDestination {
-        store.spreadsheetDestination()?.let { return it }
-        val legacyId = legacySheetId()
-        if (legacyId.isBlank()) {
-            return SpreadsheetDestination()
-        }
-        val prefs = context.getSharedPreferences(SyncDestinationStore.PREFS_NAME, Context.MODE_PRIVATE)
-        return SpreadsheetDestination(
-            targetId = legacyId,
-            enabled = prefs.getBoolean("sync_enabled", false),
-            wifiOnly = prefs.getBoolean("wifi_only", true),
-            chargingOnly = prefs.getBoolean("charging_only", false),
-            frequencyMinutes = (prefs.getInt("frequency_hours", 6) * 60)
-                .coerceIn(
-                    SpreadsheetDestination.MIN_FREQUENCY_MINUTES,
-                    SpreadsheetDestination.MAX_FREQUENCY_MINUTES,
-                ),
-        )
-    }
-
     private fun recordSpreadsheetResult(
         failureStore: SyncFailureStore,
         destId: String,
@@ -563,13 +543,8 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         }
 
     private fun resolveTargetId(dest: SpreadsheetDestination?): String {
-        if (dest == null) return legacySheetId()
+        if (dest == null) return ""
         return tabularApi.backendFor(dest).resolveTargetId(dest)
-    }
-
-    private fun legacySheetId(): String {
-        val prefs = context.getSharedPreferences(SyncDestinationStore.PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getString("sheet_id", "")?.trim().orEmpty()
     }
 
     /**

@@ -32,7 +32,6 @@ object VolumeUnits {
 
     fun shortLabel(unit: String): String = if (unit == LITERS) "L" else "G"
 
-    fun longLabel(unit: String): String = if (unit == LITERS) "Liters" else "Gallons"
 
     /**
      * User-facing volume string. Spacing: `"12.34 L"` (space before unit).

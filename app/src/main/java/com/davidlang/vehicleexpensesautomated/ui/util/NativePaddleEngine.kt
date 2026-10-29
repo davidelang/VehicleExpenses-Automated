@@ -26,7 +26,6 @@ import org.opencv.imgproc.Imgproc
 
 class NativePaddleEngine(private val context: Context, private val variant: String = "V3") : OcrEngine {
     override val name = if (variant == "V3") "Paddle V3 Greedy" else "Paddle Numeric Greedy"
-    fun isV3() = variant == "V3"
 
     data class DetectionBox(val points: FloatArray, val confidence: Float)
     data class DetectionResult(
@@ -50,19 +49,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             return 0f
         }
     }
-    private val dictionary = mutableListOf<String>()
     private var initError: String? = null
     var isAvailable = false
         private set
 
-    // Predictors anchored to instance lifecycle
-    private var detectorLarge: PaddlePredictor? = null
-    private var detectorSmall: PaddlePredictor? = null
-
     companion object {
         var isAvailableGlobally = false; private set
-        private var sharedDetectorLarge: PaddlePredictor? = null
-        private var sharedDetectorSmall: PaddlePredictor? = null
         private var sharedRecognizerV3: PaddlePredictor? = null
         private var sharedRecognizerNumeric: PaddlePredictor? = null
 
@@ -103,9 +95,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         /** Production path for fp32 mid-graph (uint8 feed → fp32 compute + uint8 heatmap). */
         const val PROD_PATH_ID_FP32 = "uint8_fp32_u8"
-
-        /** @deprecated Use [PROD_PATH_ID_FP32]; kept for call sites that named the v7 product path. */
-        const val PROD_PATH_ID_ARMV7 = PROD_PATH_ID_FP32
 
         /**
          * Last loaded product path id (set by [loadProductionModels]).
@@ -198,8 +187,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             for ((scale, pred) in tiers) {
                 releasePredictor(pred, "det_tier_$scale")
             }
-            sharedDetectorLarge = null
-            sharedDetectorSmall = null
             // Drop large host buffers so next load reallocates clean sizes for the path.
             sharedTierBuffers.clear()
             sharedTiersInt8.clear()
@@ -304,39 +291,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
         }
 
-        fun getOdoBuffer(context: Context, vehicle: com.davidlang.vehicleexpensesautomated.data.model.Vehicle): BufferSet {
-            val (refW, refH) = if (!vehicle.referenceDashPhotoUrl.isNullOrEmpty()) {
-                getReferenceDimensions(context, vehicle.referenceDashPhotoUrl)
-            } else {
-                Pair(DEFAULT_REF_DASH_W, DEFAULT_REF_DASH_H)
-            }
 
-            val icrsRect = if (vehicle.odometerCropLeft != null && vehicle.odometerCropTop != null && vehicle.odometerCropRight != null && vehicle.odometerCropBottom != null) {
-                RectF(vehicle.odometerCropLeft, vehicle.odometerCropTop, vehicle.odometerCropRight, vehicle.odometerCropBottom)
-            } else {
-                IcrsMath.fullImageIcrsRect(refW, refH)
-            }
-            val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, refW, refH)
-            val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, refW, refH)
-            val srcW = (p2.x - p1.x).toInt()
-            val srcH = (p2.y - p1.y).toInt()
-
-            // Align to 32-pixel boundaries for efficient native processing
-            val targetW = if (srcW % 32 == 0) srcW else (srcW / 32 + 1) * 32
-            val targetH = if (srcH % 2 == 0) srcH else (srcH / 2 + 1) * 2
-            
-            return vehicleOdoBuffers.getOrPut(vehicle.id) {
-                Log.i("PaddleLite", "Creating persistent Odo Buffer for vehicle ${vehicle.id}: ${targetW}x${targetH}")
-                BufferSet(targetW, targetH)
-            }
-        }
-
-        fun releaseOdoBuffer(vehicleId: Int) {
-            vehicleOdoBuffers.remove(vehicleId)?.let { buffer ->
-                Log.i("PaddleLite", "Releasing persistent Odo Buffer for vehicle $vehicleId")
-                buffer.release()
-            }
-        }
 
         fun releaseAllOdoBuffers() {
             val iterator = vehicleOdoBuffers.entries.iterator()
@@ -593,8 +548,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     init {
         try {
             if (isAvailableGlobally) {
-                detectorLarge = sharedDetectorLarge
-                detectorSmall = sharedDetectorSmall
                 isAvailable = true
             }
         } catch (e: Throwable) {
@@ -1040,126 +993,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
     }
 
-    /**
-     * Dynamic-sized detection for arbitrary Mat crops (e.g. Pump Experiment).
-     * Resizes the internal Paddle predictor to match the input Mat dimensions exactly.
-     */
-    fun detectMat(
-        srcMat: Mat,
-        copyHeatmap: Boolean = true,
-        boxMode: Int = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
-        heatDumpU8z: java.io.File? = null,
-        hmThresh: Float = 0.0f,
-        maskDilatePasses: Int = 0,
-        heatToPhoto: Float = 0f,
-        photoW: Int = 0,
-        photoH: Int = 0,
-    ): DetectionResult? {
-        if (!isAvailable) return null
-        val predictor = detectorLarge ?: return null
-        val t0 = System.currentTimeMillis()
-        val w = srcMat.cols(); val h = srcMat.rows()
-        val tPop0 = System.nanoTime()
-        val byteData = ByteArray(w * h)
-        NativeImageUtils.populateMonoUInt8(srcMat, byteData, w, h)
-        val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
-
-        try {
-            val tJniIn0 = System.nanoTime()
-            val inputTensor = predictor.getInput(0)
-            inputTensor.resize(longArrayOf(1, 1, h.toLong(), w.toLong()))
-            requireSetData(inputTensor.setData(byteData), "detectMat uint8 ${w}x$h")
-            val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
-
-            val tInfer0 = System.nanoTime()
-            predictor.run()
-            val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
-
-            val tJniOut0 = System.nanoTime()
-            val outputTensor = predictor.getOutput(0)
-            val dims = outputTensor.shape()
-            val heatW = dims[3].toInt()
-            val heatH = dims[2].toInt()
-
-            // Zero-Copy Native Post-Processing — MUST run before any floatData copy
-            val tNativePost0 = System.nanoTime()
-            val nativeRes = NativeImageUtils.processHeatmap(
-                outputTensor, hmThresh, 10f, boxMode, maskDilatePasses,
-                scratchY = bufferSetA.s.mat,
-                heatToPhoto = heatToPhoto,
-                photoW = photoW,
-                photoH = photoH,
-            )
-            val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
-            val heatmapPostPath = NativeImageUtils.lastHeatmapPostPath()
-
-            val nativeBoxes = mutableListOf<DetectionBox>()
-            var hist: IntArray? = null
-            if (nativeRes != null) {
-                val boxFloats = nativeRes.size - 100
-                val nboxes = boxFloats / 9
-                for (i in 0 until nboxes) {
-                    val offset = i * 9
-                    val matPixels = FloatArray(8)
-                    for (p in 0 until 4) {
-                        matPixels[p * 2] = nativeRes[offset + p * 2]
-                        matPixels[p * 2 + 1] = nativeRes[offset + p * 2 + 1]
-                    }
-                    val conf = nativeRes[offset + 8]
-                    nativeBoxes.add(DetectionBox(matPixels, conf))
-                }
-                hist = IntArray(100)
-                for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
-            }
-            if (heatDumpU8z != null) {
-                val u8 = NativeImageUtils.heatmapToUInt8Array(outputTensor)
-                if (u8 != null) {
-                    HeatmapU8Dump.writeU8z(
-                        heatDumpU8z,
-                        u8,
-                        heatW,
-                        heatH,
-                        mapOf(
-                            "path" to activeProductPathId,
-                            "product_dir" to activeProductDir,
-                            "box_mode" to boxMode,
-                            "hm_thresh" to hmThresh,
-                            "mask_dilate_passes" to maskDilatePasses,
-                            "heatmap_post_path" to heatmapPostPath,
-                            "n_boxes" to nativeBoxes.size,
-                            "dynamic" to true,
-                        ),
-                    )
-                }
-            }
-            // Never floatData on uint8 heatmaps (getFloatData SEGV). Campaign: copyHeatmap=false.
-            val tCopy0 = System.nanoTime()
-            val heatmap: FloatArray? =
-                if (copyHeatmap) NativeImageUtils.heatmapToFloatArray(outputTensor) else null
-            val tCopy = (System.nanoTime() - tCopy0) / 1_000_000.0
-
-            val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
-
-            val meta = mapOf(
-                "t_pop_tensor_ms" to "%.3f".format(tPop),
-                "t_jni_in_ms" to "%.3f".format(tJniIn),
-                "t_inference_ms" to "%.3f".format(tInfer),
-                "t_jni_out_ms" to "%.3f".format(tJniOut),
-                "t_native_post_ms" to "%.3f".format(tNativePost),
-                "t_copy_tensor_ms" to "%.3f".format(tCopy),
-                "dynamic_shape" to "%dx%d".format(w, h),
-                "path" to activeProductPathId,
-                "box_mode" to boxMode.toString(),
-                "hm_thresh" to hmThresh.toString(),
-                "mask_dilate_passes" to maskDilatePasses.toString(),
-                "heatmap_post_path" to heatmapPostPath,
-            )
-            return DetectionResult(heatmap, heatW, heatH, meta, nativeBoxes, outputTensor, hist)
-        } catch (t: Throwable) {
-            Log.e("PaddleDetect", "Dynamic detection failed", t)
-            return null
-        }
-    }
 
     /** Populate a w×h rec tensor (not the unused 4096 canvas). JNI setData length must match shape. */
     private fun recTensorBytes(srcMat: Mat, w: Int, h: Int): ByteArray {

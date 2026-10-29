@@ -2152,7 +2152,7 @@ internal suspend fun performLandmarkDiscovery(input: Any, context: Context): Pai
     val slice = input as BufferSet.Slice
     val blocks = MultiScaleDetRunner.productDetLandmarks2048(context, slice.mat, 0.40f)
     val landmarks = OdometerOcrUtils.processRawLandmarks(
-        blocks, null, null, slice.width, slice.height,
+        blocks, null, slice.width, slice.height,
     )
     val ocr = OcrResult(
         engineName = "product_det",
@@ -2181,7 +2181,7 @@ private suspend fun discoverAlignLandmarks(
     rotGVert: Float,
 ): AlignLandmarkDiscovery {
     val blocks = MultiScaleDetRunner.productDetLandmarks2048(context, work.mat, rotGVert)
-    val landmarks = OdometerOcrUtils.processRawLandmarks(blocks, null, null, imgW, imgH)
+    val landmarks = OdometerOcrUtils.processRawLandmarks(blocks, null, imgW, imgH)
     val ocr = OcrResult(
         engineName = "product_det",
         debugText = landmarks.joinToString(" ") { it.text },

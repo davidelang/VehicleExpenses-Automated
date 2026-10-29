@@ -507,13 +507,11 @@ object OdometerOcrUtils {
     fun processRawLandmarks(
         allBlocks: List<TextBlock>,
         odometerCrop: android.graphics.RectF? = null,
-        otherTextCrop: android.graphics.RectF? = null,
         imgWidth: Int,
         imgHeight: Int
     ): List<TextBlock> {
         val filtered = allBlocks.filter { block ->
-            !OcrUtils.isBlockInCrop(block, odometerCrop, imgWidth, imgHeight) &&
-            !OcrUtils.isBlockInCrop(block, otherTextCrop, imgWidth, imgHeight)
+            !OcrUtils.isBlockInCrop(block, odometerCrop, imgWidth, imgHeight)
         }
         return filtered.map { block ->
             block.copy(text = cleanLandmarkString(block.text))

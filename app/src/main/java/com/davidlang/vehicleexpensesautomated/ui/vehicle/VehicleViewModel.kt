@@ -40,7 +40,6 @@ class VehicleViewModel @Inject constructor(
         referenceDashPhotoUrl: String?,
         cleanedReferenceDashPhotoUrl: String?,
         odometerCropRect: androidx.compose.ui.geometry.Rect?,
-        otherTextCropRect: androidx.compose.ui.geometry.Rect?,
         initialOdometer: Int,
         landmarkTextBlocksJson: String? = null,
         imgW: Int = 0,
@@ -60,10 +59,6 @@ class VehicleViewModel @Inject constructor(
             odometerCropTop = odometerCropRect?.top,
             odometerCropRight = odometerCropRect?.right,
             odometerCropBottom = odometerCropRect?.bottom,
-            otherTextCropLeft = otherTextCropRect?.left,
-            otherTextCropTop = otherTextCropRect?.top,
-            otherTextCropRight = otherTextCropRect?.right,
-            otherTextCropBottom = otherTextCropRect?.bottom,
             landmarkTextBlocksJson = landmarkTextBlocksJson,
             odometerDigitCount = odometerDigitCount.coerceIn(3, 9),
             odometerRolloverCount = odometerRolloverCount.coerceAtLeast(0),
@@ -95,24 +90,17 @@ class VehicleViewModel @Inject constructor(
     }
 
     /**
-     * Get the crop rectangles for a vehicle.
+     * Odometer crop rectangle for a vehicle, or null when any edge is missing.
      */
-    fun getCrops(vehicle: Vehicle): Pair<androidx.compose.ui.geometry.Rect?, androidx.compose.ui.geometry.Rect?> {
-        val odo = if (vehicle.odometerCropLeft != null && vehicle.odometerCropTop != null &&
-                     vehicle.odometerCropRight != null && vehicle.odometerCropBottom != null) {
-            androidx.compose.ui.geometry.Rect(
+    fun getCrops(vehicle: Vehicle): androidx.compose.ui.geometry.Rect? {
+        if (vehicle.odometerCropLeft != null && vehicle.odometerCropTop != null &&
+            vehicle.odometerCropRight != null && vehicle.odometerCropBottom != null) {
+            return androidx.compose.ui.geometry.Rect(
                 vehicle.odometerCropLeft, vehicle.odometerCropTop,
                 vehicle.odometerCropRight, vehicle.odometerCropBottom
             )
-        } else null
-        val other = if (vehicle.otherTextCropLeft != null && vehicle.otherTextCropTop != null &&
-                        vehicle.otherTextCropRight != null && vehicle.otherTextCropBottom != null) {
-            androidx.compose.ui.geometry.Rect(
-                vehicle.otherTextCropLeft, vehicle.otherTextCropTop,
-                vehicle.otherTextCropRight, vehicle.otherTextCropBottom
-            )
-        } else null
-        return Pair(odo, other)
+        }
+        return null
     }
 
     suspend fun ensureVehicleAssetsDownloaded(vehicleId: Int): Boolean =

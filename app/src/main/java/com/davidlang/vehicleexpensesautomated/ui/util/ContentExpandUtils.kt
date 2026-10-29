@@ -2214,67 +2214,6 @@ object ContentExpandUtils {
         return best
     }
 
-    private data class HorizRunHist(
-        val hist: IntArray,
-        val nNonSpan: Int,
-        val maxRun: Int,
-    )
-
-    private fun horizRunHist(ink: Mat): HorizRunHist {
-        val h = ink.rows()
-        val w = ink.cols()
-        val hist = IntArray(w + 1)
-        if (h <= 0 || w <= 0) return HorizRunHist(hist, 0, 0)
-        val row = ByteArray(w)
-        var nNonSpan = 0
-        var maxRun = 0
-        for (y in 0 until h) {
-            ink.get(y, 0, row)
-            var run = 0
-            fun close() {
-                if (run <= 0) return
-                if (run != w) {
-                    hist[run]++
-                    nNonSpan++
-                    if (run > maxRun) maxRun = run
-                }
-            }
-            for (x in 0 until w) {
-                if (row[x].toInt() and 0xff != 0) {
-                    run++
-                } else if (run > 0) {
-                    close()
-                    run = 0
-                }
-            }
-            if (run > 0) close()
-        }
-        return HorizRunHist(hist, nNonSpan, maxRun)
-    }
-
-    private fun vertRunHist(ink: Mat): IntArray {
-        val h = ink.rows()
-        val w = ink.cols()
-        val hist = IntArray(h + 1)
-        if (h <= 0 || w <= 0) return hist
-        val rows = Array(h) { ByteArray(w) }
-        for (y in 0 until h) ink.get(y, 0, rows[y])
-        for (x in 0 until w) {
-            var run = 0
-            for (y in 0 until h) {
-                val on = rows[y][x].toInt() and 0xff != 0
-                if (on) {
-                    run++
-                } else if (run > 0) {
-                    if (run != h) hist[run]++
-                    run = 0
-                }
-            }
-            if (run > 0 && run != h) hist[run]++
-        }
-        return hist
-    }
-
     private fun peakCapped(hist: IntArray, minK: Int, maxK: Int): Int {
         var bestK = minK
         var bestV = -1

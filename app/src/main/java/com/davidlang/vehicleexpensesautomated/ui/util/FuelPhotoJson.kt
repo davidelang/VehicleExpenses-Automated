@@ -107,24 +107,4 @@ object FuelPhotoJson {
         }
         return serialize(out)
     }
-
-    /** Append a pump photo; assigns next free pump / pump_N tag. */
-    fun addPumpPhoto(existing: String?, uri: String, ts: Long): String {
-        val list = parse(existing).toMutableList()
-        if (list.any { it.uri == uri }) return serialize(list) ?: single("pump", uri, ts)
-        val tag = nextPumpTag(list.map { it.tag })
-        list.add(FuelPhotoRef(tag = tag, uri = uri, ts = ts))
-        return serialize(list)!!
-    }
-
-    fun addDashPhoto(existing: String?, uri: String, ts: Long): String {
-        val list = parse(existing).toMutableList()
-        if (list.any { it.uri == uri }) return serialize(list) ?: single("dash", uri, ts)
-        if (list.none { it.tag == "dash" }) {
-            list.add(0, FuelPhotoRef(tag = "dash", uri = uri, ts = ts))
-        } else {
-            list.add(FuelPhotoRef(tag = "dash_2", uri = uri, ts = ts))
-        }
-        return serialize(list)!!
-    }
 }

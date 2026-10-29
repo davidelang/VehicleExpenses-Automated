@@ -17,19 +17,12 @@ class SyncWorker @AssistedInject constructor(
     private val coordinator: SpreadsheetSyncCoordinator,
 ) : CoroutineWorker(appContext, workerParams) {
 
-    /** Phase 17: coordinator + destination store (legacy sheet_id fallback). */
+    /** Sync when any spreadsheet destination in the store is enabled. */
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
             val store = SyncDestinationStore(appContext)
-            val hasEnabled = store.enabledSpreadsheet().isNotEmpty()
-            val legacyFallback = run {
-                val prefs = appContext.getSharedPreferences(SyncDestinationStore.PREFS_NAME, Context.MODE_PRIVATE)
-                val legacySheetId = prefs.getString("sheet_id", null)
-                val legacyEnabled = prefs.getBoolean("sync_enabled", false)
-                !legacySheetId.isNullOrBlank() && legacyEnabled
-            }
-
-            if (!hasEnabled && !legacyFallback) {
+            val hasEnabled = store.load().spreadsheet.any { it.enabled }
+            if (!hasEnabled) {
                 return@withContext Result.success()
             }
 

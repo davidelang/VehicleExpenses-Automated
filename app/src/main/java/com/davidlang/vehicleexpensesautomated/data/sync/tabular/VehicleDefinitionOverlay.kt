@@ -16,10 +16,6 @@ object VehicleDefinitionOverlay {
         vehicle.odometerCropLeft != null && vehicle.odometerCropTop != null &&
             vehicle.odometerCropRight != null && vehicle.odometerCropBottom != null
 
-    fun hasCompleteOtherCrops(vehicle: Vehicle): Boolean =
-        vehicle.otherTextCropLeft != null && vehicle.otherTextCropTop != null &&
-            vehicle.otherTextCropRight != null && vehicle.otherTextCropBottom != null
-
     /**
      * Which side is the non-winning definition donor for overlay.
      * Matches coordinator LWW: remote wins only if [remote.updatedAt] > [local.updatedAt];
@@ -61,17 +57,6 @@ object VehicleDefinitionOverlay {
                 odometerCropTop = loser.odometerCropTop,
                 odometerCropRight = loser.odometerCropRight,
                 odometerCropBottom = loser.odometerCropBottom,
-            )
-        }
-        if (!hasCompleteOtherCrops(result) && hasCompleteOtherCrops(loser)) {
-            log?.invoke(
-                "Vehicle overlay: other-text crops from syncId=${loser.syncId} onto winner=${winner.syncId}",
-            )
-            result = result.copy(
-                otherTextCropLeft = loser.otherTextCropLeft,
-                otherTextCropTop = loser.otherTextCropTop,
-                otherTextCropRight = loser.otherTextCropRight,
-                otherTextCropBottom = loser.otherTextCropBottom,
             )
         }
         if (result.landmarkTextBlocksJson.isNullOrBlank() && !loser.landmarkTextBlocksJson.isNullOrBlank()) {

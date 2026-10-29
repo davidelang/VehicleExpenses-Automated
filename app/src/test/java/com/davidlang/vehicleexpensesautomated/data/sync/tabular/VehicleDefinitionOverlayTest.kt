@@ -21,10 +21,6 @@ class VehicleDefinitionOverlayTest {
         odoT: Float? = null,
         odoR: Float? = null,
         odoB: Float? = null,
-        otherL: Float? = null,
-        otherT: Float? = null,
-        otherR: Float? = null,
-        otherB: Float? = null,
         landmarks: String? = null,
         cloudManifest: String? = null,
         refPhoto: String? = null,
@@ -37,10 +33,6 @@ class VehicleDefinitionOverlayTest {
         odometerCropTop = odoT,
         odometerCropRight = odoR,
         odometerCropBottom = odoB,
-        otherTextCropLeft = otherL,
-        otherTextCropTop = otherT,
-        otherTextCropRight = otherR,
-        otherTextCropBottom = otherB,
         landmarkTextBlocksJson = landmarks,
         cloudManifest = cloudManifest,
         referenceDashPhotoUrl = refPhoto,
@@ -54,10 +46,6 @@ class VehicleDefinitionOverlayTest {
         odoT = 0.2f,
         odoR = 0.3f,
         odoB = 0.4f,
-        otherL = 0.5f,
-        otherT = 0.6f,
-        otherR = 0.7f,
-        otherB = 0.8f,
         landmarks = """[{"t":"odo"}]""",
         cloudManifest = """{"id":"m1"}""",
         refPhoto = "/data/local/ref.jpg",
@@ -81,16 +69,6 @@ class VehicleDefinitionOverlayTest {
         assertEquals(0.4f, out.odometerCropBottom)
         assertEquals(200L, out.updatedAt)
         assertEquals("Car-remote", out.name)
-    }
-
-    @Test
-    fun thinWinner_getsOtherTextCropsFromLoser() {
-        val local = thickCrops("v1", updatedAt = 100L)
-        val remote = thin("v1", updatedAt = 300L)
-        val out = VehicleDefinitionOverlay.applyAfterLww(remote, local, remote)
-        assertTrue(VehicleDefinitionOverlay.hasCompleteOtherCrops(out))
-        assertEquals(0.5f, out.otherTextCropLeft)
-        assertEquals(0.8f, out.otherTextCropBottom)
     }
 
     @Test

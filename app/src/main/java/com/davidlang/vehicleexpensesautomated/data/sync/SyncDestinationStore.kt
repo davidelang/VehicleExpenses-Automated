@@ -32,22 +32,8 @@ class SyncDestinationStore(private val appContext: Context) {
             return
         }
 
-        var spreadsheet = emptyList<SpreadsheetDestination>()
+        val spreadsheet = emptyList<SpreadsheetDestination>()
         var photo = emptyList<PhotoDestination>()
-
-        val legacySheetId = prefs.getString("sheet_id", "")?.trim().orEmpty()
-        if (legacySheetId.isNotBlank()) {
-            spreadsheet = listOf(
-                SpreadsheetDestination(
-                    targetId = legacySheetId,
-                    enabled = prefs.getBoolean("sync_enabled", false),
-                    wifiOnly = prefs.getBoolean("wifi_only", true),
-                    chargingOnly = prefs.getBoolean("charging_only", false),
-                    frequencyMinutes = (prefs.getInt("frequency_hours", 6) * 60)
-                        .coerceIn(SpreadsheetDestination.MIN_FREQUENCY_MINUTES, SpreadsheetDestination.MAX_FREQUENCY_MINUTES),
-                ),
-            )
-        }
 
         val photoProvider = prefs.getString("photo_storage_provider", "google_drive") ?: "google_drive"
         if (photoProvider == "google_drive") {

@@ -29,8 +29,4 @@ object UserManualDocs {
         context.startActivity(Intent(context, UserManualActivity::class.java))
     }
 
-    /** Open published web HTML in Custom Tabs (not raw .md). */
-    fun openOnlineManual(context: Context) {
-        SyncSetupDocs.open(context, ONLINE_HTML_URL)
-    }
 }

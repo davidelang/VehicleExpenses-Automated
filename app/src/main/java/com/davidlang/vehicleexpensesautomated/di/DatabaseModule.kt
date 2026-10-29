@@ -483,6 +483,68 @@ object DatabaseModule {
         }
     }
 
+    /**
+     * v22: drop retired other-text / ignore crop columns.
+     * Rebuild (minSdk 26 has no DROP COLUMN). Copy every remaining vehicle column.
+     */
+    val MIGRATION_21_22 = object : Migration(21, 22) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS vehicles_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    name TEXT NOT NULL,
+                    make TEXT,
+                    model TEXT,
+                    year INTEGER,
+                    licensePlate TEXT,
+                    vin TEXT,
+                    notes TEXT,
+                    referenceDashPhotoUrl TEXT,
+                    cleanedReferenceDashPhotoUrl TEXT,
+                    odometerCropLeft REAL,
+                    odometerCropTop REAL,
+                    odometerCropRight REAL,
+                    odometerCropBottom REAL,
+                    landmarkTextBlocksJson TEXT,
+                    tripTypesJson TEXT NOT NULL,
+                    expenseCategoriesJson TEXT NOT NULL,
+                    odometerDigitCount INTEGER NOT NULL,
+                    odometerRolloverCount INTEGER NOT NULL,
+                    cloudManifest TEXT,
+                    deleted INTEGER NOT NULL,
+                    deletedAt INTEGER,
+                    syncId TEXT NOT NULL,
+                    originDeviceId TEXT NOT NULL,
+                    updatedAt INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                INSERT INTO vehicles_new (
+                    id, name, make, model, year, licensePlate, vin, notes,
+                    referenceDashPhotoUrl, cleanedReferenceDashPhotoUrl,
+                    odometerCropLeft, odometerCropTop, odometerCropRight, odometerCropBottom,
+                    landmarkTextBlocksJson, tripTypesJson, expenseCategoriesJson,
+                    odometerDigitCount, odometerRolloverCount, cloudManifest,
+                    deleted, deletedAt, syncId, originDeviceId, updatedAt
+                )
+                SELECT
+                    id, name, make, model, year, licensePlate, vin, notes,
+                    referenceDashPhotoUrl, cleanedReferenceDashPhotoUrl,
+                    odometerCropLeft, odometerCropTop, odometerCropRight, odometerCropBottom,
+                    landmarkTextBlocksJson, tripTypesJson, expenseCategoriesJson,
+                    odometerDigitCount, odometerRolloverCount, cloudManifest,
+                    deleted, deletedAt, syncId, originDeviceId, updatedAt
+                FROM vehicles
+                """.trimIndent(),
+            )
+            db.execSQL("DROP TABLE vehicles")
+            db.execSQL("ALTER TABLE vehicles_new RENAME TO vehicles")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -508,6 +570,7 @@ object DatabaseModule {
             MIGRATION_18_19,
             MIGRATION_19_20,
             MIGRATION_20_21,
+            MIGRATION_21_22,
         )
         .fallbackToDestructiveMigration(BuildConfig.DEBUG)
         .build()

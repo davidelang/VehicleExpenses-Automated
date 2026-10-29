@@ -130,27 +130,7 @@ object RecBufferFeed {
         )
     }
 
-    fun feedIntegerKContent40LeftPad(
-        workspace: BufferSet,
-        rect: Rect,
-        imgW: Int,
-        imgH: Int,
-        recBuffer: BufferSet,
-        maxW: Int = DEFAULT_MAX_W,
-    ): Result? = feedIntegerKContent40(
-        workspace, rect, imgW, imgH, recBuffer, maxW, extraLeftDestPx = 4,
-    )
 
-    fun feedIntegerKContent40RightPad(
-        workspace: BufferSet,
-        rect: Rect,
-        imgW: Int,
-        imgH: Int,
-        recBuffer: BufferSet,
-        maxW: Int = DEFAULT_MAX_W,
-    ): Result? = feedIntegerKContent40(
-        workspace, rect, imgW, imgH, recBuffer, maxW, extraRightDestPx = 4,
-    )
 
     /**
      * Geom-only isotropic s = 40/boxH. Dest canvas 48. Source height is the dest-49
@@ -187,27 +167,7 @@ object RecBufferFeed {
         )
     }
 
-    fun feedMildNoPartialLeftPad(
-        workspace: BufferSet,
-        rect: Rect,
-        imgW: Int,
-        imgH: Int,
-        recBuffer: BufferSet,
-        maxW: Int = DEFAULT_MAX_W,
-    ): Result? = feedMildNoPartial(
-        workspace, rect, imgW, imgH, recBuffer, maxW, growLeft = true,
-    )
 
-    fun feedMildNoPartialRightPad(
-        workspace: BufferSet,
-        rect: Rect,
-        imgW: Int,
-        imgH: Int,
-        recBuffer: BufferSet,
-        maxW: Int = DEFAULT_MAX_W,
-    ): Result? = feedMildNoPartial(
-        workspace, rect, imgW, imgH, recBuffer, maxW, growRight = true,
-    )
 
     private fun evenAtLeast2(n: Int): Int {
         val v = n.coerceAtLeast(2)

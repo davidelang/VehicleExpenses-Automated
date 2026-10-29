@@ -60,7 +60,6 @@ fun LandmarkDebugDialog(
     sourceImage: Bitmap? = null,
     photoPath: String? = null,
     odometerCrop: androidx.compose.ui.geometry.Rect? = null,
-    otherTextCrop: androidx.compose.ui.geometry.Rect? = null,
     landmarks: List<TextBlock>,
     
     onDismiss: () -> Unit,
@@ -298,7 +297,6 @@ fun LandmarkDebugDialog(
                                                 }
                                             }
                                             odometerCrop?.let { drawIcrsRect(it, Color.Blue, fillAlpha = 0.5f) }
-                                            otherTextCrop?.let { drawIcrsRect(it, Color.Red, fillAlpha = 0.5f) }
                                         }
                                     }
 
