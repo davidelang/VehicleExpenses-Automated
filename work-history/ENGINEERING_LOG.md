@@ -12426,3 +12426,8 @@ feature-group: label=''
 - A hidden provider exports and imports a tar for adb shell. Import stages beside the live data, writes one commit marker, and the next launch applies the swap. Export strips Zoho tokens.
 - Room opens once from Unchecked. A failed open stays Failed and shows the database error screen. Debug no longer wipes the database on a migration failure.
 - Workers and the experiment foreground service stand down while a transfer or a failed database is in progress.
+
+## 2026-10-29 - Play flavor, versionCode 15, and release R8
+
+- One play flavor packs arm64, armv7, and x86_64. playDebug and playQa are disabled. versionCode is 15 from app/versionCode.txt.
+- Release minifies with R8. The keeps cover Paddle, OpenCV, Drive, Sheets, FindBugs, and JNDI/JGSS. Debug and qa stay unminified. No Play bundle was built.

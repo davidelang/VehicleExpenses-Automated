@@ -32,7 +32,8 @@ android {
         applicationId = "com.davidlang.vehicleexpensesautomated"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
+        // Must increase on every Play upload (raise app/versionCode.txt before each Play bundle).
+        versionCode = file("versionCode.txt").readText().trim().toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Use orNull so a broken git state (bad refs after permission issues or worktree problems)
         // does not fail the entire configuration with "bash exit 128".
@@ -106,6 +107,11 @@ android {
             dimension = "abi"
             ndk { abiFilters += "x86_64" }
         }
+        // Play bundle only. All three ABIs in one AAB. playDebug and playQa are disabled below.
+        create("play") {
+            dimension = "abi"
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        }
     }
     // Default aapt ignore plus timestamped model leftovers (*.nb.bak.*).
     // Unscheduled dets live in third_party/paddle/exp_det_ab_unscheduled/ (not assets).
@@ -113,7 +119,8 @@ android {
         ignoreAssetsPattern =
             "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:*.bak*"
     }
-    // debug: the real app. qa: side-by-side test app. release matches debug.
+    // debug: the real app. qa: side-by-side test app. release matches debug and is minified for Play.
+    testBuildType = "qa"
     buildTypes {
         getByName("debug") {
             buildConfigField("boolean", "TEST_BUILD", "false")
@@ -134,7 +141,13 @@ android {
             manifestPlaceholders["msalSignatureHash"] = "PLACEHOLDER_SIGNATURE_HASH"
         }
         release {
-            isMinifyEnabled = false
+            // Play dex scores need R8. debug and qa stay unminified.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             buildConfigField("boolean", "TEST_BUILD", "false")
             buildConfigField("String", "APP_SCHEME", "\"vehicleexpenses\"")
             manifestPlaceholders["appLabel"] = "VehicleExpenses"
@@ -185,6 +198,16 @@ android {
             excludes.add("META-INF/NOTICE.md")
             excludes.add("META-INF/LICENSE.txt")
             excludes.add("META-INF/NOTICE.txt")
+        }
+    }
+}
+
+// The play flavor is release-only (playDebug and playQa disabled). ABI flavors stay.
+androidComponents {
+    beforeVariants { variant ->
+        val isPlay = variant.productFlavors.any { it.first == "abi" && it.second == "play" }
+        if (isPlay && variant.buildType != "release") {
+            variant.enable = false
         }
     }
 }
