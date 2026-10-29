@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.di
 
+import android.app.Application
 import android.content.Context
 import androidx.room.Room
 import androidx.room.migration.Migration
@@ -10,8 +11,9 @@ import com.davidlang.vehicleexpensesautomated.data.dao.FuelEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.KnownStationDao
 import com.davidlang.vehicleexpensesautomated.data.dao.MergeAckDao
 import com.davidlang.vehicleexpensesautomated.data.dao.VehicleDao
-import com.davidlang.vehicleexpensesautomated.BuildConfig
+import com.davidlang.vehicleexpensesautomated.VehicleExpensesApplication
 import com.davidlang.vehicleexpensesautomated.data.db.AppDatabase
+import com.davidlang.vehicleexpensesautomated.data.db.DatabaseHealthState
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -572,9 +574,13 @@ object DatabaseModule {
             MIGRATION_20_21,
             MIGRATION_21_22,
         )
-        .fallbackToDestructiveMigration(BuildConfig.DEBUG)
         .build()
     }
+
+    @Provides
+    @Singleton
+    fun provideDatabaseHealthState(app: Application): DatabaseHealthState =
+        (app as VehicleExpensesApplication).dbState
 
     @Provides
     fun provideVehicleDao(database: AppDatabase): VehicleDao = database.vehicleDao()

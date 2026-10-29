@@ -4,8 +4,17 @@ import android.app.Application
 import android.content.Context
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.davidlang.vehicleexpensesautomated.data.db.DatabaseHealth
+import com.davidlang.vehicleexpensesautomated.data.db.DatabaseHealthState
+import com.davidlang.vehicleexpensesautomated.data.db.DbState
+import com.davidlang.vehicleexpensesautomated.data.db.Exporting
+import com.davidlang.vehicleexpensesautomated.data.db.Failed
+import com.davidlang.vehicleexpensesautomated.data.db.Importing
+import com.davidlang.vehicleexpensesautomated.data.db.Ok
+import com.davidlang.vehicleexpensesautomated.data.db.Unchecked
 import com.davidlang.vehicleexpensesautomated.data.location.KnownStationStore
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
+import com.davidlang.vehicleexpensesautomated.data.transfer.BackupImporter
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupManager
 import com.davidlang.vehicleexpensesautomated.data.sync.RcloneLoader
 import com.davidlang.vehicleexpensesautomated.data.sync.RcloneRuntime
@@ -22,6 +31,9 @@ import javax.inject.Inject
 
 @HiltAndroidApp
 class VehicleExpensesApplication : Application(), Configuration.Provider {
+
+    /** Created with the Application, before [onCreate] and before Hilt. Hilt only provides this instance. */
+    val dbState: DatabaseHealthState = DatabaseHealthState()
 
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
@@ -53,6 +65,9 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
     }
 
     override fun onCreate() {
+        BackupImporter.applyStartup(this)
+        val blocked = dbState.states.value is Failed
+        if (!blocked) {
         val defaultUncaughtHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
@@ -76,8 +91,42 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
         anchoredEngineV3 = NativePaddleEngine(this, variant = "V3")
 
         android.util.Log.i("VehicleExpensesApp", "onCreate complete. Engines anchored.")
+        } else {
+            android.util.Log.e("DatabaseHealth", "startup swap failed; opening nothing")
+        }
         super.onCreate()
+        val failedBeforeVerify = dbState.states.value is Failed
+        verifyDatabase()
+        if (dbState.states.value is Failed) {
+            if (!failedBeforeVerify) {
+                android.util.Log.e("DatabaseHealth", "database open failed; scheduling skipped")
+            }
+            return
+        }
 
+        scheduleBackgroundWork()
+        smokeRcloneOnStartup()
+        seedKnownStationsInBackground()
+    }
+
+    /** After a failed import restores [prior]. [Ok] schedules; [Unchecked] verifies first; [Failed] stays quiet. */
+    fun resumeAfterImport(prior: DbState) {
+        when (prior) {
+            Ok -> scheduleBackgroundWork()
+            Unchecked -> {
+                verifyDatabase()
+                if (dbState.states.value is Ok) scheduleBackgroundWork()
+            }
+            is Failed, is Exporting, is Importing -> Unit
+        }
+    }
+
+    /** Same scheduling [onCreate] uses. Export and import call this when the gate clears to [Ok]. */
+    fun scheduleBackgroundWork() {
+        if (dbState.states.value is Failed) {
+            android.util.Log.i("VehicleExpensesApp", "Skipping background scheduling; database failed")
+            return
+        }
         if (syncIdBackfill.isBackfillDone()) {
             try {
                 android.util.Log.i("VehicleExpensesApp", "Scheduling background sync from destination settings")
@@ -94,8 +143,25 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
                 "Deferring background sync until sync-id backfill completes in UI",
             )
         }
-        smokeRcloneOnStartup()
-        seedKnownStationsInBackground()
+    }
+
+    fun casLogged(expect: DbState, update: DbState): Boolean {
+        val won = dbState.compareAndSet(expect, update)
+        if (won) {
+            android.util.Log.i("DatabaseHealth", "DatabaseHealth: ${dbLabel(expect)} -> ${dbLabel(update)}")
+        }
+        return won
+    }
+
+    /** Opens Room when the state is [Unchecked]. Does nothing while a transfer gate is held. */
+    fun verifyDatabase(): DbState = DatabaseHealth.verify(this)
+
+    private fun dbLabel(state: DbState): String = when (state) {
+        Unchecked -> "Unchecked"
+        Ok -> "Ok"
+        is Failed -> "Failed"
+        is Exporting -> "Exporting"
+        is Importing -> "Importing"
     }
 
     private fun seedKnownStationsInBackground() {

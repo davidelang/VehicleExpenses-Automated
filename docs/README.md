@@ -25,6 +25,7 @@ Updated when the code changes.
 | [NAVIGATION_MAP.md](reference/NAVIGATION_MAP.md) | Drawer and screens |
 | [API.md](reference/API.md) | Room entities |
 | [REPORTS_METRICS.md](reference/REPORTS_METRICS.md) | Fuel-economy math |
+| [DATA_TRANSFER.md](reference/DATA_TRANSFER.md) | Adb export and import commands, and the exec-in probe |
 | [SYNC_BEHAVIOR.md](reference/SYNC_BEHAVIOR.md) | Room merge with spreadsheet and photo targets |
 | [SYNC_TAB_LWW_AND_TESTS.md](reference/SYNC_TAB_LWW_AND_TESTS.md) | Tab last-writer-wins runbook |
 | [UI_COMPATIBILITY.md](reference/UI_COMPATIBILITY.md) | Compose label, font-scale, and photo rules |

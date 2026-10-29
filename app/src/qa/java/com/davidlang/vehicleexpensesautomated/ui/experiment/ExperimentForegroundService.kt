@@ -16,6 +16,15 @@ import androidx.core.app.NotificationCompat
 import com.davidlang.vehicleexpensesautomated.BuildConfig
 import com.davidlang.vehicleexpensesautomated.MainActivity
 import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.VehicleExpensesApplication
+import com.davidlang.vehicleexpensesautomated.data.db.Exporting
+import com.davidlang.vehicleexpensesautomated.data.db.Failed
+import com.davidlang.vehicleexpensesautomated.data.db.Importing
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * Foreground service that keeps long experiment jobs alive when the UI is backgrounded.
@@ -23,12 +32,18 @@ import com.davidlang.vehicleexpensesautomated.R
  */
 class ExperimentForegroundService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var watch: Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!BuildConfig.TEST_BUILD) {
             throw IllegalStateException("ExperimentForegroundService is qa-only")
+        }
+        if (transferInProgress()) {
+            stopSelf()
+            return START_NOT_STICKY
         }
         val kind = intent?.getStringExtra(EXTRA_KIND) ?: "experiment"
         ensureChannel()
@@ -54,11 +69,23 @@ class ExperimentForegroundService : Service() {
             return START_NOT_STICKY
         }
         acquireWakeLock()
+        watch?.cancel()
+        watch = scope.launch {
+            (application as VehicleExpensesApplication).dbState.state.collect { health ->
+                if (health is Failed || health is Exporting || health is Importing) stopSelf()
+            }
+        }
         Log.i(TAG, "FGS started kind=$kind")
         return START_NOT_STICKY
     }
 
+    private fun transferInProgress(): Boolean {
+        val health = (application as VehicleExpensesApplication).dbState.states.value
+        return health is Failed || health is Exporting || health is Importing
+    }
+
     override fun onDestroy() {
+        watch?.cancel()
         releaseWakeLock()
         Log.i(TAG, "FGS destroyed")
         super.onDestroy()

@@ -5,6 +5,13 @@ import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.davidlang.vehicleexpensesautomated.VehicleExpensesApplication
+import com.davidlang.vehicleexpensesautomated.data.db.DatabaseHealthState
+import com.davidlang.vehicleexpensesautomated.data.db.Exporting
+import com.davidlang.vehicleexpensesautomated.data.db.Failed
+import com.davidlang.vehicleexpensesautomated.data.db.Importing
+import com.davidlang.vehicleexpensesautomated.data.db.Ok
+import com.davidlang.vehicleexpensesautomated.data.db.Unchecked
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
@@ -17,9 +24,11 @@ class EmailReceiptWorker @AssistedInject constructor(
     private val gmailClient: GmailReceiptClient,
     private val imapClient: ImapReceiptClient,
     private val ingest: FuelReceiptIngest,
+    private val dbState: DatabaseHealthState,
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        databaseGate(dbState, appContext)?.let { return@withContext it }
         val prefs = EmailReceiptPrefs(appContext)
         if (!prefs.enabled) {
             Log.i(TAG, "disabled; skip")
@@ -187,6 +196,28 @@ class EmailReceiptWorker @AssistedInject constructor(
             val brief = (e.message ?: e.javaClass.simpleName).take(80)
                 .replace(Regex("(?i)password|passwd|secret"), "[redacted]")
             PathResult("imap error: $brief", retry = true)
+        }
+    }
+
+
+    private fun databaseGate(dbState: DatabaseHealthState, appContext: Context): Result? {
+        val app = appContext.applicationContext as VehicleExpensesApplication
+        var health = dbState.states.value
+        if (health is Unchecked) {
+            app.verifyDatabase()
+            health = dbState.states.value
+        }
+        return when (health) {
+            is Failed -> {
+                Log.i(TAG, "database failed; failure")
+                Result.failure()
+            }
+            is Exporting, is Importing -> {
+                Log.i(TAG, "transfer in progress; retry")
+                Result.retry()
+            }
+            Unchecked -> Result.retry()
+            Ok -> null
         }
     }
 

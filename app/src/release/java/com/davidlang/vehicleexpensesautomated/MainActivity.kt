@@ -104,6 +104,14 @@ import com.davidlang.vehicleexpensesautomated.ui.theme.VehicleExpensesAutomatedT
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.ManageVehicles2Screen
+import androidx.compose.runtime.collectAsState
+import com.davidlang.vehicleexpensesautomated.data.db.DatabaseHealthState
+import com.davidlang.vehicleexpensesautomated.data.db.Exporting
+import com.davidlang.vehicleexpensesautomated.data.db.Failed
+import com.davidlang.vehicleexpensesautomated.data.db.Importing
+import com.davidlang.vehicleexpensesautomated.data.db.Ok
+import com.davidlang.vehicleexpensesautomated.data.db.Unchecked
+import com.davidlang.vehicleexpensesautomated.ui.db.DatabaseErrorActivity
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import javax.inject.Inject
@@ -130,6 +138,10 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var emailReceiptManager: com.davidlang.vehicleexpensesautomated.data.email.EmailReceiptManager
+
+    @Inject
+    lateinit var dbState: DatabaseHealthState
+
 
     private val mediaPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -216,13 +228,52 @@ class MainActivity : ComponentActivity() {
         // Re-composition reads intent via setContent; force recreate for deep-link re-entry
     }
 
+
+    /** [Failed] leaves this task. [Unchecked] is verified first. */
+    private fun leaveForDatabaseError(): Boolean {
+        var health = dbState.states.value
+        if (health is Unchecked) {
+            (application as VehicleExpensesApplication).verifyDatabase()
+            health = dbState.states.value
+        }
+        if (health is Failed) {
+            startDatabaseError()
+            return true
+        }
+        return false
+    }
+
+    private fun startDatabaseError() {
+        startActivity(
+            Intent(this, DatabaseErrorActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK,
+            ),
+        )
+        finish()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (leaveForDatabaseError()) return
 
         // Camera only here — media then location follow in callbacks (no stacked dialogs).
         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
 
         setContent {
+            val health by dbState.state.collectAsState()
+            val transferProgress by dbState.progress.collectAsState()
+            when (health) {
+                is Failed -> {
+                    LaunchedEffect(Unit) { startDatabaseError() }
+                }
+                is Exporting, is Importing -> TransferBlockingScreen(health, transferProgress)
+                Unchecked -> {
+                    LaunchedEffect(Unit) {
+                        (application as VehicleExpensesApplication).verifyDatabase()
+                    }
+                }
+                Ok -> {
+            ExportFailedNotice(dbState)
             VehicleExpensesAutomatedTheme {
                 val navController = rememberNavController()
                 val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -592,6 +643,11 @@ class MainActivity : ComponentActivity() {
                 }
                 } // CompositionLocalProvider (PageHelp)
             }
+                }
+            }
         }
     }
+}
+
+fun stopExperimentForegroundService(context: Context) {
 }

@@ -5,6 +5,13 @@ import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.davidlang.vehicleexpensesautomated.VehicleExpensesApplication
+import com.davidlang.vehicleexpensesautomated.data.db.DatabaseHealthState
+import com.davidlang.vehicleexpensesautomated.data.db.Exporting
+import com.davidlang.vehicleexpensesautomated.data.db.Failed
+import com.davidlang.vehicleexpensesautomated.data.db.Importing
+import com.davidlang.vehicleexpensesautomated.data.db.Ok
+import com.davidlang.vehicleexpensesautomated.data.db.Unchecked
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
@@ -16,9 +23,11 @@ class PhotoBackupWorker @AssistedInject constructor(
     @Assisted private val appContext: Context,
     @Assisted workerParams: WorkerParameters,
     private val coordinator: PhotoBackupCoordinator,
+    private val dbState: DatabaseHealthState,
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        databaseGate(dbState, appContext)?.let { return@withContext it }
         try {
             val store = SyncDestinationStore(appContext)
             if (store.enabledPhoto().isEmpty()) {
@@ -38,6 +47,28 @@ class PhotoBackupWorker @AssistedInject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Photo backup worker failed", e)
             Result.retry()
+        }
+    }
+
+
+    private fun databaseGate(dbState: DatabaseHealthState, appContext: Context): Result? {
+        val app = appContext.applicationContext as VehicleExpensesApplication
+        var health = dbState.states.value
+        if (health is Unchecked) {
+            app.verifyDatabase()
+            health = dbState.states.value
+        }
+        return when (health) {
+            is Failed -> {
+                Log.i(TAG, "database failed; failure")
+                Result.failure()
+            }
+            is Exporting, is Importing -> {
+                Log.i(TAG, "transfer in progress; retry")
+                Result.retry()
+            }
+            Unchecked -> Result.retry()
+            Ok -> null
         }
     }
 

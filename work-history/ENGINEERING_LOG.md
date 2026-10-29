@@ -12420,3 +12420,9 @@ feature-group: label=''
 - Standard manifests strip the foreground-service permissions and WorkManager's foreground service. The qa manifest puts those permissions and the experiment service back.
 - The pump JNI helpers stay in main. Production code still calls them, and the native symbol is ExperimentPumpScreenKt.expRotGmmRecognize. native_ocr_qa stays out until its C++ sources exist. Other helpers and assets that production code still reads stay in main.
 - project-facts Test build is qa. The build command is ./build_app --standard --test.
+
+## 2026-10-29 - Adb backup, import, and the database error screen
+
+- A hidden provider exports and imports a tar for adb shell. Import stages beside the live data, writes one commit marker, and the next launch applies the swap. Export strips Zoho tokens.
+- Room opens once from Unchecked. A failed open stays Failed and shows the database error screen. Debug no longer wipes the database on a migration failure.
+- Workers and the experiment foreground service stand down while a transfer or a failed database is in progress.
