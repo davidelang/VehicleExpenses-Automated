@@ -8,8 +8,10 @@ Read in full early on startup/new cycle.
 - Route **`managevehicles`** is the paddle seed screen (`ManageVehicles2Screen` composable). The retired drag-crop screen is documented in `docs/obsolete/MANAGE_VEHICLES_DRAW.md`.
 
 ## Build and commit
-- Build: `./build_app`
-- Commit: `./build_app "<message>"|@<msg_file> <paths...>` (builds, then commits exactly the named paths and tags builds)
+- **Standard build:** debug
+- **Test build:** none
+- Build: `./build_app --standard`. Never `--play`.
+- Commit: the same flags, then `"<message>"|@<msg_file> <paths...>` (builds, then commits exactly the named paths and tags builds)
 
 ## App docs (master `docs/`)
 - `README.md` — GitHub front page

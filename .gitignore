@@ -31,7 +31,7 @@ kotlin-daemon-*.out
 *.code-workspace
 
 # Dev / AI Interaction
-dev-ai-interaction/
+@@SANDBOX_PATH@@
 bin/
 lib/
 # Track Grok pack launcher library (not Android/native lib/)
@@ -106,7 +106,6 @@ alignment_results_*.json
 !app/src/main/assets/tflite/
 !app/src/main/assets/tflite/paddle/
 !app/src/main/assets/tflite/paddle/**
-!app/src/main/assets/atkinson-hyperlegible-OFL.txt
 
 .gemini/
 gha-creds-*.json
@@ -126,3 +125,7 @@ third_party/*/*.local
 
 # Grok session/subagent worktree pool (local)
 grok-worktrees/
+# Generated at launch by .grok/lib/grok-launch-common.sh (role sandbox profile).
+.grok/sandbox.toml
+.grok/sandbox.toml.lock
+.grok/sandbox.toml.tmp

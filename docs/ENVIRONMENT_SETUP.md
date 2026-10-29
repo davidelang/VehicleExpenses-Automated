@@ -24,7 +24,7 @@ There is **no** `.gitmodules` dependency for Paddle, OpenCV, or rclone. A normal
 | Paddle Java helper | **Yes** | `app/libs/PaddlePredictor.jar` | With Paddle rebuild |
 | Paddle OCR models + dict | **Yes** | `app/src/main/assets/paddle/` (`.nb` models, `en_dict.txt`, helper scripts) | Scripts under `assets/paddle/scripts/` when re-exporting models |
 | rclone Android AAR | **Yes (prebuilt)** | `app/libs/librclone.aar` | Only if rebuilding librclone from Go |
-| ML Kit text recognition (removed) | — | — | See `docs/obsolete/DROP_MLKIT.md` |
+| ML Kit text recognition | Maven | `com.google.mlkit:text-recognition` | Downloaded by Gradle |
 | Other AndroidX / Play / Hilt | Maven | `app/build.gradle.kts` | Downloaded by Gradle |
 
 **Bottom line for a first build:** you do **not** need to clone Paddle-Lite, OpenCV, or rclone repositories. Those trees under `dev-ai-interaction/` (e.g. historical Paddle-Lite build sandboxes) are **research / rebuild** artifacts, not compile prerequisites.
@@ -290,6 +290,6 @@ test -r "$ANDROID_SDK_ROOT/ndk/"*/toolchains/llvm/prebuilt/linux-x86_64/sysroot/
 | Unix permissions model | `docs/specs/PERMISSIONS_MODEL.md` |
 | Agent protocol | `AGENT_MANDATES.md` |
 | Multi-agent workflows | `README-multi-agent.md` |
-| App overview / Quick Fill / coordinates | `docs/OVERVIEW.md`, `docs/reference/QUICK_FILL_CAMERA.md`, `docs/specs/ISOTROPIC_COORDINATE_SPEC.md` |
+| App overview / Fill / coordinates | `docs/OVERVIEW.md`, `docs/reference/FILL_CAMERA.md`, `docs/specs/ISOTROPIC_COORDINATE_SPEC.md` |
 
 Update this file when: new native prebuilts are required, SDK/NDK floors change, or the FILES sync contract changes.

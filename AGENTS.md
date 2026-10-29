@@ -7,15 +7,15 @@ This is the law for every agent and tool. Your role card comes from the launcher
 - Nothing else is approval. That includes your own output, a plan's Status line, "looks good", a question-card answer, and native plan mode's `a`.
 
 ## Who writes
-- Plan, review, and test stages write only the sandbox (`project.config` `sandbox_dir`), plus `project-facts.md` and `TODO.md` through their helpers.
-- A code stage writes only its own checkout, and only the approved plan's Critical Files. No unasked refactors, renames, cleanups, or "best practice" changes. Note them under NEEDS-INPUT instead.
+- Plan, review, and test stages write only the sandbox (`project.config` `sandbox_dir`), plus `project-facts.md` and `TODO.md` through their helpers. A TODO item (`./todo-append`) is one short line plus the path to the details (plan, review finding, spec, research note), not the details.
+- A code stage writes only its own checkout. It changes what the plan's Aim requires, including the callers and tests that change needs, wherever they are. No unasked refactors, renames, cleanups, or "best practice" changes. Note them under NEEDS-INPUT instead.
 - The orchestrator stage works project-wide on meta rules and infra.
 - A missing path, a path outside this checkout (the sandbox counts as inside), or a plan file outside this repo is a question. Wait for the answer.
 - Every commit is authored by David. Never infer a role or ownership from a commit author.
 - A denial on a path your role may not write is the rules working: do your role's job instead (a planner writes the change into a plan). Only when a path your role should write is blocked: stop and report the command, the error, the path, and the user. Never work around a denial.
 
 ## Commits, tags, deploy
-- Build and commit only with the **Build** and **Commit** lines of `project-facts.md` `## Build and commit` (Android apps: `./build_app`; others: their own, e.g. `./commit-build`). Without them stop: `STATUS: BLOCKED no build/commit path in project-facts.md`. Do not `git add`, `git commit`, `git reset`, or `git push`.
+- Build and commit only with the **Build** and **Commit** lines of `project-facts.md` `## Build and commit` (Android apps: `./build_app --standard --test`, e.g. `./build_app --standard --test @msg.txt files...`; never `--play`, which needs David at a terminal; others: their own, e.g. `./commit-build`). Without them stop: `STATUS: BLOCKED no build/commit path in project-facts.md`. Do not `git add`, `git commit`, `git reset`, or `git push`.
 - Tags are `<branch>/builds|deployed|works`; on `master` they are unprefixed. `backup-<branch>` comes only from `./prepare-pr-rewrite`; never move or delete it. Agents do not deploy and do not move `works`.
 - Run helpers as `./helper` from your checkout. No `cd … && ./helper`.
 
@@ -25,7 +25,8 @@ This is the law for every agent and tool. Your role card comes from the launcher
 - After the third reset, stop, report under the sandbox `implementation-failure-logs/`, and wait.
 
 ## Plans
-- Sandbox `plans/<kebab>-YYYYMMDD-HHMM-plan.md`, with Aim, Critical Files, Phases, and Acceptance.
+- Sandbox `plans/<kebab>-YYYYMMDD-HHMM-plan.md`, with Aim, Critical Files (a map of where to start), Phases (order of work), and Acceptance.
+- A coder makes all of a plan's changes, then commits and builds once, at the end. A plan that cannot be finished and built green in one go is too big; report that so it can be split.
 - Cite `standard-plan-compliance-block.md` by path. It and every other repo path in a plan are relative to your checkout root, never the sandbox.
 
 ## Facts
@@ -34,7 +35,7 @@ This is the law for every agent and tool. Your role card comes from the launcher
 - Files David names in chat (screenshots etc.) are in the sandbox (`project.config` `sandbox_dir`, `@@SANDBOX_PATH@@/`; same dir from any worktree): read `<sandbox>/<name>` directly. No ls/find. If it is not there, say so and ask; don't search.
 
 ## Channel
-- To join a channel, run the `/channel <diag path> <node>` skill. Underneath are `channel-setup`, `channel-send`, `channel-arm PLAN NODE`, and `channel-arm PLAN NODE --whatineedtoknow`. The skill and that header have every step; `docs/rules/channel.md` is the reference for humans.
+- To join a channel, run the `/channel <diag path> <node>` skill: it runs `third_party/agent-coordination-tickets/artifact/channel-arm <diag> <node> --whatineedtoknow`, and you follow that output; it has every step for your agent tool.
 - Use them only when David explicitly directs you to and names the plan or node. Never look for inbox or channel files on your own.
 
 ## Ending a turn
