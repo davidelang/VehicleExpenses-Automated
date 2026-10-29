@@ -59,6 +59,36 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var sharedRecognizerNumeric: PaddlePredictor? = null
 
         private var isNativeLibLoaded = false
+        private var paddleModelsLoaded = false
+
+        @JvmStatic
+        private external fun modelBlob(key: String): ByteArray?
+
+        /** Bytes from libpaddle_models, written to a temp file then renamed into place. */
+        internal fun materializeModel(context: Context, assetPath: String, missing: String): String {
+            if (!paddleModelsLoaded) {
+                System.loadLibrary("paddle_models")
+                paddleModelsLoaded = true
+            }
+            val bytes = modelBlob(assetPath) ?: throw IllegalStateException(missing)
+            val f = File(context.filesDir, assetPath.replace("/", "_"))
+            val tmp = File(context.filesDir, f.name + ".tmp")
+            FileOutputStream(tmp).use { out -> out.write(bytes) }
+            if (f.exists() && !f.delete()) {
+                throw IllegalStateException("could not replace ${f.name}")
+            }
+            if (!tmp.renameTo(f)) {
+                throw IllegalStateException("could not rename ${tmp.name} to ${f.name}")
+            }
+            return f.absolutePath
+        }
+
+        /** Production det for the primary ABI, from libpaddle_models. */
+        fun productionDetFile(context: Context): File {
+            val (arch, dir) = productArchAndDir()
+            val key = "paddle/$dir/det_$arch.nb"
+            return File(materializeModel(context, key, "Missing production model $key arch=$arch"))
+        }
         private val dictionaryV3 = mutableListOf<String>()
         @Volatile private var warnedRecClassCount = false
 
@@ -407,21 +437,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             heartbeat("load_models_begin path=$pathId")
             releaseAllPredictors("loadProductionModels")
 
-            fun copyAsset(p: String): String {
-                val f = File(context.filesDir, p.replace("/", "_"))
-                context.assets.open(p).use { inp -> FileOutputStream(f).use { out -> inp.copyTo(out) } }
-                return f.absolutePath
-            }
-
             fun resolveModel(baseName: String): String {
                 val prodAsset = "paddle/$prodDir/${baseName}_$arch.nb"
-                try {
-                    context.assets.open(prodAsset).close()
-                    Log.i("PaddleLite", "Using production asset $prodAsset")
-                    return copyAsset(prodAsset)
-                } catch (_: Exception) {
-                    throw IllegalStateException("Missing production model $prodAsset arch=$arch")
-                }
+                Log.i("PaddleLite", "Using production model $prodAsset")
+                return materializeModel(context, prodAsset, "Missing production model $prodAsset arch=$arch")
             }
 
             val detPath = resolveModel("det")

@@ -66,10 +66,10 @@ Read in full early on startup/new cycle.
 - Host installers (`grok-install.sh`, `antigravity-install`) are **local only** (gitignored); `run-*` launchers sync to worktrees. `./update-rules.sh` skips worktree-ahead/dirty paths unless `--force`; supports `--dry-run`.
 
 ## Application ABI / Paddle assets
-- Production models: `app/src/arm64/assets/paddle/prod_u8fp16/*_armv8.nb`, `app/src/x86_64/assets/paddle/prod_u8fp32_u8/*_x86_64.nb`, `app/src/armv7/assets/paddle/prod_u8fp32_u8/*_armv7.nb`; shared dict `app/src/main/assets/paddle/en_dict.txt`; scheduled exp dets `app/src/<abi>/assets/paddle/exp_det_ab/` (`product_det` only); v4/v5 mobile and server nbs are unscheduled and not in the APK (`third_party/paddle/exp_det_ab_unscheduled/`)
-- Runtime: `app/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86_64}/`, `app/libs/PaddlePredictor.jar`
-- JNI sizing: arm64-v8a tailored ~1.6MB; x86_64 slim jni + `libpaddle_light_api_shared.so`; armeabi-v7a fat multi-path lib (interim)
-- Product ABIs: arm64-v8a + armeabi-v7a + x86_64 flavor APKs (`useLegacyPackaging = false`). arm64/x86 jni ship stamp `so45e4733a` (arm64 jni 1842712, arm64 light 1826072, x86 jni 30936, x86 light 10430904).
+- Production models: `third_party/paddle-models/artifact/app/{armv8,armv7,x86_64}/{det,rec_v3,rec_numeric}_<arch>.nb` (pin artifact), embedded into `libpaddle_models.so` via CMake `.incbin` (not assets; asset keys `paddle/prod_u8fp16/` arm64, `paddle/prod_u8fp32_u8/` armv7 + x86_64); no model copies or model-writing scripts under `app/`; shared dict `app/src/main/assets/paddle/en_dict.txt`; exp dets `app/src/<flavor>/paddle-models/exp_det_ab/product_det_<arch>.nb` (embedded only in the qa build type, `VE_EMBED_EXP_DET`); v4/v5 mobile and server nbs are unscheduled and not in the APK (`third_party/paddle/exp_det_ab_unscheduled/`)
+- Runtime: `third_party/paddle/artifact/jni/{arm64-v8a,armeabi-v7a,x86_64}/`, `third_party/paddle/artifact/PaddlePredictor.jar` (the app reads them there; no copies under `app/`). OpenCV stays in `app/src/main/jniLibs/` and `app/libs/`.
+- JNI builds: arm64-v8a tailored; armeabi-v7a fat; x86_64 slim thin jni (16 KB pages) + `libpaddle_light_api_shared.so`
+- Product ABIs: arm64-v8a + armeabi-v7a + x86_64 flavor APKs (`useLegacyPackaging = false`). Sizes are in `third_party/paddle/SOURCE.md`.
 
 ## Worktree layout
 - App worktrees (`agent-N/`, `master/`): `app/` + root scripts + symlink `dev-ai-interaction -> ../@@SANDBOX_PATH@@`

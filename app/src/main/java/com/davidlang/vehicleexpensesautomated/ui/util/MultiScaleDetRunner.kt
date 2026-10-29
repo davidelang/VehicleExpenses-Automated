@@ -283,7 +283,11 @@ object MultiScaleDetRunner {
     fun availableModels(context: Context, arch: String = modelArchForDevice()): List<String> {
         return DET_MODELS.filter { name ->
             try {
-                context.assets.open("$ASSET_DIR/${name}_$arch.nb").close()
+                NativePaddleEngine.materializeModel(
+                    context,
+                    "$ASSET_DIR/${name}_$arch.nb",
+                    "missing $ASSET_DIR/${name}_$arch.nb",
+                )
                 true
             } catch (_: Exception) {
                 false
@@ -306,11 +310,13 @@ object MultiScaleDetRunner {
 
     private fun copyModelAsset(context: Context, arch: String): File {
         val asset = "$ASSET_DIR/${MODEL_NAME}_$arch.nb"
-        val dest = File(context.filesDir, "exp_det_${MODEL_NAME}_$arch.nb")
-        context.assets.open(asset).use { inp ->
-            FileOutputStream(dest).use { out -> inp.copyTo(out) }
-        }
-        return dest
+        return File(
+            NativePaddleEngine.materializeModel(
+                context,
+                asset,
+                "No $MODEL_NAME for arch=$arch under $ASSET_DIR",
+            ),
+        )
     }
 
     /**

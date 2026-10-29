@@ -10,9 +10,9 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
-/** SHA-256 hex of a file, or "missing" if absent. */
+/** SHA-256 hex of a file. Fails configuration when the file is absent. */
 fun sha256File(f: java.io.File): String {
-    if (!f.isFile) return "missing"
+    if (!f.isFile) error("SHA-256 input is not a file: ${f.path}")
     val md = MessageDigest.getInstance("SHA-256")
     f.inputStream().use { inp ->
         val buf = ByteArray(64 * 1024)
@@ -50,7 +50,7 @@ android {
         // Fingerprint product paddle light SOs so experiment reports self-describe the
         // library under test (git describe alone does not encode jniLibs contents).
         // Format: <git>+so<8> where <8> is sha256 of "abi=sha|..." over all shipped ABIs.
-        val jniRoot = file("src/main/jniLibs")
+        val jniRoot = rootProject.file("third_party/paddle/artifact/jni")
         val soAbis = listOf("x86_64", "arm64-v8a", "armeabi-v7a")
         val soShaByAbi = soAbis.associateWith { abi ->
             sha256File(file("$jniRoot/$abi/libpaddle_light_api_shared.so"))
@@ -61,7 +61,7 @@ android {
             .joinToString("") { b -> "%02x".format(b) }
             .take(8)
         // versionName embeds SO stamp so any SO byte change is visible even before commit.
-        // Still commit jniLibs + third_party/paddle/SO_SHIPPED.sha256 so describe advances too.
+        // Per-ABI shas are recorded in third_party/paddle/libpin.toml.
         val versionWithSo = "$rawVersion+so$soStamp8"
         versionName = versionWithSo
         buildConfigField("String", "VERSION_NAME", "\"${versionWithSo}\"")
@@ -69,19 +69,6 @@ android {
         buildConfigField("String", "PADDLE_SO_X86_64", "\"${soShaByAbi["x86_64"]}\"")
         buildConfigField("String", "PADDLE_SO_ARM64_V8A", "\"${soShaByAbi["arm64-v8a"]}\"")
         buildConfigField("String", "PADDLE_SO_ARMEABI_V7A", "\"${soShaByAbi["armeabi-v7a"]}\"")
-
-        // Tracked inventory: update when light SOs change (committed with the SO blobs).
-        val stampFile = rootProject.file("third_party/paddle/SO_SHIPPED.sha256")
-        val stampBody = buildString {
-            append("# libpaddle_light_api_shared.so per ABI (sha256). Commit with SO swaps.\n")
-            append("# Composite stamp so$soStamp8 is embedded in app versionName.\n")
-            soAbis.forEach { abi -> append("$abi ${soShaByAbi[abi]}\n") }
-        }
-        if (!stampFile.exists() || stampFile.readText() != stampBody) {
-            stampFile.parentFile?.mkdirs()
-            stampFile.writeText(stampBody)
-            logger.lifecycle("Updated ${stampFile.relativeTo(rootProject.projectDir)} (so$soStamp8) — commit with jniLibs if SO changed")
-        }
 
         externalNativeBuild {
             cmake {
@@ -123,6 +110,11 @@ android {
     testBuildType = "qa"
     buildTypes {
         getByName("debug") {
+            externalNativeBuild {
+                cmake {
+                    arguments += "-DVE_EMBED_EXP_DET=OFF"
+                }
+            }
             buildConfigField("boolean", "TEST_BUILD", "false")
             buildConfigField("String", "APP_SCHEME", "\"vehicleexpenses\"")
             manifestPlaceholders["appLabel"] = "VehicleExpenses"
@@ -139,6 +131,12 @@ android {
             manifestPlaceholders["appLabel"] = "VE Test"
             manifestPlaceholders["appScheme"] = "vehicleexpensestest"
             manifestPlaceholders["msalSignatureHash"] = "PLACEHOLDER_SIGNATURE_HASH"
+            externalNativeBuild {
+                cmake {
+                    arguments.clear()
+                    arguments += "-DVE_EMBED_EXP_DET=ON"
+                }
+            }
         }
         release {
             // Play dex scores need R8. debug and qa stay unminified.
@@ -153,6 +151,11 @@ android {
             manifestPlaceholders["appLabel"] = "VehicleExpenses"
             manifestPlaceholders["appScheme"] = "vehicleexpenses"
             manifestPlaceholders["msalSignatureHash"] = "PLACEHOLDER_SIGNATURE_HASH"
+            externalNativeBuild {
+                cmake {
+                    arguments += "-DVE_EMBED_EXP_DET=OFF"
+                }
+            }
         }
     }
     compileOptions {
@@ -177,6 +180,11 @@ android {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
+        }
+    }
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDir(rootProject.file("third_party/paddle/artifact/jni"))
         }
     }
     packaging {
@@ -221,8 +229,9 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 dependencies {
-    // Local jars only (PaddlePredictor, opencv-java). AARs come from third_party pins.
+    // opencv-java stays in app/libs. PaddlePredictor comes from the paddle pin.
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
+    implementation(files(rootProject.file("third_party/paddle/artifact/PaddlePredictor.jar")))
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.browser:browser:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.9.0")

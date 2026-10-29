@@ -12431,3 +12431,9 @@ feature-group: label=''
 
 - One play flavor packs arm64, armv7, and x86_64. playDebug and playQa are disabled. versionCode is 15 from app/versionCode.txt.
 - Release minifies with R8. The keeps cover Paddle, OpenCV, Drive, Sheets, FindBugs, and JNDI/JGSS. Debug and qa stay unminified. No Play bundle was built.
+
+## 2026-10-29 - Paddle comes from the pins
+
+- Product models and the Paddle JNI and jar are read from the pin artifacts. CMake embeds the product .nb files in libpaddle_models.so. Experiment dets are embedded only on qa.
+- The x86_64 thin JNI is 16 KB. The pin build scripts fail when an input, mkdir, strip, or registry edit fails. Vendored .so, jar, and product .nb copies are gone from app/.
+- The adb transfer unit tests that were left out of the transfer commit are included here.

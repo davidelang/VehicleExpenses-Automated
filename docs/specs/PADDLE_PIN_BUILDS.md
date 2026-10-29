@@ -19,11 +19,15 @@ This document is the **how-to** for configuring, building, and validating the Pa
 
 ### 1.1 Library (JNI / Java)
 
-| Artifact | App path (ship) | Pin product path |
-|----------|-----------------|------------------|
-| `libpaddle_lite_jni.so` | `app/src/main/jniLibs/<abi>/` | `third_party/paddle/artifact/jni/<abi>/` |
-| `libpaddle_light_api_shared.so` | x86_64 only (today) | `artifact/jni/x86_64/` |
-| `PaddlePredictor.jar` | `app/libs/` | `artifact/PaddlePredictor.jar` |
+The app reads Paddle products directly from the pin artifact dir (`app/build.gradle.kts`
+adds `third_party/paddle/artifact/jni` as a jniLibs source dir and depends on
+`artifact/PaddlePredictor.jar`). There are no Paddle copies under `app/`.
+
+| Artifact | Pin product path (shipped as-is) |
+|----------|----------------------------------|
+| `libpaddle_lite_jni.so` | `third_party/paddle/artifact/jni/<abi>/` |
+| `libpaddle_light_api_shared.so` | `third_party/paddle/artifact/jni/<abi>/` |
+| `PaddlePredictor.jar` | `third_party/paddle/artifact/PaddlePredictor.jar` |
 
 ABIs of interest: **arm64-v8a** (devices), **x86_64** (emulators), **armeabi-v7a** (legacy / head units — keep building when capacity allows).
 
@@ -31,11 +35,11 @@ ABIs of interest: **arm64-v8a** (devices), **x86_64** (emulators), **armeabi-v7a
 
 | Kind | Channels | Quant | App path (example) |
 |------|----------|-------|---------------------|
-| Detection | mono 1ch | u8→fp16 path | `assets/paddle/prod_u8fp16/det_{armv8,x86_64}.nb` |
-| Recognition v3 | mono | u8→fp16 | `rec_v3_*.nb` |
-| Recognition numeric | mono | u8→fp16 | `rec_numeric_*.nb` |
+| Detection | mono 1ch | u8→fp16 (armv8), u8→fp32 (armv7, x86_64) | `third_party/paddle-models/artifact/app/<arch>/det_<arch>.nb` |
+| Recognition v3 | mono | same | `rec_v3_<arch>.nb` |
+| Recognition numeric | mono | same | `rec_numeric_<arch>.nb` |
 
-Built with host **`opt`** (INT8-capable build of the same fork), **not** by the Android slim JNI script alone.
+Built by `./third_party/fetch-deps build paddle-models` with the `paddle-opt` pin `opt`; embedded into the app via CMake `.incbin` (no copies under `app/`).
 
 ### 1.3 Two pipelines
 
@@ -45,7 +49,7 @@ Built with host **`opt`** (INT8-capable build of the same fork), **not** by the 
                     └─────────────────────────────┘
 
   FP32/mono export → convert_mono → opt (fp32 nb)
-                                 → opt --quant_model (int8 nb) → assets
+                                 → opt --analytic_input_quant (u8 nb) → paddle-models/artifact/app
 ```
 
 ---
@@ -93,11 +97,14 @@ third_party/paddle/
   SOURCE.md             # short map
   build                 # host entry (Docker orchestration)
   scripts/
-    Dockerfile.int8     # Ubuntu 20.04 + NDK r20b + JDK8 + patchelf
+    Dockerfile.int8     # Ubuntu 20.04 + NDK (build-arg; product r28c → image ve-paddle-ndk28c) + JDK8 + patchelf
     run-android-slim.sh # in-container: copy pin, apply int8, build_android.sh
     apply_int8_patches.sh
   patches-int8/         # INT8/u8 layer (full-file copies under code/)
   src/                  # materialized git @ pin (gitignored)
+third_party/paddle-opt/ # host linux-x86_64 opt only (same pin, host_repo = "paddle");
+                        # overlays copied from ../paddle at build time + patches-opt/.
+                        # Build order: paddle-opt → paddle-models → paddle
   artifact/             # stable outputs after get-artifacts
 ```
 
@@ -107,26 +114,22 @@ third_party/paddle/
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 # Docker required; long first image build
 ./third_party/fetch-deps ro paddle
-./third_party/fetch-deps build paddle
-# Optional ABIs:
-# PADDLE_ABIS="arm64-v8a x86_64 armeabi-v7a" ./third_party/paddle/build
+./third_party/fetch-deps build --record paddle
+./third_party/paddle/record-sizes
+# Default: NDK r28c, image ve-paddle-ndk28c, ABIs arm64-v8a armeabi-v7a x86_64
+# PADDLE_ABIS="arm64-v8a armeabi-v7a x86_64" ./third_party/paddle/build
 ```
 
-Promote into the app (manual / plan-approved):
-
-```bash
-cp third_party/paddle/artifact/jni/arm64-v8a/libpaddle_lite_jni.so app/src/main/jniLibs/arm64-v8a/
-cp third_party/paddle/artifact/jni/x86_64/libpaddle_lite_jni.so app/src/main/jniLibs/x86_64/
-# light_api if present
-cp third_party/paddle/artifact/PaddlePredictor.jar app/libs/   # if produced
-```
+No promote step: `fetch-deps build --record paddle` updates `artifact/` and the sha256 rows in
+`libpin.toml`, and `third_party/paddle/record-sizes` writes the sizes into `third_party/paddle/SOURCE.md`;
+commit those and the next app build picks them up.
 
 ### 3.2 Env knobs
 
 | Variable | Meaning |
 |----------|---------|
-| `PADDLE_ABIS` | Space-separated ABIs (default `arm64-v8a x86_64`) |
-| `PADDLE_SKIP_IMAGE_BUILD=1` | Reuse `ve-paddle-int8` image |
+| `PADDLE_ABIS` | Space-separated ABIs (default `arm64-v8a armeabi-v7a x86_64`) |
+| `PADDLE_SKIP_IMAGE_BUILD=1` | Reuse the existing image (product: `ve-paddle-ndk28c`, `PADDLE_NDK_VERSION=r28c`) |
 | `PADDLE_DOCKER_IMAGE` | Override image tag |
 | `LIBPIN_NO_BWRAP` / `LIBPIN_NO_LANDLOCK` | Sandbox off (Docker still needs host privileges for daemon) |
 
@@ -140,9 +143,9 @@ The container **copies** pin `src` to a writable workdir, applies `patches-int8`
 
 | Target | `--arch` | Notes |
 |--------|----------|--------|
-| arm64-v8a | `armv8` | `--with_arm82_fp16=ON`; patchelf SONAME on jni; **tailor** default when models present |
+| arm64-v8a | `armv8` | `--with_arm82_fp16=ON`; patchelf SONAME on jni; **tailor** by default; lists from `paddle-models/artifact/tailor/armv8` (built by `fetch-deps build paddle-models`); missing lists = FAIL |
 | x86_64 | `x86_64` | Emulator; thin jni + **light**; **no HW fp16 backbone** (see §4.1). OpenBLAS via `patches/external/openblas.cmake`: **`USE_THREAD=1 NUM_THREADS=4`** (not `NUM_THREADS=1` — that stubs multi-thread and caps host CPU at ~1 core; see `patches-x86-openblas/README.md`) |
-| armeabi-v7a | `armv7` | Real limited **ARMv7 head units**; **fp32 calib only** — never `ARM82_FP16` for product (see §4.1) |
+| armeabi-v7a | `armv7` | Real limited **ARMv7 head units**; **fp32 calib only** — never `ARM82_FP16` for product (see §4.1); **tailor** by default; lists from `paddle-models/artifact/tailor/armv7` (built by `fetch-deps build paddle-models`); missing lists = FAIL |
 
 Common flags (slim):
 
@@ -200,7 +203,7 @@ No competitive HW fp16 conv stack in this pin. Host `opt` may enable kFP16 place
 ### 5.2 Monochrome conversion
 
 ```bash
-# app/src/main/assets/paddle/scripts/convert_mono.py
+# third_party/paddle-models/convert_mono.py
 # Weight averaging / graph edit: 3ch → 1ch input
 python convert_mono.py …   # see script and HOST_PADDLE_USE
 ```
@@ -208,8 +211,9 @@ python convert_mono.py …   # see script and HOST_PADDLE_USE
 ### 5.3 FP32 optimize (ARGB + mono)
 
 ```bash
-# optimize_models.sh — sets OPT_TOOL, MODEL_ROOT, dynamic shapes via NNADAPTER_DYNAMIC_SHAPE_INFO
-./optimize_models.sh
+# third_party/paddle-models/build (convert_mono + opt for every product ABI)
+./third_party/fetch-deps ro paddle-models
+./third_party/fetch-deps build paddle-models
 ```
 
 Dynamic shape examples (locked tables in `HOST_PADDLE_USE.md`):
@@ -221,13 +225,7 @@ Dynamic shape examples (locked tables in `HOST_PADDLE_USE.md`):
 
 ### 5.4 INT8 mono optimize
 
-```bash
-# optimize_mono_int8_models.sh
-# Requires INT8 opt (analytic_input_quant_pass)
-OPT_TOOL=/path/to/opt_linux_x86_int8 ./optimize_mono_int8_models.sh
-```
-
-Flags concept: `--quant_model=true --quant_type=QUANT_INT8` plus dynamic shapes.
+The old `optimize_mono_int8_models.sh` (`--quant_model=true --quant_type=QUANT_INT8`) was retired: weight quant broke det heatmaps. Product models use `--analytic_input_quant=true` only, via `third_party/paddle-models/build`.
 
 ### 5.5 Runtime contract (app)
 
@@ -241,7 +239,7 @@ Must match what `analytic_input_quant_pass` baked into the `.nb`. See `HOST_PADD
 
 ### 5.6 Prod layout
 
-Ship selected `.nb` under `assets/paddle/prod_u8fp16/` with `en_dict.txt`. Naming today uses `det_armv8.nb` / `det_x86_64.nb` etc. (armv8 ≡ arm64 device models).
+Product `.nb` live in `third_party/paddle-models/artifact/app/<arch>/` and are embedded by `app/src/main/cpp/CMakeLists.txt` (asset keys `paddle/prod_u8fp16/` for arm64, `paddle/prod_u8fp32_u8/` for armv7 and x86_64); `en_dict.txt` stays in `app/src/main/assets/paddle/`. Naming uses `det_armv8.nb` / `det_x86_64.nb` etc. (armv8 ≡ arm64 device models).
 
 ---
 
@@ -290,7 +288,7 @@ Prefer **libpin** for new rebuilds; leave sandbox until outputs are fully promot
 | Kernel string FAIL | INT8 patches not applied; wrong light vs jni check file |
 | Emulator SIGILL | AVX flags / not using x86_64 mobile build |
 | SEGV on greyscale | Missing calib safe dequant / wrong model opt pass |
-| App still old .so | Forgot copy from `artifact/` to `jniLibs` + reinstall |
+| App still old .so | `artifact/` not rebuilt/committed, or app not reinstalled |
 
 ---
 
@@ -303,4 +301,4 @@ Prefer **libpin** for new rebuilds; leave sandbox until outputs are fully promot
 | `docs/specs/PADDLE_BUILD.md` | Locked build intent |
 | `docs/specs/HOST_PADDLE_USE.md` | Host opt / mono / uint8 contract |
 | `docs/specs/PADDLE_PR_DESCRIPTIONS.md` | PR write-ups for upstream |
-| `app/src/main/assets/paddle/scripts/*` | Model conversion scripts |
+| `third_party/paddle-models/build` | Product model rebuild (`convert_mono.py` + `opt`) |
