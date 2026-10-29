@@ -12437,3 +12437,8 @@ feature-group: label=''
 - Product models and the Paddle JNI and jar are read from the pin artifacts. CMake embeds the product .nb files in libpaddle_models.so. Experiment dets are embedded only on qa.
 - The x86_64 thin JNI is 16 KB. The pin build scripts fail when an input, mkdir, strip, or registry edit fails. Vendored .so, jar, and product .nb copies are gone from app/.
 - The adb transfer unit tests that were left out of the transfer commit are included here.
+
+## 2026-10-29 - One Sheets sign-in covers Drive browse
+
+- Spreadsheet sign-in requests Sheets plus drive.file and drive.readonly. Browse opens on All and shared. A recoverable Drive consent launches from the browse dialog.
+- Photo backup keeps its own Drive sign-in. The user manual and project-facts describe the one sign-in.

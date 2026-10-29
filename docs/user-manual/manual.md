@@ -194,7 +194,7 @@ Setup cheatsheets for self-hosted photo and tabular targets: [self-host index](r
 
    ![Google Sheets form](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/10-spreadsheet-google-form.jpg)
 
-4. **Sign in with Google** → display name → **Sheet URL** or **🔍** browse/create → schedule options → enable → save.
+4. **Sign in with Google** once — that sign-in also lets you browse. Display name → paste a **Sheet URL** (still valid) or **🔍** browse. Browse opens on **All & shared** so you can pick an existing spreadsheet you own or that is shared with you. Then schedule options → enable → save.
 5. **Sync now** once to create/update tabs: `Vehicles`, `Expenses`, `Fuel - {vehicle name}`.
 
 ### Example: add Google Drive (photos)

@@ -25,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -211,6 +212,7 @@ internal fun SpreadsheetDestEditForm(
         }
     }
     var showBrowseDialog by remember { mutableStateOf(false) }
+    var driveBrowseReloadNonce by remember { mutableIntStateOf(0) }
     val consentRecovery = rememberConsentRecoveryHandle()
     val displayNameRequired = totalDestCount > 1
     val formTitle = if (isNew) "Add ${provider.displayLabel()}" else "Edit ${provider.displayLabel()}"
@@ -315,6 +317,8 @@ internal fun SpreadsheetDestEditForm(
         viewModel.rescheduleBackgroundSync()
     }
 
+    var driveReadonlyGranted by remember { mutableStateOf(viewModel.driveAuth.hasReadonlyBrowseScope()) }
+
     val signInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -322,7 +326,9 @@ internal fun SpreadsheetDestEditForm(
             val account = viewModel.auth.parseSignInResult(result.data)
             val email = account.email ?: ""
             viewModel.auth.persistAccountEmail(email)
+            viewModel.driveAuth.persistAccountEmail(email)
             accountHint = email
+            driveReadonlyGranted = viewModel.driveAuth.hasReadonlyBrowseScope()
             statusText = "Signed in as $email"
             Toast.makeText(context, "Signed in as $email", Toast.LENGTH_SHORT).show()
         } catch (e: ApiException) {
@@ -331,13 +337,11 @@ internal fun SpreadsheetDestEditForm(
         }
     }
 
-    var driveReadonlyGranted by remember { mutableStateOf(viewModel.driveAuth.hasReadonlyBrowseScope()) }
-
     val driveReadonlyLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         try {
-            val account = viewModel.auth.parseSignInResult(result.data)
+            val account = viewModel.driveAuth.parseSignInResult(result.data)
             val email = account.email ?: ""
             if (email.isNotBlank()) {
                 viewModel.driveAuth.persistAccountEmail(email)
@@ -358,11 +362,18 @@ internal fun SpreadsheetDestEditForm(
         when (provider) {
             SpreadsheetProvider.GOOGLE_SHEETS -> {
                 OutlinedButton(
-                    onClick = { signInLauncher.launch(viewModel.auth.signInIntent()) },
+                    onClick = {
+                        signInLauncher.launch(viewModel.auth.spreadsheetDestinationSignInIntent())
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(if (accountHint.isBlank()) "Sign in with Google" else "Signed in: $accountHint")
                 }
+                Text(
+                    "One sign-in covers Sheets and browsing spreadsheets you own or that are shared with you.",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
                 Spacer(modifier = Modifier.height(16.dp))
             }
             SpreadsheetProvider.EXCEL_GRAPH -> {
@@ -459,6 +470,10 @@ internal fun SpreadsheetDestEditForm(
                         onRequestReadonlyAccess = {
                             driveReadonlyLauncher.launch(viewModel.driveAuth.readonlyBrowseSignInIntent())
                         },
+                        onRecoverableDriveAuth = { intent ->
+                            consentRecovery.launch(intent) { driveBrowseReloadNonce++ }
+                        },
+                        reloadKey = driveBrowseReloadNonce,
                         listItems = { search, catalog ->
                             try {
                                 viewModel.listSpreadsheetsForBrowse(accountHint, search, catalog)

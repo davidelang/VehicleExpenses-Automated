@@ -71,6 +71,9 @@ Read in full early on startup/new cycle.
 - JNI builds: arm64-v8a tailored; armeabi-v7a fat; x86_64 slim thin jni (16 KB pages) + `libpaddle_light_api_shared.so`
 - Product ABIs: arm64-v8a + armeabi-v7a + x86_64 flavor APKs (`useLegacyPackaging = false`). Sizes are in `third_party/paddle/SOURCE.md`.
 
+## Google Sheets destination sign-in
+- Before changing spreadsheet Google sign-in: `GoogleSheetsAuth.spreadsheetDestinationSignInClient` requests spreadsheets plus `drive.file` and `drive.readonly` in one flow. Do not drop the Drive scopes. Photo backup stays `GoogleDriveAuth.getSignInClient` (`drive.file` only). Setup note: `docs/user-manual/manual.md` example "add Google Sheets".
+
 ## Worktree layout
 - App worktrees (`agent-N/`, `master/`): `app/` + root scripts + symlink `dev-ai-interaction -> ../@@SANDBOX_PATH@@`
 - Orchestration root: source of brain for `update-rules.sh`; may lack `app/` depending on layout mode
