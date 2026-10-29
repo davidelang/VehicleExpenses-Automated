@@ -6,7 +6,7 @@ import kotlin.math.abs
 import kotlin.math.max
 
 /**
- * Pure merge planner for **any** live fuel partials — batch import, Quick Fill,
+ * Pure merge planner for **any** live fuel partials — batch import, Fill,
  * and **sync-sourced** rows (no filter on `location` / batch tags).
  *
  * **Cross-device product:** Device A writes odo-only; device B writes cost/vol;
@@ -652,12 +652,20 @@ object FuelRowMergeEngine {
             updatedAtB = b.updatedAt.takeIf { it > 0 } ?: b.timestamp,
         ) ?: preferLocation(a.location, b.location)
         val notes = preferNotes(a.notes, b.notes)
-        val idKeep = later.id
+        val idKeep = a.id
         val complete = (if (odo > 0) odo else 0) > 0 && costF > 0 && galF > 0
         // Explicit partial only when complete and either side already had user override
         val preservePartial = complete && (a.isPartialFill || b.isPartialFill)
         return later.copy(
             id = idKeep,
+            syncId = a.syncId,
+            originDeviceId = a.originDeviceId,
+            cloudManifest = a.cloudManifest,
+            deleted = a.deleted,
+            deletedAt = a.deletedAt,
+            economyIgnored = a.economyIgnored,
+            tripType = a.tripType,
+            updatedAt = max(a.updatedAt, b.updatedAt),
             vehicleId = vehicleId,
             odometer = if (odo > 0) odo else 0,
             gallons = galF,

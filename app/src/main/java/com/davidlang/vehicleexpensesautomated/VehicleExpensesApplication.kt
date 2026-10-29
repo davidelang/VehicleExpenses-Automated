@@ -15,6 +15,7 @@ import com.davidlang.vehicleexpensesautomated.data.db.Unchecked
 import com.davidlang.vehicleexpensesautomated.data.location.KnownStationStore
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
 import com.davidlang.vehicleexpensesautomated.data.transfer.BackupImporter
+import com.davidlang.vehicleexpensesautomated.data.sync.CorruptIncoming
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupManager
 import com.davidlang.vehicleexpensesautomated.data.sync.RcloneLoader
 import com.davidlang.vehicleexpensesautomated.data.sync.RcloneRuntime
@@ -65,6 +66,7 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
     }
 
     override fun onCreate() {
+        CorruptIncoming.install(this)
         BackupImporter.applyStartup(this)
         val blocked = dbState.states.value is Failed
         if (!blocked) {

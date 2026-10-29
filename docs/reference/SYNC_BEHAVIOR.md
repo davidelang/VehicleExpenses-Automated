@@ -32,7 +32,7 @@ Optional app log line when falling back to full rewrite: see `SpreadsheetSyncCoo
 
 Devices and device IDs are unique. There is **no** supported model where two devices intentionally share one logical fill with two independent local identities that auto-collapse.
 
-If the user **manually enters the same fill on two devices**, or runs **Quick Fill twice** for the same real-world fill, they should **expect two rows** until they clean up manually (delete in app or sheet). The **Deleted** column / tombstone supports removal after cleanup.
+If the user **manually enters the same fill on two devices**, or runs **Fill twice** for the same real-world fill, they should **expect two rows** until they clean up manually (delete in app or sheet). The **Deleted** column / tombstone supports removal after cleanup.
 
 ## Photo bookkeeping vs LWW
 

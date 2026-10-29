@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.data.expense
 
+import com.davidlang.vehicleexpensesautomated.data.model.StoredParse
 import org.json.JSONArray
 
 /**
@@ -23,20 +24,35 @@ object ExpenseCategories {
         "Other",
     )
 
-    /** Parse JSON array of strings; blank or invalid → seed list. */
-    fun parse(json: String?): List<String> {
-        if (json.isNullOrBlank()) return DEFAULT_ORDERED.toList()
+    fun read(json: String?): StoredParse<List<String>> {
+        if (json.isNullOrBlank()) return StoredParse.Blank()
+        val trimmed = json.trim()
+        if (!trimmed.startsWith("[")) {
+            if (trimmed.startsWith("{")) return StoredParse.Corrupt(trimmed)
+            return StoredParse.Valid(listOf(trimmed))
+        }
         return try {
-            val arr = JSONArray(json)
+            val arr = JSONArray(trimmed)
             val out = ArrayList<String>(arr.length())
             for (i in 0 until arr.length()) {
+                if (arr.isNull(i)) continue
+                if (arr.optJSONObject(i) != null || arr.optJSONArray(i) != null) {
+                    return StoredParse.Corrupt(trimmed)
+                }
                 val s = arr.optString(i, "").trim()
                 if (s.isNotEmpty()) out.add(s)
             }
-            if (out.isEmpty()) DEFAULT_ORDERED.toList() else out
+            if (out.isEmpty()) StoredParse.Blank() else StoredParse.Valid(out)
         } catch (_: Exception) {
-            DEFAULT_ORDERED.toList()
+            StoredParse.Corrupt(trimmed)
         }
+    }
+
+    /** Display list. Blank keeps the seed. Corrupt shows the default list; parse() does not change the stored value. */
+    fun parse(json: String?): List<String> = when (val parsed = read(json)) {
+        is StoredParse.Valid -> parsed.value
+        is StoredParse.Blank -> DEFAULT_ORDERED.toList()
+        is StoredParse.Corrupt -> DEFAULT_ORDERED.toList()
     }
 
     fun format(categories: List<String>): String {
@@ -49,8 +65,12 @@ object ExpenseCategories {
 
     fun seedJson(): String = format(DEFAULT_ORDERED)
 
-    /** Ensure non-empty ordered list (seed if blank/invalid). */
-    fun ensureNonEmpty(json: String?): String = format(parse(json))
+    /** Seed when blank. A corrupt value is returned unchanged. */
+    fun ensureNonEmpty(json: String?): String = when (val parsed = read(json)) {
+        is StoredParse.Corrupt -> json ?: seedJson()
+        is StoredParse.Blank -> seedJson()
+        is StoredParse.Valid -> format(parsed.value)
+    }
 
     fun defaultCategory(json: String?): String = parse(json).first()
 

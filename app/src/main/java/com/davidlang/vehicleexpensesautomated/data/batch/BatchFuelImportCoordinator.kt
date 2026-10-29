@@ -503,6 +503,8 @@ class BatchFuelImportCoordinator @Inject constructor(
         val liveCount: Int = 0,
         val pendingFromMerge: Int = 0,
         val secondPass: Boolean = false,
+        /** Rows whose update or absorb threw. Other writes in the plan stay applied. */
+        val failed: Int = 0,
     )
 
     /**

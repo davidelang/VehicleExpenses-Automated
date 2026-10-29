@@ -1,6 +1,8 @@
 package com.davidlang.vehicleexpensesautomated.data.batch
 
 import android.location.Location
+import android.util.Log
+import com.davidlang.vehicleexpensesautomated.data.model.StoredParse
 import org.json.JSONObject
 
 /**
@@ -58,11 +60,6 @@ object FuelLocationJson {
             accuracyM = accuracyM,
         )
 
-        fun withCoords(
-            lat: Double?,
-            lon: Double?,
-            accuracyM: Double? = this.accuracyM,
-        ): Blob = copy(lat = lat, lon = lon, accuracyM = accuracyM)
 
         fun withPlace(
             name: String?,
@@ -80,14 +77,6 @@ object FuelLocationJson {
             lookedUpAt = lookedUpAt,
         )
 
-        fun clearPlace(): Blob = copy(
-            name = "",
-            address = "",
-            confirmed = false,
-            source = null,
-            kind = null,
-            lookedUpAt = null,
-        )
     }
 
     /** @deprecated Prefer [Blob]; kept for callers that only need place display. */
@@ -183,12 +172,42 @@ object FuelLocationJson {
                     kind = kind,
                     lookedUpAt = lookedUpAt,
                 ).takeUnless { it.isBlank() }
-            } catch (_: Exception) {
-                Blob(name = t).takeUnless { it.isBlank() }
+            // kept: failure stays on this call so the screen or caller can continue
+            } catch (e: Exception) {
+                Log.e(TAG, "location unreadable", e)
+                null
             }
         }
         if (t.startsWith("batch_")) return null
         return Blob(name = t)
+    }
+
+    fun readBlob(location: String?): StoredParse<Blob> {
+        if (location.isNullOrBlank()) return StoredParse.Blank()
+        val trimmed = location.trim()
+        if (trimmed.startsWith("batch_")) return StoredParse.Blank()
+        if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+            return StoredParse.Valid(Blob(name = trimmed))
+        }
+        if (!trimmed.startsWith("{")) {
+            Log.e(TAG, "location unreadable")
+            return StoredParse.Corrupt(trimmed)
+        }
+        return try {
+            val obj = JSONObject(trimmed)
+            val blob = parseBlob(trimmed)
+            when {
+                blob != null -> StoredParse.Valid(blob)
+                obj.length() == 0 -> StoredParse.Blank()
+                else -> {
+                    Log.e(TAG, "location unreadable")
+                    StoredParse.Corrupt(trimmed)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "location unreadable", e)
+            StoredParse.Corrupt(trimmed)
+        }
     }
 
     fun parse(location: String?): Place? {
@@ -277,8 +296,8 @@ object FuelLocationJson {
     }
 
     /**
-     * Fold legacy **Room column** lat/lon + existing location text into one blob.
-     * **Device DB upgrade only** ([MIGRATION_17_18]) — not for sheet/CSV import.
+     * Fold legacy Room column lat/lon + existing location text into one blob.
+     * Device DB upgrade only (MIGRATION_17_18).
      */
     fun foldLegacy(
         columnLat: Double?,
@@ -292,8 +311,9 @@ object FuelLocationJson {
         val merged = (existing ?: Blob()).copy(
             lat = lat,
             lon = lon,
-            // place without confirmed flag stays confirmed=false
         )
         return encode(merged)
     }
+
+    private const val TAG = "FuelLocationJson"
 }

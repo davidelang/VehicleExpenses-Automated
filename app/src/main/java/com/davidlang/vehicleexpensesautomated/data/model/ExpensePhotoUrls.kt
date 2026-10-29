@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.data.model
 
+import android.util.Log
+import com.davidlang.vehicleexpensesautomated.data.model.StoredParse
 import com.davidlang.vehicleexpensesautomated.data.sync.CloudManifest
 import org.json.JSONArray
 import org.json.JSONObject
@@ -12,27 +14,39 @@ object ExpensePhotoUrls {
 
     const val MAX_PAGES = 20
 
-    data class Page(val index: Int, val uri: String)
+    data class Page(val index: Int, val uri: String, val missing: Boolean = false)
 
-    fun parse(photoUrl: String?): List<Page> {
-        if (photoUrl.isNullOrBlank()) return emptyList()
-        return try {
-            if (photoUrl.trimStart().startsWith("[")) {
-                val arr = JSONArray(photoUrl)
-                buildList {
-                    for (i in 0 until arr.length()) {
-                        val obj = arr.optJSONObject(i) ?: continue
-                        val index = obj.optInt("i", i)
-                        val uri = obj.optString("uri", "")
-                        if (uri.isNotBlank()) add(Page(index, uri))
-                    }
-                }.sortedBy { it.index }.take(MAX_PAGES)
-            } else {
-                listOf(Page(0, photoUrl))
-            }
-        } catch (_: Exception) {
-            listOf(Page(0, photoUrl))
+    fun read(photoUrl: String?): StoredParse<List<Page>> {
+        if (photoUrl.isNullOrBlank()) return StoredParse.Blank()
+        val trimmed = photoUrl.trim()
+        if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) {
+            return StoredParse.Valid(listOf(Page(0, trimmed)))
         }
+        if (!trimmed.startsWith("[")) {
+            Log.e(TAG, "photo reference unreadable")
+            return StoredParse.Corrupt(trimmed)
+        }
+        return try {
+            val arr = JSONArray(trimmed)
+            val pages = buildList {
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: return StoredParse.Corrupt(trimmed)
+                    val index = obj.optInt("i", i)
+                    val uri = obj.optString("uri", "")
+                    if (uri.isNotBlank()) add(Page(index, uri, obj.optBoolean("missing", false)))
+                }
+            }.sortedBy { it.index }.take(MAX_PAGES)
+            StoredParse.Valid(pages)
+        } catch (e: Exception) {
+            Log.e(TAG, "photo reference unreadable", e)
+            StoredParse.Corrupt(trimmed)
+        }
+    }
+
+    fun parse(photoUrl: String?): List<Page> = when (val parsed = read(photoUrl)) {
+        is StoredParse.Valid -> parsed.value
+        is StoredParse.Blank -> emptyList()
+        is StoredParse.Corrupt -> emptyList()
     }
 
     fun format(pages: List<Page>): String? {
@@ -41,8 +55,9 @@ object ExpensePhotoUrls {
             .sortedBy { it.index }
             .take(MAX_PAGES)
         if (normalized.isEmpty()) return null
-        if (normalized.size == 1 && normalized[0].index == 0) {
-            return normalized[0].uri
+        val only = normalized.singleOrNull()
+        if (only != null && only.index == 0 && !only.missing) {
+            return only.uri
         }
         val arr = JSONArray()
         for (page in normalized) {
@@ -50,16 +65,14 @@ object ExpensePhotoUrls {
                 JSONObject().apply {
                     put("i", page.index)
                     put("uri", page.uri)
+                    if (page.missing) put("missing", true)
                 },
             )
         }
         return arr.toString()
     }
 
-    fun isMulti(photoUrl: String?): Boolean =
-        photoUrl?.trimStart()?.startsWith("[") == true
 
-    fun listUris(photoUrl: String?): List<String> = parse(photoUrl).map { it.uri }
 
     fun isExpenseReceiptRole(role: String): Boolean =
         role == CloudManifest.ROLE_EXPENSE_RECEIPT ||
@@ -112,4 +125,6 @@ object ExpensePhotoUrls {
         }
         return format(merged)
     }
+
+    private const val TAG = "ExpensePhotoUrls"
 }

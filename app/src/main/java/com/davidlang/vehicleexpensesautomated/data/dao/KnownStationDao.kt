@@ -13,6 +13,14 @@ interface KnownStationDao {
     @Query("SELECT * FROM known_stations WHERE deleted = 0 ORDER BY updatedAt DESC")
     suspend fun getAllLive(): List<KnownStation>
 
+    @Query(
+        """
+        SELECT * FROM known_stations
+        WHERE deleted = 0 AND lat BETWEEN :minLat AND :maxLat AND lon BETWEEN :minLon AND :maxLon
+        """,
+    )
+    suspend fun liveInBox(minLat: Double, maxLat: Double, minLon: Double, maxLon: Double): List<KnownStation>
+
     @Query("SELECT * FROM known_stations ORDER BY updatedAt DESC")
     suspend fun getAllIncludingDeleted(): List<KnownStation>
 
@@ -22,8 +30,6 @@ interface KnownStationDao {
     @Query("SELECT COUNT(*) FROM known_stations")
     suspend fun countAll(): Int
 
-    @Query("SELECT COUNT(*) FROM known_stations WHERE deleted = 0")
-    suspend fun countLive(): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(station: KnownStation)

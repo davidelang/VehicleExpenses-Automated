@@ -60,6 +60,12 @@ class FuelEntryRepository @Inject constructor(
 
     suspend fun getAllIncludingDeleted(): List<FuelEntry> = fuelEntryDao.getAllIncludingDeleted()
 
+    suspend fun pageLiveNewest(limit: Int, offset: Int): List<FuelEntry> =
+        fuelEntryDao.pageLiveNewest(limit, offset)
+
+    suspend fun pageAllNewest(limit: Int, offset: Int): List<FuelEntry> =
+        fuelEntryDao.pageAllNewest(limit, offset)
+
     suspend fun findBySyncKey(originDeviceId: String, id: Long): FuelEntry? =
         fuelEntryDao.findBySyncKey(originDeviceId, id)
 

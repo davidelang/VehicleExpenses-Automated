@@ -12442,3 +12442,8 @@ feature-group: label=''
 
 - Spreadsheet sign-in requests Sheets plus drive.file and drive.readonly. Browse opens on All and shared. A recoverable Drive consent launches from the browse dialog.
 - Photo backup keeps its own Drive sign-in. The user manual and project-facts describe the one sign-in.
+
+## 2026-10-29 - Sync and fuel match the tip
+
+- A scored merge keeps the base sync id. Every sync point is read into Room before sheet writes. An unread fuel tab stays. Blank rows are dropped. A dash veto acts only when one vehicle survives.
+- Corrupt cells and missing photo markers persist, including a one-page missing receipt. The import coordinator that the qa screen calls stays in main.

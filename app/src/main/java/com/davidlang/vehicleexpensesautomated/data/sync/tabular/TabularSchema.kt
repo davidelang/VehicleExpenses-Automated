@@ -1,12 +1,17 @@
 package com.davidlang.vehicleexpensesautomated.data.sync.tabular
 
+import com.davidlang.vehicleexpensesautomated.data.expense.ExpenseCategories
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseVehicleSyncIds
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.KnownStation
 import com.davidlang.vehicleexpensesautomated.data.model.MergeAck
+import com.davidlang.vehicleexpensesautomated.data.model.StoredParse
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
+import com.davidlang.vehicleexpensesautomated.data.sync.CloudManifest
+import com.davidlang.vehicleexpensesautomated.data.sync.CorruptIncoming
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdGenerator
+import com.davidlang.vehicleexpensesautomated.data.trip.TripTypes
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 
 /** Canonical tab names, headers, and row encode/decode shared by all tabular backends + CSV zip. */
@@ -102,29 +107,49 @@ object TabularSchema {
         return true
     }
 
-    fun vehicleToRow(vehicle: Vehicle): List<String> = listOf(
-        vehicle.syncId,
-        vehicle.id.toString(),
-        vehicle.name,
-        vehicle.make ?: "",
-        vehicle.model ?: "",
-        vehicle.year?.toString() ?: "",
-        vehicle.licensePlate ?: "",
-        vehicle.vin ?: "",
-        vehicle.notes ?: "",
-        vehicle.odometerCropLeft?.toString() ?: "",
-        vehicle.odometerCropTop?.toString() ?: "",
-        vehicle.odometerCropRight?.toString() ?: "",
-        vehicle.odometerCropBottom?.toString() ?: "",
-        vehicle.landmarkTextBlocksJson ?: "",
-        vehicle.tripTypesJson,
-        vehicle.expenseCategoriesJson,
-        vehicle.cloudManifest ?: "",
-        vehicle.originDeviceId,
-        vehicle.updatedAt.toString(),
-        vehicle.deleted.toString(),
-        vehicle.deletedAt?.toString() ?: "",
-    )
+    /**
+     * @param columnOrder sheet header order to emit; default [VEHICLE_HEADERS] for new tabs/CSV.
+     *   Existing sheets should pass their write header row. Unknown names emit "".
+     */
+    fun vehicleToRow(
+        vehicle: Vehicle,
+        columnOrder: List<String> = VEHICLE_HEADERS,
+        forPublish: Boolean = false,
+    ): List<String> {
+        var tripTypes = vehicle.tripTypesJson
+        var categories = vehicle.expenseCategoriesJson
+        var cloud = vehicle.cloudManifest ?: ""
+        if (forPublish) {
+            tripTypes = CorruptIncoming.outgoingCell(TAB_VEHICLES, vehicle.syncId, "Trip Types JSON", tripTypes)
+            categories = CorruptIncoming.outgoingCell(TAB_VEHICLES, vehicle.syncId, "Expense Categories JSON", categories)
+            cloud = CorruptIncoming.outgoingCell(TAB_VEHICLES, vehicle.syncId, "Cloud Manifest", cloud)
+        }
+        val byName = mapOf(
+            "Sync ID" to vehicle.syncId,
+            "ID" to vehicle.id.toString(),
+            "Name" to vehicle.name,
+            "Make" to (vehicle.make ?: ""),
+            "Model" to (vehicle.model ?: ""),
+            "Year" to (vehicle.year?.toString() ?: ""),
+            "License Plate" to (vehicle.licensePlate ?: ""),
+            "VIN" to (vehicle.vin ?: ""),
+            "Notes" to (vehicle.notes ?: ""),
+            "Odo Crop L" to (vehicle.odometerCropLeft?.toString() ?: ""),
+            "Odo Crop T" to (vehicle.odometerCropTop?.toString() ?: ""),
+            "Odo Crop R" to (vehicle.odometerCropRight?.toString() ?: ""),
+            "Odo Crop B" to (vehicle.odometerCropBottom?.toString() ?: ""),
+            "Landmark Text Blocks JSON" to (vehicle.landmarkTextBlocksJson ?: ""),
+            "Trip Types JSON" to tripTypes,
+            "Expense Categories JSON" to categories,
+            "Cloud Manifest" to cloud,
+            "Origin Device ID" to vehicle.originDeviceId,
+            "Updated At" to vehicle.updatedAt.toString(),
+            "Deleted" to vehicle.deleted.toString(),
+            "Deleted At" to (vehicle.deletedAt?.toString() ?: ""),
+        )
+        val row = columnOrder.map { name -> byName[name] ?: "" }
+        return row
+    }
 
     fun rowToVehicle(row: List<String>, headerIndex: Map<String, Int>): Vehicle {
         fun cell(name: String) = row.getOrElse(headerIndex[name] ?: -1) { "" }
@@ -174,9 +199,20 @@ object TabularSchema {
         entry: FuelEntry,
         vehicleSyncId: String = "",
         columnOrder: List<String> = FUEL_HEADERS,
+        forPublish: Boolean = false,
+        sheetName: String = "Fuel",
     ): List<String> {
-        val byName = fuelFieldMap(entry, vehicleSyncId)
-        return columnOrder.map { name -> byName[name] ?: "" }
+        val byName = fuelFieldMap(entry, vehicleSyncId).toMutableMap()
+        if (forPublish) {
+            byName["Cloud Manifest"] = CorruptIncoming.outgoingCell(
+                sheetName,
+                entry.syncId,
+                "Cloud Manifest",
+                byName["Cloud Manifest"].orEmpty(),
+            )
+        }
+        val row = columnOrder.map { name -> byName[name] ?: "" }
+        return row
     }
 
     /** Named fuel cells for encode/decode; includes all [FUEL_HEADERS] keys. */
@@ -275,18 +311,40 @@ object TabularSchema {
     fun padDataRowsToWidth(dataRows: List<List<String>>, headerWidth: Int): List<List<String>> =
         dataRows.map { padRowToWidth(it, headerWidth) }
 
-    fun expenseToRow(entry: ExpenseEntry, vehicleSyncId: String = ""): List<String> {
-        val syncIds = ExpenseVehicleSyncIds.parse(entry.vehicleSyncIdsJson)
+    fun expenseToRow(
+        entry: ExpenseEntry,
+        vehicleSyncId: String = "",
+        forPublish: Boolean = false,
+    ): List<String> {
+        val read = ExpenseVehicleSyncIds.read(entry.vehicleSyncIdsJson)
+        val syncIds = (read as? StoredParse.Valid)?.value.orEmpty()
         val primarySyncId = syncIds.firstOrNull()?.takeIf { it.isNotBlank() }
             ?: vehicleSyncId
-        val syncIdsJson = if (syncIds.isNotEmpty()) {
-            entry.vehicleSyncIdsJson
-        } else if (vehicleSyncId.isNotBlank()) {
-            ExpenseVehicleSyncIds.format(listOf(vehicleSyncId))
-        } else {
-            ""
+        var syncIdsJson = when (read) {
+            is StoredParse.Corrupt -> entry.vehicleSyncIdsJson
+            is StoredParse.Valid -> if (syncIds.isNotEmpty()) {
+                entry.vehicleSyncIdsJson
+            } else if (vehicleSyncId.isNotBlank()) {
+                ExpenseVehicleSyncIds.format(listOf(vehicleSyncId))
+            } else {
+                ""
+            }
+            is StoredParse.Blank -> if (vehicleSyncId.isNotBlank()) {
+                ExpenseVehicleSyncIds.format(listOf(vehicleSyncId))
+            } else {
+                ""
+            }
         }
-        return listOf(
+        var manifest = entry.cloudManifest ?: ""
+        if (forPublish) {
+            syncIdsJson = CorruptIncoming.outgoingCell(
+                TAB_EXPENSES, entry.syncId, "Vehicle Sync IDs", syncIdsJson,
+            )
+            manifest = CorruptIncoming.outgoingCell(
+                TAB_EXPENSES, entry.syncId, "Cloud Manifest", manifest,
+            )
+        }
+        val row = listOf(
         entry.syncId,
         entry.id.toString(),
         primarySyncId,
@@ -302,12 +360,13 @@ object TabularSchema {
         entry.photoUrl ?: "",
         "",
         entry.location ?: "",
-        entry.cloudManifest ?: "",
+        manifest,
         entry.originDeviceId,
         entry.updatedAt.toString(),
         entry.deleted.toString(),
         entry.deletedAt?.toString() ?: "",
-    )
+        )
+        return row
     }
 
     fun rowToFuel(row: List<String>, headerIndex: Map<String, Int>): FuelEntry {
@@ -396,23 +455,24 @@ object TabularSchema {
         )
     }
 
-    fun rowToExpenseVehicleSyncId(row: List<String>, headerIndex: Map<String, Int>): String {
-        val fromList = rowToExpenseVehicleSyncIds(row, headerIndex).firstOrNull()
-        if (!fromList.isNullOrBlank()) return fromList
-        fun cell(name: String) = row.getOrElse(headerIndex[name] ?: -1) { "" }
-        return cell("Vehicle Sync ID")
-    }
 
     fun rowToExpenseVehicleSyncIds(row: List<String>, headerIndex: Map<String, Int>): List<String> {
         fun cell(name: String) = row.getOrElse(headerIndex[name] ?: -1) { "" }
         val multiCell = cell("Vehicle Sync IDs")
-        val parsed = ExpenseVehicleSyncIds.parse(multiCell)
-        if (parsed.isNotEmpty()) return parsed
-        val single = cell("Vehicle Sync ID").trim()
-        return if (single.isNotBlank()) listOf(single) else emptyList()
+        return when (val read = ExpenseVehicleSyncIds.read(multiCell)) {
+            is StoredParse.Corrupt -> emptyList()
+            is StoredParse.Valid -> read.value
+            is StoredParse.Blank -> {
+                val single = cell("Vehicle Sync ID").trim()
+                if (single.isNotBlank()) listOf(single) else emptyList()
+            }
+        }
     }
 
     fun rowToExpenseVehicleSyncIdsJson(row: List<String>, headerIndex: Map<String, Int>): String {
+        fun cell(name: String) = row.getOrElse(headerIndex[name] ?: -1) { "" }
+        val multiCell = cell("Vehicle Sync IDs")
+        if (ExpenseVehicleSyncIds.read(multiCell) is StoredParse.Corrupt) return multiCell
         val syncIds = rowToExpenseVehicleSyncIds(row, headerIndex)
         return ExpenseVehicleSyncIds.format(syncIds)
     }
@@ -491,5 +551,93 @@ object TabularSchema {
             deleted = cell("Deleted").equals("true", ignoreCase = true),
             deletedAt = cell("Deleted At").toLongOrNull(),
         )
+    }
+
+    /** Header plus data rows that have at least one non-blank cell. */
+    fun dropBlankRows(grid: List<List<String>>): List<List<String>> {
+        if (grid.isEmpty()) return grid
+        val header = grid.first()
+        val kept = ArrayList<List<String>>(grid.size)
+        kept.add(header)
+        for (row in grid.drop(1)) {
+            if (row.all { it.isBlank() }) continue
+            kept.add(row)
+        }
+        return kept
+    }
+
+    fun shieldVehicle(winner: Vehicle, local: Vehicle?, remote: Vehicle): Vehicle {
+        val has = local != null
+        var trip = winner.tripTypesJson
+        var cats = winner.expenseCategoriesJson
+        var cloud = winner.cloudManifest
+        shieldText(
+            TAB_VEHICLES, winner.syncId, "Trip Types JSON", remote.tripTypesJson,
+            has, local?.tripTypesJson.orEmpty(),
+            TripTypes.read(remote.tripTypesJson) is StoredParse.Corrupt, "",
+        )?.let { trip = it }
+        shieldText(
+            TAB_VEHICLES, winner.syncId, "Expense Categories JSON", remote.expenseCategoriesJson,
+            has, local?.expenseCategoriesJson.orEmpty(),
+            ExpenseCategories.read(remote.expenseCategoriesJson) is StoredParse.Corrupt, "",
+        )?.let { cats = it }
+        shieldText(
+            TAB_VEHICLES, winner.syncId, "Cloud Manifest", remote.cloudManifest.orEmpty(),
+            has, local?.cloudManifest.orEmpty(),
+            CloudManifest.read(remote.cloudManifest) is StoredParse.Corrupt, "",
+        )?.let { cloud = it.ifBlank { null } }
+        return winner.copy(tripTypesJson = trip, expenseCategoriesJson = cats, cloudManifest = cloud)
+    }
+
+    fun shieldFuel(winner: FuelEntry, local: FuelEntry?, remote: FuelEntry, sheet: String): FuelEntry {
+        val has = local != null
+        var cloud = winner.cloudManifest
+        shieldText(
+            sheet, winner.syncId, "Cloud Manifest", remote.cloudManifest.orEmpty(),
+            has, local?.cloudManifest.orEmpty(),
+            CloudManifest.read(remote.cloudManifest) is StoredParse.Corrupt, "",
+        )?.let { cloud = it.ifBlank { null } }
+        return winner.copy(cloudManifest = cloud)
+    }
+
+    fun shieldExpense(winner: ExpenseEntry, local: ExpenseEntry?, remote: ExpenseEntry): ExpenseEntry {
+        val has = local != null
+        var ids = winner.vehicleSyncIdsJson
+        var cloud = winner.cloudManifest
+        shieldText(
+            TAB_EXPENSES, winner.syncId, "Vehicle Sync IDs", remote.vehicleSyncIdsJson,
+            has, local?.vehicleSyncIdsJson.orEmpty(),
+            ExpenseVehicleSyncIds.read(remote.vehicleSyncIdsJson) is StoredParse.Corrupt, "",
+        )?.let { ids = it }
+        shieldText(
+            TAB_EXPENSES, winner.syncId, "Cloud Manifest", remote.cloudManifest.orEmpty(),
+            has, local?.cloudManifest.orEmpty(),
+            CloudManifest.read(remote.cloudManifest) is StoredParse.Corrupt, "",
+        )?.let { cloud = it.ifBlank { null } }
+        return winner.copy(vehicleSyncIdsJson = ids, cloudManifest = cloud)
+    }
+
+    private fun shieldText(
+        sheet: String,
+        syncId: String,
+        column: String,
+        remoteRaw: String,
+        hasLocal: Boolean,
+        localRaw: String,
+        corrupt: Boolean,
+        blank: String,
+    ): String? {
+        if (!corrupt) return null
+        val kept = if (hasLocal) localRaw else blank
+        val existing = CorruptIncoming.openItems().firstOrNull {
+            it.sheet == sheet && it.syncId == syncId && it.column == column
+        }
+        if (existing == null) {
+            CorruptIncoming.record(
+                CorruptIncoming.Item(sheet, syncId, column, remoteRaw, kept),
+            )
+            return kept
+        }
+        return if (existing.disposition == CorruptIncoming.ACCEPT) blank else kept
     }
 }

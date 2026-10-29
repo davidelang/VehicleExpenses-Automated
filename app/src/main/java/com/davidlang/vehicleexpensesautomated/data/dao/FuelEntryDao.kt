@@ -17,6 +17,12 @@ interface FuelEntryDao {
     @Query("SELECT * FROM fuel_entries ORDER BY timestamp DESC")
     suspend fun getAllIncludingDeleted(): List<FuelEntry>
 
+    @Query("SELECT * FROM fuel_entries WHERE deleted = 0 ORDER BY timestamp DESC, id DESC LIMIT :limit OFFSET :offset")
+    suspend fun pageLiveNewest(limit: Int, offset: Int): List<FuelEntry>
+
+    @Query("SELECT * FROM fuel_entries ORDER BY timestamp DESC, id DESC LIMIT :limit OFFSET :offset")
+    suspend fun pageAllNewest(limit: Int, offset: Int): List<FuelEntry>
+
     @Query("SELECT * FROM fuel_entries WHERE vehicleId = :vehicleId AND deleted = 0 ORDER BY timestamp DESC")
     fun getFuelEntriesForVehicle(vehicleId: Int): Flow<List<FuelEntry>>
 

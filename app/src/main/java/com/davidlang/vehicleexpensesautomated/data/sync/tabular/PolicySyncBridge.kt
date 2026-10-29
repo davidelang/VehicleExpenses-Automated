@@ -69,17 +69,6 @@ object PolicySyncBridge {
         tombstone = TOMBSTONE,
     )
 
-    fun mergeAcksPushUnit(): TableSyncUnit = TableSyncUnit(
-        id = "merge-acks-push-pilot",
-        direction = "push",
-        sourceTable = TAB_LOCAL,
-        destTable = TAB_REMOTE,
-        columns = mergeAckColumnDefs(),
-        columnMap = emptyMap(),
-        keys = listOf("Sync ID"),
-        timestamp = "Updated At",
-        tombstone = TOMBSTONE,
-    )
 
     fun tabDataFromAcks(acks: List<MergeAck>): TabData {
         val rows = acks
@@ -125,21 +114,6 @@ object PolicySyncBridge {
         return acksFromTabData(result.data)
     }
 
-    /**
-     * One-way PolicySync.push (local → remote snapshot). For experiments; pilot prefers LWW.
-     */
-    fun pushAcksViaPolicy(
-        localAcks: List<MergeAck>,
-        remoteGrid: List<List<String>>,
-    ): Pair<List<MergeAck>, PushResult> {
-        val localData = tabDataFromAcks(localAcks)
-        val remoteData = tabDataFromGrid(remoteGrid, TabularSchema.MERGE_ACK_HEADERS)
-        val a = Backends.mock(mapOf(TAB_LOCAL to localData))
-        val b = Backends.mock(mapOf(TAB_REMOTE to remoteData))
-        val pushResult = PolicySync.push(a, b, mergeAcksPushUnit())
-        val after = b.readRows(TAB_REMOTE)
-        return acksFromTabData(after) to pushResult
-    }
 
     /** Pure key-set check for tests (no Backends). */
     fun syncIds(acks: List<MergeAck>): Set<String> =
@@ -175,17 +149,6 @@ object PolicySyncBridge {
         tombstone = TOMBSTONE,
     )
 
-    fun expensesPushUnit(): TableSyncUnit = TableSyncUnit(
-        id = "expenses-push-pilot",
-        direction = "push",
-        sourceTable = TAB_LOCAL_EXP,
-        destTable = TAB_REMOTE_EXP,
-        columns = expenseColumnDefs(),
-        columnMap = emptyMap(),
-        keys = listOf("Sync ID"),
-        timestamp = "Updated At",
-        tombstone = TOMBSTONE,
-    )
 
     /**
      * @param vehicleSyncIdById Room vehicleId → vehicle Sync ID for [TabularSchema.expenseToRow].
@@ -231,29 +194,24 @@ object PolicySyncBridge {
         vehicleSyncIdById: Map<Int, String> = emptyMap(),
         vehicleIdBySyncId: Map<String, Int> = emptyMap(),
     ): List<ExpenseEntry> {
+        val safeRemote = TabularSchema.dropBlankRows(remoteGrid)
         val localData = tabDataFromExpenses(localExpenses, vehicleSyncIdById)
-        val remoteData = tabDataFromGrid(remoteGrid, TabularSchema.EXPENSE_HEADERS)
+        val remoteData = tabDataFromGrid(safeRemote, TabularSchema.EXPENSE_HEADERS)
         val a = Backends.mock(mapOf(TAB_LOCAL_EXP to localData))
         val b = Backends.mock(mapOf(TAB_REMOTE_EXP to remoteData))
         val result = MergeSync.merge(a, b, expensesMergeUnit(writeTarget = "none"))
-        return expensesFromTabData(result.data, vehicleIdBySyncId)
+        val winners = expensesFromTabData(result.data, vehicleIdBySyncId)
+        val idx = TabularSchema.headerIndex(safeRemote.firstOrNull().orEmpty())
+        val remoteBy = safeRemote.drop(1).map { row ->
+            TabularSchema.rowToExpense(row, idx)
+        }.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+        val localBy = localExpenses.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+        return winners.map { winner ->
+            val remote = remoteBy[winner.syncId] ?: return@map winner
+            TabularSchema.shieldExpense(winner, localBy[winner.syncId], remote)
+        }
     }
 
-    /** One-way PolicySync.push for expenses experiments. */
-    fun pushExpensesViaPolicy(
-        localExpenses: List<ExpenseEntry>,
-        remoteGrid: List<List<String>>,
-        vehicleSyncIdById: Map<Int, String> = emptyMap(),
-        vehicleIdBySyncId: Map<String, Int> = emptyMap(),
-    ): Pair<List<ExpenseEntry>, PushResult> {
-        val localData = tabDataFromExpenses(localExpenses, vehicleSyncIdById)
-        val remoteData = tabDataFromGrid(remoteGrid, TabularSchema.EXPENSE_HEADERS)
-        val a = Backends.mock(mapOf(TAB_LOCAL_EXP to localData))
-        val b = Backends.mock(mapOf(TAB_REMOTE_EXP to remoteData))
-        val pushResult = PolicySync.push(a, b, expensesPushUnit())
-        val after = b.readRows(TAB_REMOTE_EXP)
-        return expensesFromTabData(after, vehicleIdBySyncId) to pushResult
-    }
 
     // ── Vehicles pilot ──────────────────────────────────────────────────────
 
@@ -264,7 +222,6 @@ object PolicySyncBridge {
                 "Deleted" -> "checkbox"
                 "Year",
                 "Odo Crop L", "Odo Crop T", "Odo Crop R", "Odo Crop B",
-                "Other Crop L", "Other Crop T", "Other Crop R", "Other Crop B",
                 -> "number"
                 else -> "string"
             }
@@ -288,17 +245,6 @@ object PolicySyncBridge {
         tombstone = TOMBSTONE,
     )
 
-    fun vehiclesPushUnit(): TableSyncUnit = TableSyncUnit(
-        id = "vehicles-push-pilot",
-        direction = "push",
-        sourceTable = TAB_LOCAL_VEH,
-        destTable = TAB_REMOTE_VEH,
-        columns = vehicleColumnDefs(),
-        columnMap = emptyMap(),
-        keys = listOf("Sync ID"),
-        timestamp = "Updated At",
-        tombstone = TOMBSTONE,
-    )
 
     fun tabDataFromVehicles(vehicles: List<Vehicle>): TabData {
         val rows = vehicles
@@ -326,27 +272,24 @@ object PolicySyncBridge {
         localVehicles: List<Vehicle>,
         remoteGrid: List<List<String>>,
     ): List<Vehicle> {
+        val safeRemote = TabularSchema.dropBlankRows(remoteGrid)
         val localData = tabDataFromVehicles(localVehicles)
-        val remoteData = tabDataFromGrid(remoteGrid, TabularSchema.VEHICLE_HEADERS)
+        val remoteData = tabDataFromGrid(safeRemote, TabularSchema.VEHICLE_HEADERS)
         val a = Backends.mock(mapOf(TAB_LOCAL_VEH to localData))
         val b = Backends.mock(mapOf(TAB_REMOTE_VEH to remoteData))
         val result = MergeSync.merge(a, b, vehiclesMergeUnit(writeTarget = "none"))
-        return vehiclesFromTabData(result.data)
+        val winners = vehiclesFromTabData(result.data)
+        val idx = TabularSchema.headerIndex(safeRemote.firstOrNull().orEmpty())
+        val remoteBy = safeRemote.drop(1).map { row ->
+            TabularSchema.rowToVehicle(row, idx)
+        }.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+        val localBy = localVehicles.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+        return winners.map { winner ->
+            val remote = remoteBy[winner.syncId] ?: return@map winner
+            TabularSchema.shieldVehicle(winner, localBy[winner.syncId], remote)
+        }
     }
 
-    /** One-way PolicySync.push for vehicles experiments. */
-    fun pushVehiclesViaPolicy(
-        localVehicles: List<Vehicle>,
-        remoteGrid: List<List<String>>,
-    ): Pair<List<Vehicle>, PushResult> {
-        val localData = tabDataFromVehicles(localVehicles)
-        val remoteData = tabDataFromGrid(remoteGrid, TabularSchema.VEHICLE_HEADERS)
-        val a = Backends.mock(mapOf(TAB_LOCAL_VEH to localData))
-        val b = Backends.mock(mapOf(TAB_REMOTE_VEH to remoteData))
-        val pushResult = PolicySync.push(a, b, vehiclesPushUnit())
-        val after = b.readRows(TAB_REMOTE_VEH)
-        return vehiclesFromTabData(after) to pushResult
-    }
 
     // ── Fuel pilot (per-tab LWW only; field-merge stays in app) ──────────────
 
@@ -378,17 +321,6 @@ object PolicySyncBridge {
         tombstone = TOMBSTONE,
     )
 
-    fun fuelPushUnit(): TableSyncUnit = TableSyncUnit(
-        id = "fuel-push-pilot",
-        direction = "push",
-        sourceTable = TAB_LOCAL_FUEL,
-        destTable = TAB_REMOTE_FUEL,
-        columns = fuelColumnDefs(),
-        columnMap = emptyMap(),
-        keys = listOf("Sync ID"),
-        timestamp = "Updated At",
-        tombstone = TOMBSTONE,
-    )
 
     fun tabDataFromFuel(
         entries: List<FuelEntry>,
@@ -427,28 +359,24 @@ object PolicySyncBridge {
         remoteGrid: List<List<String>>,
         vehicleId: Int,
         vehicleSyncId: String = "",
+        sheetName: String = "Fuel",
     ): List<FuelEntry> {
+        val safeRemote = TabularSchema.dropBlankRows(remoteGrid)
         val localData = tabDataFromFuel(localEntries, vehicleSyncId)
-        val remoteData = tabDataFromGrid(remoteGrid, TabularSchema.FUEL_HEADERS)
+        val remoteData = tabDataFromGrid(safeRemote, TabularSchema.FUEL_HEADERS)
         val a = Backends.mock(mapOf(TAB_LOCAL_FUEL to localData))
         val b = Backends.mock(mapOf(TAB_REMOTE_FUEL to remoteData))
         val result = MergeSync.merge(a, b, fuelMergeUnit(writeTarget = "none"))
-        return fuelFromTabData(result.data, vehicleId)
+        val winners = fuelFromTabData(result.data, vehicleId)
+        val idx = TabularSchema.headerIndex(safeRemote.firstOrNull().orEmpty())
+        val remoteBy = safeRemote.drop(1).map { row ->
+            TabularSchema.rowToFuel(row, idx)
+        }.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+        val localBy = localEntries.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+        return winners.map { winner ->
+            val remote = remoteBy[winner.syncId] ?: return@map winner
+            TabularSchema.shieldFuel(winner, localBy[winner.syncId], remote, sheetName)
+        }
     }
 
-    /** One-way PolicySync.push for fuel experiments (single tab). */
-    fun pushFuelViaPolicy(
-        localEntries: List<FuelEntry>,
-        remoteGrid: List<List<String>>,
-        vehicleId: Int,
-        vehicleSyncId: String = "",
-    ): Pair<List<FuelEntry>, PushResult> {
-        val localData = tabDataFromFuel(localEntries, vehicleSyncId)
-        val remoteData = tabDataFromGrid(remoteGrid, TabularSchema.FUEL_HEADERS)
-        val a = Backends.mock(mapOf(TAB_LOCAL_FUEL to localData))
-        val b = Backends.mock(mapOf(TAB_REMOTE_FUEL to remoteData))
-        val pushResult = PolicySync.push(a, b, fuelPushUnit())
-        val after = b.readRows(TAB_REMOTE_FUEL)
-        return fuelFromTabData(after, vehicleId) to pushResult
-    }
 }

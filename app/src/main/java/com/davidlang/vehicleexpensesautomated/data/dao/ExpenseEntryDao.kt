@@ -36,6 +36,9 @@ interface ExpenseEntryDao {
     @Query("SELECT * FROM expense_entries ORDER BY date DESC")
     suspend fun getAllIncludingDeleted(): List<ExpenseEntry>
 
+    @Query("SELECT * FROM expense_entries WHERE deleted = 0 ORDER BY date DESC, id DESC LIMIT :limit OFFSET :offset")
+    suspend fun pageLiveNewest(limit: Int, offset: Int): List<ExpenseEntry>
+
     @Query("SELECT * FROM expense_entries WHERE originDeviceId = :originDeviceId AND id = :id LIMIT 1")
     suspend fun findBySyncKey(originDeviceId: String, id: Long): ExpenseEntry?
 
