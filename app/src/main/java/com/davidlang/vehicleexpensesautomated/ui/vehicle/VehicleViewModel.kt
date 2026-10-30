@@ -40,13 +40,13 @@ class VehicleViewModel @Inject constructor(
         referenceDashPhotoUrl: String?,
         cleanedReferenceDashPhotoUrl: String?,
         odometerCropRect: androidx.compose.ui.geometry.Rect?,
-        otherTextCropRect: androidx.compose.ui.geometry.Rect?,
         initialOdometer: Int,
         landmarkTextBlocksJson: String? = null,
         imgW: Int = 0,
         imgH: Int = 0,
         odometerDigitCount: Int = 6,
         odometerRolloverCount: Int = 0,
+        cloudManifest: String? = null,
     ) {
         val newVehicle = Vehicle(
             name = name,
@@ -60,11 +60,8 @@ class VehicleViewModel @Inject constructor(
             odometerCropTop = odometerCropRect?.top,
             odometerCropRight = odometerCropRect?.right,
             odometerCropBottom = odometerCropRect?.bottom,
-            otherTextCropLeft = otherTextCropRect?.left,
-            otherTextCropTop = otherTextCropRect?.top,
-            otherTextCropRight = otherTextCropRect?.right,
-            otherTextCropBottom = otherTextCropRect?.bottom,
             landmarkTextBlocksJson = landmarkTextBlocksJson,
+            cloudManifest = cloudManifest,
             odometerDigitCount = odometerDigitCount.coerceIn(3, 9),
             odometerRolloverCount = odometerRolloverCount.coerceAtLeast(0),
         )
@@ -74,6 +71,7 @@ class VehicleViewModel @Inject constructor(
                 repository.insert(newVehicle)
                 photoBackupCoordinator.enqueueAfterSave()
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Insert failed", e)
             throw e
@@ -88,6 +86,7 @@ class VehicleViewModel @Inject constructor(
                 repository.updateVehicle(vehicle)
                 photoBackupCoordinator.enqueueAfterSave()
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Update failed", e)
             throw e
@@ -95,37 +94,22 @@ class VehicleViewModel @Inject constructor(
     }
 
     /**
-     * Get the crop rectangles for a vehicle.
+     * Odometer crop rectangle for a vehicle, or null when any edge is missing.
      */
-    fun getCrops(vehicle: Vehicle): Pair<androidx.compose.ui.geometry.Rect?, androidx.compose.ui.geometry.Rect?> {
-        val odo = if (vehicle.odometerCropLeft != null && vehicle.odometerCropTop != null &&
-                     vehicle.odometerCropRight != null && vehicle.odometerCropBottom != null) {
-            androidx.compose.ui.geometry.Rect(
+    fun getCrops(vehicle: Vehicle): androidx.compose.ui.geometry.Rect? {
+        if (vehicle.odometerCropLeft != null && vehicle.odometerCropTop != null &&
+            vehicle.odometerCropRight != null && vehicle.odometerCropBottom != null) {
+            return androidx.compose.ui.geometry.Rect(
                 vehicle.odometerCropLeft, vehicle.odometerCropTop,
                 vehicle.odometerCropRight, vehicle.odometerCropBottom
             )
-        } else null
-        val other = if (vehicle.otherTextCropLeft != null && vehicle.otherTextCropTop != null &&
-                        vehicle.otherTextCropRight != null && vehicle.otherTextCropBottom != null) {
-            androidx.compose.ui.geometry.Rect(
-                vehicle.otherTextCropLeft, vehicle.otherTextCropTop,
-                vehicle.otherTextCropRight, vehicle.otherTextCropBottom
-            )
-        } else null
-        return Pair(odo, other)
+        }
+        return null
     }
 
     suspend fun ensureVehicleAssetsDownloaded(vehicleId: Int): Boolean =
         photoBackupCoordinator.downloadVehicleIfNeeded(vehicleId)
 
-    suspend fun ensureCleanedReference(vehicle: Vehicle): String? {
-        val cleaned = vehicle.cleanedReferenceDashPhotoUrl
-        if (cleaned != null) {
-            val f = java.io.File(cleaned)
-            if (f.exists()) return cleaned
-        }
-        return null
-    }
 
     // Phase 18: soft-delete tombstone for sync
     fun deleteVehicle(vehicle: Vehicle) {

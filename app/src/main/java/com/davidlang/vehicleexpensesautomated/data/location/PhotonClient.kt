@@ -51,6 +51,7 @@ object PhotonClient {
                 } finally {
                     conn.disconnect()
                 }
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 Log.w(TAG, "photon fuel failed: ${e.message}")
                 emptyList()
@@ -105,6 +106,7 @@ object PhotonClient {
                 )
             }
             out.sortedBy { it.distanceM ?: Double.MAX_VALUE }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "parse photon: ${e.message}")
             emptyList()

@@ -20,10 +20,6 @@ data class Vehicle(
     val odometerCropTop: Float? = null,
     val odometerCropRight: Float? = null,
     val odometerCropBottom: Float? = null,
-    val otherTextCropLeft: Float? = null,
-    val otherTextCropTop: Float? = null,
-    val otherTextCropRight: Float? = null,
-    val otherTextCropBottom: Float? = null,
     val landmarkTextBlocksJson: String? = null,
     /**
      * Ordered trip type names as a JSON string array (e.g. `["Business","Personal",…]`).

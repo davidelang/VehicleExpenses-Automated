@@ -282,13 +282,6 @@ fun formatVolume(gallons: Double, unitLabel: String): String {
 fun List<FuelEntry>.withoutTripStarts(): List<FuelEntry> =
     FuelEconomyChains.withoutTripStarts(this)
 
-/** Unit price (cost/vol) when both present and vol > 0. */
-fun unitPrice(entry: FuelEntry): Double? {
-    if (!FuelEconomyChains.hasCost(entry) || !FuelEconomyChains.hasVol(entry)) return null
-    if (entry.gallons <= 0) return null
-    return entry.cost / entry.gallons
-}
-
 data class MonthlyBucket(
     /** yyyy-MM */
     val key: String,
@@ -334,26 +327,6 @@ data class TeaserKpis(
     val lastMpg: Double?,
     val avgMpg: Double?,
 )
-
-fun teaserKpis(
-    fuel: List<FuelEntry>,
-    expenses: List<ExpenseEntry>,
-    defaultStored: String,
-): TeaserKpis {
-    val legs = allValidLegsChrono(fuel, defaultStored)
-    val fills = fuel.withoutTripStarts()
-    return TeaserKpis(
-        fuelCostByCurrency = CurrencyCodes.sumByCurrency(
-            fuel, defaultStored, { it.currency }, { it.cost },
-        ),
-        expenseByCurrency = CurrencyCodes.sumByCurrency(
-            expenses, defaultStored, { it.currency }, { it.amount },
-        ),
-        fillCount = fills.size,
-        lastMpg = lastMpg(legs),
-        avgMpg = avgMpg(legs),
-    )
-}
 
 /** Hub / summary card metrics (mirrors production Reports overall + per-vehicle lines). */
 data class HubVehicleSummary(
@@ -458,5 +431,3 @@ fun odometerRange(fuel: List<FuelEntry>): Pair<Int?, Int?> {
     if (withOdo.isEmpty()) return null to null
     return withOdo.minOf { it.odometer } to withOdo.maxOf { it.odometer }
 }
-
-fun monthLabel(key: String): String = key

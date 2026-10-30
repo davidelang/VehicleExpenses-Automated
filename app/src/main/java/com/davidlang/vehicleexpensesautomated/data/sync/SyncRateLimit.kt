@@ -68,6 +68,7 @@ object SyncRateLimit {
     private fun notifyStatus(message: String) {
         try {
             progressRef.get()?.onStatus(message)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             // UI listener must never break API path
         }
@@ -149,8 +150,6 @@ object SyncRateLimit {
         return ms.coerceIn(60_000L, 180_000L)
     }
 
-    /** @deprecated Prefer [apiBackoffMs]. */
-    fun writeBackoffMs(attemptAfterFailure: Int): Long = apiBackoffMs(attemptAfterFailure)
 
     fun backoffMs(attemptAfterFailure: Int): Long = apiBackoffMs(attemptAfterFailure)
 
@@ -165,15 +164,11 @@ object SyncRateLimit {
         }
     }
 
-    /** @deprecated Prefer [paceBeforeApiIfNeeded]. */
-    suspend fun paceBeforeWriteIfNeeded() = paceBeforeApiIfNeeded()
 
     fun noteApiSucceeded() {
         lastApiAtMs.set(System.currentTimeMillis())
     }
 
-    /** @deprecated Prefer [noteApiSucceeded]. */
-    fun noteWriteSucceeded() = noteApiSucceeded()
 
     /**
      * Run a **single** Sheets API call (read or write) with pace + rate-limit wait/retry.
@@ -189,6 +184,7 @@ object SyncRateLimit {
                 val result = block()
                 noteApiSucceeded()
                 return result
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 if (!isRateLimitError(e)) throw e
                 attempt++
@@ -207,6 +203,4 @@ object SyncRateLimit {
         }
     }
 
-    /** @deprecated Prefer [withSheetsApiLimit] (reads and writes). */
-    suspend fun <T> withSheetsWriteLimit(block: () -> T): T = withSheetsApiLimit(block)
 }

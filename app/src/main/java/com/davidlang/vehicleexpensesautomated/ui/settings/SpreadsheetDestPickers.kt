@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -15,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.davidlang.vehicleexpensesautomated.testOnlyBuild
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetDestination
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetProvider
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
@@ -114,9 +116,18 @@ internal fun SpreadsheetDestList(
                 viewModel.hasUnmatchedFuelPartials()
             }
             if (unmatched) {
+                val mergeToast = if (
+                    testOnlyBuild() &&
+                    context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
+                        .getBoolean("show_experiment_screens", false)
+                ) {
+                    "Unmatched partials may need Run merge (Import Old Pictures)"
+                } else {
+                    "Unmatched partials may need a merge"
+                }
                 Toast.makeText(
                     context,
-                    "Unmatched partials may need Run merge (Import Old Pictures)",
+                    mergeToast,
                     Toast.LENGTH_LONG,
                 ).show()
             }

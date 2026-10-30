@@ -68,6 +68,7 @@ class MicrosoftOneDriveAuth @Inject constructor(
                     }
                 }
             }.sorted()
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             emptyList()
         }
@@ -167,6 +168,7 @@ class MicrosoftOneDriveAuth @Inject constructor(
         val target = email?.trim()?.takeIf { it.isNotBlank() } ?: getPersistedAccountEmail()
         val accounts = try {
             app.accounts
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             emptyList()
         }

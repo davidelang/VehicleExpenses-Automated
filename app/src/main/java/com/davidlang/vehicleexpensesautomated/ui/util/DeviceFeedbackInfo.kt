@@ -9,6 +9,21 @@ import com.davidlang.vehicleexpensesautomated.BuildConfig
  * Non-sensitive device/app facts for user-edited feedback email bodies.
  * No serials, accounts, GPS, or photo content.
  */
+/** Fixed-focus counts. Absent feature, empty id list, or a throw is false. */
+fun deviceHasCamera(context: Context): Boolean {
+    if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) {
+        return false
+    }
+    return try {
+        val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? android.hardware.camera2.CameraManager
+        val ids = cameraManager?.cameraIdList
+        ids != null && ids.isNotEmpty()
+    // kept: failure stays on this call so the screen or caller can continue
+    } catch (_: Exception) {
+        false
+    }
+}
+
 fun buildFeedbackSeedBody(context: Context): String {
     val abis = Build.SUPPORTED_ABIS.joinToString(", ")
     val hasAnyCamera = context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
@@ -23,6 +38,7 @@ fun buildFeedbackSeedBody(context: Context): String {
         } else {
             -1
         }
+    // kept: failure stays on this call so the screen or caller can continue
     } catch (_: Exception) {
         -1
     }

@@ -28,8 +28,6 @@ object TripTimeline {
     fun currentOpenTrip(vehicleId: Int, entries: List<FuelEntry>): FuelEntry? =
         tripStartsForVehicle(vehicleId, entries).lastOrNull()
 
-    fun currentOpenTripType(vehicleId: Int, entries: List<FuelEntry>): String? =
-        currentOpenTrip(vehicleId, entries)?.tripType?.takeIf { it.isNotBlank() }
 
     /**
      * Build a trip-start fuel row: gallons=0, cost=0, [tripType] set.

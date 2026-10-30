@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.data.batch
 
 import android.content.Context
+import android.util.Log
 import org.json.JSONArray
 
 /**
@@ -22,7 +23,7 @@ object StageCSkipLedger {
         val fid = item.fuelEntryId?.toString()
             ?: item.extra["suspectId"]
             ?: item.extra["entryIds"].orEmpty()
-        return listOf(item.kind.name, stem, sync, fid).joinToString("|")
+        return listOf(item.kindRaw ?: item.kind.name, stem, sync, fid).joinToString("|")
     }
 
     fun load(context: Context, currentPhase: Int): Set<String> {
@@ -38,7 +39,9 @@ object StageCSkipLedger {
                     if (s.isNotBlank()) add(s)
                 }
             }
-        } catch (_: Exception) {
+        // kept: failure stays on this call so the screen or caller can continue
+        } catch (e: Exception) {
+            Log.e("StageCSkipLedger", "skip ledger unreadable", e)
             emptySet()
         }
     }

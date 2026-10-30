@@ -13,9 +13,11 @@ import com.davidlang.vehicleexpensesautomated.data.model.KnownStation
 import com.davidlang.vehicleexpensesautomated.data.model.MergeAck
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 
+const val APP_DB_SCHEMA_VERSION = 22
+
 @Database(
     entities = [Vehicle::class, FuelEntry::class, ExpenseEntry::class, MergeAck::class, KnownStation::class],
-    version = 21,
+    version = APP_DB_SCHEMA_VERSION,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

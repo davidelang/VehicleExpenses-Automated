@@ -12,21 +12,24 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
-/** Shared shutter / capture button visual states (Quick Fill + Start trip). */
+/** Shared shutter / capture button visual states (Fill + Start trip). */
 enum class CaptureButtonState {
     Live,
     Processing,
     Results,
+    Restart,
 }
 
 /**
- * White circular shutter (Live), red cancel (Processing), or refresh (Results).
- * Matches Quick Fill portrait control chrome.
+ * White circular shutter (Live), red cancel (Processing), the word Restart, or refresh (Results).
+ * Matches Fill portrait control chrome.
  */
 @Composable
 fun RoundCaptureButton(
@@ -48,6 +51,8 @@ fun RoundCaptureButton(
                         .background(MaterialTheme.colorScheme.error, CircleShape)
                     CaptureButtonState.Results -> Modifier
                         .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
+                    CaptureButtonState.Restart -> Modifier
+                        .background(MaterialTheme.colorScheme.errorContainer, CircleShape)
                 },
             ),
     ) {
@@ -62,6 +67,12 @@ fun RoundCaptureButton(
                 contentDescription = "Cancel processing",
                 tint = MaterialTheme.colorScheme.onError,
                 modifier = Modifier.size(32.dp),
+            )
+            CaptureButtonState.Restart -> Text(
+                text = "Restart",
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                style = MaterialTheme.typography.labelSmall,
+                textAlign = TextAlign.Center,
             )
             CaptureButtonState.Results -> Icon(
                 imageVector = Icons.Filled.Refresh,

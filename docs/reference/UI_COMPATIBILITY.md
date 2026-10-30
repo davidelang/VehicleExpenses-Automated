@@ -41,7 +41,7 @@ Orientation pointers: **`project-facts.md`**. Economy math: **`REPORTS_METRICS.m
 | Material3 typography (`sp`); honor system `fontScale` | Custom density that zeros `fontScale` |
 | `softWrap = true`, `maxLines ≥ 2` on tight chrome labels | Fixed tiny `height(N.dp)` that clips text at large font |
 | Prefer `heightIn(min=…)` on buttons/rows | Horizontal overflow / right-edge loss of controls (failure) |
-| Vertical scroll for long screens | Redesign Quick Fill from scratch for font-only bugs |
+| Vertical scroll for long screens | Redesign Fill from scratch for font-only bugs |
 
 ## 5. Icons & dependencies
 

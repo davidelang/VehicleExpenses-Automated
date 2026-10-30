@@ -31,11 +31,7 @@ class OtherTabularBackendStub @Inject constructor() : TabularShareBackend {
     override fun targetUrlFromId(id: String): String = id
 
     private fun unknownSubtype(dest: SpreadsheetDestination): Nothing {
-        val type = try {
-            org.json.JSONObject(dest.configJson).optString("backendType", "unknown")
-        } catch (_: Exception) {
-            "unknown"
-        }
+        val type = org.json.JSONObject(dest.configJson).optString("backendType", "unknown")
         throw UnsupportedOperationException("Unknown Other spreadsheet subtype: $type")
     }
 
@@ -96,11 +92,7 @@ class OtherTabularBackendStub @Inject constructor() : TabularShareBackend {
     ) = unknownSubtype(dest)
 
     override suspend fun testConnection(dest: SpreadsheetDestination, accountHint: String?): TabularTestResult {
-        val type = try {
-            org.json.JSONObject(dest.configJson).optString("backendType", "")
-        } catch (_: Exception) {
-            ""
-        }
+        val type = org.json.JSONObject(dest.configJson).optString("backendType", "")
         return TabularTestResult(
             false,
             if (type.isBlank()) {

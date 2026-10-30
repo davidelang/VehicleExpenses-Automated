@@ -76,6 +76,9 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     /**
      * @param destId when non-null, sync **only** that destination (edit-form Sync now).
      *   Ignores [scope] list filtering other than requiring the dest to exist.
+     *
+     * One merge-in loop (Room only), then one field-merge and one post-merge,
+     * then one publish loop. A point whose read failed is not published.
      */
     suspend fun syncNow(
         accountHint: String? = null,
@@ -93,150 +96,278 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             // Ghost failures for removed dest UUIDs never clear on success of new ids.
             failureStore.pruneToKnownDestinations(store)
 
-            if (destId != null) {
-                val dest = store.allSpreadsheet().find { it.id == destId }
-                    ?: return@withContext SyncResult(false, "Destination not found")
-                val hint = accountHint?.takeIf { it.isNotBlank() } ?: dest.accountHint
-                val label = destLabel(dest)
-                onProgress?.onStatus("Syncing $label…")
-                val single = syncSingleDestination(dest, hint, onProgress)
-                recordSpreadsheetResult(failureStore, dest.id, single)
-                runPostSyncVehicleDownloads(hint)
-                val withPost = if (single.success) {
-                    appendPostFuelMerge(
-                        single,
-                        fuelRowsChanged = single.fuelRemoteWins > 0,
-                    )
-                } else {
-                    single
-                }
-                val statusLine = if (withPost.success) {
-                    "$label done"
-                } else {
-                    failStatusLine(label, withPost.message)
-                }
-                onProgress?.onStatus(statusLine)
-                onProgress?.onStatus(withPost.message)
-                return@withContext withPost
-            }
-
-            val destinations = when (scope) {
-                SyncDestinationScope.CONFIGURED -> store.configuredSpreadsheet()
-                SyncDestinationScope.ENABLED -> store.enabledSpreadsheet()
-            }
-            if (destinations.isEmpty()) {
-                val dest = resolveLegacyOrPrimaryDest(store)
-                val targetId = resolveTargetId(dest)
-                if (targetId.isBlank()) {
-                    val message = when (scope) {
-                        SyncDestinationScope.ENABLED -> "No enabled spreadsheet destinations"
-                        SyncDestinationScope.CONFIGURED -> "Spreadsheet not configured"
+            when (val resolved = resolveSyncPoints(store, scope, destId, accountHint)) {
+                is SyncPoints.Stop -> return@withContext resolved.result
+                is SyncPoints.Ready -> {
+                    val points = resolved.points
+                    if (points.size > 1) {
+                        onProgress?.onStatus(
+                            "Starting spreadsheet sync (${points.size} destinations)…",
+                        )
                     }
-                    return@withContext SyncResult(false, message)
-                }
-                val hint = accountHint?.takeIf { it.isNotBlank() } ?: dest.accountHint
-                val label = destLabel(dest)
-                onProgress?.onStatus("Syncing $label…")
-                val single = syncSingleDestination(dest, hint, onProgress)
-                recordSpreadsheetResult(failureStore, dest.id, single)
-                runPostSyncVehicleDownloads(hint)
-                val withPost = if (single.success) {
-                    appendPostFuelMerge(
-                        single,
-                        fuelRowsChanged = single.fuelRemoteWins > 0,
-                    )
-                } else {
-                    single
-                }
-                onProgress?.onStatus(
-                    if (withPost.success) "$label done" else failStatusLine(label, withPost.message),
-                )
-                onProgress?.onStatus(withPost.message)
-                return@withContext withPost
-            }
+                    val ready = mutableListOf<DestSession>()
+                    val failed = mutableListOf<Pair<String, SyncResult>>()
+                    var consentResult: SyncResult? = null
+                    var consentLabel: String? = null
 
-            val results = mutableListOf<Pair<String, SyncResult>>()
-            var totalVehicles = 0
-            var totalExpenses = 0
-            var totalFuel = 0
-            var totalFuelRemoteWins = 0
-            var anyFailure = false
-            var consentResult: SyncResult? = null
-
-            onProgress?.onStatus("Starting spreadsheet sync (${destinations.size} destinations)…")
-            for ((index, dest) in destinations.withIndex()) {
-                val hint = accountHint?.takeIf { it.isNotBlank() } ?: dest.accountHint
-                val label = destLabel(dest)
-                onProgress?.onStatus("Syncing $label…")
-                val result = syncSingleDestination(dest, hint, onProgress)
-                recordSpreadsheetResult(failureStore, dest.id, result)
-                results.add(label to result)
-                onProgress?.onStatus(
-                    if (result.success) {
-                        "$label done (${result.vehiclesMerged} vehicles, ${result.expensesMerged} expenses, ${result.fuelMerged} fuel)"
-                    } else {
-                        failStatusLine(label, result.message)
-                    },
-                )
-                if (result.success) {
-                    totalVehicles += result.vehiclesMerged
-                    totalExpenses += result.expensesMerged
-                    totalFuel += result.fuelMerged
-                    totalFuelRemoteWins += result.fuelRemoteWins
-                } else {
-                    anyFailure = true
-                    if (result.needsRemoteConsent && consentResult == null) {
-                        consentResult = result
+                    for ((index, point) in points.withIndex()) {
+                        val label = destLabel(point.dest)
+                        onProgress?.onStatus("Reading $label…")
+                        val opened = openForMerge(point.dest, point.hint)
+                        if (opened.failure != null) {
+                            recordReadFailure(
+                                failureStore, point.dest.id, label, opened.failure, onProgress,
+                            )
+                            failed.add(label to opened.failure)
+                            if (opened.failure.needsRemoteConsent && consentResult == null) {
+                                consentResult = opened.failure
+                                consentLabel = label
+                            }
+                        } else {
+                            try {
+                                val read = mergeInDestination(
+                                    point.dest, opened.backend!!, point.hint,
+                                )
+                                ready.add(
+                                    DestSession(
+                                        dest = point.dest,
+                                        hint = point.hint,
+                                        label = label,
+                                        backend = opened.backend,
+                                        read = read,
+                                    ),
+                                )
+                                onProgress?.onStatus(
+                                    "$label read (${read.vehiclesMerged} vehicles, " +
+                                        "${read.expensesMerged} expenses, ${read.fuel.upserted} fuel)",
+                                )
+                            // kept: failure stays on this call so the screen or caller can continue
+                            } catch (e: Exception) {
+                                val result = failureResult(point.dest, e) ?: throw e
+                                recordReadFailure(
+                                    failureStore, point.dest.id, label, result, onProgress,
+                                )
+                                failed.add(label to result)
+                                if (result.needsRemoteConsent && consentResult == null) {
+                                    consentResult = result
+                                    consentLabel = label
+                                }
+                            }
+                        }
+                        paceBeforeNext(index, points.lastIndex, onProgress)
                     }
-                }
-                // Long multi-dest pace (10–20s) + read cooldown (15–30s) after heavy fuel GETs.
-                if (index < destinations.lastIndex) {
-                    val pace = SyncRateLimit.interDestPaceMs
-                    val cooldown = SyncRateLimit.postDestReadCooldownMs
-                    val total = pace + cooldown
-                    val sec = (total / 1000L).toInt()
-                    onProgress?.onStatus("Pacing before next destination (${sec}s)…")
-                    delay(total)
-                }
-            }
 
-            runPostSyncVehicleDownloads(accountHint)
+                    var mergeFailures = 0
+                    var mergeUpdated = 0
+                    var mergeDeleted = 0
+                    var mergeError: String? = null
+                    try {
+                        val mergeStats = batchFuelImportCoordinator.get().fieldMergeForSync { msg ->
+                            Log.i(TAG, "fieldMerge: $msg")
+                        }
+                        mergeFailures = mergeStats.failed
+                        mergeUpdated = mergeStats.updated
+                        mergeDeleted = mergeStats.deleted
+                        Log.i(
+                            TAG,
+                            "session field-merge updates=${mergeStats.updated} " +
+                                "deletes=${mergeStats.deleted} failed=${mergeStats.failed}",
+                        )
+                    // kept: failure stays on this call so the screen or caller can continue
+                    } catch (e: Exception) {
+                        if (e.isNonFailureCancel()) throw e
+                        mergeError = e.message ?: "error"
+                        Log.w(TAG, "field-merge failed", e)
+                    }
+                    val fuelRowsChanged = ready.any { it.read.fuel.remoteWins > 0 } ||
+                        mergeUpdated > 0 || mergeDeleted > 0
+                    val postNote = runPostFuelMergeAndRebuild(fuelRowsChanged)
 
-            var message = SyncResultMessages.spreadsheetSummary(
-                results = results,
-                anyFailure = anyFailure,
-                totalVehicles = totalVehicles,
-                totalExpenses = totalExpenses,
-                totalFuel = totalFuel,
-            )
-            if (consentResult != null && anyFailure) {
-                val consentLabel = results.first { !it.second.success && it.second.needsRemoteConsent }.first
-                val finalMessage = SyncResultMessages.consentWithDest(consentLabel, consentResult.message)
-                onProgress?.onStatus(finalMessage)
-                return@withContext consentResult.copy(message = finalMessage)
-            }
-            // Once per sync session after successful multi-dest fuel LWW
-            if (!anyFailure) {
-                val postNote = runPostFuelMergeAndRebuild(
-                    fuelRowsChanged = totalFuelRemoteWins > 0,
-                )
-                if (postNote != null) {
-                    message = "$message · $postNote"
+                    val published = mutableListOf<Pair<String, SyncResult>>()
+                    for (session in ready) {
+                        onProgress?.onStatus("Publishing ${session.label}…")
+                        try {
+                            publishDestination(session)
+                            val result = readSuccessResult(session.read)
+                            recordSpreadsheetResult(failureStore, session.dest.id, result)
+                            published.add(session.label to result)
+                            onProgress?.onStatus(
+                                "${session.label} done (${result.vehiclesMerged} vehicles, " +
+                                    "${result.expensesMerged} expenses, ${result.fuelMerged} fuel)",
+                            )
+                        // kept: failure stays on this call so the screen or caller can continue
+                        } catch (e: Exception) {
+                            val result = failureResult(session.dest, e) ?: throw e
+                            recordSpreadsheetResult(failureStore, session.dest.id, result)
+                            failed.add(session.label to result)
+                            onProgress?.onStatus(failStatusLine(session.label, result.message))
+                            if (result.needsRemoteConsent && consentResult == null) {
+                                consentResult = result
+                                consentLabel = session.label
+                            }
+                        }
+                    }
+                    if (failed.isEmpty() && published.isNotEmpty()) {
+                        CorruptIncoming.consumeResolved()
+                    }
+
+                    val downloadHint = accountHint?.takeIf { it.isNotBlank() }
+                        ?: points.firstOrNull()?.hint
+                    runPostSyncVehicleDownloads(downloadHint)
+
+                    val anyFailure = failed.isNotEmpty()
+                    val totalVehicles = published.sumOf { it.second.vehiclesMerged }
+                    val totalExpenses = published.sumOf { it.second.expensesMerged }
+                    val totalFuel = published.sumOf { it.second.fuelMerged }
+                    val totalFuelRemoteWins = published.sumOf { it.second.fuelRemoteWins }
+                    val results = published + failed
+                    var message = SyncResultMessages.spreadsheetSummary(
+                        results = results,
+                        anyFailure = anyFailure,
+                        totalVehicles = totalVehicles,
+                        totalExpenses = totalExpenses,
+                        totalFuel = totalFuel,
+                    )
+                    destinationFailureLine(failed)?.let { line ->
+                        message = if (message.isBlank()) line else "$message\n$line"
+                    }
+                    if (mergeFailures > 0) {
+                        message = "$message · $mergeFailures merges failed"
+                    }
+                    if (mergeError != null) {
+                        message = "$message · field-merge failed: $mergeError"
+                    }
+                    if (!postNote.isNullOrBlank()) {
+                        message = "$message · $postNote"
+                    }
+                    val postFailed = postNote?.startsWith("post-fuel merge failed") == true
+                    if (consentResult != null && consentLabel != null) {
+                        val consentText = SyncResultMessages.consentWithDest(
+                            consentLabel, consentResult.message,
+                        )
+                        message = if (message.isBlank()) consentText else "$message\n$consentText"
+                    }
+                    onProgress?.onStatus(message)
+                    SyncResult(
+                        success = !anyFailure && mergeError == null && !postFailed,
+                        message = message,
+                        vehiclesMerged = totalVehicles,
+                        expensesMerged = totalExpenses,
+                        fuelMerged = totalFuel,
+                        fuelRemoteWins = totalFuelRemoteWins,
+                        needsRemoteConsent = consentResult?.needsRemoteConsent == true,
+                        recoveryIntent = consentResult?.recoveryIntent,
+                    )
                 }
             }
-            onProgress?.onStatus(message)
-            SyncResult(
-                success = !anyFailure,
-                message = message,
-                vehiclesMerged = totalVehicles,
-                expensesMerged = totalExpenses,
-                fuelMerged = totalFuel,
-                fuelRemoteWins = totalFuelRemoteWins,
-            )
             } // withContext
         } finally {
             SyncRateLimit.installProgress(null)
         }
+    }
+
+    private data class SyncPoint(
+        val dest: SpreadsheetDestination,
+        val hint: String?,
+    )
+
+    private sealed class SyncPoints {
+        data class Ready(val points: List<SyncPoint>) : SyncPoints()
+        data class Stop(val result: SyncResult) : SyncPoints()
+    }
+
+    /**
+     * [destId] is that one point. Otherwise the configured/enabled list, or the
+     * legacy single spreadsheet when the list is empty.
+     */
+    private fun resolveSyncPoints(
+        store: SyncDestinationStore,
+        scope: SyncDestinationScope,
+        destId: String?,
+        accountHint: String?,
+    ): SyncPoints {
+        if (destId != null) {
+            val dest = store.allSpreadsheet().find { it.id == destId }
+                ?: return SyncPoints.Stop(SyncResult(false, "Destination not found"))
+            val hint = accountHint?.takeIf { it.isNotBlank() } ?: dest.accountHint
+            return SyncPoints.Ready(listOf(SyncPoint(dest, hint)))
+        }
+        val destinations = when (scope) {
+            SyncDestinationScope.CONFIGURED -> store.configuredSpreadsheet()
+            SyncDestinationScope.ENABLED -> store.enabledSpreadsheet()
+        }
+        val list = if (destinations.isNotEmpty()) {
+            destinations
+        } else {
+            val dest = store.spreadsheetDestination()
+            val targetId = resolveTargetId(dest)
+            if (dest == null || targetId.isBlank()) {
+                val message = when (scope) {
+                    SyncDestinationScope.ENABLED -> "No enabled spreadsheet destinations"
+                    SyncDestinationScope.CONFIGURED -> "Spreadsheet not configured"
+                }
+                return SyncPoints.Stop(SyncResult(false, message))
+            }
+            listOf(dest)
+        }
+        return SyncPoints.Ready(
+            list.map { dest ->
+                SyncPoint(
+                    dest = dest,
+                    hint = accountHint?.takeIf { it.isNotBlank() } ?: dest.accountHint,
+                )
+            },
+        )
+    }
+
+    private fun recordReadFailure(
+        failureStore: SyncFailureStore,
+        destId: String,
+        label: String,
+        result: SyncResult,
+        onProgress: SyncProgressListener?,
+    ) {
+        recordSpreadsheetResult(failureStore, destId, result)
+        onProgress?.onStatus(failStatusLine(label, result.message))
+    }
+
+    private fun destinationFailureLine(failed: List<Pair<String, SyncResult>>): String? {
+        if (failed.isEmpty()) return null
+        val detail = failed.joinToString("; ") { (label, result) ->
+            val reason = result.message.replace("\n", " ").trim()
+            "$label — $reason"
+        }
+        return "${failed.size} destinations failed: $detail"
+    }
+
+    private fun readSuccessResult(read: MergedDest): SyncResult =
+        SyncResult(
+            success = true,
+            message = buildString {
+                append("Sync complete: ${read.vehiclesMerged} vehicles, ${read.expensesMerged} expenses, ")
+                append("${read.fuel.upserted} fuel")
+                if (read.fuel.remoteWins > 0) append(" (${read.fuel.remoteWins} remote/new)")
+                if (read.mergeAcksMerged > 0) append(", ${read.mergeAcksMerged} merge-acks")
+                if (read.stationsMerged > 0) append(", ${read.stationsMerged} stations")
+            },
+            vehiclesMerged = read.vehiclesMerged,
+            expensesMerged = read.expensesMerged,
+            fuelMerged = read.fuel.upserted,
+            fuelRemoteWins = read.fuel.remoteWins,
+        )
+
+    private suspend fun paceBeforeNext(
+        index: Int,
+        lastIndex: Int,
+        onProgress: SyncProgressListener?,
+    ) {
+        if (index >= lastIndex) return
+        val pace = SyncRateLimit.interDestPaceMs
+        val cooldown = SyncRateLimit.postDestReadCooldownMs
+        val total = pace + cooldown
+        val sec = (total / 1000L).toInt()
+        onProgress?.onStatus("Pacing before next destination (${sec}s)…")
+        delay(total)
     }
 
     private fun failStatusLine(label: String, detail: String): String {
@@ -275,22 +406,17 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 }
             if (note != null) Log.i(TAG, "post-fuel merge: $note (${result.message})")
             note
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
-            Log.w(TAG, "post-fuel merge/rebuild failed", e)
-            null
+            if (e.isNonFailureCancel()) throw e
+            val text = "post-fuel merge failed: ${e.message ?: "error"}"
+            Log.w(TAG, text, e)
+            text
         }
     }
 
     private fun onProgressSafe(msg: String) {
         Log.i(TAG, msg)
-    }
-
-    private suspend fun appendPostFuelMerge(
-        result: SyncResult,
-        fuelRowsChanged: Boolean,
-    ): SyncResult {
-        val note = runPostFuelMergeAndRebuild(fuelRowsChanged) ?: return result
-        return result.copy(message = "${result.message} · $note")
     }
 
     /**
@@ -302,8 +428,8 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         backend: TabularShareBackend,
         accountHint: String?,
         bulk: Map<String, List<List<String>>> = emptyMap(),
-    ): Int {
-        val resolved = resolveRemoteTabRows(
+    ): TabMerge {
+        val resolved = readRemoteTabForMerge(
             dest, backend, TabularSchema.TAB_MERGE_ACKS, TabularSchema.MERGE_ACK_HEADERS, accountHint, bulk,
         )
         val remoteRows = resolved.rows
@@ -318,35 +444,35 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             if (ack.ackId.isBlank()) continue
             mergeAckStore.upsertFromSync(ack)
         }
-        return writeMergedAcksAndReturn(
-            dest, backend, accountHint, resolved, headerIndex, remoteDataRows, merged,
+        return TabMerge(
+            upserted = merged.size,
+            tab = TabPublish(
+                tabName = TabularSchema.TAB_MERGE_ACKS,
+                writeHeaders = TabularSchema.MERGE_ACK_HEADERS,
+                headerIndex = headerIndex,
+                remoteDataRows = remoteDataRows,
+                forceFullRewrite = resolved.forceFullRewrite,
+                tabMissing = resolved.tabMissing,
+                logTag = "MergeAcks",
+            ),
         )
     }
 
-    private suspend fun writeMergedAcksAndReturn(
+    /** Publish Room acks. Does not apply sheet rows. */
+    private suspend fun publishAcksTab(
         dest: SpreadsheetDestination,
         backend: TabularShareBackend,
         accountHint: String?,
-        resolved: ResolvedRemoteTab,
-        headerIndex: Map<String, Int>,
-        remoteDataRows: List<List<String>>,
-        merged: List<MergeAck>,
-    ): Int {
-        val sortedMerged = merged.sortedWith(compareBy({ it.kind }, { it.ackId }))
-        writeRowsIncremental(
-            dest = dest,
-            backend = backend,
-            tabName = TabularSchema.TAB_MERGE_ACKS,
-            headers = TabularSchema.MERGE_ACK_HEADERS,
-            sortedRows = sortedMerged.map { TabularSchema.ackToRow(it) },
-            sortedSyncIds = sortedMerged.map { it.ackId },
-            remoteDataRows = remoteDataRows,
-            headerIndex = headerIndex,
-            accountHint = accountHint,
-            logTag = "MergeAcks",
-            forceFullRewrite = resolved.forceFullRewrite,
+        tab: TabPublish,
+    ) {
+        val sorted = mergeAckStore.getAllIncludingDeleted()
+            .filter { it.ackId.isNotBlank() }
+            .sortedWith(compareBy({ it.kind }, { it.ackId }))
+        publishTabFromRoom(
+            dest, backend, accountHint, tab,
+            sortedRows = sorted.map { TabularSchema.ackToRow(it) },
+            sortedSyncIds = sorted.map { it.ackId },
         )
-        return sortedMerged.size
     }
 
     /**
@@ -357,8 +483,8 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         backend: TabularShareBackend,
         accountHint: String?,
         bulk: Map<String, List<List<String>>> = emptyMap(),
-    ): Int {
-        val resolved = resolveRemoteTabRows(
+    ): TabMerge {
+        val resolved = readRemoteTabForMerge(
             dest, backend, TabularSchema.TAB_STATIONS, TabularSchema.STATION_HEADERS, accountHint, bulk,
         )
         val remoteRows = resolved.rows
@@ -373,7 +499,6 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         val remoteById = remoteStations.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
         val allIds = (localById.keys + remoteById.keys).toSet()
 
-        val merged = mutableListOf<KnownStation>()
         var count = 0
         for (syncId in allIds) {
             val local = localById[syncId]
@@ -381,45 +506,38 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             val winner = mergeLww(local, remote)
             if (winner != null && winner.syncId.isNotBlank()) {
                 knownStationStore.upsertFromSync(winner)
-                merged.add(winner)
                 count++
             }
         }
 
-        val sortedMerged = merged.sortedWith(compareBy({ it.name.lowercase() }, { it.syncId }))
-        writeRowsIncremental(
-            dest = dest,
-            backend = backend,
-            tabName = TabularSchema.TAB_STATIONS,
-            headers = TabularSchema.STATION_HEADERS,
-            sortedRows = sortedMerged.map { TabularSchema.stationToRow(it) },
-            sortedSyncIds = sortedMerged.map { it.syncId },
-            remoteDataRows = remoteDataRows,
-            headerIndex = headerIndex,
-            accountHint = accountHint,
-            logTag = "Stations",
-            forceFullRewrite = resolved.forceFullRewrite,
+        return TabMerge(
+            upserted = count,
+            tab = TabPublish(
+                tabName = TabularSchema.TAB_STATIONS,
+                writeHeaders = TabularSchema.STATION_HEADERS,
+                headerIndex = headerIndex,
+                remoteDataRows = remoteDataRows,
+                forceFullRewrite = resolved.forceFullRewrite,
+                tabMissing = resolved.tabMissing,
+                logTag = "Stations",
+            ),
         )
-        return count
     }
 
-    private fun resolveLegacyOrPrimaryDest(store: SyncDestinationStore): SpreadsheetDestination {
-        store.spreadsheetDestination()?.let { return it }
-        val legacyId = legacySheetId()
-        if (legacyId.isBlank()) {
-            return SpreadsheetDestination()
-        }
-        val prefs = context.getSharedPreferences(SyncDestinationStore.PREFS_NAME, Context.MODE_PRIVATE)
-        return SpreadsheetDestination(
-            targetId = legacyId,
-            enabled = prefs.getBoolean("sync_enabled", false),
-            wifiOnly = prefs.getBoolean("wifi_only", true),
-            chargingOnly = prefs.getBoolean("charging_only", false),
-            frequencyMinutes = (prefs.getInt("frequency_hours", 6) * 60)
-                .coerceIn(
-                    SpreadsheetDestination.MIN_FREQUENCY_MINUTES,
-                    SpreadsheetDestination.MAX_FREQUENCY_MINUTES,
-                ),
+    /** Publish Room stations. Does not apply sheet rows. */
+    private suspend fun publishStationsTab(
+        dest: SpreadsheetDestination,
+        backend: TabularShareBackend,
+        accountHint: String?,
+        tab: TabPublish,
+    ) {
+        val sorted = knownStationStore.getAllIncludingDeleted()
+            .filter { it.syncId.isNotBlank() }
+            .sortedWith(compareBy({ it.name.lowercase() }, { it.syncId }))
+        publishTabFromRoom(
+            dest, backend, accountHint, tab,
+            sortedRows = sorted.map { TabularSchema.stationToRow(it) },
+            sortedSyncIds = sorted.map { it.syncId },
         )
     }
 
@@ -440,87 +558,189 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         }
     }
 
+    private data class OpenedMerge(
+        val backend: TabularShareBackend?,
+        val failure: SyncResult?,
+    )
+
+    private data class DestSession(
+        val dest: SpreadsheetDestination,
+        val hint: String?,
+        val label: String,
+        val backend: TabularShareBackend,
+        val read: MergedDest,
+    )
+
+    private data class MergedDest(
+        val vehiclesMerged: Int,
+        val expensesMerged: Int,
+        val fuel: FuelTabSyncStats,
+        val mergeAcksMerged: Int,
+        val stationsMerged: Int,
+        val vehicles: TabPublish,
+        val expenses: TabPublish,
+        val fuelTabs: List<FuelTabSnapshot>,
+        val acks: TabPublish,
+        val stations: TabPublish,
+    )
+
+    /** Column order and prior grid for a later publish. Merge-in does not write the sheet. */
+    private data class TabPublish(
+        val tabName: String,
+        val writeHeaders: List<String>,
+        val headerIndex: Map<String, Int>,
+        val remoteDataRows: List<List<String>>,
+        val forceFullRewrite: Boolean,
+        val tabMissing: Boolean,
+        val logTag: String,
+        val remoteRowsDeferred: Boolean = false,
+    )
+
+    private data class TabMerge(
+        val upserted: Int,
+        val tab: TabPublish,
+    )
+
+    private data class FuelMerge(
+        val stats: FuelTabSyncStats,
+        val snapshots: List<FuelTabSnapshot>,
+    )
+
+    private data class FuelTabSnapshot(
+        val vehicleSyncId: String,
+        val vehicleId: Int,
+        val tabName: String,
+        val writeHeaders: List<String>,
+        val headerIndex: Map<String, Int>,
+        val remoteDataRows: List<List<String>>,
+        val forceFullRewrite: Boolean,
+        val tabMissing: Boolean,
+        val renameFrom: String?,
+        val deleteOrphan: String?,
+        val remoteRowsDeferred: Boolean = false,
+    )
+
     /**
-     * Sync one destination once. Google Sheets HTTP pace / 429 retry live in
-     * **remotetable** L0 ([com.davidelang.remotetable.GoogleSheetsBackend]);
-     * [SyncRateLimit] still supplies multi-dest cooldowns and UI progress bridge.
-     * Legacy [GoogleSheetsClient] paths (browse/create) retain [SyncRateLimit.withSheetsApiLimit].
-     * No whole-dest restart that re-merges completed tabs.
+     * Auth and target checks only. Sheet reads happen in [mergeInDestination].
      */
-    private suspend fun syncSingleDestination(
-        dest: SpreadsheetDestination,
-        accountHint: String?,
-        @Suppress("UNUSED_PARAMETER") onProgress: SyncProgressListener? = null,
-    ): SyncResult {
+    private fun openForMerge(dest: SpreadsheetDestination, accountHint: String?): OpenedMerge {
         val backend = tabularApi.backendFor(dest)
         val targetId = backend.resolveTargetId(dest)
         if (targetId.isBlank()) {
-            return SyncResult(false, "Spreadsheet not configured")
+            return OpenedMerge(null, SyncResult(false, "Spreadsheet not configured"))
         }
         val hint = accountHint?.takeIf { it.isNotBlank() } ?: dest.accountHint
         if (!isAccountReady(dest, backend, hint)) {
-            return SyncResult(false, authRequiredMessage(dest.provider))
+            return OpenedMerge(null, SyncResult(false, authRequiredMessage(dest.provider)))
         }
-        return try {
-            // System Unassigned vehicle (id=0) so Fuel - Unassigned tab exists
-            vehicleRepository.ensureUnassignedVehicle()
-            // One titles list + bulk batchGet for compare pass (Vehicles/Expenses/acks/all Fuel - *)
-            val sheetTitles = backend.listTabTitles(dest, hint)
-            val bulk = prefetchCompareTabs(dest, backend, hint, sheetTitles)
-            val vehiclesMerged = syncVehiclesTab(dest, backend, hint, bulk)
-            val expensesMerged = syncExpensesTab(dest, backend, hint, bulk)
-            val fuel = syncFuelTabs(dest, backend, hint, bulk, sheetTitles)
-            val mergeAcksMerged = syncMergeAcksTab(dest, backend, hint, bulk)
-            Log.i(TAG, "Merge acks tab upserted=$mergeAcksMerged")
-            val stationsMerged = syncStationsTab(dest, backend, hint, bulk)
-            Log.i(TAG, "Stations tab upserted=$stationsMerged")
-            SyncResult(
-                success = true,
-                message = buildString {
-                    append("Sync complete: $vehiclesMerged vehicles, $expensesMerged expenses, ")
-                    append("${fuel.upserted} fuel")
-                    if (fuel.remoteWins > 0) append(" (${fuel.remoteWins} remote/new)")
-                    if (mergeAcksMerged > 0) append(", $mergeAcksMerged merge-acks")
-                    if (stationsMerged > 0) append(", $stationsMerged stations")
-                },
-                vehiclesMerged = vehiclesMerged,
-                expensesMerged = expensesMerged,
-                fuelMerged = fuel.upserted,
-                fuelRemoteWins = fuel.remoteWins,
-            )
-        } catch (e: SpreadsheetMissingColumnsException) {
-            // User-visible: wrong/corrupt sheet headers — do not wrap as generic network error.
+        return OpenedMerge(backend, null)
+    }
+
+    /** @return null when [e] is a non-failure cancel so the caller rethrows. */
+    private fun failureResult(dest: SpreadsheetDestination, e: Exception): SyncResult? {
+        if (e is SpreadsheetMissingColumnsException) {
             Log.e(TAG, "Sync aborted for dest=${dest.id}: ${e.message}")
-            SyncResult(false, e.message ?: SpreadsheetMissingColumnsException.formatUserMessage(e.tabName, e.missingColumns))
-        } catch (e: Exception) {
-            // Compose dispose / structured cancel must not become a stored spreadsheet failure.
-            if (e.isNonFailureCancel()) throw e
-            Log.e(TAG, "Sync failed for dest=${dest.id}", e)
-            val wrapped = SheetsAuthRecovery.wrapIfRecoverable(e)
-            if (wrapped is SheetsRecoverableAuthException) {
-                return SyncResult(
-                    success = false,
-                    message = wrapped.message ?: SheetsAuthRecovery.NEED_REMOTE_CONSENT_MESSAGE,
-                    needsRemoteConsent = true,
-                    recoveryIntent = wrapped.recoveryIntent,
-                )
-            }
-            val detail = SheetsAuthRecovery.userMessage(wrapped)
-            val full = buildString {
-                append(detail)
-                val raw = wrapped.message?.trim().orEmpty()
-                if (raw.isNotBlank() && !detail.contains(raw) && raw.length > detail.length) {
-                    append("\n\n")
-                    append(raw)
-                }
-            }
-            val message = if (SyncRateLimit.isRateLimitError(wrapped)) {
-                SyncRateLimit.appendCrossDeviceHint(full)
-            } else {
-                full
-            }
-            SyncResult(false, message)
+            return SyncResult(
+                false,
+                e.message ?: SpreadsheetMissingColumnsException.formatUserMessage(
+                    e.tabName, e.missingColumns,
+                ),
+            )
         }
+        if (e.isNonFailureCancel()) return null
+        Log.e(TAG, "Sync failed for dest=${dest.id}", e)
+        val wrapped = SheetsAuthRecovery.wrapIfRecoverable(e)
+        if (wrapped is SheetsRecoverableAuthException) {
+            return SyncResult(
+                success = false,
+                message = wrapped.message ?: SheetsAuthRecovery.NEED_REMOTE_CONSENT_MESSAGE,
+                needsRemoteConsent = true,
+                recoveryIntent = wrapped.recoveryIntent,
+            )
+        }
+        val detail = SheetsAuthRecovery.userMessage(wrapped)
+        val full = buildString {
+            append(detail)
+            val raw = wrapped.message?.trim().orEmpty()
+            if (raw.isNotBlank() && !detail.contains(raw) && raw.length > detail.length) {
+                append("\n\n")
+                append(raw)
+            }
+        }
+        val message = if (SyncRateLimit.isRateLimitError(wrapped)) {
+            SyncRateLimit.appendCrossDeviceHint(full)
+        } else {
+            full
+        }
+        return SyncResult(false, message)
+    }
+
+    /**
+     * Read this point into Room. Does not write the sheet.
+     */
+    private suspend fun mergeInDestination(
+        dest: SpreadsheetDestination,
+        backend: TabularShareBackend,
+        accountHint: String?,
+    ): MergedDest {
+        val hint = accountHint?.takeIf { it.isNotBlank() } ?: dest.accountHint
+        vehicleRepository.ensureUnassignedVehicle()
+        val sheetTitles = backend.listTabTitles(dest, hint)
+        val bulk = prefetchCompareTabs(dest, backend, hint, sheetTitles)
+        val vehicles = syncVehiclesTab(dest, backend, hint, bulk)
+        val expenses = syncExpensesTab(dest, backend, hint, bulk)
+        val fuel = syncFuelTabs(dest, backend, hint, bulk, sheetTitles)
+        val acks = syncMergeAcksTab(dest, backend, hint, bulk)
+        Log.i(TAG, "Merge acks tab upserted=${acks.upserted}")
+        val stations = syncStationsTab(dest, backend, hint, bulk)
+        Log.i(TAG, "Stations tab upserted=${stations.upserted}")
+        return MergedDest(
+            vehiclesMerged = vehicles.upserted,
+            expensesMerged = expenses.upserted,
+            fuel = fuel.stats,
+            mergeAcksMerged = acks.upserted,
+            stationsMerged = stations.upserted,
+            vehicles = vehicles.tab.deferRows(),
+            expenses = expenses.tab.deferRows(),
+            fuelTabs = fuel.snapshots.map { it.deferRows() },
+            acks = acks.tab.deferRows(),
+            stations = stations.tab.deferRows(),
+        )
+    }
+
+    private fun TabPublish.deferRows() = copy(remoteDataRows = emptyList(), remoteRowsDeferred = true)
+
+    private fun FuelTabSnapshot.deferRows() = copy(remoteDataRows = emptyList(), remoteRowsDeferred = true)
+
+    /** One tab at publish time so earlier destinations' grids are not kept. */
+    private suspend fun remoteRowsForWrite(
+        dest: SpreadsheetDestination,
+        backend: TabularShareBackend,
+        accountHint: String?,
+        tabName: String,
+        deferred: Boolean,
+        cached: List<List<String>>,
+    ): List<List<String>> {
+        if (!deferred) return cached
+        val bulk = backend.batchReadTabs(dest, listOf(tabName), accountHint)
+        val grid = bulk[tabName] ?: return emptyList()
+        return grid.drop(1).filter { row -> row.any { it.isNotBlank() } }
+    }
+
+    /**
+     * Write Room out to this point. Does not apply sheet body rows back into Room.
+     * May read tab titles and a header row so a tab that arrived from another point
+     * has a column order.
+     */
+    private suspend fun publishDestination(session: DestSession) {
+        val hint = session.hint?.takeIf { it.isNotBlank() } ?: session.dest.accountHint
+        val backend = session.backend
+        val dest = session.dest
+        publishVehiclesTab(dest, backend, hint, session.read.vehicles)
+        publishExpensesTab(dest, backend, hint, session.read.expenses)
+        publishFuelTabs(dest, backend, hint, session.read.fuelTabs)
+        publishAcksTab(dest, backend, hint, session.read.acks)
+        publishStationsTab(dest, backend, hint, session.read.stations)
     }
 
     private fun isAccountReady(dest: SpreadsheetDestination, backend: TabularShareBackend, hint: String?): Boolean =
@@ -552,6 +772,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         try {
             val downloads = photoBackupCoordinator.get().downloadMissingVehicleAssets(accountHint)
             Log.i(TAG, "Post-sync vehicle image downloads attempted: $downloads")
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "Post-sync vehicle image download batch failed (sheet sync still OK)", e)
         }
@@ -563,13 +784,8 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         }
 
     private fun resolveTargetId(dest: SpreadsheetDestination?): String {
-        if (dest == null) return legacySheetId()
+        if (dest == null) return ""
         return tabularApi.backendFor(dest).resolveTargetId(dest)
-    }
-
-    private fun legacySheetId(): String {
-        val prefs = context.getSharedPreferences(SyncDestinationStore.PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getString("sheet_id", "")?.trim().orEmpty()
     }
 
     /**
@@ -604,6 +820,8 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         /** Header row + data rows. */
         val rows: List<List<String>>,
         val forceFullRewrite: Boolean,
+        /** Tab was not on the sheet. Publish creates it; merge-in does not. */
+        val tabMissing: Boolean,
     )
 
     /**
@@ -624,23 +842,23 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     }
 
     /**
-     * Resolve full tab body for LWW.
-     * - **Missing tab / blank tab:** ensureHeaders creates canonical headers; empty remote; full rewrite write.
-     * - **Valid headers:** cache or ensure missing optional cols; incremental write when ordered.
-     * - **Corrupt headers** (cells present, required names missing): **fail** with named columns — no ensureHeaders merge, no LWW, no writeAllRows.
+     * Read a tab for LWW. Does not write the sheet.
+     * - **Missing / blank:** empty remote; publish creates or replaces the tab.
+     * - **Valid headers:** cached grid. Incomplete optional columns force a full rewrite later.
+     * - **Corrupt headers** (cells present, required names missing): **fail** — no LWW, no write.
      */
-    private suspend fun resolveRemoteTabRows(
-        dest: SpreadsheetDestination,
-        backend: TabularShareBackend,
+    private fun readRemoteTabForMerge(
+        @Suppress("UNUSED_PARAMETER") dest: SpreadsheetDestination,
+        @Suppress("UNUSED_PARAMETER") backend: TabularShareBackend,
         tabName: String,
         expectedHeaders: List<String>,
-        accountHint: String?,
+        @Suppress("UNUSED_PARAMETER") accountHint: String?,
         bulk: Map<String, List<List<String>>>?,
     ): ResolvedRemoteTab {
         fun firstNames(grid: List<List<String>>): List<String> =
             grid.firstOrNull()?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
 
-        fun failCorrupt(grid: List<List<String>>) {
+        fun failCorrupt(grid: List<List<String>>): Nothing {
             val first = firstNames(grid)
             val missing = TabularSchema.missingRequiredHeaders(first)
             Log.e(
@@ -651,54 +869,62 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         }
 
         val cached = bulk?.get(tabName)
-        if (cached != null) {
-            // Case 2: blank tab (exists but no cells)
-            if (TabularSchema.isCompletelyBlankGrid(cached)) {
-                Log.i(TAG, "Blank tab $tabName — ensureHeaders + empty remote")
-                backend.ensureHeaders(dest, tabName, expectedHeaders, accountHint)
-                val after = backend.readAllRows(dest, tabName, accountHint)
-                return ResolvedRemoteTab(
-                    rows = if (TabularSchema.isValidHeaderRow(firstNames(after))) after
-                    else listOf(expectedHeaders),
-                    forceFullRewrite = true,
-                )
-            }
-            // Case 3: non-blank but missing required columns
-            val first = firstNames(cached)
-            val missing = TabularSchema.missingRequiredHeaders(first)
-            if (missing.isNotEmpty()) {
-                failCorrupt(cached)
-            }
-            // Valid identity headers; maybe missing optional expected cols
-            val complete = expectedHeaders.all { it in first }
-            if (complete) {
-                val dataEmpty = cached.drop(1).none { row -> row.any { it.isNotBlank() } }
-                return ResolvedRemoteTab(cached, forceFullRewrite = dataEmpty)
-            }
-            Log.i(TAG, "Bulk cache header incomplete for $tabName — ensureHeaders + re-read")
-            backend.ensureHeaders(dest, tabName, expectedHeaders, accountHint)
-            val after = backend.readAllRows(dest, tabName, accountHint)
-            val afterFirst = firstNames(after)
-            val afterMissing = TabularSchema.missingRequiredHeaders(afterFirst)
-            if (afterMissing.isNotEmpty()) {
-                failCorrupt(after)
-            }
-            val dataEmpty = after.drop(1).none { row -> row.any { it.isNotBlank() } }
-            return ResolvedRemoteTab(after, forceFullRewrite = dataEmpty)
+        if (cached == null) {
+            Log.i(TAG, "No bulk cache for $tabName — empty remote (no sheet write)")
+            return ResolvedRemoteTab(
+                rows = listOf(expectedHeaders),
+                forceFullRewrite = true,
+                tabMissing = true,
+            )
         }
-        // Case 1: tab not on sheet (not in bulk) — create
-        Log.i(TAG, "No bulk cache for $tabName — ensureHeaders (create tab)")
-        backend.ensureHeaders(dest, tabName, expectedHeaders, accountHint)
-        val after = backend.readAllRows(dest, tabName, accountHint)
-        if (!TabularSchema.isCompletelyBlankGrid(after) &&
-            TabularSchema.missingRequiredHeaders(firstNames(after)).isNotEmpty()
-        ) {
-            // Unexpected: created tab still corrupt
-            failCorrupt(after)
+        if (TabularSchema.isCompletelyBlankGrid(cached)) {
+            Log.i(TAG, "Blank tab $tabName — empty remote (no sheet write)")
+            return ResolvedRemoteTab(
+                rows = listOf(expectedHeaders),
+                forceFullRewrite = true,
+                tabMissing = false,
+            )
         }
+        val first = firstNames(cached)
+        val missing = TabularSchema.missingRequiredHeaders(first)
+        if (missing.isNotEmpty()) {
+            failCorrupt(cached)
+        }
+        val dataEmpty = cached.drop(1).none { row -> row.any { it.isNotBlank() } }
+        val complete = expectedHeaders.all { it in first }
         return ResolvedRemoteTab(
-            rows = if (TabularSchema.isValidHeaderRow(firstNames(after))) after else listOf(expectedHeaders),
-            forceFullRewrite = true,
+            rows = cached,
+            forceFullRewrite = dataEmpty || !complete,
+            tabMissing = false,
+        )
+    }
+
+    private suspend fun publishTabFromRoom(
+        dest: SpreadsheetDestination,
+        backend: TabularShareBackend,
+        accountHint: String?,
+        tab: TabPublish,
+        sortedRows: List<List<String>>,
+        sortedSyncIds: List<String>,
+    ) {
+        if (tab.tabMissing) {
+            backend.ensureHeaders(dest, tab.tabName, tab.writeHeaders, accountHint)
+        }
+        val remoteDataRows = remoteRowsForWrite(
+            dest, backend, accountHint, tab.tabName, tab.remoteRowsDeferred, tab.remoteDataRows,
+        )
+        writeRowsIncremental(
+            dest = dest,
+            backend = backend,
+            tabName = tab.tabName,
+            headers = tab.writeHeaders,
+            sortedRows = sortedRows,
+            sortedSyncIds = sortedSyncIds,
+            remoteDataRows = remoteDataRows,
+            headerIndex = tab.headerIndex,
+            accountHint = accountHint,
+            logTag = tab.logTag,
+            forceFullRewrite = tab.forceFullRewrite,
         )
     }
 
@@ -711,14 +937,20 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         backend: TabularShareBackend,
         accountHint: String?,
         bulk: Map<String, List<List<String>>> = emptyMap(),
-    ): Int {
-        val resolved = resolveRemoteTabRows(
+    ): TabMerge {
+        val resolved = readRemoteTabForMerge(
             dest, backend, TabularSchema.TAB_VEHICLES, TabularSchema.VEHICLE_HEADERS, accountHint, bulk,
         )
         val remoteRows = resolved.rows
         val headerRow = remoteRows.firstOrNull() ?: TabularSchema.VEHICLE_HEADERS
-        val writeHeaders = TabularSchema.mergeHeaderOrder(headerRow, TabularSchema.VEHICLE_HEADERS)
-        val headerIndex = TabularSchema.headerIndex(writeHeaders)
+        val retiredOtherCrop = setOf(
+            "Other Crop L", "Other Crop T", "Other Crop R", "Other Crop B",
+        )
+        // Read index keeps remote positions so name-based decode is not shifted.
+        // Write drops retired Other Crop columns; full rewrite when they were present.
+        val mergedHeaders = TabularSchema.mergeHeaderOrder(headerRow, TabularSchema.VEHICLE_HEADERS)
+        val writeHeaders = mergedHeaders.filter { it !in retiredOtherCrop }
+        val headerIndex = TabularSchema.headerIndex(mergedHeaders)
         val remoteDataRows = remoteRows.drop(1)
             .filter { it.any { cell -> cell.isNotBlank() } }
 
@@ -744,21 +976,36 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         val withLandmarks = merged.count { !it.landmarkTextBlocksJson.isNullOrBlank() }
         Log.i(TAG, "Vehicles tab merged: upserted=${merged.size} withLandmarks=$withLandmarks")
 
-        val sortedMerged = merged.sortedWith(compareBy({ it.name.lowercase() }, { it.syncId }))
-        writeRowsIncremental(
-            dest = dest,
-            backend = backend,
-            tabName = TabularSchema.TAB_VEHICLES,
-            headers = writeHeaders,
-            sortedRows = sortedMerged.map { TabularSchema.vehicleToRow(it) },
-            sortedSyncIds = sortedMerged.map { it.syncId },
-            remoteDataRows = remoteDataRows,
-            headerIndex = headerIndex,
-            accountHint = accountHint,
-            logTag = "Vehicles",
-            forceFullRewrite = resolved.forceFullRewrite,
+        return TabMerge(
+            upserted = merged.size,
+            tab = TabPublish(
+                tabName = TabularSchema.TAB_VEHICLES,
+                writeHeaders = writeHeaders,
+                headerIndex = headerIndex,
+                remoteDataRows = remoteDataRows,
+                forceFullRewrite = resolved.forceFullRewrite ||
+                    headerRow.any { it.trim() in retiredOtherCrop },
+                tabMissing = resolved.tabMissing,
+                logTag = "Vehicles",
+            ),
         )
-        return sortedMerged.size
+    }
+
+    /** Publish Room vehicles. Does not apply sheet rows. */
+    private suspend fun publishVehiclesTab(
+        dest: SpreadsheetDestination,
+        backend: TabularShareBackend,
+        accountHint: String?,
+        tab: TabPublish,
+    ) {
+        val sorted = vehicleRepository.getAllIncludingDeleted()
+            .filter { it.syncId.isNotBlank() }
+            .sortedWith(compareBy({ it.name.lowercase() }, { it.syncId }))
+        publishTabFromRoom(
+            dest, backend, accountHint, tab,
+            sortedRows = sorted.map { TabularSchema.vehicleToRow(it, tab.writeHeaders, forPublish = true) },
+            sortedSyncIds = sorted.map { it.syncId },
+        )
     }
 
     /**
@@ -770,8 +1017,8 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         backend: TabularShareBackend,
         accountHint: String?,
         bulk: Map<String, List<List<String>>> = emptyMap(),
-    ): Int {
-        val resolved = resolveRemoteTabRows(
+    ): TabMerge {
+        val resolved = readRemoteTabForMerge(
             dest, backend, TabularSchema.TAB_EXPENSES, TabularSchema.EXPENSE_HEADERS, accountHint, bulk,
         )
         val remoteRows = resolved.rows
@@ -810,23 +1057,43 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             expenseRepository.upsertFromSync(entry)
         }
 
-        val sortedMerged = merged.sortedWith(compareBy({ it.date }, { it.syncId }))
-        writeRowsIncremental(
-            dest = dest,
-            backend = backend,
-            tabName = TabularSchema.TAB_EXPENSES,
-            headers = writeHeaders,
-            sortedRows = sortedMerged.map { entry ->
-                TabularSchema.expenseToRow(entry, vehicleSyncIdById[entry.vehicleId].orEmpty())
-            },
-            sortedSyncIds = sortedMerged.map { it.syncId },
-            remoteDataRows = remoteDataRows,
-            headerIndex = headerIndex,
-            accountHint = accountHint,
-            logTag = "Expenses",
-            forceFullRewrite = resolved.forceFullRewrite,
+        return TabMerge(
+            upserted = merged.size,
+            tab = TabPublish(
+                tabName = TabularSchema.TAB_EXPENSES,
+                writeHeaders = writeHeaders,
+                headerIndex = headerIndex,
+                remoteDataRows = remoteDataRows,
+                forceFullRewrite = resolved.forceFullRewrite,
+                tabMissing = resolved.tabMissing,
+                logTag = "Expenses",
+            ),
         )
-        return sortedMerged.size
+    }
+
+    /** Publish Room expenses. Does not apply sheet rows. */
+    private suspend fun publishExpensesTab(
+        dest: SpreadsheetDestination,
+        backend: TabularShareBackend,
+        accountHint: String?,
+        tab: TabPublish,
+    ) {
+        val allVehicles = vehicleRepository.getAllIncludingDeleted().filter { it.syncId.isNotBlank() }
+        val vehicleSyncIdById = allVehicles.associate { it.id to it.syncId }
+        val sorted = expenseRepository.getAllIncludingDeleted()
+            .filter { it.syncId.isNotBlank() }
+            .sortedWith(compareBy({ it.date }, { it.syncId }))
+        publishTabFromRoom(
+            dest, backend, accountHint, tab,
+            sortedRows = sorted.map { entry ->
+                TabularSchema.expenseToRow(
+                    entry,
+                    vehicleSyncIdById[entry.vehicleId].orEmpty(),
+                    forPublish = true,
+                )
+            },
+            sortedSyncIds = sorted.map { it.syncId },
+        )
     }
 
     private suspend fun findOrphanFuelTabs(
@@ -887,6 +1154,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         return emptyList()
     }
 
+    /** Old tab to rename at publish, or null. Does not write the sheet. */
     private suspend fun migrateFuelTabRenameIfNeeded(
         dest: SpreadsheetDestination,
         backend: TabularShareBackend,
@@ -896,29 +1164,22 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         accountHint: String?,
         hintStore: FuelTabRenameHintStore,
         bulk: MutableMap<String, List<List<String>>> = mutableMapOf(),
-    ): List<String> {
+    ): String? {
         val orphanTabs = resolveOrphanFuelTabs(
             dest, backend, vehicle, expectedTabName, sheetTitles, accountHint, hintStore, bulk,
         )
-        if (orphanTabs.isEmpty()) return sheetTitles
+        if (orphanTabs.isEmpty()) return null
         if (orphanTabs.size > 1) {
             Log.w(
                 TAG,
                 "Fuel tab rename skipped: multiple orphan tabs for syncId=${vehicle.syncId}: $orphanTabs",
             )
-            return sheetTitles
+            return null
         }
         val oldTab = orphanTabs.single()
-        if (expectedTabName in sheetTitles) return sheetTitles
-        val renamed = backend.renameTab(dest, oldTab, expectedTabName, accountHint)
-        if (renamed) {
-            Log.i(TAG, "Fuel tab migrate: \"$oldTab\" → \"$expectedTabName\" (rename)")
-            hintStore.clearHint(vehicle.syncId)
-            // Keep bulk compare cache under the new tab name (no re-GET).
-            bulk.remove(oldTab)?.let { bulk[expectedTabName] = it }
-            return sheetTitles.map { if (it == oldTab) expectedTabName else it }
-        }
-        return sheetTitles
+        if (expectedTabName in sheetTitles || oldTab !in sheetTitles) return null
+        Log.i(TAG, "Fuel tab rename deferred: \"$oldTab\" → \"$expectedTabName\"")
+        return oldTab
     }
 
     private suspend fun parseFuelEntriesFromTab(
@@ -956,6 +1217,10 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             .filter { it.vehicleId == vehicle.id }
     }
 
+    /**
+     * Pull a duplicate fuel tab into Room. Returns the orphan tab to delete at publish.
+     * Does not write the sheet.
+     */
     private suspend fun migrateFuelTabMergeAndDeleteIfNeeded(
         dest: SpreadsheetDestination,
         backend: TabularShareBackend,
@@ -966,13 +1231,13 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         accountHint: String?,
         hintStore: FuelTabRenameHintStore,
         bulk: MutableMap<String, List<List<String>>> = mutableMapOf(),
-    ): List<String> {
+    ): String? {
         val orphanTabs = resolveOrphanFuelTabs(
             dest, backend, vehicle, expectedTabName, sheetTitles, accountHint, hintStore, bulk,
         )
-        if (orphanTabs.size != 1) return sheetTitles
+        if (orphanTabs.size != 1) return null
         val oldTab = orphanTabs.single()
-        if (oldTab !in sheetTitles || expectedTabName !in sheetTitles) return sheetTitles
+        if (oldTab !in sheetTitles || expectedTabName !in sheetTitles) return null
 
         val oldFuel = parseFuelEntriesFromTab(
             dest, backend, oldTab, vehicle, vehicleIdBySyncId, accountHint, bulk,
@@ -1000,23 +1265,17 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             }
         }
 
-        backend.deleteTab(dest, oldTab, accountHint)
-        bulk.remove(oldTab)
-        hintStore.clearHint(vehicle.syncId)
         Log.i(
             TAG,
-            "Fuel tab migrate: \"$oldTab\" → \"$expectedTabName\" rows=$mergedCount (merge+delete)",
+            "Fuel tab orphan merged into Room: \"$oldTab\" → \"$expectedTabName\" rows=$mergedCount",
         )
-        return sheetTitles.filter { it != oldTab }
+        return oldTab
     }
 
     /**
-     * Fuel sync order (product):
-     * 1) LWW each `Fuel - {name}` tab via remotetable MergeSync lww_row, then
-     *    [LocationBlobOverlay] (FuelLocationJson.mergeBlobs) — domain stays in VE
-     * 2) Field-merge (absorb partials; soft-delete losers) — app, **before** sheet write
-     * 3) Write each fuel tab from **fresh** Room (incl. tombstones)
-     * Stage C question rebuild stays in post-sync after this returns.
+     * Fuel merge-in: LWW each `Fuel - {name}` tab into Room, then
+     * [LocationBlobOverlay]. No field-merge and no sheet write.
+     * Field-merge runs once in [syncNow], between merge-in and publish.
      */
     private suspend fun syncFuelTabs(
         dest: SpreadsheetDestination,
@@ -1024,36 +1283,22 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         accountHint: String?,
         bulk: Map<String, List<List<String>>> = emptyMap(),
         initialTitles: List<String>? = null,
-    ): FuelTabSyncStats {
-        // Reuse titles from dest prefetch when provided (avoid second listTabTitles GET).
-        var sheetTitles = initialTitles ?: backend.listTabTitles(dest, accountHint)
+    ): FuelMerge {
+        val sheetTitles = initialTitles ?: backend.listTabTitles(dest, accountHint)
         val hintStore = FuelTabRenameHintStore(context)
         val vehicles = vehicleRepository.getAllIncludingDeleted().filter { !it.deleted && it.syncId.isNotBlank() }
         val vehicleIdBySyncId = vehicles.associate { it.syncId to it.id }
         var total = 0
         var remoteWins = 0
-        // Mutable bulk map: rename migrations may invalidate cache entries.
         val bulkRows = bulk.toMutableMap()
-
-        // Snapshot remote headers/rows per vehicle for write-back after merge
-        data class FuelTabSnapshot(
-            val vehicle: Vehicle,
-            val tabName: String,
-            /** Preserved remote header order (+ appended missing cols after ensureHeaders). */
-            val writeHeaders: List<String>,
-            val headerIndex: Map<String, Int>,
-            val remoteDataRows: List<List<String>>,
-            val forceFullRewrite: Boolean,
-        )
         val snapshots = mutableListOf<FuelTabSnapshot>()
 
-        // --- Pass 1: library LWW only (no sheet write yet); use bulk cache for tab bodies ---
         for (vehicle in vehicles) {
             val tabName = TabularSchema.fuelTabName(vehicle.name)
-            sheetTitles = migrateFuelTabRenameIfNeeded(
+            val renameFrom = migrateFuelTabRenameIfNeeded(
                 dest, backend, vehicle, tabName, sheetTitles, accountHint, hintStore, bulkRows,
             )
-            sheetTitles = migrateFuelTabMergeAndDeleteIfNeeded(
+            val deleteOrphan = migrateFuelTabMergeAndDeleteIfNeeded(
                 dest,
                 backend,
                 vehicle,
@@ -1064,16 +1309,14 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 hintStore,
                 bulkRows,
             )
-            val resolved = resolveRemoteTabRows(
-                dest, backend, tabName, TabularSchema.FUEL_HEADERS, accountHint, bulkRows,
+            val readTab = renameFrom ?: tabName
+            val resolved = readRemoteTabForMerge(
+                dest, backend, readTab, TabularSchema.FUEL_HEADERS, accountHint, bulkRows,
             )
             val remoteRows = resolved.rows
-            // Keep cache in sync after resolve (may have re-read after ensureHeaders).
-            bulkRows[tabName] = remoteRows
             val headerRow = remoteRows.firstOrNull()?.map { it.trim() }?.filter { it.isNotEmpty() }
                 ?.takeIf { it.isNotEmpty() }
                 ?: TabularSchema.FUEL_HEADERS
-            // Valid headers: preserve order; invalid path already returned canonical-only rows.
             val writeHeaders = TabularSchema.mergeHeaderOrder(headerRow, TabularSchema.FUEL_HEADERS)
             val headerIndex = TabularSchema.headerIndex(writeHeaders)
             val remoteDataRows = remoteRows.drop(1)
@@ -1088,6 +1331,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 remoteGrid = remoteRows,
                 vehicleId = vehicle.id,
                 vehicleSyncId = vehicle.syncId,
+                sheetName = tabName,
             )
             val remoteFuel = parseFuelEntriesFromRows(remoteRows, vehicle, vehicleIdBySyncId)
             val remoteBySyncId = remoteFuel.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
@@ -1125,39 +1369,90 @@ class SpreadsheetSyncCoordinator @Inject constructor(
 
             snapshots.add(
                 FuelTabSnapshot(
-                    vehicle = vehicle,
+                    vehicleSyncId = vehicle.syncId,
+                    vehicleId = vehicle.id,
                     tabName = tabName,
                     writeHeaders = writeHeaders,
                     headerIndex = headerIndex,
                     remoteDataRows = remoteDataRows,
                     forceFullRewrite = resolved.forceFullRewrite,
+                    tabMissing = resolved.tabMissing && renameFrom == null,
+                    renameFrom = renameFrom,
+                    deleteOrphan = deleteOrphan,
                 ),
             )
         }
+        return FuelMerge(
+            stats = FuelTabSyncStats(upserted = total, remoteWins = remoteWins),
+            snapshots = snapshots,
+        )
+    }
 
-        // --- Pass 2: field-merge on full Room (absorb partials before write-back) ---
-        // Domain fuel merge stays in app after library LWW.
-        val liveBefore = fuelRepository.getAllIncludingDeleted().filter { !it.deleted }.size
-        Log.i(TAG, "Fuel field-merge before sheet write; live=$liveBefore")
-        val mergeStats = try {
-            batchFuelImportCoordinator.get().fieldMergeForSync { msg ->
-                Log.i(TAG, "fieldMerge: $msg")
+    /**
+     * Write each fuel tab from Room, including rows that arrived from other points.
+     * Does not apply sheet body rows back into Room.
+     */
+    private suspend fun publishFuelTabs(
+        dest: SpreadsheetDestination,
+        backend: TabularShareBackend,
+        accountHint: String?,
+        snapshots: List<FuelTabSnapshot>,
+    ) {
+        val hintStore = FuelTabRenameHintStore(context)
+        val bySyncId = snapshots.associateBy { it.vehicleSyncId }
+        val titles = backend.listTabTitles(dest, accountHint).toSet()
+        val vehicles = vehicleRepository.getAllIncludingDeleted()
+            .filter { !it.deleted && it.syncId.isNotBlank() }
+        for (vehicle in vehicles) {
+            val snap = bySyncId[vehicle.syncId]
+            val tabName: String
+            val writeHeaders: List<String>
+            val headerIndex: Map<String, Int>
+            val remoteDataRows: List<List<String>>
+            val forceFullRewrite: Boolean
+            val tabMissing: Boolean
+            if (snap != null) {
+                tabName = snap.tabName
+                var renamedOk = snap.renameFrom == null
+                if (snap.renameFrom != null) {
+                    renamedOk = backend.renameTab(dest, snap.renameFrom, tabName, accountHint)
+                    if (renamedOk) {
+                        Log.i(TAG, "Fuel tab migrate: \"${snap.renameFrom}\" → \"$tabName\" (rename)")
+                        hintStore.clearHint(vehicle.syncId)
+                    }
+                }
+                if (snap.deleteOrphan != null) {
+                    backend.deleteTab(dest, snap.deleteOrphan, accountHint)
+                    hintStore.clearHint(vehicle.syncId)
+                    Log.i(
+                        TAG,
+                        "Fuel tab migrate: deleted \"${snap.deleteOrphan}\" after Room merge",
+                    )
+                }
+                writeHeaders = snap.writeHeaders
+                headerIndex = snap.headerIndex
+                remoteDataRows = remoteRowsForWrite(
+                    dest, backend, accountHint, tabName, snap.remoteRowsDeferred, snap.remoteDataRows,
+                )
+                forceFullRewrite = snap.forceFullRewrite
+                tabMissing = snap.tabMissing || !renamedOk
+            } else {
+                tabName = TabularSchema.fuelTabName(vehicle.name)
+                // No merge-in read for this vehicle. An existing tab still has rows
+                // that were never applied to Room; leave it for a later sync.
+                if (tabName in titles) {
+                    Log.i(TAG, "Fuel write ${vehicle.name}: skip unread tab $tabName")
+                    continue
+                }
+                writeHeaders = TabularSchema.FUEL_HEADERS
+                headerIndex = TabularSchema.headerIndex(writeHeaders)
+                remoteDataRows = emptyList()
+                forceFullRewrite = true
+                tabMissing = true
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "field-merge before write failed", e)
-            null
-        }
-        if (mergeStats != null) {
-            Log.i(
-                TAG,
-                "Fuel field-merge done updates=${mergeStats.updated} deletes=${mergeStats.deleted} " +
-                    "secondPass=${mergeStats.secondPass} live=${mergeStats.liveCount}",
-            )
-        }
-
-        // --- Pass 3: write each tab from fresh Room (incl. deleted tombstones) ---
-        for (snap in snapshots) {
-            val vehicle = snap.vehicle
+            if (tabMissing) {
+                backend.ensureHeaders(dest, tabName, writeHeaders, accountHint)
+            }
             val fresh = fuelRepository.getAllIncludingDeleted()
                 .filter { it.vehicleId == vehicle.id && it.syncId.isNotBlank() }
             val sortedMerged = fresh.sortedWith(
@@ -1171,21 +1466,21 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             writeRowsIncremental(
                 dest = dest,
                 backend = backend,
-                tabName = snap.tabName,
-                // Keep sheet column order (append-only Notes); do not force human-first reorder.
-                headers = snap.writeHeaders,
+                tabName = tabName,
+                headers = writeHeaders,
                 sortedRows = sortedMerged.map {
-                    TabularSchema.fuelToRow(it, vehicle.syncId, snap.writeHeaders)
+                    TabularSchema.fuelToRow(
+                        it, vehicle.syncId, writeHeaders, forPublish = true, sheetName = tabName,
+                    )
                 },
                 sortedSyncIds = sortedMerged.map { it.syncId },
-                remoteDataRows = snap.remoteDataRows,
-                headerIndex = snap.headerIndex,
+                remoteDataRows = remoteDataRows,
+                headerIndex = headerIndex,
                 accountHint = accountHint,
                 logTag = "Fuel-${vehicle.name}",
-                forceFullRewrite = snap.forceFullRewrite,
+                forceFullRewrite = forceFullRewrite,
             )
         }
-        return FuelTabSyncStats(upserted = total, remoteWins = remoteWins)
     }
 
     private fun resolveVehicleIdFromSyncId(

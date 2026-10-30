@@ -53,17 +53,6 @@ object TripSegments {
         return out
     }
 
-    /** Segments for every vehicle that has trip starts in [entries] (natural only). */
-    fun listAllSegments(entries: List<FuelEntry>): List<Segment> {
-        val vehicleIds = entries
-            .asSequence()
-            .filter { TripTimeline.isTripStart(it) }
-            .map { it.vehicleId }
-            .distinct()
-            .sorted()
-            .toList()
-        return vehicleIds.flatMap { listSegments(it, entries) }
-    }
 
     /**
      * Natural segments plus **implicit leading Personal** for the report window when

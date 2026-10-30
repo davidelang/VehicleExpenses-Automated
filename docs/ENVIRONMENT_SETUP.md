@@ -290,6 +290,6 @@ test -r "$ANDROID_SDK_ROOT/ndk/"*/toolchains/llvm/prebuilt/linux-x86_64/sysroot/
 | Unix permissions model | `docs/specs/PERMISSIONS_MODEL.md` |
 | Agent protocol | `AGENT_MANDATES.md` |
 | Multi-agent workflows | `README-multi-agent.md` |
-| App overview / Quick Fill / coordinates | `docs/OVERVIEW.md`, `docs/reference/QUICK_FILL_CAMERA.md`, `docs/specs/ISOTROPIC_COORDINATE_SPEC.md` |
+| App overview / Fill / coordinates | `docs/OVERVIEW.md`, `docs/reference/FILL_CAMERA.md`, `docs/specs/ISOTROPIC_COORDINATE_SPEC.md` |
 
 Update this file when: new native prebuilts are required, SDK/NDK floors change, or the FILES sync contract changes.

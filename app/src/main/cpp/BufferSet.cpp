@@ -6,6 +6,7 @@
 #include <mutex>
 #include <cstring>
 #include <new>
+#include <jni.h>
 #include "BufferSetHandle.h"
 
 #define LOG_TAG "BufferSet"
@@ -23,6 +24,23 @@ static void logMatHeader(const char* tag, const cv::Mat* m) {
 static std::set<BufferSetHandle*> validHandles;
 static std::mutex registryMutex;
 
+static void throwIllegalState(JNIEnv* env, const char* what) {
+    if (env->ExceptionCheck()) return;
+    jclass ex = env->FindClass("java/lang/IllegalStateException");
+    if (!ex) return;
+    env->ThrowNew(ex, what);
+}
+
+static jlong failLong(JNIEnv* env, const char* what) {
+    throwIllegalState(env, what);
+    return static_cast<jlong>(0);
+}
+
+static jobject failObj(JNIEnv* env, const char* what) {
+    throwIllegalState(env, what);
+    return static_cast<jobject>(nullptr);
+}
+
 // Grow-path Mat redirect: point Mats at a live non-zero address while old pixel
 // data is freed. Primary sentinel is &handle->allocatedByteCount (valid, accessible).
 static inline uint8_t* bufferSetSafePointer(BufferSetHandle* handle) {
@@ -38,12 +56,15 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeSetup(
     JNIEnv* env, jobject thiz, jint width, jint height) {
     size_t frameSize = (size_t)width * (size_t)height;
     size_t totalSize = frameSize + (frameSize / 2);
-    uint8_t* data = new uint8_t[totalSize];
-    if (data == nullptr) return 0;
+    uint8_t* data = new (std::nothrow) uint8_t[totalSize];
+    if (data == nullptr) return failLong(env, "nativeSetup: allocation failed");
     std::memset(data, 0, frameSize);
     std::memset(data + frameSize, 128, totalSize - frameSize);
     jobject localBuffer = env->NewDirectByteBuffer(data, totalSize);
-    if (localBuffer == nullptr) { delete[] data; return 0; }
+    if (localBuffer == nullptr) {
+        delete[] data;
+        return failLong(env, "nativeSetup: NewDirectByteBuffer failed");
+    }
     jobject globalBuffer = env->NewGlobalRef(localBuffer);
     auto* handle = new BufferSetHandle(data, (size_t)width, (size_t)height, totalSize, totalSize, globalBuffer);
     {
@@ -93,21 +114,21 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeResize(
         size_t oldAllocated = handle->allocatedByteCount;
         uint8_t* newData = new (std::nothrow) uint8_t[needed];
         if (newData == nullptr) {
-            LOGE("BufferSet resize grow OOM: %dx%d needs %zu bytes (capacity %zu)", width, height, needed, oldAllocated);
+            throwIllegalState(env, "nativeResize: allocation failed");
             return;
         }
         std::memset(newData, 0, frameSize);
         std::memset(newData + frameSize, 128, needed - frameSize);
         jobject localBuffer = env->NewDirectByteBuffer(newData, needed);
         if (localBuffer == nullptr) {
-            LOGE("BufferSet resize grow failed: NewDirectByteBuffer for %zu bytes", needed);
             delete[] newData;
+            throwIllegalState(env, "nativeResize: NewDirectByteBuffer failed");
             return;
         }
         jobject newGlobalBuffer = env->NewGlobalRef(localBuffer);
         if (newGlobalBuffer == nullptr) {
-            LOGE("BufferSet resize grow failed: NewGlobalRef");
             delete[] newData;
+            throwIllegalState(env, "nativeResize: NewGlobalRef failed");
             return;
         }
         if (handle->globalBuffer != nullptr) env->DeleteGlobalRef(handle->globalBuffer);
@@ -161,9 +182,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeGetMatPtr(
     auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
     {
         std::lock_guard<std::mutex> lock(registryMutex);
-        if (validHandles.find(handle) == validHandles.end()) return 0;
+        if (validHandles.find(handle) == validHandles.end()) {
+            return failLong(env, "nativeGetMatPtr: stale handle");
+        }
+        return (jlong)handle->yMat;
     }
-    return (jlong)handle->yMat;
 }
 
 JNIEXPORT jlong JNICALL
@@ -172,9 +195,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeGetUVMatPtr(
     auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
     {
         std::lock_guard<std::mutex> lock(registryMutex);
-        if (validHandles.find(handle) == validHandles.end()) return 0;
+        if (validHandles.find(handle) == validHandles.end()) {
+            return failLong(env, "nativeGetUVMatPtr: stale handle");
+        }
+        return (jlong)handle->uvMat;
     }
-    return (jlong)handle->uvMat;
 }
 
 JNIEXPORT jlong JNICALL
@@ -183,9 +208,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeGetNv21MatPt
     auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
     {
         std::lock_guard<std::mutex> lock(registryMutex);
-        if (validHandles.find(handle) == validHandles.end()) return 0;
+        if (validHandles.find(handle) == validHandles.end()) {
+            return failLong(env, "nativeGetNv21MatPtr: stale handle");
+        }
+        return (jlong)handle->nv21Mat;
     }
-    return (jlong)handle->nv21Mat;
 }
 
 JNIEXPORT jobject JNICALL
@@ -194,9 +221,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeGetBuffer(
     auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
     {
         std::lock_guard<std::mutex> lock(registryMutex);
-        if (validHandles.find(handle) == validHandles.end()) return nullptr;
+        if (validHandles.find(handle) == validHandles.end()) {
+            return failObj(env, "nativeGetBuffer: stale handle");
+        }
+        return handle->globalBuffer;
     }
-    return handle->globalBuffer;
 }
 
 JNIEXPORT void JNICALL
@@ -306,27 +335,21 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeBorrowYuv(
 
     if (!yPtr) return;
 
-    handle->yMat->data = yPtr;
-    handle->yMat->datastart = yPtr;
-    handle->yMat->dataend = yPtr + (handle->height * yStride);
-    handle->yMat->step[0] = (size_t)yStride;
-
-    // NV21 Mat also starts at Y
-    handle->nv21Mat->data = yPtr;
-    handle->nv21Mat->step[0] = (size_t)yStride;
+    int width = (int)handle->width;
+    int height = (int)handle->height;
+    *(handle->yMat) = cv::Mat(height, width, CV_8UC1, yPtr, (size_t)yStride);
+    *(handle->nv21Mat) = cv::Mat(height * 3 / 2, width, CV_8UC1, yPtr, (size_t)yStride);
 
     // Borrow UV only if interleaved (Semi-Planar)
     if (uPtr && vPtr && uPixelStride == 2 && vPixelStride == 2) {
         // In NV21, V comes before U. In YV12/NV12, it might differ.
         // We point to the first byte of the chroma pair.
         uint8_t* firstChroma = (uPtr < vPtr) ? uPtr : vPtr;
-        handle->uvMat->data = firstChroma;
-        handle->uvMat->step[0] = (size_t)uvStride;
+        *(handle->uvMat) = cv::Mat(height / 2, width / 2, CV_8UC2, firstChroma, (size_t)uvStride);
     } else {
-        // Fallback: point UV to internal memory to avoid crash, 
+        // Fallback: point UV to internal memory to avoid crash,
         // but it won't match the borrowed Y.
-        handle->uvMat->data = handle->data + (handle->width * handle->height);
-        handle->uvMat->step[0] = (size_t)handle->width;
+        *(handle->uvMat) = cv::Mat(height / 2, width / 2, CV_8UC2, handle->data + (handle->width * handle->height), (size_t)handle->width);
     }
     
     handle->isBorrowed = true;
@@ -345,12 +368,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeUnborrow(
 
     if (!handle->isBorrowed) return;
 
-    handle->yMat->data = handle->data;
-    handle->yMat->step[0] = (size_t)handle->width;
-    handle->uvMat->data = handle->data + (handle->width * handle->height);
-    handle->uvMat->step[0] = (size_t)handle->width;
-    handle->nv21Mat->data = handle->data;
-    handle->nv21Mat->step[0] = (size_t)handle->width;
+    uint8_t* data = handle->data;
+    int width = (int)handle->width;
+    int height = (int)handle->height;
+    *(handle->yMat) = cv::Mat(height, width, CV_8UC1, data, (size_t)width);
+    *(handle->uvMat) = cv::Mat(height / 2, width / 2, CV_8UC2, data + (width * height), (size_t)width);
+    *(handle->nv21Mat) = cv::Mat(height * 3 / 2, width, CV_8UC1, data, (size_t)width);
     
     handle->isBorrowed = false;
     LOGI("BufferSet unborrowed handle %p", handle);

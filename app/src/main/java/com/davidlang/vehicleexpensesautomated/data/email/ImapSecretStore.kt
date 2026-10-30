@@ -38,6 +38,7 @@ class ImapSecretStore(context: Context) {
                     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
                 )
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 Log.w(TAG, "EncryptedSharedPreferences unavailable; using private prefs")
                 context.getSharedPreferences(FILE, Context.MODE_PRIVATE)

@@ -88,6 +88,7 @@ fun RcloneRemotesListDialog(
                 remotes = withContext(Dispatchers.IO) {
                     viewModel.listRcloneRemotes(destId, config)
                 }
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 errorText = e.message ?: "Failed to list remotes"
                 remotes = emptyList()
@@ -138,6 +139,7 @@ fun RcloneRemotesListDialog(
                                                 Toast.makeText(context, "Deleted $remote", Toast.LENGTH_SHORT).show()
                                                 onDeleted()
                                                 reload()
+                                            // kept: failure stays on this call so the screen or caller can continue
                                             } catch (e: Exception) {
                                                 Toast.makeText(
                                                     context,
@@ -208,6 +210,7 @@ fun RcloneRemoteWizardDialog(
                         ?: withContext(Dispatchers.IO) { viewModel.providerForRcloneType(t) }
                 }
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             errorText = e.message ?: "Failed to load providers"
         } finally {
@@ -229,6 +232,7 @@ fun RcloneRemoteWizardDialog(
         try {
             val intent = CustomTabsIntent.Builder().build()
             intent.launchUrl(context, Uri.parse(url))
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             Toast.makeText(context, "Could not open browser for sign-in", Toast.LENGTH_LONG).show()
         }
@@ -482,6 +486,7 @@ fun RcloneRemoteWizardDialog(
                                     withContext(Dispatchers.IO) {
                                         submitCreateOrUpdate(oauthState, oauthAnswer)
                                     }
+                                // kept: failure stays on this call so the screen or caller can continue
                                 } catch (e: Exception) {
                                     errorText = e.message ?: "Failed"
                                 } finally {
@@ -505,6 +510,7 @@ fun RcloneRemoteWizardDialog(
                                     withContext(Dispatchers.IO) {
                                         submitCreateOrUpdate()
                                     }
+                                // kept: failure stays on this call so the screen or caller can continue
                                 } catch (e: Exception) {
                                     errorText = e.message ?: "Save failed"
                                 } finally {

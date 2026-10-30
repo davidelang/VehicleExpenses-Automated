@@ -185,6 +185,7 @@ class ExcelGraphTabularBackend @Inject constructor(
                 conn["message"]?.toString()
                     ?: if (ok) "Connection test passed" else "Connection test failed",
             )
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             TabularTestResult(false, e.message ?: "Excel connection test failed")
         }

@@ -18,13 +18,14 @@ Updated when the code changes.
 
 | File | One line |
 |------|----------|
-| [QUICK_FILL_CAMERA.md](reference/QUICK_FILL_CAMERA.md) | Dash identity, odometer, pump stages, location |
+| [FILL_CAMERA.md](reference/FILL_CAMERA.md) | Dash identity, odometer, pump stages, location |
 | [OCR_PREPROCESSING.md](reference/OCR_PREPROCESSING.md) | Crop prep before odometer and pump OCR |
 | [PUMP_CLASSIFICATION.md](reference/PUMP_CLASSIFICATION.md) | How cost and volume are chosen |
 | [PUMP_EXPERIMENT_FLOWS.md](reference/PUMP_EXPERIMENT_FLOWS.md) | Current heatmap-expand attempts |
 | [NAVIGATION_MAP.md](reference/NAVIGATION_MAP.md) | Drawer and screens |
 | [API.md](reference/API.md) | Room entities |
 | [REPORTS_METRICS.md](reference/REPORTS_METRICS.md) | Fuel-economy math |
+| [DATA_TRANSFER.md](reference/DATA_TRANSFER.md) | Adb export and import commands, and the exec-in probe |
 | [SYNC_BEHAVIOR.md](reference/SYNC_BEHAVIOR.md) | Room merge with spreadsheet and photo targets |
 | [SYNC_TAB_LWW_AND_TESTS.md](reference/SYNC_TAB_LWW_AND_TESTS.md) | Tab last-writer-wins runbook |
 | [UI_COMPATIBILITY.md](reference/UI_COMPATIBILITY.md) | Compose label, font-scale, and photo rules |
@@ -54,6 +55,6 @@ Locked. If the code and the spec disagree, the code is wrong. Edits need a strat
 
 ## obsolete
 
-What we tried, how it worked, and why we stopped. Includes old classifier rules, old odometer notes, saved Paddle PR text, the JNI-mismatch investigation, the parallel harness note, two history notes (merge postmortem, oversize-blob purge), and [MANAGE_VEHICLES_DRAW.md](obsolete/MANAGE_VEHICLES_DRAW.md) (retired drag-crop Manage Vehicles screen).
+What we tried, how it worked, and why we stopped. Includes old classifier rules, old odometer notes, saved Paddle PR text, the JNI-mismatch investigation, the parallel harness note, two history notes (merge postmortem, oversize-blob purge), [MANAGE_VEHICLES_DRAW.md](obsolete/MANAGE_VEHICLES_DRAW.md) (retired drag-crop Manage Vehicles screen), and [RETIRED_OTHER_TEXT_CROP.md](obsolete/RETIRED_OTHER_TEXT_CROP.md) (retired ignore / otherText crop).
 
 Purged-engine and sandbox-researcher archives (see also [DISCOVERY_ENGINES.md](obsolete/DISCOVERY_ENGINES.md) for OCR engine history): [DROP_MLKIT.md](obsolete/DROP_MLKIT.md), [MLKIT_ITERATIVE_ALGORITHM.md](obsolete/MLKIT_ITERATIVE_ALGORITHM.md), [TFLITE_CTC_DECODER.md](obsolete/TFLITE_CTC_DECODER.md), [TFLITE_DETECTION_POST_PROCESSOR.md](obsolete/TFLITE_DETECTION_POST_PROCESSOR.md), [TESSERACT_CROP_SWEEP_RESULTS.md](obsolete/TESSERACT_CROP_SWEEP_RESULTS.md), [GEMINI-researcher-prompt.md](obsolete/GEMINI-researcher-prompt.md) (not repo `GEMINI.md`), [TODO-researcher.md](obsolete/TODO-researcher.md) (not repo `TODO.md`).

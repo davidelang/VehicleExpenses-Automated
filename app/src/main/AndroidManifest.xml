@@ -5,6 +5,7 @@
     <!-- Camera & Media permissions + explicit feature declaration (fixes lint error) -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
@@ -18,17 +19,25 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <uses-feature android:name="android.hardware.location.network" android:required="false" />
 
     <!-- Long experiment runs (multi-scale det, etc.) -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" tools:node="remove" />
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="mailto" />
+        </intent>
+    </queries>
 
     <application
         android:name=".VehicleExpensesApplication"
         android:allowBackup="true"
-        android:label="VehicleExpenses"
+        android:label="${appLabel}"
         android:largeHeap="true"
         android:theme="@style/Theme.VehicleExpensesAutomated"
         android:icon="@mipmap/ic_vehicleexpenses"
@@ -46,6 +55,11 @@
                 tools:node="remove" />
         </provider>
         <provider
+            android:name=".data.transfer.DataTransferProvider"
+            android:authorities="${applicationId}.datatransfer"
+            android:exported="true"
+            android:grantUriPermissions="false" />
+        <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
             android:exported="false"
@@ -61,14 +75,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Device automation: adb shell am start -a VIEW -d vehicleexpenses://experiment/... -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="vehicleexpenses" android:host="experiment" />
-            </intent-filter>
         </activity>
+        <activity
+            android:name=".ui.db.DatabaseErrorActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.startup.StartupFailureActivity"
+            android:exported="false" />
         <activity
             android:name=".ui.help.UserManualActivity"
             android:exported="false"
@@ -83,15 +96,11 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:scheme="vehicleexpenses"
+                    android:scheme="${appScheme}"
                     android:host="zoho"
                     android:path="/oauth" />
             </intent-filter>
         </activity>
-        <service
-            android:name=".ui.experiment.ExperimentForegroundService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
         <activity
             android:name="com.microsoft.identity.client.BrowserTabActivity"
             android:exported="true">
@@ -100,10 +109,13 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:host="com.davidlang.vehicleexpensesautomated"
-                    android:path="/PLACEHOLDER_SIGNATURE_HASH"
+                    android:host="${applicationId}"
+                    android:path="/${msalSignatureHash}"
                     android:scheme="msauth" />
             </intent-filter>
         </activity>
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            tools:node="remove" />
     </application>
 </manifest>

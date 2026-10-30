@@ -11834,3 +11834,649 @@ Plan ocr-geom-rec-prep-not-sizes-20260921-0445-plan.md. Tag detect-ocr-work-2/bu
 ## 2026-10-15 - PR prepared
 
 - PR prepared, path dev-ai-interaction/PRs/PR-test-new-paddle-landmarks.md
+
+## 2026-10-15 - Remove the unwired ConflictResolutionScreen stub.
+
+- Deleted ConflictResolutionScreen and the empty ui/conflict package. Removed its API.md entry. ImportOldPicturesScreen and the merge engine are unchanged.
+
+## 2026-10-16 - Remove dead OcrHarness.runSetJPipeline
+
+- Plan: remove-ocr-run-setj-dead-code-20261015-2135-plan.md (CR-dead-002)
+- Zero callers under app/. Delete runSetJPipeline only; production Quick Fill / batch dash stay runAutoFillPipeline + PaddleSeedOdo.
+- Keep OdoExpandKind (still a runAutoFillPipeline parameter) and BufferSet.Slice.toBitmap (still used by runAutoFillPipeline).
+- Phase 2 scrubs Set J production wording in docs/reference/OCR_PREPROCESSING.md and docs/obsolete/EXPERIMENT_ALIGNMENT_SETS.md. ENGINEERING_LOG historical mentions stay.
+
+## 2026-10-16 - Drop legacy sheet_id sync fallback
+
+- Spreadsheet sync no longer reads prefs sheet_id or sync_enabled as a parallel path.
+- SyncWorker runs when any spreadsheet destination in SyncDestinationStore.load() is enabled.
+- SpreadsheetSyncCoordinator uses SyncDestinationStore.spreadsheetDestination() only. migrateLegacyIfNeeded stays in the store.
+- Plan: drop-legacy-sheet-id-sync-20261015-2135-plan.md
+
+## 2026-10-16 - Gate SyncWorker on enabled configured spreadsheets
+
+- SyncWorker.doWork returns success without syncNow when enabledSpreadsheet() is empty.
+- That is the same list SyncManager.scheduleFromDestination uses (enabled and configured).
+- An enabled row with a blank target no longer reaches the coordinator fallback.
+- Plan: drop-legacy-sheet-id-sync-20261015-2135-plan.md (review fixup 1)
+
+## 2026-10-16 - Move experiment-only dump utils into ui/experiment
+
+- Move ExperimentReportMeta, PumpSoDebugDump, PreprocessStageDump, and HeatmapStageDump from ui/util to ui/experiment.
+- Package lines follow the move. Same-module util types they call are imported explicitly. Experiment screens keep the same calls.
+- Plan: relocate-experiment-only-utils-20261015-2135-plan.md
+
+## 2026-10-16 - Extract pump OCR feed from the experiment screen
+
+- Move recognizeRotGmmQuads and ocrPumpFeedOriented40 into ui/ocr/OcrPumpFeed.kt. Same signatures and call behavior.
+- JNI expRotGmmRecognize and ExpRotGmmOut stay on ExperimentPumpScreenKt so the existing .so symbol still resolves. The native entry is public so the moved wrapper can call it. ocrGeomExpandQuadFrame is internal so the moved feed can call it.
+- PaddleSeedOdo and MultiScaleDetRunner import ui.ocr. Report types stay in ui.experiment for this phase.
+- Plan: decouple-production-from-experiment-package-20261015-2135-plan.md
+
+## 2026-10-16 - Move PumpSetIRunner into ui/ocr
+
+- Package rename only. BatchFuelImportCoordinator imports ui.ocr.PumpSetIRunner. No experiment screen referenced the type.
+- Plan: decouple-production-from-experiment-package-20261015-2135-plan.md
+
+## 2026-10-16 - Move experiment report HTML helpers into ui/reports
+
+- ExperimentReportHtml and ReportCollapser (with ReportCellRef) move to ui/reports. Package rename only.
+- SettingsScreen, MultiScaleDetRunner, ExperimentPumpScreen, and ExperimentAlignmentScreen import the new package. MultiScaleDetRunner uses ui.ocr and ui.reports.
+- MultiScaleDetRunner's allowNames note names SelectedSamplePhotos.DASH without the ui.experiment package, so the production grep stays empty. SelectedSamplePhotos stays in ui.experiment.
+- ReportCellRef is a type in ReportCollapser.kt, not its own file.
+- Plan: decouple-production-from-experiment-package-20261015-2135-plan.md
+
+## 2026-10-16 - Drop vehicle other-text crop columns
+
+- Plan: remove-vehicle-other-text-crop-20261015-2135-plan.md
+- Phase 1: Vehicle drops otherTextCrop*. Room 21→22 rebuilds vehicles without those columns (minSdk 26, no DROP COLUMN). Dao unassigned insert matches. TabularSchema vehicle headers and encode/decode drop Other Crop L/T/R/B. Overlay no longer copies other-text crops.
+- Manage Vehicles and VehicleViewModel stop reading the removed fields so this phase still compiles. The otherTextCropRect parameter and landmark filter stay until phase 2.
+- MIGRATION_12_13 still names the columns because that step rebuilt the v13 table, which still had them.
+
+## 2026-10-16 - Remove other-text crop from vehicle UI
+
+- Plan: remove-vehicle-other-text-crop-20261015-2135-plan.md
+- Phase 2: createNewVehicleWithReference drops otherTextCropRect. getCrops returns only the odometer rect. Manage Vehicles no longer passes a null ignore crop into the landmark dialog.
+- LandmarkDebugDialog drops the otherTextCrop overlay. processRawLandmarks no longer takes otherTextCrop; the three callers drop that argument only.
+
+## 2026-10-16 - Other-text crop tests and obsolete note
+
+- Plan: remove-vehicle-other-text-crop-20261015-2135-plan.md
+- Phase 3: VehicleDefinitionOverlayTest fixtures no longer set other-text crops. The test that only checked that overlay is removed.
+- docs/obsolete/RETIRED_OTHER_TEXT_CROP.md records the retired ignore / otherText crop. docs/README.md links it from the obsolete index.
+
+## 2026-10-17 - Phase 0 build_app diff (reference vs VE root)
+
+- Diffed `/home/dlang/git/orchestration-example/build-examples/android-app/build_app` against `/home/dlang/git/VehicleExpenses-automated/build_app` before copying.
+- Reference has `_AAPT2=$(ve_aapt2_from_sdk ...)` and `-Pandroid.aapt2FromMavenOverride="$_AAPT2"`. VE root `ve-resolve-orch` still defines `ve_aapt2_from_sdk`, `ve_resolve_orch`, `ve_setup_worktree_build_homes`, `ve_reset_gradle_daemon_dir`, and `ve_wipe_foreign_app_build_outputs`. Not a stop.
+- VE-specific pieces the reference lacks (not required to keep inside `build_app`):
+  - No `./gradlew`: VE tags the branch builds tag and exits 0. The reference errors. The root has no `gradlew`. The one root commit of the new script uses a saved copy of the old script. After that, `./build_app` on the root cannot finish a run.
+  - `describe_here()` (AGENT_CONTEXT Forked-from / Start-branch). Reference and `app/build.gradle.kts` versionName use `${branch}-start` or `git describe --always` only.
+  - Re-exec as `primary_user` when root, for `~/.android/debug.keystore`. Reference re-execs as `coder_user` and uses worktree homes.
+  - Hard-coded `assembleDebug` and a default `planning_user`. Reference reads `apk_*` and `planning_user` from `project.config` with no defaults.
+- VE `deploy` is a separate file (data backup flags, hard-coded package). Not replaced.
+
+## 2026-10-17 - Phase 0 stopped: write denial outside agent-1
+
+- Did not copy `build_app` and did not commit. `project.config` in this worktree (agent-1) was updated with the Phase 0 keys (`apk_test_tasks=assembleDebug`). Writes outside this worktree were denied.
+- StrReplace `/home/dlang/git/VehicleExpenses-automated/project.config`: IO Error: Permission denied (os error 13).
+- Same denial for `master/project.config`, `agent-2/project.config`, and `test-smudge-filters/project.config`.
+- Shell `open('/home/dlang/git/VehicleExpenses-automated/project.config','r+')`: PermissionError [Errno 13] Permission denied.
+- No sudo. Handoff is those four `project.config` files plus the root `build_app` / `project-facts.md` copy and the master bundle edits, which were not attempted after the denial.
+
+## 2026-10-17 - Request for David: Phase 0 build_app handoff
+
+Request for David. Not work this coder did. Do not treat these steps as done.
+
+- Copy ~/git/orchestration-example/build-examples/android-app/build_app to the VE root build_app (branch orchestration, mode 775) after the diff. The diff already passed: the reference has ve_aapt2_from_sdk and -Pandroid.aapt2FromMavenOverride.
+- Set the Phase 0 project.config keys in the VE root, master, agent-2, and test-smudge-filters. agent-1/project.config is done. Keep primary_user, coder_user, planning_user. apk_test_tasks stays assembleDebug.
+- Before the publish, commit, move, or ignore the VE root files ground_truth.json, ground_truth_odo.json, ground_truth_odo.json.bak_20260811, and ground_truth_pump.json. Do not delete the first two.
+- Apply ~/playstore/vehicleexpenses-bundle.patch by hand on master. Do not git apply.
+- Update ## Build and commit in root and master project-facts.md as the roadmap states (./build_app --standard until qa exists and apk_test_tasks points at qa; after that, ./build_app --standard --test. Never --play).
+- Canon publish from ~/git/orchestration-example: dry run then --apply of tools/publish-smudge-fix with the roadmap excludes (extractmail, liveimap, remotetable, testclone, torque-ford-gas-tracking), plus ./deploy-orchestration --host-only --override-path build_app if the publish skips VE build_app.
+
+## 2026-10-17 - Phase 1 qa build: other trees, root deploy, OAuth
+
+Request for David. Not work this coder did. Do not treat these steps as done.
+
+- agent-1 `project.config` now has `apk_test_tasks=assembleQa` and the qa `apk_test_outputs`. The VE root, `master`, `agent-2`, and `test-smudge-filters` need the same keys:
+  - `apk_test_tasks=assembleQa`
+  - `apk_test_outputs=app/build/outputs/apk/arm64/qa/app-arm64-qa.apk app/build/outputs/apk/armv7/qa/app-armv7-qa.apk app/build/outputs/apk/x86_64/qa/app-x86_64-qa.apk`
+- The VE root `deploy` needs the same `--test` change as this checkout (qa APK path `app/build/outputs/apk/<flavor>/qa/app-<flavor>-qa.apk`, package from SDK aapt2 `dump packagename`, a missing qa APK names its path and errors, default stays debug). The root copy was not edited.
+- OAuth registrations, not registered here:
+  - Google sign-in (Android OAuth clients): the real package with the debug certificate SHA-1; the `.test` package with the debug certificate SHA-1; the real package with the Play app-signing SHA-1 (Play Console → App integrity); the real package with the upload key SHA-1 only if locally signed release builds are sideloaded.
+  - MSAL: the redirect is `msauth://<package>/<base64 SHA-1 of the signing cert>`. `app/src/qa/res/raw/msal_auth_config.json` is the `.test` package with `PLACEHOLDER_SIGNATURE_HASH`. The manifest path is `${msalSignatureHash}`, still `PLACEHOLDER_SIGNATURE_HASH` on debug, qa, and release. David fills the hashes.
+  - Zoho: register `vehicleexpensestest://zoho/oauth` as a second redirect URI.
+- This branch has no `play` product flavor (that is the master bundle edit, not this plan). `beforeVariants` disables a non-release `play` variant only once that flavor exists. The ABI flavors are unchanged.
+
+## 2026-10-17 - adb export uses the live path
+
+- Export stays in the process. Room is closed with openHelper.close(), checkpointed with PRAGMA wal_checkpoint(TRUNCATE), copied, checked, then reopened with writableDatabase and SELECT 1 before the tar is streamed. The Exporting gate clears after the pipe closes.
+- This is the live path, not the kill path. processRestarted is false. The kill path is only if a fuel entry saved after an export does not show up in the Room lists.
+
+## 2026-10-17 - import swaps on the next launch
+
+- Startup swap and stale-staging cleanup are the first statements of VehicleExpensesApplication.onCreate, before super.onCreate and before OpenCV or Paddle. Failed cleanup still calls super.onCreate for Hilt, then opens nothing: no verify, no scheduling, no seeding.
+- The WorkManager startup initializer is already removed (`tools:node="remove"` on `androidx.work.WorkManagerInitializer`). The Application implements `Configuration.Provider`.
+- Import writes the commit marker and restarts the process. Export stays in the process on the live path and does not restart.
+
+## 2026-10-17 - replace the VE root deploy when ready
+
+- David replaces the VE root `deploy` with `~/git/orchestration-example/build-examples/android-app/deploy` when he is ready. This checkout does not replace `deploy` outside the worktree.
+
+## 2026-10-17 - Database failure screen does not move database access
+
+- Grep of constructors, `init` blocks, `by lazy`, and injected-field initializers found no Room or DAO query. None were moved. DAO objects are injected, and the first open is `DatabaseHealth.verify` after `super.onCreate` and the startup swap.
+- `DataTransferProvider.onCreate` still returns true and touches no files. The WorkManager `InitializationProvider` meta-data is still `tools:node="remove"`.
+- `ZohoOAuthRedirectActivity` does not query the database (`ZohoSheetAuth` stores no rows). It was not given a new `Failed` branch.
+- Wipe compare-and-sets `Failed` to `Importing` before deleting the commit marker, both staging dirs, then `vehicle_expenses.db` and its `-wal`, `-shm`, and `-journal`. The first delete failure restores that `Failed` and stays on the error screen. There is no `Importing` to `Ok`.
+
+## 2026-10-17 - verify does not let SQLite delete a corrupt database
+
+- `SQLiteDatabase.openDatabase` read-only was calling the default corruption handler, which deleted `vehicle_expenses.db` before the error screen. The handler is now a no-op so a corrupt file stays until the user wipes.
+
+## 2026-10-17 - Wipe disabled during transfer; external staging exists-line
+
+- The database error screen stays composed across Failed, Exporting, and Importing. Wipe data and continue is disabled while Exporting or Importing. That does not dismiss an open confirm dialog or clear the refusal notice. An already-open confirm can still call wipe. A lost compare-and-set deletes nothing and does not kill the process.
+- The cleanup exists-line for external staging uses externalCacheDir's parent and File(parent, datatransfer-staging). A null parent says unavailable. Marker and internal staging stay under dataDir/no_backup. Exists checks only.
+
+## 2026-10-19 - Experiment foreground service: uses-permission names before the qa move
+
+- Plan: qa-only-experiment-foreground-service-20261019-2203-plan.md
+- Main manifest uses-permission names before the edit:
+  - android.permission.CAMERA
+  - android.permission.READ_MEDIA_IMAGES
+  - android.permission.READ_EXTERNAL_STORAGE
+  - android.permission.WRITE_EXTERNAL_STORAGE
+  - android.permission.INTERNET
+  - android.permission.ACCESS_NETWORK_STATE
+  - android.permission.ACCESS_FINE_LOCATION
+  - android.permission.ACCESS_COARSE_LOCATION
+  - android.permission.FOREGROUND_SERVICE
+  - android.permission.FOREGROUND_SERVICE_DATA_SYNC
+  - android.permission.POST_NOTIFICATIONS
+  - android.permission.WAKE_LOCK
+
+## 2026-10-19 - Experiment foreground service: uses-permission lists after the qa move
+
+- Plan: qa-only-experiment-foreground-service-20261019-2203-plan.md
+- Before, main:
+  - android.permission.CAMERA
+  - android.permission.READ_MEDIA_IMAGES
+  - android.permission.READ_EXTERNAL_STORAGE
+  - android.permission.WRITE_EXTERNAL_STORAGE
+  - android.permission.INTERNET
+  - android.permission.ACCESS_NETWORK_STATE
+  - android.permission.ACCESS_FINE_LOCATION
+  - android.permission.ACCESS_COARSE_LOCATION
+  - android.permission.FOREGROUND_SERVICE
+  - android.permission.FOREGROUND_SERVICE_DATA_SYNC
+  - android.permission.POST_NOTIFICATIONS
+  - android.permission.WAKE_LOCK
+- After, main:
+  - android.permission.CAMERA
+  - android.permission.READ_MEDIA_IMAGES
+  - android.permission.READ_EXTERNAL_STORAGE
+  - android.permission.WRITE_EXTERNAL_STORAGE
+  - android.permission.INTERNET
+  - android.permission.ACCESS_NETWORK_STATE
+  - android.permission.ACCESS_FINE_LOCATION
+  - android.permission.ACCESS_COARSE_LOCATION
+  - android.permission.POST_NOTIFICATIONS
+  - android.permission.WAKE_LOCK
+- After, qa:
+  - android.permission.FOREGROUND_SERVICE
+  - android.permission.FOREGROUND_SERVICE_DATA_SYNC
+- qa also declares .ui.experiment.ExperimentForegroundService (exported=false, foregroundServiceType=dataSync) beside the experiment deep link. Main does not.
+
+## 2026-10-20 - Execute play-r8-16k-abi-assets
+
+- Plan: dev-ai-interaction/plans/play-r8-16k-abi-assets-20261020-0109-plan.md
+- Worktree agent-1, branch code-review. HEAD at start ade405daf6e054d43d9747b290524b2dc67d7dc4. code-review/builds was 5871a746bac23a732206d41c558202138390365a.
+- Phase 1: release-only R8 (minify + shrink resources + proguard-android-optimize.txt). debug and qa stay unminified. Keep file is Paddle JNI, PaddlePredictor.clear, OpenCV JNI, Mat.nativeObj. Room, Hilt, kotlinx.serialization, and MSAL keep their own consumer rules. No app-package keep.
+
+## 2026-10-20 - Play R8 scores and per-ABI Paddle model libraries
+
+- playRelease `r8-metadata` stats are the share of classes, fields, and methods where that step is not allowed: noShrinkingPercentage 28.18, noOptimizationPercentage 28.85, noObfuscationPercentage 28.29. R8 counts `!isShrinkingAllowed`, `!isOptimizationAllowed`, and `!isMinificationAllowed`.
+- Play shrinking, optimization, and obfuscation scores are the complement: shrinking 71.82, optimization 71.15, obfuscation 71.71. Each is at least 25.
+- `x86_64/libpaddle_lite_jni.so` LOAD alignment is 0x4000. NEEDED is `libpaddle_light_api_shared.so`.
+- `libpaddle_models.so` LOAD alignment is 0x4000 for arm64-v8a, armeabi-v7a, and x86_64.
+- Release and debug libraries contain only that ABI's det, rec_v3, and rec_numeric: arm64 `paddle/prod_u8fp16/{det,rec_v3,rec_numeric}_armv8.nb`; armv7 `paddle/prod_u8fp32_u8/{det,rec_v3,rec_numeric}_armv7.nb`; x86_64 `paddle/prod_u8fp32_u8/{det,rec_v3,rec_numeric}_x86_64.nb`.
+- qa arm64 also embeds `paddle/exp_det_ab/product_det_armv8.nb`. qa x86_64 also embeds `paddle/exp_det_ab/product_det_x86_64.nb`. qa armv7 has no experiment det file, so only the three prod models.
+
+## 2026-10-20 - Keep Paddle Lite Java methods for JNI GetMethodID
+
+- Plan: dev-ai-interaction/plans/paddle-r8-keep-modeldir-20261020-0522-plan.md
+- Worktree agent-1, branch code-review. HEAD at start 33e5ceadf3a72ffe3614778ed3cda0bde5ec9a86.
+- Release R8 removed getModelDir. It is declared on ConfigBase. JNI GetMethodID looks the name up on MobileConfig and aborts in Application.onCreate before any window.
+- app/proguard-rules.pro: -keepclassmembers class com.baidu.paddle.lite.** { <methods>; }. Existing native-method and PaddlePredictor.clear rules stay. No app-package keep.
+
+## 2026-10-20 - Release R8 JNI keep mapping
+
+- playRelease mapping at a2540d1d: no `cppPaddlePredictorPointer ->`, `cppTensorPointer ->`, or Paddle `readOnly ->` (R8 omits unrenamed fields; dex keeps `PaddlePredictor.cppPaddlePredictorPointer` J, `Tensor.cppTensorPointer` J, `Tensor.readOnly` Z). `getP -> getP`, `getMat -> getMat`, `getModelDir -> getModelDir`. `sharedRecognizerV3` unrenamed on `NativePaddleEngine` (dex field, not a mapping arrow). Class names for the FindClass peers unchanged.
+
+## 2026-10-20 - Sheets sign-in includes Drive browse scopes
+
+- Plan: dev-ai-interaction/plans/sheets-signin-drive-browse-20261020-1900-plan.md (cite standard-plan-compliance-block.md)
+- Phase 1: spreadsheet destination sign-in requests spreadsheets, drive.file, and drive.readonly in one flow; persist the same email for Sheets and Drive; refresh readonly browse after sign-in. Photo backup sign-in stays the Drive-only client.
+
+## 2026-10-20 - Spreadsheet browse Drive consent recovery
+
+- Phase 2: readonly browse result is parsed with GoogleDriveAuth. DriveRecoverableAuthException from browse launches the existing consent flow and the dialog shows DriveAuthRecovery.userMessage plus Retry, then reloads.
+
+## 2026-10-20 - Spreadsheet browse defaults to All and shared
+
+- Phase 3: hybrid spreadsheet browse opens on All & shared. This app chip and empty-state copy stay. Folder browse still starts on This app.
+
+## 2026-10-20 - Sheets browse sign-in documented
+
+- Phase 4: user manual Google Sheets step 4 says one sign-in covers browse, All and shared is the default for an existing sheet, and paste URL still works. project-facts trigger records the three spreadsheet sign-in scopes and that photo backup stays Drive-only.
+
+## 2026-10-20 - Keep Drive and Sheets REST clients under release R8
+
+- ProGuard keeps com.google.api.services.drive, com.google.api.services.sheets, and com.google.api.client, plus Signature and annotation attributes, so release Gson does not throw key error on those clients.
+- Google REST failures log operation and stack under tag GoogleRestApi. Non-consent UI messages include the exception class.
+
+## 2026-10-20 - R8 dontwarn optional JNDI and JGSS
+
+- Plan: dev-ai-interaction/plans/r8-dontwarn-jndi-jgss-play-20261020-2230-plan.md (cite standard-plan-compliance-block.md)
+- app/proguard-rules.pro: -dontwarn javax.naming and org.ietf.jgss types that Apache HttpClient references for optional JNDI/Kerberos. Not on Android. Drive, Sheets, and client -keep lines stay. No new broad -keep.
+- app/build/outputs/mapping/playRelease/missing_rules.txt matched that list; no extra JNDI/JGSS lines copied.
+- Phase 2 step 1 is ./build_app --standard --test. ./build_app --play was not run (David's machine).
+
+## 2026-10-21 - Finished import must not open the error screen
+
+- Plan: dev-ai-interaction/plans/import-applied-not-failed-20261020-0405-plan.md (cite standard-plan-compliance-block.md)
+- Phase 1: startupSwap sets a flag only after markApplied returns. A throw before that still calls failSwap. The marker delete is outside that catch: a failure is logged and the swapped data stays. A leftover marker with no staged directory is finished on the next launch.
+
+## 2026-10-21 - Import and export failures share APP_DB_SCHEMA_VERSION
+
+- Plan: dev-ai-interaction/plans/import-applied-not-failed-20261020-0405-plan.md (cite standard-plan-compliance-block.md)
+- Phase 2: Failed in the importer and the exporter uses APP_DB_SCHEMA_VERSION. BackupExporter.DB_SCHEMA_VERSION is deleted.
+
+## 2026-10-21 - BufferSet §4.E alias audit already landed
+
+- Plan `dev-ai-interaction/plans/bufferset-mat-alias-audit-20261015-2140-plan.md` checked at HEAD `20b6628fb933636dabf7079afbe399e92b25c281` (`code-review/builds`).
+- P0 is `61b9cd69`: `runAutoFillPipeline` passes `masterBuffer`; `readSeedRec` queries `graySet.p.mat` only at `ocrPumpFeedOriented40` and re-queries `recBuffer.c[recId].mat` after the feed.
+- P1 is `58a2a9be`: `rotate`, `anchorAlign`, and `warpOdometerCrop` query `.p.mat` / `.s.mat` at the warp call. `MultiScaleDetRunner` nativeObj compare left as an identity guard.
+- Later commits on those files did not restore a cached Mat alias. No Critical File diff this turn. No new commit.
+- Inventory grep still matches `NativePaddleEngine.kt` `val scratch = bufferSetA.s.mat` (P2, not a Critical File). `ui/fuel`, `ui/trip`, and `data/batch` have no matches.
+
+## 2026-10-21 - Strip FOREGROUND_SERVICE from standard merged manifests
+
+- Plan: dev-ai-interaction/plans/strip-standard-foreground-service-20261019-2324-plan.md (cite standard-plan-compliance-block.md). Commit 6719b9cc.
+- Grep app/build/intermediates/merged_manifests/*/process*Manifest/AndroidManifest.xml, one ABI each.
+- arm64Debug, arm64Release, and playRelease: no FOREGROUND_SERVICE, no FOREGROUND_SERVICE_DATA_SYNC, no ExperimentForegroundService, no SystemForegroundService. SystemAlarmService and SystemJobService remain.
+- arm64Qa: FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, and ExperimentForegroundService are present. SystemForegroundService is absent. SystemAlarmService and SystemJobService remain.
+
+## 2026-10-24 - Paddle build defaults to NDK r28c
+
+- Plan: dev-ai-interaction/plans/cleanup-paddle-ndk-default-20261024-0458-plan.md (cite standard-plan-compliance-block.md)
+- `third_party/paddle/build` defaults `PADDLE_NDK_VERSION` to r28c and `PADDLE_ABIS` to arm64-v8a armeabi-v7a x86_64. Unset `PADDLE_DOCKER_IMAGE` selects `ve-paddle-ndk${NDK_VERSION}`. A set `PADDLE_DOCKER_IMAGE` is used as that string. The missing-image alias to `ve-paddle-int8` / `paddle-build-int8-20.04` is gone. `PADDLE_SKIP_IMAGE_BUILD=1` still exits when `docker image inspect` fails and names `$IMAGE`.
+- `Dockerfile.int8` `ARG NDK_VERSION` default is r28c. `docs/specs/PADDLE_PIN_BUILDS.md` and `third_party/paddle/SOURCE.md` name image `ve-paddle-ndk28c`, NDK r28c, and those three ABIs as the default.
+
+## 2026-10-24 - Paddle build and libpin-sandbox stop swallowing failures
+
+- Plan: dev-ai-interaction/plans/cleanup-paddle-fail-loud-20261024-0857-plan.md (cite standard-plan-compliance-block.md)
+- Phase 1: mkdir, chmod, llvm-strip lookup, strip, tailor-list patches, and the named fast-math, ffp-contract, gc-sections, and LTO seds exit on failure. The tailor ABI-dir retry is removed. A missing tailor directory fails on the first check and names paddle-models/artifact/tailor, paddle-models/src, or PADDLE_TAILOR_DIR.
+- Phase 2: the empty host_repo resolve_host_git call does not redirect stderr. A pin with no host checkout still keeps an empty HOST_GIT and continues.
+
+## 2026-10-24 - Paddle smoke reports stay under the pin
+
+- Plan: dev-ai-interaction/plans/cleanup-paddle-output-home-20261024-0857-plan.md (cite standard-plan-compliance-block.md)
+- scripts/paddle-so-smoke.sh default REPORT_DIR is $ROOT/third_party/paddle/tests/out/paddle-so-smoke-<timestamp>/. PADDLE_SMOKE_REPORT still overrides that directory.
+- docs/reference/PADDLE_SO_SMOKE.md PADDLE_SMOKE_REPORT row names that default.
+
+## 2026-10-24 - Fuel field-merge writes report per-row failures
+
+- Plan: dev-ai-interaction/plans/cleanup-sync-session-20261024-0428-plan.md (cite standard-plan-compliance-block.md)
+- Each field-merge updateFuelEntry and absorbMergedRow runs in its own Room transaction. A throw rolls that write back, adds one failure, and the loop continues. fieldMergeForSync returns the failure count. The syncFuelTabs catch that logged and returned null is gone.
+
+## 2026-10-24 - Spreadsheet sync reads every point before publish
+
+- Plan: dev-ai-interaction/plans/cleanup-sync-session-20261024-0428-plan.md (cite standard-plan-compliance-block.md)
+- syncNow reads every selected point into Room, runs field-merge and the post-merge once, then publishes Room. A point whose read failed is not written. The result lists N destinations failed and N merges failed. A standard build does not write BatchImportPendingStore from rebuildPendingForPhase.
+
+## 2026-10-24 - Align NDK rebuild comment and paddle smoke report path
+
+- Plan: dev-ai-interaction/plans/cleanup-paddle-smoke-doc-20261024-1830-plan.md (cite standard-plan-compliance-block.md)
+- Dockerfile.int8 rebuild example names NDK_VERSION=r28c, image ve-paddle-ndk28c, and PADDLE_NDK_VERSION=r28c. The Default NDK comment and ARG NDK_VERSION stay r28c.
+- docs/reference/PADDLE_ABI_EMULATOR_TEST.md report path is third_party/paddle/tests/out/paddle-so-smoke-YYYYMMDD-HHMM/. .gitignore ignores third_party/paddle/tests/out/.
+
+## 2026-10-25 - Imported photos keep EXIF, real dimensions, and a local URI
+
+- Plan: dev-ai-interaction/plans/cleanup-photo-import-20261025-0015-plan.md (cite standard-plan-compliance-block.md)
+- rotateImageIfRequired reads EXIF from a content:// stream. A file path still uses ExifInterface(path). A missing orientation or a thrown read leaves the bitmap unchanged.
+- getReferenceDimensions returns the probed size, swapped for EXIF 90 or 270, and throws IllegalStateException with the path when the size cannot be read. OcrHarness returns that message instead of 4080×3072. An empty reference photo still uses the default pair.
+- savePhoto still uploads to Drive and returns the local URI. A null decode toasts "Could not read that photo" and clears the discovery spinner.
+
+## 2026-10-25 - Sample ingest and the merge toast stay off the standard UI
+
+- Plan: dev-ai-interaction/plans/cleanup-standard-experiment-ui-20261025-0029-plan.md (cite standard-plan-compliance-block.md)
+- The sample-receipt ingest button and the spacer under it compose only when experimentsEnabled is true. The email-receipt paragraph omits the offline packaged-samples sentence unless that flag is on.
+- SpreadsheetDestList toasts "Unmatched partials may need Run merge (Import Old Pictures)" only when TEST_BUILD and show_experiment_screens are both true. Otherwise the toast is "Unmatched partials may need a merge".
+
+## 2026-10-25 - JNI failures stay pending, and OCR cancel is not a toast
+
+- Plan: dev-ai-interaction/plans/cleanup-jni-throw-20261025-0039-plan.md (cite standard-plan-compliance-block.md)
+- QfRotGmm checkExc no longer clears the Java exception. A true check returns from that native call without further JNI, including the dictionary loop, the box loop, and a failed PushLocalFrame.
+- Quick Fill and trip OCR rethrow CancellationException before the failure catch, so cancel does not toast that OCR failed.
+
+## 2026-10-25 - Quick Fill blocks the shutter until the capture ends, and Restart after 15 seconds without a heartbeat kills the process.
+
+## 2026-10-25 - BufferSet rebuilds Mat headers on borrow and unborrow
+
+- Plan: dev-ai-interaction/plans/cleanup-bufferset-headers-20261025-0129-plan.md (cite standard-plan-compliance-block.md)
+- nativeBorrowYuv and nativeUnborrow assign yMat, uvMat, and nv21Mat from the external-data cv::Mat constructor. Unborrow points all three at handle->data. borrowYuv and unborrow rebind existing crops. nativeUpdateMatData is unchanged.
+
+## 2026-10-25 - Content expand no longer hides a bufferSetB failure
+
+- content expand no longer hides a bufferSetB failure.
+
+## 2026-10-25 - Manage Vehicles discovery joins the previous job before another run
+
+- Manage Vehicles discovery joins the previous job before another run.
+
+## 2026-10-25 - Paddle pin build hardened; rebuild records shas and sizes; scripts read models only from the paddle-models pin
+
+- third_party/paddle/build validates PADDLE_STRIP_MODE, checks the host NDK before Docker, requires the scripts helpers and ./test, clears products before the build and requires them after, and always runs the link gate and ./test.
+- Paddle rebuild is `fetch-deps build --record paddle` then `third_party/paddle/record-sizes`: the pin is reproducible = false, so a rebuild records the new [[artifact]] sha256 values (old -> new printed per row) and record-sizes writes the .so sizes into the SOURCE.md Verified products table, the only place sizes are documented. Fixed the stale x86_64 jni size (55344 B, was 30936) and the armv7 sizes.
+- The OCR QEMU harness and the stage-ab, so-ab-compare, heatmap-stage-host and deskew phase1 scripts read product models from third_party/paddle-models/artifact/app/<arch>/; a missing model is an error.
+- Retired the scripts that wrote models into app/ (reopt-product-models, optimize_{armv7,armv8}_prod_u8fp32_u8, optimize_models, optimize_mono_int8_models). Models are rebuilt only by fetch-deps build paddle-models.
+- Tested in a scratch clone: hardened ./build real run passed every gate; ./test passed all 3 ABIs; get-artifacts --record plus the fetch-deps recorder moved only the jar sha; record-sizes fails loudly on a missing or duplicate row. Landed without a build or test run.
+
+## 2026-10-25 - Quick Fill debug sessions record the app version, SO stamp, and device.
+
+## 2026-10-25 - Quick Fill debug packed NV21
+
+- Quick Fill debug sessions store the packed NV21 frame.
+
+## 2026-10-25 - Odometer debug sessions record the 2048 detect and its recognize rows.
+
+## 2026-10-25 - Pump debug sessions record the cost and volume chooser
+
+## 2026-10-25 - Odometer debug sessions record the vehicle veto
+
+## 2026-10-25 - Quick Fill debug sessions keep one small preview JPEG
+
+## 2026-10-25 - The engine no longer allocates buffers nothing reads.
+
+## 2026-10-25 - The production dash read no longer encodes the harness JPEG, HTML, or JSON
+
+- the production dash read no longer encodes the harness JPEG, HTML, or JSON.
+
+## 2026-10-25 - dash valley trials reuse one scratch crop
+
+## 2026-10-25 - Manage Vehicles discovery detects on one small gray bitmap
+
+## 2026-10-25 - Quick Fill writes the Camera-roll EXIF off the main thread.
+
+## 2026-10-25 - tutorial images decode off the main thread
+
+## 2026-10-25 - A standard detect no longer samples process memory
+
+- a standard detect no longer samples process memory.
+
+## 2026-10-25 - bufferSetB is allocated on first use
+
+## 2026-10-25 - Quick Fill det caches its JNI class and method ids.
+
+## 2026-10-25 - the pump discovery frame is one JPEG drawn on scratch.
+
+## 2026-10-25 - the linear pump classifier runs only in debug
+
+## 2026-10-25 - Trip Tracking no longer builds the dash frame bitmap
+
+## 2026-10-25 - the pump stack JPEG reuses its output planes.
+
+## 2026-10-25 - a skipped IMAP receipt is counted and reported.
+
+## 2026-10-25 - a failed bitmap lock or label buffer throws.
+
+## 2026-10-25 - an unreadable import marker is not a landed commit
+
+## 2026-10-25 - a failed export flush is closed as an error.
+
+## 2026-10-25 - experiment routes and the service stop go through TestBuildHooks.
+
+## 2026-10-25 - the qa MainActivity registers the experiment routes.
+
+## 2026-10-25 - The experiment screens compile only for qa
+
+## 2026-10-25 - Import Old Pictures compiles only for qa
+
+## 2026-10-25 - Multi-scale det experiment compiles only for qa
+
+- The multi-scale det experiment compiles only for qa, and alignment uses the qa landmark function.
+
+## 2026-10-25 - recognizeNumeric compiles only for qa
+
+- recognizeNumeric compiles only for qa.
+
+## 2026-10-25 - The experiment det tier swap compiles only for qa
+
+## 2026-10-25 - the experiments call a qa copy of recognize
+
+## 2026-10-25 - the import-question fuel helpers compile only for qa
+
+## 2026-10-25 - the experiment content-expand helpers compile only for qa
+
+## 2026-10-25 - delete unused normalizeAngle and clean7SegmentDigits
+
+## 2026-10-25 - Delete unused detector fields and the armv7 path alias
+
+## 2026-10-25 - delete unused GoogleSheetsClient methods
+
+## 2026-10-25 - The deskew angle is no longer capped at ±20°
+
+## 2026-10-25 - the bitmap contrast stretch uses RGBA gray weights.
+
+## 2026-10-25 - a failed seed JPEG encode throws
+
+## 2026-10-25 - A deskew that gives up and returns 0 logs the reason.
+
+## 2026-10-25 - the rec window is a submat, not a row copy
+
+## 2026-10-25 - The deskew pack scales the s plane only
+
+## 2026-10-24 - reset-to-builds.sh never touches ENGINEERING_LOG.md
+
+- Plan: dev-ai-interaction/plans/publish-reset-to-builds-20261024-1826-plan.md
+- Pulled the fixed reset-to-builds.sh from 42306e94 (orchestration-example 82f53a2): it no longer resets, saves or restores ENGINEERING_LOG.md, and drops chattr, swallowed errors and the /tmp scratch copy.
+
+## 2026-10-26 - expRotGmmRecognize compiles only for the qa build
+
+expRotGmmRecognize compiles only for the qa build.
+
+## 2026-10-26 - An import whose backup manifest is not JSON fails and logs the parser message.
+
+## 2026-10-26 - Dash identification continues only when exactly one vehicle survives the veto
+
+## 2026-10-26 - Play does not require camera autofocus
+
+- Plan: dev-ai-interaction/plans/play-camera-autofocus-optional-20261024-1747-plan.md (cite standard-plan-compliance-block.md)
+- Before: android.hardware.camera required false; android.hardware.location required false; CAMERA implies android.hardware.camera.autofocus; ACCESS_FINE_LOCATION can imply android.hardware.location.gps.
+- After, aapt2 dump badging of the arm64 debug APK ./build_app wrote (app/build/outputs/apk/arm64/debug/app-arm64-debug.apk from output-metadata.json, SDK build-tools/36.1.0/aapt2, versionName code-review-start-206-gaaee00ce+sod0506c55). uses-feature-not-required is required false. No camera feature is required. android.hardware.touchscreen stays required.
+feature-group: label=''
+  uses-feature-not-required: name='android.hardware.camera'
+  uses-feature-not-required: name='android.hardware.camera.autofocus'
+  uses-feature-not-required: name='android.hardware.location'
+  uses-feature-not-required: name='android.hardware.location.gps'
+  uses-feature-not-required: name='android.hardware.location.network'
+  uses-feature-not-required: name='android.hardware.nfc'
+  uses-feature-not-required: name='android.hardware.usb.host'
+  uses-feature: name='android.hardware.faketouch'
+  uses-implied-feature: name='android.hardware.faketouch' reason='default feature for all apps'
+
+## 2026-10-27 - Test-only Kotlin, assets, and JNI leave the shipped build
+
+- Plan: dev-ai-interaction/plans/test-only-out-of-main-20261027-1535-plan.md (cite standard-plan-compliance-block.md)
+- Roadmap steps 1.1–1.3 only. Test-only members and assets move to the qa source set. Qa-only JNI moves to native_ocr_qa. Debug and release keep the TEST_BUILD false path. DatabaseErrorActivity still prints TEST_BUILD.
+
+## 2026-10-27 - Debug compile: shipped photo helpers and EmailReceiptPrefs
+
+- Plan: dev-ai-interaction/plans/test-only-out-of-main-20261027-1535-plan.md (cite standard-plan-compliance-block.md)
+- Debug could not see qa. `photoStem`, `dedupePhotoPaths`, and `dashPhotoPaths` (and `photoPathExists`, which dedupe calls) stay in main. Qa keeps `pendingPhotoUris`, the path hints, `pumpPhotoPaths`, and `isDngPath`. Removed the stray `useGmail` expression in EmailReceiptPrefs; those methods had no callers.
+
+## 2026-10-27 - Qa native compile: kVeAllocCap on the copied alloc helpers
+
+- Plan: dev-ai-interaction/plans/test-only-out-of-main-20261027-1535-plan.md (cite standard-plan-compliance-block.md)
+- assembleQa failed in NativeImageUtilsQa.cpp: the copied veMatBytes and veAllocLog use kVeAllocCap, which stayed only in NativeImageUtils.cpp. The same file-local 64MiB cap is now in the qa copy. Debug native_ocr is unchanged.
+
+## 2026-10-27 - Qa compile: extension receivers and veEncodeYuvMatJpeg
+
+- Plan: dev-ai-interaction/plans/test-only-out-of-main-20261027-1535-plan.md (cite standard-plan-compliance-block.md)
+- assembleQa: OrientedBox members are extensions on OrientedBox; uvRasterSize is on OrientedQuad; Seg7Expand defaults qualify SEG7_K and SEG7_J. MergeAckStore.context and ImageAlignmentUtils.median are internal so the qa extensions can call them. hunkToRect is back on the qa PumpCostVolUtils extensions. veEncodeYuvMatJpeg is copied into NativeImageUtilsQa.cpp so native_ocr_qa does not link native_ocr. Debug behavior is unchanged.
+
+## 2026-10-27 - Qa compile: photo helper file name
+
+- Plan: dev-ai-interaction/plans/test-only-out-of-main-20261027-1535-plan.md (cite standard-plan-compliance-block.md)
+- Main and qa both had PendingPhotoUris.kt, so assembleQa saw two PendingPhotoUrisKt classes. The shipped helpers are in PhotoStem.kt. Same package, same functions. Debug behavior is unchanged.
+
+## 2026-10-27 - Failures are loud
+
+- Plan: dev-ai-interaction/plans/failures-are-loud-20261027-2007-plan.md (cite standard-plan-compliance-block.md)
+- Startup OpenCV, Paddle, and rclone load failures open a fatal screen. The rclone smoke thread, sharedTierBuffers, and the app WAKE_LOCK line are gone. Product labels come from productArchAndDir().
+- Shipped JNI failures throw. ExceptionClear is gone from NativeImageUtils.cpp, QfRotGmm.cpp, and the shipped part of ExpRotGmm.cpp. Rec rows no longer carry "?", "", or error strings. A throw inside runAutoFillPipeline still returns AutoFillResult(error = "Pipeline Error: …"). A pump throw still returns PumpCostVolResult(error = "Pump OCR failed: …").
+- Auto-fill reads ICRS landmarks only. getIcrsLandmarksFromJson replaces getFullLandmarksFromJson. DEFAULT_REF_DASH, getReferenceDimensions, and qa restoreMasterBuffers are deleted. The JSON key stays "ML Kit".
+- Camera dispose awaits the executor 250 ms, then shutdownNow on timeout. Trip uses the Quick Fill busy CAS. One BufferSet ingest helper has a generation guard. The debug_quick_fill toggle is renamed and resets off. Trip original.jpg is gone.
+- D6 is one transaction per merge pair; a failure keeps both rows and reports "N merges failed". Sync and the location worker do not load every row. PhotoExifMeta applies stored OffsetTime. uploadToDriveLegacy is deleted; savePhoto returns a path or throws.
+- One OpenDocument picker takes a persistable grant for jpeg, png, and image/x-adobe-dng. veDngDevelopRgb develops DNG at the image's size. A missing gallery file is reported and sync continues. Display uses decodeFullSize and recycles on dispose.
+- Shipped caps kVeAllocCap, the 254-label stop, the 200-box cap, pts[4096], kRecMaxW, and the 4096/2048 Kotlin pools are sized from the data. Allocation failure throws. Qa copies keep their caps.
+- Remaining catches rethrow with context, are removed, or have a one-line justification. The two harness landing zones and the two DataTransferProvider pipe threads stay, with comments. The debug toggle resets to off. qa restoreMasterBuffers is deleted because DEFAULT_REF_DASH is gone.
+
+## 2026-10-27 - Failures are loud: photo path
+
+- Plan: dev-ai-interaction/plans/failures-are-loud-20261027-2007-plan.md (cite standard-plan-compliance-block.md)
+- savePhoto and saveLocally are removed. The expense row stores the gallery URI. The vehicle reference JPEG is still written under filesDir. A DNG original is uploaded from that gallery URI.
+- Spreadsheet sync drops each destination's row grids after merge-in and reads one tab back at publish. The legacy sheet_id fallback is gone. PhotoExifMeta applies OffsetTimeOriginal to DateTimeOriginal.
+- The debug capture toggle key is debug_capture and starts off.
+
+## 2026-10-27 - Rec scale follows crop height
+- Plan: dev-ai-interaction/plans/failures-are-loud-20261027-2007-plan.md (cite standard-plan-compliance-block.md)
+- recognizeOne no longer passes the unscaled crop width as a destination cap. planContent40 keeps scale 40/cropH, so a crop shorter than 40px still has content height 40. Width is the scaled crop.
+- A gallery open that returns null shows "Could not use picture" and does not call onPicked.
+
+## 2026-10-27 - Picker sniff, EXIF copy, and rec scale
+
+- Plan: dev-ai-interaction/plans/picker-exif-and-rec-scale-20261027-2131-plan.md (cite standard-plan-compliance-block.md)
+- A gallery pick is kept only when the header is JPEG, PNG, or TIFF. Anything else shows "Could not use picture" and does not call onPicked. isDng is the TIFF header only.
+- developToJpeg copies DateTimeOriginal and GPS from the source onto the JPEG and sets orientation to 1.
+- planContent40In48 keeps scale at 40/cropH. ocrPumpFeedOriented40 grows the scratch and the recognition buffer to that window. The width-fit shrink and the cut path are gone.
+
+## 2026-10-27 - Build guard, model pin, and method splits
+
+- Plan: dev-ai-interaction/plans/build-models-method-guard-20261027-2007-plan.md (cite standard-plan-compliance-block.md)
+- build_app fails on a missing named file, a pre-staged extra, or an untracked file. The version name has no dev or missing fallback. The embed list must stay the three product models. dexdump fails a shipped method over 7,900 code units. Qa-only methods are not counted. The play bundle is checked only when this command builds it.
+- The paddle-models pin keeps seed/weights and the four x86_64 tailor lists. Legacy seed models and lists are removed. tests/verify-rebuild is the host rebuild check SOURCE.md cites.
+- ExpenseEntryScreenBody, SettingsScreen, FuelEditScreen, TripTrackingScreen, and OcrHarness.runAutoFillPipeline are split. The three settings switches stay in the parent. The forced-vehicle exit, the ICRS read, and the two pipeline catches stay in runAutoFillPipeline.
+
+## 2026-10-28 - build_app back to the synced version
+
+- build_app is installed from orchestration-example (build-examples/android-gradle) and synced from the VehicleExpenses-automated root, so it is not edited in this worktree. It is restored to the last sync (a58d556c, same as the root copy).
+- That removes the 2026-10-27 "Build guard" build_app changes: the untracked-file check, the missing-name and pre-staged errors, the keystore-mode error, the embed-list check, and the dexdump method-size guard. The version-name change in app/build.gradle.kts, the paddle-models pin and the method splits stay.
+
+## 2026-10-28 - Post-impl display, capture, sync, and Fill rename
+
+- Gallery writes go through PhotoStorageManager.saveGalleryPhoto (reuse when the same bytes are already stored; otherwise insert). No overwrite or delete. Picked images stay as-is and are OCR'd at full size. TIFF still uses LibRaw.
+- Photo and JSON cells are valid, blank, or corrupt. Corrupt text is kept and not written back. Open items show on SyncingScreen, count as failures, and skip photo upload, missing, and scrub.
+- Fill (was Quick Fill) saves shutter and fallback frames through the shared gallery save, persists a fallback mark, and migrates the old debug pref and folder once at startup.
+- Genuine defaults left in place: CurrencyCodes symbol lookups; RcloneProviderCatalog curated list; MicrosoftOneDriveAuth hints and accounts; RcloneRuntime getRemoteType and best-effort mkdir; RcloneConfStorage .bak copy and conf import; DeviceFeedbackInfo deviceHasCamera; NetworkStatus; PhotoExifMeta; CaptureLocation; SpreadsheetDestEditForm sign-in and test-connection catches.
+- Repo-root docs/ENVIRONMENT_SETUP.md (rules.manifest.local) was not writable from this checkout, so that copy still says Quick Fill. The worktree copy was left unchanged.
+
+## 2026-10-28 - Expense original name and missing receipt marker
+
+- Restoring an expense original uses the stored gallery name, including expense_<syncId>_original.dng. A blank name is still built from the file ID and role, and that substitution is logged.
+- A one-page receipt with a missing marker is stored as JSON so the marker survives format and parse. A readable one-page receipt stays a raw URI.
+
+## 2026-10-29 - Post-fix follow-ups
+
+- Plan: dev-ai-interaction/plans/post-fix-follow-ups-20261029-0711-plan.md (cite standard-plan-compliance-block.md)
+- Unreadable-row sync path is removed. Blank sheet rows are dropped before merge. Gallery saves copy to a .part file, then insert, with no IS_PENDING. Expense shutter, fill pick, and trip save use the click-time or frame rotation, and EXIF is written on the cache file before the gallery insert.
+
+## 2026-10-29 - Expense shutter after failed bind
+
+- A shutter tap after CameraPreview has already failed to bind does not set shotPending. The gallery button stays enabled. A throw from ProcessCameraProvider.get() reports onBound(false) from the same catch as a failed bindToLifecycle.
+
+## 2026-10-29 - Expense shutter on a cloud-only receipt
+
+- A shutter tap while a cloud-only receipt is showing does not set shotPending. That branch does not compose the preview, so no later onBound would clear the flag. The gallery button stays enabled.
+
+## 2026-10-29 - history rewrite started (backup tag backup-code-review)
+
+- Branch code-review, reference backup-code-review (251fe2e57).
+
+## 2026-10-29 - reset to 794f43d6a done
+
+- Reset to merge-base with master; log kept; infra kept: 71 path(s).
+
+## 2026-10-29 - Remove dead code from the code review.
+
+- Deleted the unwired conflict screen, unused Room tabular backends, Set J, the parallel sheet id path, the other-text crop, unused OCR helpers and Sheets methods, and the replaced report screens. The open TODO is a future resolution screen and does not mention the removed stub.
+
+## 2026-10-29 - Move experiments onto the qa build
+
+- The qa build is the side-by-side test app. Experiment screens, import-old-pictures, the experiment foreground service, and pump_ocr_geom_boxes.json live in the qa source set. Debug and release register no experiment routes. ExperimentPrecisionAbScreen is removed.
+- Standard manifests strip the foreground-service permissions and WorkManager's foreground service. The qa manifest puts those permissions and the experiment service back.
+- The pump JNI helpers stay in main. Production code still calls them, and the native symbol is ExperimentPumpScreenKt.expRotGmmRecognize. native_ocr_qa stays out until its C++ sources exist. Other helpers and assets that production code still reads stay in main.
+- project-facts Test build is qa. The build command is ./build_app --standard --test.
+
+## 2026-10-29 - Adb backup, import, and the database error screen
+
+- A hidden provider exports and imports a tar for adb shell. Import stages beside the live data, writes one commit marker, and the next launch applies the swap. Export strips Zoho tokens.
+- Room opens once from Unchecked. A failed open stays Failed and shows the database error screen. Debug no longer wipes the database on a migration failure.
+- Workers and the experiment foreground service stand down while a transfer or a failed database is in progress.
+
+## 2026-10-29 - Play flavor, versionCode 15, and release R8
+
+- One play flavor packs arm64, armv7, and x86_64. playDebug and playQa are disabled. versionCode is 15 from app/versionCode.txt.
+- Release minifies with R8. The keeps cover Paddle, OpenCV, Drive, Sheets, FindBugs, and JNDI/JGSS. Debug and qa stay unminified. No Play bundle was built.
+
+## 2026-10-29 - Paddle comes from the pins
+
+- Product models and the Paddle JNI and jar are read from the pin artifacts. CMake embeds the product .nb files in libpaddle_models.so. Experiment dets are embedded only on qa.
+- The x86_64 thin JNI is 16 KB. The pin build scripts fail when an input, mkdir, strip, or registry edit fails. Vendored .so, jar, and product .nb copies are gone from app/.
+- The adb transfer unit tests that were left out of the transfer commit are included here.
+
+## 2026-10-29 - One Sheets sign-in covers Drive browse
+
+- Spreadsheet sign-in requests Sheets plus drive.file and drive.readonly. Browse opens on All and shared. A recoverable Drive consent launches from the browse dialog.
+- Photo backup keeps its own Drive sign-in. The user manual and project-facts describe the one sign-in.
+
+## 2026-10-29 - Sync and fuel match the tip
+
+- A scored merge keeps the base sync id. Every sync point is read into Room before sheet writes. An unread fuel tab stays. Blank rows are dropped. A dash veto acts only when one vehicle survives.
+- Corrupt cells and missing photo markers persist, including a one-page missing receipt. The import coordinator that the qa screen calls stays in main.
+
+## 2026-10-29 - Fill capture and the Fill name
+
+- The fuel screen is Fill. Gallery save uses a .part file and does not overwrite or delete an existing photo. Capture keeps a JPEG, PNG, or TIFF header. Autofocus and a missing camera stay optional.
+- The user manual, the quick guide, the navigation map, and the README use the name Fill. DNG develop throws until the native path is linked.
+
+## 2026-10-29 - Shipped OCR matches the tip
+
+- Production recognition is OcrRotGmm. Rec scale, the seg7 histogram, the wide-component mask, and heatmap packing are native. Deskew does not cap at ±20.
+- Experiment feeds, ingestion, reports, and the pump screen stay on qa. native_ocr_qa is the experiment library. DNG develop is linked. The import coordinator the qa screen calls is the qa type.
+
+## 2026-10-29 - Remaining screens and docs match the tip
+
+- Email fixtures, experiment dumps, and the photo picker follow the tip. Test-only helpers live on qa.
+- The Fill camera reference and the user-manual images use the Fill names.
+
+## 2026-10-29 - Pin scripts and host model seeds match the tip
+
+- Host models, tailor lists, and the paddle test scripts follow the tip.
+- The sandbox symlink is not part of the branch.
+
+## 2026-10-29 - Server det probe outputs stay out of the branch
+
+- The thin JNI libraries under the server det probe out directory are local build output. The tip does not carry them.
+
+## 2026-10-29 - Project facts match the tip
+
+- The facts file is the tip copy, including the Fill camera path.
+- The worktree scripts the tip does not carry are removed.
+
+## 2026-10-29 - code-review PR prepared
+
+- Local PR doc: dev-ai-interaction/PRs/PR-code-review.md. Master reviews from there. Nothing is merged or pushed.

@@ -63,6 +63,7 @@ object LocationLookup {
                     NominatimClient.reverseAddress(lat, lon, nominatimTimeout)
                 }
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "lookup failed: ${e.message}")
             null
@@ -115,6 +116,7 @@ object LocationLookup {
                 }
                 LocationLookupKind.ADDRESS_ONLY -> emptyList()
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "listNearby failed: ${e.message}")
             fromTable
@@ -189,6 +191,7 @@ object LocationLookup {
         val overpass = async {
             try {
                 OverpassClient.listFuelStations(lat, lon, radiusM, overpassTimeout)
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 Log.w(TAG, "optional Overpass list: ${e.message}")
                 emptyList()

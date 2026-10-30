@@ -1,0 +1,17 @@
+name = "paddle-opt"
+# Same Paddle-Lite pin as ../paddle; the local checkout comes from the host repo "paddle".
+host_repo = "paddle"
+git_ssh = "git@github.com:davidelang/Paddle-Lite.git"
+git_https = "https://github.com/davidelang/Paddle-Lite.git"
+git_sha = "c6a9b9ada00e3b37aa80c21407e7d8e240595ebb"
+git_describe = "v2.0.0-beta1-prerel-4122-gc6a9b9ad"
+track_branch = "pr-x86-android-mobile-gap"
+reproducible = false
+requires_writable_src = false
+build = ["./build"]
+consumer_note = "Host linux-x86_64 opt for paddle-models. Overlays copied at build time from ../paddle (patches/, patches-int8/, scripts/apply_*patches.sh; ../paddle is the source of truth) plus patches-opt/ (opt-only). Order: paddle-opt -> paddle-models -> paddle."
+
+[[artifact]]
+from = "src/bin/linux-x86_64/opt"
+path = "artifact/linux-x86_64/opt"
+sha256 = "e30d85825c504a6d136e37cd16c0555c63b62a0c1971c16a032fc1374ce9e02b"

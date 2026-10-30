@@ -257,6 +257,7 @@ internal fun PhotoDestEditForm(
             accountHint = email
             statusText = "Signed in as $email"
             Toast.makeText(context, "Signed in as $email (Drive)", Toast.LENGTH_SHORT).show()
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: ApiException) {
             statusText = "Sign-in failed — try again or pick a Google account with Drive access"
             Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
@@ -280,6 +281,7 @@ internal fun PhotoDestEditForm(
             } else {
                 statusText = "Drive browse access not granted — try again"
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: ApiException) {
             statusText = "Drive browse sign-in failed"
             Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
@@ -330,6 +332,7 @@ internal fun PhotoDestEditForm(
                             accountHint = authResult.email
                             statusText = "Signed in as ${authResult.email}"
                             Toast.makeText(context, "Signed in as ${authResult.email} (OneDrive)", Toast.LENGTH_SHORT).show()
+                        // kept: failure stays on this call so the screen or caller can continue
                         } catch (e: Exception) {
                             statusText = e.message ?: "Microsoft sign-in failed"
                             Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
@@ -434,8 +437,10 @@ internal fun PhotoDestEditForm(
                     listItems = { search, catalog ->
                         try {
                             viewModel.listFoldersForBrowse(accountHint, search, catalog)
+                        // kept: failure stays on this call so the screen or caller can continue
                         } catch (e: DriveRecoverableAuthException) {
                             throw e
+                        // kept: failure stays on this call so the screen or caller can continue
                         } catch (e: Exception) {
                             throw DriveAuthRecovery.wrapIfRecoverable(e)
                         }
@@ -443,8 +448,10 @@ internal fun PhotoDestEditForm(
                     createItem = { name ->
                         try {
                             viewModel.createFolderForBrowse(accountHint, name)
+                        // kept: failure stays on this call so the screen or caller can continue
                         } catch (e: DriveRecoverableAuthException) {
                             throw e
+                        // kept: failure stays on this call so the screen or caller can continue
                         } catch (e: Exception) {
                             throw DriveAuthRecovery.wrapIfRecoverable(e)
                         }
@@ -531,6 +538,7 @@ internal fun PhotoDestEditForm(
                                 confImported = true
                                 statusText = "S3 credentials saved"
                                 Toast.makeText(context, statusText, Toast.LENGTH_SHORT).show()
+                            // kept: failure stays on this call so the screen or caller can continue
                             } catch (e: Exception) {
                                 statusText = e.message ?: "Failed to save S3 credentials"
                                 Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
@@ -573,6 +581,7 @@ internal fun PhotoDestEditForm(
                                 confImported = true
                                 statusText = "OneDrive account refreshed"
                                 Toast.makeText(context, statusText, Toast.LENGTH_SHORT).show()
+                            // kept: failure stays on this call so the screen or caller can continue
                             } catch (e: Exception) {
                                 statusText = e.message ?: "Re-authentication failed"
                                 Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
@@ -803,6 +812,7 @@ internal fun PhotoDestEditForm(
                             } else {
                                 Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
                             }
+                        // kept: failure stays on this call so the screen or caller can continue
                         } catch (e: DriveRecoverableAuthException) {
                             statusIsError = true
                             statusText = e.message ?: DriveAuthRecovery.NEED_REMOTE_CONSENT_MESSAGE
@@ -811,6 +821,7 @@ internal fun PhotoDestEditForm(
                             } else {
                                 Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
                             }
+                        // kept: failure stays on this call so the screen or caller can continue
                         } catch (e: Exception) {
                             statusIsError = true
                             statusText = DriveAuthRecovery.userMessage(e)

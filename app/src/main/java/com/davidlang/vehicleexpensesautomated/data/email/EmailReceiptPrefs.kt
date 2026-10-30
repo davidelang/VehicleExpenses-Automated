@@ -23,13 +23,6 @@ class EmailReceiptPrefs(context: Context) {
         get() = prefs.getString(KEY_SOURCE, SOURCE_GMAIL)?.trim().orEmpty().ifBlank { SOURCE_GMAIL }
         set(value) = prefs.edit().putString(KEY_SOURCE, value.trim()).apply()
 
-    fun useGmail(): Boolean =
-        source == SOURCE_GMAIL || source == SOURCE_BOTH ||
-            (source != SOURCE_IMAP && enabled && !imapEnabled)
-
-    fun useImap(): Boolean =
-        source == SOURCE_IMAP || source == SOURCE_BOTH || imapEnabled
-
     /** Gmail label name only (not full mailbox). */
     var labelName: String
         get() = prefs.getString(KEY_LABEL, DEFAULT_LABEL)?.trim().orEmpty()

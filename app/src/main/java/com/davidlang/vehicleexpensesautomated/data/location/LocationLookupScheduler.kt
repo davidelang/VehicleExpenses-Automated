@@ -41,6 +41,7 @@ object LocationLookupScheduler {
                 req,
             )
             Log.i(TAG, "Enqueued one-shot location lookup")
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "enqueueSoon failed: ${e.message}")
         }
@@ -58,6 +59,7 @@ object LocationLookupScheduler {
                 req,
             )
             Log.i(TAG, "Ensured periodic location lookup")
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "ensurePeriodic failed: ${e.message}")
         }

@@ -17,22 +17,16 @@
 
 #include "paddle/paddle_api.h"
 
+#include "CropPlan.h"
+#include "VeJni.h"
+
+#include <stdexcept>
+
 namespace {
 
-constexpr int kBorderPx = 4;
-constexpr int kRightBorderPx = 4;
 constexpr int kRecH = 48;
-constexpr int kRecMaxW = 4096;
 constexpr int kAllowedDecimal[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 93};
 
-struct Plan40 {
-    float s;
-    int destW;
-    int destH;
-    int srcW;
-    int srcH;
-    float marginSrc;
-};
 
 struct BoxUv {
     float cx, cy, ux, uy, vx, vy;
@@ -41,82 +35,18 @@ struct BoxUv {
 };
 
 struct RecRow {
-    std::string asis = "?";
+    std::string asis;
     std::string asisProbs;
-    std::string digits = "?";
+    std::string digits;
     std::string digitsProbs;
     int recW = 0;
     int recH = 0;
     int recCropId = -1;
 };
 
-int evenAtLeast2(int n) {
-    int v = n < 2 ? 2 : n;
-    return (v & 1) ? (v + 1) : v;
-}
 
-int evenDown(int n) {
-    int e = (n & 1) ? (n - 1) : n;
-    return e < 2 ? 2 : e;
-}
 
-int javaRoundFloat(float a) {
-    if (!(a == a)) return 0;
-    if (a >= 2147483647.f) return 2147483647;
-    if (a <= -2147483648.f) return static_cast<int>(-2147483647 - 1);
-    return static_cast<int>(std::floor(static_cast<double>(a) + 0.5));
-}
 
-Plan40 planContent40(float cropW, float cropH, int maxDestW, int destHIn) {
-    const float h = cropH < 1.f ? 1.f : cropH;
-    const float w = cropW < 1.f ? 1.f : cropW;
-    const int canvasH = destHIn < 2 ? 2 : destHIn;
-    const int cap = maxDestW < 2 ? 2 : maxDestW;
-    const int maxEven = (cap % 2 == 0) ? cap : std::max(2, cap - 1);
-    auto destWidth = [&](float scale) {
-        return evenAtLeast2(kBorderPx + kRightBorderPx + javaRoundFloat(w * scale));
-    };
-    float s = 40.f / h;
-    int destW = destWidth(s);
-    if (destW > maxEven) {
-        const float s0 = s;
-        int cMax = maxEven - kBorderPx - kRightBorderPx;
-        if (cMax < 1) cMax = 1;
-        float chosen = 1.f / w;
-        for (int c = cMax; c >= 1; --c) {
-            float sTry = (static_cast<float>(c) + 0.5f) / w;
-            int guard = 0;
-            while (guard < 6 && javaRoundFloat(w * sTry) > c) {
-                sTry = static_cast<float>(std::nextafter(
-                    static_cast<double>(sTry), -std::numeric_limits<double>::infinity()));
-                ++guard;
-            }
-            if (sTry > 0.f && javaRoundFloat(w * sTry) <= c && destWidth(sTry) <= maxEven) {
-                chosen = sTry;
-                break;
-            }
-        }
-        s = std::min(s0, chosen);
-        destW = destWidth(s);
-        if (destW > maxEven) destW = maxEven;
-        if (destW % 2 != 0) destW = evenDown(destW);
-        __android_log_print(
-            ANDROID_LOG_INFO, "CropScale",
-            "width fit crop=%gx%g s0=%g s=%g dest=%dx%d cap=%d",
-            static_cast<double>(w), static_cast<double>(h), static_cast<double>(s0),
-            static_cast<double>(s), destW, canvasH, cap);
-    }
-    const int srcW = evenAtLeast2(static_cast<int>(std::ceil((destW + 1.0) / static_cast<double>(s))));
-    const int srcH = evenAtLeast2(static_cast<int>(std::ceil((canvasH + 1.0) / static_cast<double>(s))));
-    Plan40 plan;
-    plan.s = s;
-    plan.destW = destW;
-    plan.destH = canvasH;
-    plan.srcW = srcW;
-    plan.srcH = srcH;
-    plan.marginSrc = static_cast<float>(kBorderPx) / s;
-    return plan;
-}
 
 BoxUv boxFromQuad(const float* p) {
     BoxUv b{};
@@ -449,35 +379,11 @@ std::string decodeDecimal(const float* data, int seqLen, int dictSize, const std
 }
 
 bool checkExc(JNIEnv* env) {
-    if (!env->ExceptionCheck()) return false;
-    env->ExceptionClear();
-    return true;
+    return env->ExceptionCheck();
 }
 
 std::shared_ptr<paddle::lite_api::PaddlePredictor> loadRecognizer(JNIEnv* env) {
-    jclass eng = env->FindClass("com/davidlang/vehicleexpensesautomated/ui/util/NativePaddleEngine");
-    if (!eng || checkExc(env)) return {};
-    jfieldID fid = env->GetStaticFieldID(eng, "sharedRecognizerV3", "Lcom/baidu/paddle/lite/PaddlePredictor;");
-    if (!fid || checkExc(env)) {
-        env->DeleteLocalRef(eng);
-        return {};
-    }
-    jobject predObj = env->GetStaticObjectField(eng, fid);
-    env->DeleteLocalRef(eng);
-    if (checkExc(env) || !predObj) return {};
-    jclass predCls = env->GetObjectClass(predObj);
-    jfieldID ptrFid = env->GetFieldID(predCls, "cppPaddlePredictorPointer", "J");
-    env->DeleteLocalRef(predCls);
-    if (!ptrFid || checkExc(env)) {
-        env->DeleteLocalRef(predObj);
-        return {};
-    }
-    const jlong raw = env->GetLongField(predObj, ptrFid);
-    env->DeleteLocalRef(predObj);
-    if (raw == 0) return {};
-    auto* sp = reinterpret_cast<std::shared_ptr<paddle::lite_api::PaddlePredictor>*>(raw);
-    if (!sp || !*sp) return {};
-    return *sp;
+    return veLoadSharedRecognizerV3(env);
 }
 
 std::vector<std::string> loadDictionary(JNIEnv* env) {
@@ -619,25 +525,15 @@ void bothDecodes(
     RecRow* row,
     bool landmarkAsis
 ) {
-    if (mat.cols < 1 || mat.cols > kRecMaxW || mat.rows != kRecH || mat.type() != CV_8UC1) {
-        row->asis = "(Size Error)";
-        row->digits = "(Size Error)";
-        return;
+    if (mat.cols < 1 || mat.rows != kRecH || mat.type() != CV_8UC1) {
+        throw std::runtime_error("bothDecodes: bad crop");
     }
     try {
         std::unique_ptr<paddle::lite_api::Tensor> input = pred.GetInput(0);
-        if (!input) {
-            row->asis = "(Engine Error)";
-            row->digits = "(Engine Error)";
-            return;
-        }
+        if (!input) throw std::runtime_error("bothDecodes: no input tensor");
         input->Resize({1, 1, static_cast<int64_t>(mat.rows), static_cast<int64_t>(mat.cols)});
         int8_t* dst = input->mutable_data<int8_t>();
-        if (!dst) {
-            row->asis = "(Engine Error)";
-            row->digits = "(Engine Error)";
-            return;
-        }
+        if (!dst) throw std::runtime_error("bothDecodes: no input data");
         for (int y = 0; y < mat.rows; ++y) {
             std::memcpy(
                 dst + static_cast<size_t>(y) * static_cast<size_t>(mat.cols),
@@ -646,17 +542,11 @@ void bothDecodes(
         }
         pred.Run();
         std::unique_ptr<const paddle::lite_api::Tensor> output = pred.GetOutput(0);
-        if (!output) {
-            row->asis = "(Inference Error)";
-            row->digits = "(Inference Error)";
-            return;
-        }
+        if (!output) throw std::runtime_error("bothDecodes: no output tensor");
         const float* data = output->data<float>();
         const paddle::lite_api::shape_t shape = output->shape();
         if (!data || shape.size() < 3 || shape[1] < 1 || shape[2] < 1) {
-            row->asis = "(Inference Error)";
-            row->digits = "(Inference Error)";
-            return;
+            throw std::runtime_error("bothDecodes: bad output");
         }
         const int seqLen = static_cast<int>(shape[1]);
         const int dictSize = static_cast<int>(shape[2]);
@@ -667,12 +557,10 @@ void bothDecodes(
             row->asis = decodeFull(data, seqLen, dictSize, dict, &row->asisProbs);
         }
         row->digits = decodeDecimal(data, seqLen, dictSize, dict, &row->digitsProbs);
+    } catch (const std::runtime_error&) {
+        throw;
     } catch (const std::exception& ex) {
-        __android_log_print(ANDROID_LOG_ERROR, "ExpRotGmm", "rec failed: %s", ex.what());
-        row->asis = "(Inference Error)";
-        row->asisProbs.clear();
-        row->digits = "(Inference Error)";
-        row->digitsProbs.clear();
+        throw std::runtime_error(std::string("bothDecodes: ") + ex.what());
     }
 }
 
@@ -691,40 +579,16 @@ void recognizeOne(
     RecRow* row,
     bool landmarkAsis
 ) {
+    (void)scratchW;
+    (void)scratchH;
     const BoxUv box = boxFromQuad(quad);
-    if (!box.ok) return;
+    if (!box.ok) throw std::runtime_error("recognizeOne: bad quad");
     const float bw = std::max(1.f, box.u1 - box.u0);
     const float bh = std::max(1.f, box.v1 - box.v0);
-    if (bw < 2.f || bh < 2.f) return;
-    int cap = bufW < 2 ? 2 : bufW;
-    if (cap > kRecMaxW) cap = kRecMaxW;
-    int destHLim = bufH < kRecH ? bufH : kRecH;
-    if (destHLim < 2) destHLim = 2;
-    const Plan40 plan = planContent40(bw, bh, cap, destHLim);
-    int srcW = plan.srcW;
-    int srcH = plan.srcH;
-    bool cut = false;
-    if (srcW > scratchW) {
-        srcW = (scratchW % 2 == 0) ? scratchW : scratchW - 1;
-        cut = true;
-    }
-    if (srcH > scratchH) {
-        srcH = (scratchH % 2 == 0) ? scratchH : scratchH - 1;
-        cut = true;
-    }
-    if (srcW < 2 || srcH < 2) {
-        __android_log_print(
-            ANDROID_LOG_INFO, "CropScale",
-            "quad clamp cut empty want=%dx%d scratch=%dx%d",
-            plan.srcW, plan.srcH, scratchW, scratchH);
-        return;
-    }
-    if (cut) {
-        __android_log_print(
-            ANDROID_LOG_INFO, "CropScale",
-            "quad clamp cut want=%dx%d got=%dx%d scratch=%dx%d",
-            plan.srcW, plan.srcH, srcW, srcH, scratchW, scratchH);
-    }
+    if (bw < 2.f || bh < 2.f) throw std::runtime_error("recognizeOne: crop too small");
+    const Plan40 plan = planContent40(bw, bh, kRecH);
+    const int srcW = plan.srcW;
+    const int srcH = plan.srcH;
     float expanded[8];
     const float plusU = static_cast<float>(srcW) - plan.marginSrc - bw;
     const float plusV = static_cast<float>(srcH) - plan.marginSrc - bh;
@@ -735,37 +599,50 @@ void recognizeOne(
         warped = warpToStrip(gray, expanded, strip);
     } catch (const cv::Exception& ex) {
         __android_log_print(ANDROID_LOG_ERROR, "ExpRotGmm", "warp failed: %s", ex.what());
-        warped = false;
+        throw std::runtime_error(std::string("recognizeOne: warp failed: ") + ex.what());
     }
-    if (!warped) return;
+    if (!warped) throw std::runtime_error("recognizeOne: warp failed");
     const int y = rowIndex * kRecH;
-    if (y < 0 || plan.destH > bufH || y > bufH - plan.destH || plan.destW > bufW) return;
+    if (y < 0) throw std::runtime_error("recognizeOne: bad row");
+    if (plan.destW > bufW || y + plan.destH > bufH) {
+        jclass cls = env->GetObjectClass(recBuffer);
+        jmethodID resize = env->GetMethodID(cls, "resize", "(II)V");
+        env->DeleteLocalRef(cls);
+        if (!resize || env->ExceptionCheck()) throw std::runtime_error("recognizeOne: resize missing");
+        const int nw = std::max(bufW, plan.destW);
+        const int nh = std::max(bufH, y + plan.destH);
+        env->CallVoidMethod(recBuffer, resize, nw, nh);
+        if (env->ExceptionCheck()) throw std::runtime_error("recognizeOne: resize failed");
+        bufW = nw;
+        bufH = nh;
+    }
     const int id = createRecCrop(env, recBuffer, 0, y, plan.destW, plan.destH);
-    if (id < 0) return;
+    if (id < 0) throw std::runtime_error("recognizeOne: create crop failed");
     cv::Mat dest;
     int dw = 0;
     int dh = 0;
-    if (!cropMat(env, recBuffer, id, &dest, &dw, &dh)) return;
+    if (!cropMat(env, recBuffer, id, &dest, &dw, &dh)) {
+        throw std::runtime_error("recognizeOne: crop mat missing");
+    }
     row->recCropId = id;
     row->recW = dw;
     row->recH = dh;
     scaleArea(strip, dest, plan.s);
-    if (!pred) {
-        row->asis = "(Engine Error)";
-        row->digits = "(Engine Error)";
-        return;
-    }
+    if (!pred) throw std::runtime_error("recognizeOne: no predictor");
     bothDecodes(*pred, dest, dict, row, landmarkAsis);
 }
 
 jstring toJString(JNIEnv* env, const std::string& s) {
+    if (env->ExceptionCheck()) return nullptr;
     jstring js = env->NewStringUTF(s.c_str());
-    if (js && !env->ExceptionCheck()) return js;
-    env->ExceptionClear();
-    return env->NewStringUTF("");
+    if (!js || env->ExceptionCheck()) {
+        veThrowIllegalState(env, "toJString: NewStringUTF failed");
+        return nullptr;
+    }
+    return js;
 }
 
-jobject newOut(JNIEnv* env, const std::vector<RecRow>& rows) {
+jobject newOut(JNIEnv* env, const std::vector<RecRow>& rows, const char* outClass) {
     const jsize n = static_cast<jsize>(rows.size());
     jclass stringCls = env->FindClass("java/lang/String");
     jobjectArray asis = env->NewObjectArray(n, stringCls, nullptr);
@@ -801,7 +678,7 @@ jobject newOut(JNIEnv* env, const std::vector<RecRow>& rows) {
         env->SetIntArrayRegion(recId, 0, n, id.data());
     }
     env->DeleteLocalRef(stringCls);
-    jclass outCls = env->FindClass("com/davidlang/vehicleexpensesautomated/ui/experiment/ExpRotGmmOut");
+    jclass outCls = env->FindClass(outClass);
     if (!outCls || checkExc(env)) return nullptr;
     jmethodID ctor = env->GetMethodID(
         outCls, "<init>",
@@ -822,30 +699,27 @@ jobject newOut(JNIEnv* env, const std::vector<RecRow>& rows) {
     return out;
 }
 
-}  // namespace
-
-extern "C" JNIEXPORT jobject JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_experiment_ExperimentPumpScreenKt_expRotGmmRecognize(
+jobject runRecognize(
     JNIEnv* env,
-    jclass,
     jlong grayPtr,
     jfloatArray quadPts,
     jobject recBuffer,
     jint scratchW,
     jint scratchH,
-    jboolean landmarkAlphabet
+    jboolean landmarkAlphabet,
+    const char* outClass
 ) {
     const bool landmarkAsis = landmarkAlphabet == JNI_TRUE;
     const jsize len = quadPts ? env->GetArrayLength(quadPts) : 0;
     const int n = len >= 8 ? static_cast<int>(len / 8) : 0;
     std::vector<RecRow> rows(static_cast<size_t>(n));
-    if (n == 0 || !recBuffer) return newOut(env, rows);
+    if (n == 0 || !recBuffer) return newOut(env, rows, outClass);
     std::vector<float> pts(static_cast<size_t>(n) * 8);
     env->GetFloatArrayRegion(quadPts, 0, n * 8, pts.data());
-    if (checkExc(env)) return newOut(env, rows);
+    if (checkExc(env)) return newOut(env, rows, outClass);
     int bufW = 0;
     int bufH = 0;
-    if (!bufferPrimarySize(env, recBuffer, &bufW, &bufH)) return newOut(env, rows);
+    if (!bufferPrimarySize(env, recBuffer, &bufW, &bufH)) return newOut(env, rows, outClass);
     clearPrimary(env, recBuffer);
     std::shared_ptr<paddle::lite_api::PaddlePredictor> pred = loadRecognizer(env);
     const std::vector<std::string> dict = loadDictionary(env);
@@ -861,5 +735,53 @@ Java_com_davidlang_vehicleexpensesautomated_ui_experiment_ExperimentPumpScreenKt
             scratchW, scratchH, bufW, bufH, i, pred.get(), dict, &rows[i], landmarkAsis);
         env->PopLocalFrame(nullptr);
     }
-    return newOut(env, rows);
+    return newOut(env, rows, outClass);
+}
+
+}  // namespace
+
+#if VE_EMBED_EXP_DET
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_experiment_ExperimentPumpScreenKt_expRotGmmRecognize(
+    JNIEnv* env,
+    jclass,
+    jlong grayPtr,
+    jfloatArray quadPts,
+    jobject recBuffer,
+    jint scratchW,
+    jint scratchH,
+    jboolean landmarkAlphabet
+) {
+    VePredictorGuard guard;
+    try {
+    return runRecognize(
+        env, grayPtr, quadPts, recBuffer, scratchW, scratchH, landmarkAlphabet,
+        "com/davidlang/vehicleexpensesautomated/ui/experiment/ExpRotGmmOut");
+    } catch (const std::exception& ex) {
+        veThrowIllegalState(env, ex.what());
+        return nullptr;
+    }
+}
+#endif
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_ocr_OcrRotGmmKt_ocrRotGmmRecognize(
+    JNIEnv* env,
+    jclass,
+    jlong grayPtr,
+    jfloatArray quadPts,
+    jobject recBuffer,
+    jint scratchW,
+    jint scratchH,
+    jboolean landmarkAlphabet
+) {
+    VePredictorGuard guard;
+    try {
+    return runRecognize(
+        env, grayPtr, quadPts, recBuffer, scratchW, scratchH, landmarkAlphabet,
+        "com/davidlang/vehicleexpensesautomated/ui/ocr/OcrRotGmmOut");
+    } catch (const std::exception& ex) {
+        veThrowIllegalState(env, ex.what());
+        return nullptr;
+    }
 }

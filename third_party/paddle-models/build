@@ -1,0 +1,303 @@
+#!/usr/bin/env bash
+# Rebuild production .nb models and armv8/armv7 kernel lists from pinned weights.
+# Runs under fetch-deps [sandbox=src]. Reads src/weights, src/tools/opt, and
+# convert_mono.py. Writes only src/work and src/out.
+set -euo pipefail
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+SRC="$HERE/src"
+WORK="$SRC/work"
+OUT="$SRC/out"
+PADDLE_PY="${PADDLE_PY:-/home/dlang/miniconda3/envs/paddle_env_v3/bin/python}"
+OPT="$SRC/tools/opt"
+CONVERT="$HERE/convert_mono.py"
+DET_SHAPE="x:1,1,128,128:1,1,1280,1280:1,1,4000,4000"
+REC_SHAPE="x:1,1,48,32:1,1,48,320:1,1,48,1280"
+
+mkdir -p "$WORK/home" "$WORK/tmp" "$WORK/cache" "$WORK/pycache"
+export HOME="$WORK/home"
+export TMPDIR="$WORK/tmp"
+export XDG_CACHE_HOME="$WORK/cache"
+export PYTHONDONTWRITEBYTECODE=1
+export PYTHONPYCACHEPREFIX="$WORK/pycache"
+export FLAGS_enable_pir_api=0
+
+if [[ ! -x "$PADDLE_PY" ]]; then
+  echo "ERROR: PADDLE_PY is not executable: $PADDLE_PY" >&2
+  exit 1
+fi
+if ! "$PADDLE_PY" -c 'import paddle'; then
+  echo "ERROR: PADDLE_PY cannot import paddle: $PADDLE_PY" >&2
+  exit 1
+fi
+if [[ ! -x "$OPT" ]]; then
+  echo "ERROR: opt is not executable: $OPT" >&2
+  exit 1
+fi
+if [[ ! -f "$CONVERT" ]]; then
+  echo "ERROR: missing $CONVERT" >&2
+  exit 1
+fi
+
+convert_one() {
+  local model=$1 preset=$2
+  local src_dir="$SRC/weights/$model"
+  local out_dir="$WORK/${model}_mono"
+  if [[ ! -f "$src_dir/inference.pdmodel" || ! -f "$src_dir/inference.pdiparams" ]]; then
+    echo "ERROR: missing weights under $src_dir" >&2
+    exit 1
+  fi
+  mkdir -p "$out_dir"
+  rm -f "$out_dir/inference.pdmodel" "$out_dir/inference.pdiparams" "$out_dir/mono_norm.json"
+  echo "=== convert_mono $model preset=$preset ==="
+  "$PADDLE_PY" "$CONVERT" --model-dir "$src_dir" --out-dir "$out_dir" --preset "$preset"
+  if [[ ! -f "$out_dir/inference.pdmodel" || ! -f "$out_dir/inference.pdiparams" || ! -f "$out_dir/mono_norm.json" ]]; then
+    echo "ERROR: convert_mono did not write $out_dir" >&2
+    exit 1
+  fi
+}
+
+expect_norm() {
+  local d=$1 mean std base
+  base=$(basename "$d")
+  case "$base" in
+    det_mono)                     mean=128;   std=58.395 ;;
+    rec_v3_mono|rec_numeric_mono) mean=127.5; std=127.5 ;;
+    *) echo "ERROR: no normalisation entry for $base" >&2; exit 1 ;;
+  esac
+  python3 - "$d/mono_norm.json" "$mean" "$std" <<'PY'
+import json, sys
+p, m, s = sys.argv[1], float(sys.argv[2]), float(sys.argv[3])
+try:
+    n = json.load(open(p))
+except OSError:
+    sys.exit(f"ERROR: {p} missing")
+if n.get("legacy_mean") or abs(n["mean"] - m) > 1e-6 or abs(n["std"] - s) > 1e-3:
+    sys.exit(f"ERROR: {p}: mean={n.get('mean')} std={n.get('std')} legacy={n.get('legacy_mean')}; expected {m}/{s}")
+PY
+  echo "--analytic_input_mean=$mean --analytic_input_std=$std"
+}
+
+rm_lists_at() {
+  local dir=$1
+  rm -f \
+    "$dir/.tailored_kernels_list" \
+    "$dir/.tailored_kernels_source_list" \
+    "$dir/.tailored_ops_list" \
+    "$dir/.tailored_ops_source_list"
+}
+
+# $1 mono dir, $2 name, $3 target, $4 fp16, $5 calib, $6 dest nb, $7 list prefix or empty
+opt_one() {
+  local mono=$1 name=$2 target=$3 fp16=$4 out_calib=$5 dest=$6 list_prefix=$7
+  local out_base nf
+  nf=$(expect_norm "$mono") || exit 1
+  local -a norm
+  read -ra norm <<<"$nf"
+  if [[ -n "$list_prefix" ]]; then
+    mkdir -p "$(dirname "$list_prefix")"
+    out_base="$list_prefix"
+    rm -f "${out_base}.nb"
+    rm_lists_at "$out_base"
+  else
+    out_base="${dest%.nb}"
+    mkdir -p "$(dirname "$dest")"
+    rm -f "$dest"
+    rm_lists_at "$out_base"
+  fi
+  local -a args=(
+    --model_file="$mono/inference.pdmodel"
+    --param_file="$mono/inference.pdiparams"
+    --optimize_out="$out_base"
+    --valid_targets="$target"
+    --optimize_out_type=naive_buffer
+    --analytic_input_quant=true
+    --analytic_input_dtype=uint8
+    "${norm[@]}"
+    --record_tailoring_info=true
+  )
+  if [[ "$name" == det ]]; then
+    export NNADAPTER_DYNAMIC_SHAPE_INFO="$DET_SHAPE"
+  else
+    export NNADAPTER_DYNAMIC_SHAPE_INFO="$REC_SHAPE"
+  fi
+  if [[ "$fp16" == "1" ]]; then
+    args+=(--enable_fp16=true)
+  else
+    args+=(--enable_fp16=false)
+  fi
+  if [[ -n "$out_calib" ]]; then
+    args+=(--output_calib_precision="$out_calib")
+  fi
+  echo "=== opt $name target=$target fp16=$fp16 calib=${out_calib:-none} -> $dest ==="
+  if ! GLOG_v="${OPT_GLOG_V:-0}" "$OPT" "${args[@]}"; then
+    echo "FAIL opt $name target=$target fp16=$fp16" >&2
+    exit 1
+  fi
+  if [[ ! -f "${out_base}.nb" ]]; then
+    echo "FAIL missing ${out_base}.nb" >&2
+    exit 1
+  fi
+  if [[ -n "$list_prefix" ]]; then
+    local f
+    for f in .tailored_kernels_list .tailored_kernels_source_list .tailored_ops_list .tailored_ops_source_list; do
+      if [[ ! -f "${out_base}/$f" ]]; then
+        echo "FAIL missing ${out_base}/$f" >&2
+        exit 1
+      fi
+    done
+    mkdir -p "$(dirname "$dest")"
+    rm -f "$dest"
+    cp -a "${out_base}.nb" "$dest"
+  fi
+  if [[ ! -f "$dest" ]]; then
+    echo "FAIL missing $dest" >&2
+    exit 1
+  fi
+}
+
+# merge_lists <lists dir> <out dir>: union per-model tailoring lists
+# (det, rec_v3, rec_numeric) into one set for the tailor CMake.
+merge_lists() {
+  local lists=$1 out=$2
+  local f m kl ks nk ns dest pairs union dups
+  mkdir -p "$out"
+  for m in det rec_v3 rec_numeric; do
+    for f in .tailored_kernels_list .tailored_kernels_source_list .tailored_ops_list .tailored_ops_source_list; do
+      if [[ ! -f "$lists/$m/$f" ]]; then
+        echo "FAIL missing $lists/$m/$f" >&2
+        exit 1
+      fi
+    done
+  done
+
+  # Ops lists: plain sorted union.
+  for f in .tailored_ops_list .tailored_ops_source_list; do
+    dest="$out/$f"
+    rm -f "$dest"
+    sort -u "$lists/det/$f" "$lists/rec_v3/$f" "$lists/rec_numeric/$f" >"$dest"
+    if [[ ! -s "$dest" ]]; then
+      echo "FAIL empty ops list $dest" >&2
+      exit 1
+    fi
+  done
+
+  # Kernel lists: line i of .tailored_kernels_list pairs with line i of
+  # .tailored_kernels_source_list. Keep pairs together, first-seen order det, rec_v3, rec_numeric.
+  pairs="$lists/kernel_pairs"
+  union="$lists/kernel_pairs.union"
+  rm -f "$pairs" "$union"
+  for m in det rec_v3 rec_numeric; do
+    kl="$lists/$m/.tailored_kernels_list"
+    ks="$lists/$m/.tailored_kernels_source_list"
+    for f in "$kl" "$ks"; do
+      if grep -q '^[[:space:]]*$' "$f"; then
+        echo "FAIL blank line in $f" >&2
+        exit 1
+      fi
+    done
+    if grep -n ',kARM,,' "$kl" >&2; then
+      echo "FAIL $m: empty precision (',kARM,,') in $kl" >&2
+      exit 1
+    fi
+    nk=$(wc -l <"$kl")
+    ns=$(wc -l <"$ks")
+    if [[ "$nk" -ne "$ns" ]]; then
+      echo "FAIL $m: $kl has $nk lines, $ks has $ns (pairs would misalign)" >&2
+      exit 1
+    fi
+    if grep -q '|' "$kl" "$ks"; then
+      echo "FAIL $m: '|' in kernel list (used as pair separator)" >&2
+      exit 1
+    fi
+    paste -d'|' "$kl" "$ks" >>"$pairs"
+  done
+  awk '!seen[$0]++' "$pairs" >"$union"
+  dups=$(cut -d'|' -f1 "$union" | sort | uniq -d)
+  if [[ -n "$dups" ]]; then
+    echo "FAIL kernel(s) paired with more than one source line:" >&2
+    echo "$dups" >&2
+    exit 1
+  fi
+  if [[ ! -s "$union" ]]; then
+    echo "FAIL empty kernel union $union" >&2
+    exit 1
+  fi
+  rm -f "$out/.tailored_kernels_list" "$out/.tailored_kernels_source_list"
+  cut -d'|' -f1 "$union" >"$out/.tailored_kernels_list"
+  cut -d'|' -f2 "$union" >"$out/.tailored_kernels_source_list"
+  rm -f "$pairs" "$union"
+  echo "merged tailor lists -> $out: kernels=$(wc -l <"$out/.tailored_kernels_list") ops=$(wc -l <"$out/.tailored_ops_list")"
+}
+
+convert_one det det
+convert_one rec_v3 rec
+convert_one rec_numeric rec
+
+# fp32: app armv7 (kernel lists), host armv8, app x86_64. fp16: app armv8 (kernel lists) and host x86_64.
+run_model() {
+  local model=$1 name=$2 target=$3 abi=$4 fp16=$5 calib=$6 kind=$7
+  local prec dest list_prefix=""
+  if [[ "$calib" == "-" ]]; then calib=""; fi
+  if [[ "$fp16" == "1" ]]; then prec=16; else prec=32; fi
+  if [[ "$kind" == host ]]; then
+    dest="$OUT/host/prod_u8fp${prec}_${name}_${abi}.nb"
+  else
+    dest="$OUT/app/${abi}/${name}_${abi}.nb"
+  fi
+  if [[ "$kind" == app && "$fp16" == "1" && "$abi" == armv8 ]]; then
+    list_prefix="$WORK/lists/armv8/$model"
+  elif [[ "$kind" == app && "$abi" == armv7 ]]; then
+    list_prefix="$WORK/lists/armv7/$model"
+  fi
+  opt_one "$WORK/${model}_mono" "$name" "$target" "$fp16" "$calib" "$dest" "$list_prefix"
+}
+
+for spec in \
+  "det det arm armv7 0 uint8 app" \
+  "rec_v3 rec_v3 arm armv7 0 - app" \
+  "rec_numeric rec_numeric arm armv7 0 - app" \
+  "det det arm armv8 0 uint8 host" \
+  "rec_v3 rec_v3 arm armv8 0 - host" \
+  "rec_numeric rec_numeric arm armv8 0 - host" \
+  "det det x86 x86_64 0 uint8 app" \
+  "rec_v3 rec_v3 x86 x86_64 0 - app" \
+  "rec_numeric rec_numeric x86 x86_64 0 - app" \
+  "det det arm armv8 1 uint8 app" \
+  "rec_v3 rec_v3 arm armv8 1 - app" \
+  "rec_numeric rec_numeric arm armv8 1 - app" \
+  "det det x86 x86_64 1 uint8 host" \
+  "rec_v3 rec_v3 x86 x86_64 1 - host" \
+  "rec_numeric rec_numeric x86 x86_64 1 - host"
+ do
+  # shellcheck disable=SC2086
+  run_model $spec
+done
+
+merge_lists "$WORK/lists/armv8" "$OUT/tailor/armv8"
+merge_lists "$WORK/lists/armv7" "$OUT/tailor/armv7"
+
+for f in \
+  app/armv8/det_armv8.nb \
+  app/armv8/rec_v3_armv8.nb \
+  app/armv8/rec_numeric_armv8.nb \
+  app/armv7/det_armv7.nb \
+  app/armv7/rec_v3_armv7.nb \
+  app/armv7/rec_numeric_armv7.nb \
+  app/x86_64/det_x86_64.nb \
+  app/x86_64/rec_v3_x86_64.nb \
+  app/x86_64/rec_numeric_x86_64.nb \
+  host/prod_u8fp32_det_armv8.nb \
+  host/prod_u8fp32_rec_v3_armv8.nb \
+  host/prod_u8fp32_rec_numeric_armv8.nb \
+  host/prod_u8fp16_det_x86_64.nb \
+  host/prod_u8fp16_rec_v3_x86_64.nb \
+  host/prod_u8fp16_rec_numeric_x86_64.nb
+ do
+  if [[ ! -f "$OUT/$f" ]]; then
+    echo "FAIL missing $OUT/$f" >&2
+    exit 1
+  fi
+done
+
+echo "paddle-models build OK"

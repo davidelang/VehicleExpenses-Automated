@@ -200,17 +200,6 @@ fun AppDateTimeField(
     }
 }
 
-/** Dialog / inline form footer Cancel. */
-@Composable
-fun AppTextCancel(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    text: String = "Cancel",
-) {
-    TextButton(onClick = onClick, modifier = modifier.heightIn(min = 48.dp)) {
-        Text(text, softWrap = true)
-    }
-}
 
 /** Full-width leave / back-to-list secondary action. */
 @Composable
@@ -229,7 +218,7 @@ fun AppOutlinedBack(
     }
 }
 
-/** Feature page title + optional subtitle (not camera Quick Fill shell). */
+/** Feature page title + optional subtitle (not camera Fill shell). */
 @Composable
 fun FeatureScreenHeader(
     title: String,
@@ -254,18 +243,3 @@ fun FeatureScreenHeader(
     }
 }
 
-/** Toolbar/row icon defaults: 24.dp, theme content color. Material [ImageVector] only. */
-@Composable
-fun AppIcon(
-    imageVector: ImageVector,
-    contentDescription: String?,
-    modifier: Modifier = Modifier,
-    tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
-) {
-    Icon(
-        imageVector = imageVector,
-        contentDescription = contentDescription,
-        modifier = modifier.size(24.dp),
-        tint = tint,
-    )
-}

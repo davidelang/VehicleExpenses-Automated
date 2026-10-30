@@ -33,7 +33,7 @@ fun OnboardingSplashScreen(navController: NavHostController) {
     RegisterPageHelp(
         title = "Welcome",
         "No vehicles yet. Choose stand-alone (add a vehicle on this phone) or connect to an existing multi-device setup (same sheet + photo folder).",
-        "You can skip and use Quick Fill manually; this screen returns on the next start until a vehicle exists.",
+        "You can skip and use Fill manually; this screen returns on the next start until a vehicle exists.",
     )
     Column(
         modifier = Modifier
@@ -90,7 +90,7 @@ fun OnboardingSplashScreen(navController: NavHostController) {
         Spacer(Modifier.height(8.dp))
         TextButton(
             onClick = {
-                navController.navigate("quickfill") {
+                navController.navigate("fill") {
                     popUpTo("onboarding") { inclusive = true }
                     launchSingleTop = true
                 }

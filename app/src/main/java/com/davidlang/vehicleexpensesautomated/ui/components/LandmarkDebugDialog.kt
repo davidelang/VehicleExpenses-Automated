@@ -60,7 +60,6 @@ fun LandmarkDebugDialog(
     sourceImage: Bitmap? = null,
     photoPath: String? = null,
     odometerCrop: androidx.compose.ui.geometry.Rect? = null,
-    otherTextCrop: androidx.compose.ui.geometry.Rect? = null,
     landmarks: List<TextBlock>,
     
     onDismiss: () -> Unit,
@@ -114,11 +113,13 @@ fun LandmarkDebugDialog(
                     if (raw != null) {
                         processedBitmap = try {
                             OdometerOcrUtils.applyBilateral(OdometerOcrUtils.applyGrayscale(raw))
+                        // kept: failure stays on this call so the screen or caller can continue
                         } catch (e: Exception) {
                             Log.e("LandmarkDialog", "Failed to filter image; showing decoded photo", e)
                             raw
                         }
                     }
+                // kept: failure stays on this call so the screen or caller can continue
                 } catch (e: Exception) {
                     Log.e("LandmarkDialog", "Failed to load/process image", e)
                 } finally {
@@ -298,7 +299,6 @@ fun LandmarkDebugDialog(
                                                 }
                                             }
                                             odometerCrop?.let { drawIcrsRect(it, Color.Blue, fillAlpha = 0.5f) }
-                                            otherTextCrop?.let { drawIcrsRect(it, Color.Red, fillAlpha = 0.5f) }
                                         }
                                     }
 
@@ -338,6 +338,7 @@ fun LandmarkDebugDialog(
                                                     if (zone != null && bmp != null && zone.width() > 0 && zone.height() > 0) {
                                                         try {
                                                             crop = Bitmap.createBitmap(bmp, max(0, zone.left), max(0, zone.top), min(bmp.width - zone.left, zone.width()), min(bmp.height - zone.top, zone.height()))
+                                                        // kept: failure stays on this call so the screen or caller can continue
                                                         } catch (e: Exception) { Log.e("LandmarkDialog", "Crop failed", e) }
                                                     }
                                                     onDispose {

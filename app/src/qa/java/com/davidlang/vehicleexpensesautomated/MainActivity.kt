@@ -1,0 +1,959 @@
+package com.davidlang.vehicleexpensesautomated
+
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.os.Build
+import android.os.Bundle
+import android.util.Log
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import android.content.SharedPreferences
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.navigation.NavHostController
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportPendingStore
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import androidx.navigation.navDeepLink
+import com.davidlang.vehicleexpensesautomated.data.db.DatabaseHealthState
+import com.davidlang.vehicleexpensesautomated.data.db.DbState
+import com.davidlang.vehicleexpensesautomated.data.db.Exporting
+import com.davidlang.vehicleexpensesautomated.data.db.Failed
+import com.davidlang.vehicleexpensesautomated.data.db.Importing
+import com.davidlang.vehicleexpensesautomated.data.db.Ok
+import com.davidlang.vehicleexpensesautomated.data.db.Unchecked
+import com.davidlang.vehicleexpensesautomated.ui.db.DatabaseErrorActivity
+import com.davidlang.vehicleexpensesautomated.ui.startup.StartupFailureActivity
+import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
+import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
+import com.davidlang.vehicleexpensesautomated.data.repository.forUserPicker
+import com.davidlang.vehicleexpensesautomated.ui.onboarding.OnboardingSplashScreen
+import com.davidlang.vehicleexpensesautomated.ui.onboarding.TutorialPagerScreen
+import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupManager
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncFailureStore
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdBackfill
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncManager
+import com.davidlang.vehicleexpensesautomated.ui.about.AboutScreen
+import com.davidlang.vehicleexpensesautomated.ui.components.LocalPageHelpController
+import com.davidlang.vehicleexpensesautomated.ui.components.PageHelpTopBarAction
+import com.davidlang.vehicleexpensesautomated.ui.components.rememberPageHelpController
+import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentAlignmentScreen
+import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentForegroundService
+import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentHeatmapStageScreen
+import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentMultiScaleDetScreen
+import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentPumpScreen
+import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryMode
+import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryScreen
+import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseListScreen
+import com.davidlang.vehicleexpensesautomated.ui.fuel.FillScreen
+import com.davidlang.vehicleexpensesautomated.ui.help.HelpScreen
+import com.davidlang.vehicleexpensesautomated.ui.import.ImportOldPicturesScreen
+
+import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelEditScreen
+import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelHistoryScreen
+import com.davidlang.vehicleexpensesautomated.ui.trip.TripTrackingScreen
+import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabExpenseCategoriesScreen
+import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabFillHistoryScreen
+import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabHubScreen
+import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabTimeChartsScreen
+import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabTripMilesScreen
+import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabVehicleSummaryScreen
+import com.davidlang.vehicleexpensesautomated.ui.settings.PhotoBackupScreen
+import com.davidlang.vehicleexpensesautomated.data.email.EmailReceiptFixtureEntryPoint
+import com.davidlang.vehicleexpensesautomated.ui.reports.ExperimentHtmlRowsSetting
+import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsScreen
+import dagger.hilt.android.EntryPointAccessors
+import com.davidlang.vehicleexpensesautomated.ui.settings.SpreadsheetSyncScreen
+import com.davidlang.vehicleexpensesautomated.ui.settings.SyncingScreen
+import com.davidlang.vehicleexpensesautomated.ui.theme.VehicleExpensesAutomatedTheme
+import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
+import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
+import com.davidlang.vehicleexpensesautomated.ui.vehicle.ManageVehicles2Screen
+import dagger.hilt.android.AndroidEntryPoint
+import java.io.File
+import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+@AndroidEntryPoint
+class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var vehicleRepository: VehicleRepository
+
+    @Inject
+    lateinit var dbState: DatabaseHealthState
+
+    @Inject
+    lateinit var syncIdBackfill: SyncIdBackfill
+
+    @Inject
+    lateinit var syncManager: SyncManager
+
+    @Inject
+    lateinit var photoBackupManager: PhotoBackupManager
+
+    @Inject
+    lateinit var emailReceiptManager: com.davidlang.vehicleexpensesautomated.data.email.EmailReceiptManager
+
+    private val mediaPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (!isGranted) {
+            Toast.makeText(
+                this,
+                "Photos permission denied. Fuel photo saving to the gallery may fail until Photos access is granted in system Settings.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+        // After media dialog settles → location (no stacked dialogs).
+        maybeRequestLocationPermission()
+    }
+
+    private val locationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        val anyGranted = results.values.any { it }
+        if (!anyGranted) {
+            Toast.makeText(
+                this,
+                "Location denied — fills save without GPS",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private val cameraPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (!isGranted) {
+            Toast.makeText(this, "Camera permission denied. Photo features will be disabled.", Toast.LENGTH_LONG).show()
+        }
+        // D6: request media only after camera dialog settles (granted or denied).
+        maybeRequestMediaPermissionForFuelPhotos()
+    }
+
+    private fun mediaImagesPermission(): String {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_IMAGES
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+    }
+
+    private fun maybeRequestMediaPermissionForFuelPhotos() {
+        val prefs = getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
+        val saveFuelPhotos = prefs.getBoolean("save_fuel_photos", true)
+        if (!saveFuelPhotos) {
+            maybeRequestLocationPermission()
+            return
+        }
+        val permission = mediaImagesPermission()
+        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
+            maybeRequestLocationPermission()
+            return
+        }
+        mediaPermissionLauncher.launch(permission)
+    }
+
+    /** [Failed] leaves this task. [Unchecked] is verified first. */
+    private fun leaveForDatabaseError(): Boolean {
+        var health = dbState.states.value
+        if (health is Unchecked) {
+            (application as VehicleExpensesApplication).verifyDatabase()
+            health = dbState.states.value
+        }
+        if (health is Failed) {
+            startDatabaseError()
+            return true
+        }
+        return false
+    }
+
+    private fun startDatabaseError() {
+        startActivity(
+            Intent(this, DatabaseErrorActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK,
+            ),
+        )
+        finish()
+    }
+
+    private fun leaveForStartupFailure(): Boolean {
+        val failure = (application as VehicleExpensesApplication).startupFailure
+        if (failure == null) return false
+        startActivity(
+            Intent(this, StartupFailureActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK,
+            ),
+        )
+        finish()
+        return true
+    }
+
+    /** One-shot FINE+COARSE after camera/media chain; soft deny toast only. */
+    private fun maybeRequestLocationPermission() {
+        val fine = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (fine || coarse) return
+        locationPermissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+            )
+        )
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // Re-composition reads intent via setContent; force recreate for deep-link re-entry
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        if (leaveForStartupFailure()) return
+        if (leaveForDatabaseError()) return
+
+        // Camera only here — media then location follow in callbacks (no stacked dialogs).
+        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+
+        setContent {
+            val health by dbState.state.collectAsState()
+            val transferProgress by dbState.progress.collectAsState()
+            when (health) {
+                is Failed -> {
+                    LaunchedEffect(Unit) { startDatabaseError() }
+                }
+                is Exporting, is Importing -> TransferBlockingScreen(health, transferProgress)
+                Unchecked -> {
+                    LaunchedEffect(Unit) {
+                        (application as VehicleExpensesApplication).verifyDatabase()
+                    }
+                }
+                Ok -> {
+            ExportFailedNotice(dbState)
+            VehicleExpensesAutomatedTheme {
+                val navController = rememberNavController()
+                val drawerState = rememberDrawerState(DrawerValue.Closed)
+                val scope = rememberCoroutineScope()
+                val context = androidx.compose.ui.platform.LocalContext.current
+                var backfillComplete by remember { mutableStateOf(syncIdBackfill.isBackfillDone()) }
+                var syncFailureVisible by remember { mutableStateOf(false) }
+                var pendingReviewCount by remember { mutableStateOf(0) }
+                val experimentsAvailable = BuildConfig.TEST_BUILD
+                val experimentPrefs = remember {
+                    context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
+                }
+                var storedShowExperimentScreens by remember {
+                    mutableStateOf(experimentPrefs.getBoolean("show_experiment_screens", false))
+                }
+                DisposableEffect(experimentPrefs) {
+                    val listener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+                        if (key == "show_experiment_screens") {
+                            storedShowExperimentScreens =
+                                prefs.getBoolean("show_experiment_screens", false)
+                        }
+                    }
+                    experimentPrefs.registerOnSharedPreferenceChangeListener(listener)
+                    onDispose { experimentPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
+                }
+                val experimentsEnabled = experimentsAvailable && storedShowExperimentScreens
+
+                fun refreshChromeIndicators() {
+                    syncFailureVisible = SyncFailureStore(context).hasAnyFailure()
+                    pendingReviewCount = BatchImportPendingStore.count(context)
+                }
+
+                LaunchedEffect(backfillComplete, navController.currentBackStackEntry) {
+                    refreshChromeIndicators()
+                }
+
+                // Explicit deep-link routing for experiment automation (qa APP_SCHEME only):
+                // adb shell am start -a android.intent.action.VIEW \
+                //   -d 'vehicleexpensestest://experiment/align?auto=first10'
+                val deepLinkKey = intent?.dataString
+                LaunchedEffect(backfillComplete, deepLinkKey, experimentsEnabled) {
+                    if (!backfillComplete || !experimentsEnabled) return@LaunchedEffect
+                    val data = intent?.data ?: return@LaunchedEffect
+                    if (data.scheme != BuildConfig.APP_SCHEME || data.host != "experiment") return@LaunchedEffect
+                    val path = data.path.orEmpty()
+                    val auto = data.getQueryParameter("auto").orEmpty()
+                    val q = if (auto.isNotEmpty()) "?auto=$auto" else ""
+                    val route = when {
+                        path.contains("align") -> "experiment$q"
+                        path.contains("multiscale") || path.contains("multi_scale") ->
+                            "experiment_multiscale_det$q"
+                        path.contains("pump") -> "experiment_pump$q"
+                        path.contains("heatmap") || path.contains("preprocess") ||
+                            path.contains("odo-export") || path.contains("deskew") ->
+                            "experiment_heatmap_stage$q"
+                        else -> return@LaunchedEffect
+                    }
+                    // Let NavHost finish composing before navigating.
+                    delay(400)
+                    Log.i("MainActivity", "Deep link navigate → $route from $data")
+                    try {
+                        navController.navigate(route) {
+                            launchSingleTop = true
+                            // Drop any restored settings stack so experiment is visible.
+                            popUpTo("fill") { inclusive = false }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Deep link navigate failed for $route", e)
+                    }
+                }
+
+                // Refresh yellow ? when app returns to foreground (after merge/answer/sync)
+                val lifecycleOwner = LocalLifecycleOwner.current
+                DisposableEffect(lifecycleOwner) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            refreshChromeIndicators()
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+                }
+
+                if (!backfillComplete) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            CircularProgressIndicator()
+                            Text(
+                                "Updating database after upgrade…",
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Text(
+                                "This usually takes a few seconds.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    LaunchedEffect(Unit) {
+                        try {
+                            withContext(Dispatchers.IO) {
+                                syncIdBackfill.runIfNeeded()
+                                vehicleRepository.ensureUnassignedVehicle()
+                                syncManager.scheduleFromDestination()
+                                photoBackupManager.scheduleFromDestination()
+                                emailReceiptManager.rescheduleFromPrefs()
+                            }
+                        } catch (e: Exception) {
+                            Log.e("MainActivity", "sync-id backfill failed", e)
+                            Toast.makeText(
+                                context,
+                                "Database upgrade failed — restart the app",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                        backfillComplete = true
+                    }
+                    return@VehicleExpensesAutomatedTheme
+                }
+
+                val pageHelpController = rememberPageHelpController()
+
+                // First-run splash when no *user* vehicles (S1/S4/S5).
+                // null until Room Flow's first emission — do not treat collectAsState's
+                // empty placeholder as "no vehicles" (that raced and forced welcome on every cold start).
+                val allVehicles by produceState<List<Vehicle>?>(initialValue = null) {
+                    vehicleRepository.getAllVehicles().collect { value = it }
+                }
+                val userVehiclesEmpty = remember(allVehicles) {
+                    allVehicles?.forUserPicker()?.isEmpty()
+                }
+
+                // Dynamic page title
+                val navBackStackEntry by navController.currentBackStackEntryAsState()
+                val currentRoute = navBackStackEntry?.destination?.route
+                LaunchedEffect(backfillComplete, userVehiclesEmpty, currentRoute) {
+                    if (!backfillComplete) return@LaunchedEffect
+                    // null = vehicles not loaded yet; wait (do not open onboarding).
+                    if (userVehiclesEmpty != true) return@LaunchedEffect
+                    // Only auto-open splash from home so we don't interrupt tutorials mid-flow.
+                    // (Manual "Show first-run welcome" from Help/Settings still works.)
+                    if (currentRoute == "fill" || currentRoute == null) {
+                        navController.navigate("onboarding") {
+                            launchSingleTop = true
+                        }
+                    }
+                }
+                val title = when {
+                    currentRoute == "fill" -> "Fill"
+                    currentRoute == "triptracking" -> "Start trip"
+                    currentRoute == "managevehicles" -> "Manage Vehicles"
+                    currentRoute == "expense" -> "New expense"
+                    currentRoute?.startsWith("expense/") == true -> "Edit expense"
+                    currentRoute == "expenselist" -> "Expense list"
+                    currentRoute == "import" ||
+                        currentRoute?.startsWith("import") == true -> "Import Old Pictures"
+                    currentRoute == "reports_lab" ||
+                        currentRoute?.startsWith("reports_lab/") == true -> "Reports"
+                    currentRoute == "fuelhistory" -> "Fuel History"
+                    currentRoute?.startsWith("fuel/") == true -> "Edit Fill"
+                    currentRoute == "settings" -> "Settings"
+                    currentRoute == "syncing" -> "Syncing"
+                    currentRoute == "settings/spreadsheet_sync" -> "Spreadsheet Sync"
+                    currentRoute == "settings/photo_backup" -> "Photo Backup"
+                    currentRoute == "help" -> "Help"
+                    currentRoute == "about" -> "About"
+                    currentRoute == "onboarding" -> "Welcome"
+                    currentRoute?.startsWith("tutorial/") == true -> "Setup tips"
+                    currentRoute == "experiment" ||
+                        currentRoute?.startsWith("experiment?") == true -> "Alignment Experiment"
+                    currentRoute == "experiment_pump" ||
+                        currentRoute?.startsWith("experiment_pump") == true -> "Gas Pump Extraction Experiment"
+                    currentRoute == "experiment_heatmap_stage" -> "Heatmap stage"
+                    currentRoute == "experiment_multiscale_det" ||
+                        currentRoute?.startsWith("experiment_multiscale_det") == true ->
+                        "Dash paddle long-edge det/rec"
+                    else -> "Vehicle Expenses"
+                }
+
+                CompositionLocalProvider(LocalPageHelpController provides pageHelpController) {
+                ModalNavigationDrawer(
+                    drawerState = drawerState,
+                    drawerContent = {
+                        ModalDrawerSheet {
+                            // Experiment items push the list past short screens; allow vertical scroll.
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(rememberScrollState()),
+                            ) {
+                            Text("Vehicle Expenses", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
+                            NavigationDrawerItem(
+                                label = { Text("Fill") },
+                                selected = false,
+                                onClick = {
+                                    navController.navigate("fill")
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                            NavigationDrawerItem(
+                                label = { Text("Start trip") },
+                                selected = false,
+                                onClick = {
+                                    navController.navigate("triptracking")
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                            NavigationDrawerItem(
+                                label = { Text("Manage Vehicles") },
+                                selected = false,
+                                onClick = {
+                                    navController.navigate("managevehicles")
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                            NavigationDrawerItem(
+                                label = { Text("New expense") },
+                                selected = false,
+                                onClick = {
+                                    navController.navigate("expense")
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                            NavigationDrawerItem(
+                                label = { Text("Reports") },
+                                selected = false,
+                                onClick = {
+                                    navController.navigate("reports_lab")
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                            NavigationDrawerItem(
+                                label = { Text("Settings") },
+                                selected = false,
+                                onClick = {
+                                    navController.navigate("settings")
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                            NavigationDrawerItem(
+                                label = { Text("Syncing") },
+                                selected = false,
+                                onClick = {
+                                    navController.navigate("syncing")
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                            NavigationDrawerItem(
+                                label = { Text("Help") },
+                                selected = false,
+                                onClick = {
+                                    navController.navigate("help")
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                            NavigationDrawerItem(
+                                label = { Text("About") },
+                                selected = false,
+                                onClick = {
+                                    navController.navigate("about")
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                            if (experimentsEnabled) {
+                                NavigationDrawerItem(
+                                    label = { Text("Alignment Experiment") },
+                                    selected = false,
+                                    onClick = {
+                                        navController.navigate("experiment?auto=")
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
+                                NavigationDrawerItem(
+                                    label = { Text("Pump Experiment") },
+                                    selected = false,
+                                    onClick = {
+                                        navController.navigate("experiment_pump?auto=")
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
+                                NavigationDrawerItem(
+                                    label = { Text("Heatmap stage") },
+                                    selected = false,
+                                    onClick = {
+                                        navController.navigate("experiment_heatmap_stage")
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
+                                NavigationDrawerItem(
+                                    label = { Text("Dash paddle long-edge det/rec") },
+                                    selected = false,
+                                    onClick = {
+                                        navController.navigate("experiment_multiscale_det?auto=")
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
+                                // Import Old Pictures is an experiment route.
+                                NavigationDrawerItem(
+                                    label = { Text("Import Old Pictures") },
+                                    selected = false,
+                                    onClick = {
+                                        navController.navigate("import")
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
+                            }
+                            } // scrollable Column
+                        }
+                    }
+                ) {
+                    Scaffold(
+                        topBar = {
+                            // Narrow phones (~448dp on 5556): short title so Info stays visible with ?N + !.
+                            val screenWidthDp = LocalConfiguration.current.screenWidthDp
+                            val narrowTitle = screenWidthDp < 600
+                            val titleText = when {
+                                title == "Vehicle Expenses" -> title
+                                narrowTitle -> title
+                                else -> "Vehicle Expenses - $title"
+                            }
+                            TopAppBar(
+                                title = {
+                                    Text(
+                                        titleText,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        softWrap = false,
+                                    )
+                                },
+                                actions = {
+                                    // Priority if tight: drawer/back + Info (leading) already placed;
+                                    // trailing badges only: ?N then !
+                                    if (experimentsEnabled && pendingReviewCount > 0) {
+                                        IconButton(
+                                            onClick = {
+                                                if (!experimentsEnabled) return@IconButton
+                                                navController.navigate("import?review=1") {
+                                                    launchSingleTop = true
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                                .semantics {
+                                                    contentDescription = "Review questions"
+                                                },
+                                        ) {
+                                            Text(
+                                                if (pendingReviewCount > 99) "?99+"
+                                                else "?$pendingReviewCount",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = MaterialTheme.colorScheme.tertiary,
+                                                maxLines = 1,
+                                            )
+                                        }
+                                    }
+                                    if (syncFailureVisible) {
+                                        IconButton(
+                                            onClick = { navController.navigate("syncing") },
+                                            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                                        ) {
+                                            Text(
+                                                "!",
+                                                style = MaterialTheme.typography.titleLarge,
+                                                color = MaterialTheme.colorScheme.error,
+                                            )
+                                        }
+                                    }
+                                },
+                                navigationIcon = {
+                                    // Leading: ☰ then ← then Info (reports children get both; hub ☰ only).
+                                    val isReportsChild =
+                                        currentRoute?.startsWith("reports_lab/") == true ||
+                                            currentRoute == "expenselist"
+                                    val isSettingsOrFuelSub =
+                                        currentRoute == "settings/spreadsheet_sync" ||
+                                            currentRoute == "settings/photo_backup" ||
+                                            currentRoute?.startsWith("fuel/") == true
+                                    // Settings/fuel keep ←-only; report children + everything else show drawer.
+                                    val showMenu = !isSettingsOrFuelSub
+                                    val showBack = isSettingsOrFuelSub || isReportsChild
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (showMenu) {
+                                            IconButton(
+                                                onClick = { scope.launch { drawerState.open() } },
+                                                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                                            ) {
+                                                Icon(Icons.Default.Menu, contentDescription = "Menu")
+                                            }
+                                        }
+                                        if (showBack) {
+                                            IconButton(
+                                                onClick = {
+                                                    if (!navController.popBackStack() && isReportsChild) {
+                                                        navController.navigate("reports_lab")
+                                                    }
+                                                },
+                                                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                                            ) {
+                                                Text("←")
+                                            }
+                                        }
+                                        PageHelpTopBarAction(pageHelpController)
+                                    }
+                                }
+                            )
+                        }
+                    ) { innerPadding ->
+                        Surface(modifier = Modifier.fillMaxSize()) {
+                            NavHost(
+                                navController = navController,
+                                startDestination = "fill",
+                                modifier = Modifier.padding(innerPadding)
+                            ) {
+                                composable("fill") { FillScreen(navController = navController) }
+                                composable("managevehicles") { ManageVehicles2Screen(navController = navController) }
+                                composable("expense") {
+                                    ExpenseEntryScreen(
+                                        navController = navController,
+                                        mode = ExpenseEntryMode.Create,
+                                    )
+                                }
+                                composable("expense/{expenseId}") { backStackEntry ->
+                                    val id = backStackEntry.arguments?.getString("expenseId")?.toLongOrNull()
+                                    ExpenseEntryScreen(
+                                        navController = navController,
+                                        mode = ExpenseEntryMode.fromRoute(id),
+                                    )
+                                }
+                                composable("expenselist") { ExpenseListScreen(navController = navController) }
+                                composable(
+                                    route = "import?review={review}",
+                                    arguments = listOf(
+                                        navArgument("review") {
+                                            type = NavType.StringType
+                                            defaultValue = "0"
+                                        },
+                                    ),
+                                ) { entry ->
+                                    val expandReview =
+                                        entry.arguments?.getString("review") == "1"
+                                    ImportOldPicturesScreen(
+                                        navController = navController,
+                                        expandReview = expandReview,
+                                    )
+                                }
+
+                                composable("triptracking") { TripTrackingScreen(navController = navController) }
+                                composable("reports_lab") { ReportsLabHubScreen(navController = navController) }
+                                composable("reports_lab/time") {
+                                    ReportsLabTimeChartsScreen(navController = navController)
+                                }
+                                // Legacy deep links → unified time charts (R1.2)
+                                composable("reports_lab/efficiency") {
+                                    ReportsLabTimeChartsScreen(navController = navController)
+                                }
+                                composable("reports_lab/cost_trends") {
+                                    ReportsLabTimeChartsScreen(navController = navController)
+                                }
+                                composable("reports_lab/monthly") {
+                                    ReportsLabTimeChartsScreen(navController = navController)
+                                }
+                                composable("reports_lab/expenses") {
+                                    ReportsLabExpenseCategoriesScreen(navController = navController)
+                                }
+                                composable("reports_lab/fills") {
+                                    ReportsLabFillHistoryScreen(navController = navController)
+                                }
+                                composable("reports_lab/vehicle_summary") {
+                                    ReportsLabVehicleSummaryScreen(navController = navController)
+                                }
+                                composable("reports_lab/trips") {
+                                    ReportsLabTripMilesScreen(navController = navController)
+                                }
+                                composable("fuelhistory") { FuelHistoryScreen(navController = navController) }
+                                composable("fuel/{fuelId}") { backStackEntry ->
+                                    val id = backStackEntry.arguments?.getString("fuelId")?.toLongOrNull()
+                                    if (id != null) {
+                                        FuelEditScreen(navController = navController, fuelId = id)
+                                    }
+                                }
+                                composable("settings") {
+                                    val app = androidx.compose.ui.platform.LocalContext.current.applicationContext
+                                    SettingsScreen(
+                                        navController = navController,
+                                        experimentsAvailable = experimentsAvailable,
+                                        ingestOfflineFixtures = {
+                                            EntryPointAccessors.fromApplication(
+                                                app,
+                                                EmailReceiptFixtureEntryPoint::class.java,
+                                            ).emailReceiptFixtureIngest().ingestSampleShellReceipts().summary
+                                        },
+                                        experimentExtras = { ExperimentHtmlRowsSetting() },
+                                    )
+                                }
+                                composable("syncing") { SyncingScreen(navController = navController) }
+                                composable("settings/spreadsheet_sync") {
+                                    SpreadsheetSyncScreen(navController = navController)
+                                }
+                                composable("settings/photo_backup") {
+                                    PhotoBackupScreen(navController = navController)
+                                }
+                                composable("onboarding") {
+                                    OnboardingSplashScreen(navController = navController)
+                                }
+                                composable(
+                                    route = "tutorial/{tutorialId}",
+                                    arguments = listOf(
+                                        navArgument("tutorialId") { type = NavType.StringType },
+                                    ),
+                                ) { entry ->
+                                    val id = entry.arguments?.getString("tutorialId").orEmpty()
+                                    TutorialPagerScreen(navController = navController, tutorialId = id)
+                                }
+                                composable("help") { HelpScreen(navController = navController) }
+                                composable("about") { AboutScreen() }
+                                composable(
+                                    route = "experiment?auto={auto}",
+                                    arguments = listOf(
+                                        navArgument("auto") {
+                                            type = NavType.StringType
+                                            defaultValue = ""
+                                            nullable = true
+                                        },
+                                    ),
+                                    deepLinks = listOf(
+                                        navDeepLink {
+                                            uriPattern = "vehicleexpenses://experiment/align?auto={auto}"
+                                        },
+                                        navDeepLink {
+                                            uriPattern = "vehicleexpenses://experiment/align"
+                                        },
+                                    ),
+                                ) { entry ->
+                                    val auto = entry.arguments?.getString("auto").orEmpty()
+                                    ExperimentAlignmentScreen(
+                                        navController = navController,
+                                        autoFirst10 = auto == "first10",
+                                        autoSelectedSample =
+                                            auto == "selected" || auto == "selected_sample",
+                                    )
+                                }
+                                composable(
+                                    route = "experiment_pump?auto={auto}",
+                                    arguments = listOf(
+                                        navArgument("auto") {
+                                            type = NavType.StringType
+                                            defaultValue = ""
+                                            nullable = true
+                                        },
+                                    ),
+                                    deepLinks = listOf(
+                                        navDeepLink {
+                                            uriPattern = "vehicleexpenses://experiment/pump?auto={auto}"
+                                        },
+                                        navDeepLink {
+                                            uriPattern = "vehicleexpenses://experiment/pump"
+                                        },
+                                    ),
+                                ) { entry ->
+                                    val auto = entry.arguments?.getString("auto").orEmpty()
+                                    ExperimentPumpScreen(
+                                        navController = navController,
+                                        autoFirst10 = auto == "first10",
+                                        autoL1Debug = auto == "l1debug",
+                                        autoHorizAffected = auto == "horiz" || auto == "horiz_affected",
+                                        autoProdInkFail = auto == "prodinkfail" || auto == "inkfail",
+                                        autoMixedFail = auto == "mixedfail",
+                                        autoDetDump = auto == "detdump" || auto == "detboxes",
+                                        autoSelectedSample =
+                                            auto == "selected" || auto == "selected_sample",
+                                    )
+                                }
+                                composable("experiment_heatmap_stage") {
+                                    ExperimentHeatmapStageScreen(
+                                        navController = navController,
+                                        vehicleRepository = vehicleRepository,
+                                    )
+                                }
+                                composable(
+                                    route = "experiment_multiscale_det?auto={auto}",
+                                    arguments = listOf(
+                                        navArgument("auto") {
+                                            type = NavType.StringType
+                                            defaultValue = ""
+                                            nullable = true
+                                        },
+                                    ),
+                                    deepLinks = listOf(
+                                        navDeepLink {
+                                            uriPattern =
+                                                "vehicleexpenses://experiment/multiscale_det?auto={auto}"
+                                        },
+                                        navDeepLink {
+                                            uriPattern =
+                                                "vehicleexpenses://experiment/multiscale_det"
+                                        },
+                                    ),
+                                ) { entry ->
+                                    val auto = entry.arguments?.getString("auto").orEmpty()
+                                    ExperimentMultiScaleDetScreen(
+                                        navController = navController,
+                                        autoStart = auto == "1" || auto == "true" || auto == "run",
+                                        autoSelectedSample =
+                                            auto == "selected" || auto == "selected_sample",
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                } // CompositionLocalProvider (PageHelp)
+            }
+            }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun TransferBlockingScreen(state: DbState, progress: String) {
+    val title = if (state is Importing) "Importing data…" else "Exporting data…"
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            Text(title)
+            if (progress.isNotBlank()) Text(progress)
+        }
+    }
+}
+
+@Composable
+private fun ExportFailedNotice(holder: DatabaseHealthState) {
+    var message by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(holder) {
+        holder.exportFailures.receiveAsFlow().collect { message = it }
+    }
+    val text = message ?: return
+    AlertDialog(
+        onDismissRequest = { message = null },
+        confirmButton = {
+            TextButton(onClick = { message = null }) { Text("OK") }
+        },
+        text = { Text("Export failed: $text") },
+    )
+}
+
+fun stopExperimentForegroundService(context: Context) {
+    ExperimentForegroundService.stop(context)
+}

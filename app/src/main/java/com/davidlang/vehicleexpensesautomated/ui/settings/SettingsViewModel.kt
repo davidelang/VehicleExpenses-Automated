@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.davidlang.vehicleexpensesautomated.data.email.EmailReceiptFixtureIngest
 import com.davidlang.vehicleexpensesautomated.data.email.EmailReceiptManager
 import com.davidlang.vehicleexpensesautomated.data.email.EmailReceiptPrefs
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
@@ -37,7 +36,6 @@ class SettingsViewModel @Inject constructor(
     private val syncCoordinator: SpreadsheetSyncCoordinator,
     private val photoBackupCoordinator: PhotoBackupCoordinator,
     private val emailReceiptManager: EmailReceiptManager,
-    private val emailReceiptFixtureIngest: EmailReceiptFixtureIngest,
     private val googleLegacySignIn: GoogleLegacySignIn,
 ) : ViewModel() {
 
@@ -78,8 +76,10 @@ class SettingsViewModel @Inject constructor(
                 _spreadsheetSyncStatus.value = result.message
                 _spreadsheetSyncIsError.value = !result.success
                 _spreadsheetSyncResult.value = result
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: CancellationException) {
                 throw e
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 _spreadsheetSyncIsError.value = true
                 _spreadsheetSyncStatus.value = e.message ?: "Sync failed"
@@ -109,8 +109,10 @@ class SettingsViewModel @Inject constructor(
                 _photoSyncStatus.value = result.message
                 _photoSyncIsError.value = !result.success
                 _photoSyncResult.value = result
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: CancellationException) {
                 throw e
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 _photoSyncIsError.value = true
                 _photoSyncStatus.value = e.message ?: "Photo sync failed"
@@ -129,11 +131,7 @@ class SettingsViewModel @Inject constructor(
         _photoSyncResult.value = null
     }
 
-    suspend fun syncSpreadsheet(onProgress: SyncProgressListener? = null): SyncResult =
-        syncCoordinator.syncNow(onProgress = onProgress)
 
-    suspend fun syncPhotoBackup(onProgress: SyncProgressListener? = null): PhotoBackupResult =
-        photoBackupCoordinator.syncNow(onProgress = onProgress)
 
     suspend fun recountPendingBadge(): Int = photoBackupCoordinator.recountPending()
 
@@ -146,10 +144,6 @@ class SettingsViewModel @Inject constructor(
     fun rescheduleEmailReceiptPoll() = emailReceiptManager.rescheduleFromPrefs()
 
     fun pollEmailReceiptsNow() = emailReceiptManager.enqueueOneShot()
-
-    /** Offline: extractmail golden JSON fixtures → Room (no network). Updates last-run prefs. */
-    suspend fun ingestOfflineShellFixtures(): String =
-        emailReceiptFixtureIngest.ingestSampleShellReceipts().summary
 
     fun readEmailReceiptLastSummary(): String =
         EmailReceiptPrefs(appContext).lastRunSummary

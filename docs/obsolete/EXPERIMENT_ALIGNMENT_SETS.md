@@ -62,7 +62,7 @@ Also useful: branch marker `simplify_experiments-start` (same simplification eff
 | Set E full pass (`paddleCppAngle` + set_e pathway) | Not replaced — unused for production; Set J is the retained experiment column |
 | Outer JSON convenience reading only `pathways["set_a"]` | Outer fields retargeted to locked winner / `pathways["set_j"]` (**nested set_j serialize logic unchanged**) |
 
-**Production Quick Fill** uses `OcrHarness.runSetJPipeline` with **Set V valley expand** (`OdoExpandKind.VALLEY`) — **not** this experiment screen. Batch dash remains Set J via `AlignmentSetJRunner`.
+**Production Quick Fill** and batch dash use `OcrHarness.runAutoFillPipeline` + `PaddleSeedOdo` (paddle seed) — **not** this experiment screen. Set J is an obsolete experiment column only.
 
 ## Retired sets / columns
 
@@ -70,7 +70,7 @@ Also useful: branch marker `simplify_experiments-start` (same simplification eff
 
 - **Angle:** `mlAngle` from `OdometerOcrUtils.calculateAverageTextAngle`.
 - **Role:** First pipeline in A → E → J order; almost always set `globalWinnerId` after rotate + `performLandmarkDiscovery` + Tier-1 veto. Also ran `runMLKitIterative` (“Set A ML”) and non-char-aware paddle iterative; wrote `pathways["set_a"]` and HTML/JSON columns.
-- **Why removed (report path):** Slower and less accurate than Set J for experiment comparison; production already standardizes on Set J-style path in `OcrHarness`.
+- **Why removed (report path):** Slower and less accurate than Set J for experiment comparison. Production Quick Fill is paddle seed (`runAutoFillPipeline` + `PaddleSeedOdo`), not Set J and not this experiment screen.
 - **Why lock kept:** Naïvely running only Set J changes the vehicle ID when A’s mlAngle discovery/veto winner would have differed from J’s own first-non-null lock — breaking exact `pathways["set_j"]` parity.
 
 ### Set E (`set_e`) — fully removed
@@ -131,7 +131,7 @@ Keep these so executors do not over-delete while trimming:
 | GOLDEN_SUBSET / FAILING_SUBSET UI maps | Experiment photo selection |
 | Ingest A→B, probe dims, buffer hygiene, rotate helper | Shared prefix |
 | `ImageAlignmentUtils` veto / disambiguate / anchorAlign | Shared identity + align (not experiment-only) |
-| `ui/util/OcrHarness.kt` | Production Set J — **do not modify** for this simplify |
+| `ui/util/OcrHarness.kt` | Not part of this obsolete simplify. Production Quick Fill is paddle seed (`runAutoFillPipeline` + `PaddleSeedOdo`), not Set J. |
 
 ## Reasons for obsolescence
 

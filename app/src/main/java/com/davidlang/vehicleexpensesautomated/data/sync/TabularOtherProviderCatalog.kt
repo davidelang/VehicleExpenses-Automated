@@ -38,8 +38,6 @@ object TabularOtherProviderCatalog {
     fun providersForKind(kindId: String): List<TabularOtherProviderInfo> =
         PROVIDERS.filter { it.kindId == kindId }
 
-    fun infoFor(provider: SpreadsheetProvider): TabularOtherProviderInfo? =
-        PROVIDERS.find { it.provider == provider }
 
     fun newDestIdFor(provider: SpreadsheetProvider): String = when (provider) {
         SpreadsheetProvider.BASEROW -> "new:baserow"
@@ -69,14 +67,4 @@ object TabularOtherProviderCatalog {
         else -> null
     }
 
-    fun isRowDbProvider(provider: SpreadsheetProvider): Boolean = when (provider) {
-        SpreadsheetProvider.BASEROW,
-        SpreadsheetProvider.NOCODB,
-        SpreadsheetProvider.POCKETBASE,
-        SpreadsheetProvider.SUPABASE,
-        SpreadsheetProvider.AIRTABLE,
-        SpreadsheetProvider.FIREBASE,
-        -> true
-        else -> false
-    }
 }

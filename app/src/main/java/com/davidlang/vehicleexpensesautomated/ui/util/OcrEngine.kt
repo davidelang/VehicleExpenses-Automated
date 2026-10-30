@@ -16,6 +16,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.jvm.JvmName
 import kotlin.math.max
 import kotlin.math.min
 import org.opencv.core.*
@@ -40,56 +41,11 @@ data class TextBlock(
     val confidence: Float = 0f
 )
 
-data class AlignmentTraceResult(
-    val success: Boolean,
-    val timeMs: Long,
-    val alignedImageBase64: String,
-    val metadata: Map<String, String> = emptyMap()
-)
-
 data class RefinementTrace(
     val strategyName: String,
     val timeMs: Long,
     val steps: List<OcrStepResult>,
     val metadata: Map<String, String> = emptyMap()
-)
-
-data class SingleVehiclePathwayResult(
-    val alignmentTrace: AlignmentTraceResult?,
-    val refinementTraces: Map<String, RefinementTrace>,
-    val disambiguatedLandmarks: List<TextBlock> = emptyList(),
-    val harnessResults: Map<String, OcrHarnessResult> = emptyMap()
-)
-
-data class SingleVehicleResult(
-    val vehicleName: String,
-    val vetoReason: String,
-    val tMatchMs: Long,
-    val discoveryTimeMs: Long = 0,
-    val pathResults: Map<String, SingleVehiclePathwayResult>, // Keys: "set_a", "set_b", "standard"
-    val vetoQueryWords: List<String>,
-    val vetoMyManifest: List<String>,
-    val vetoPool: List<String>,
-    val isWinner: Boolean
-)
-
-data class PhotoPathwayResult(
-    val winnerName: String,
-    val tDeskewTotal: Long,
-    val tDiscoveryTotal: Long,
-    val deskewedBase64: String,
-    val discoveryResult: OcrResult,
-    val discoveryLandmarks: List<TextBlock>,
-    val harnessResults: Map<String, OcrHarnessResult> = emptyMap(),
-    val tOdoReadMs: Long = 0,
-    val similarity: Map<String, String> = emptyMap(),
-)
-
-data class ProcessedPhotoResult(
-    val fileName: String,
-    val pathways: Map<String, PhotoPathwayResult>, // Keys: "set_a", "set_b", "standard"
-    val vehicleResultsMap: Map<Int, SingleVehicleResult>,
-    val primaryVetoResults: Map<Int, VetoResult>
 )
 
 /**
@@ -195,7 +151,7 @@ object OcrUtils {
      * @param targetH Requested height for the thumbnail (aspect ratio preserved).
      * @param annotations List of SnapshotAnnotation (pixel Int coords) or RectF (ICRS Float coords). ICRS entries are converted internally using the actual srcW/srcH of the source buffer.
      * @param scratchArgb Optional reusable Bitmap for ARGB workspace.
-     * @param scratchYuv Optional reusable BufferSet for YUV processing.
+     * @param scratchYuv Required BufferSet scratch. No default; null is not accepted here.
      */
     suspend fun takeSnapshot(
         source: Any,
@@ -204,7 +160,29 @@ object OcrUtils {
         targetH: Int = 0,
         annotations: List<Any> = emptyList(),
         scratchArgb: Bitmap? = null,
-        scratchYuv: BufferSet? = null
+        scratchYuv: BufferSet,
+    ): Pair<String, Long> {
+        val (jpeg, t) = takeSnapshotJpeg(source, sourceRect, targetW, targetH, annotations, scratchArgb, scratchYuv)
+        val b64 = if (jpeg.isEmpty()) {
+            ""
+        } else {
+            android.util.Base64.encodeToString(jpeg, android.util.Base64.NO_WRAP)
+        }
+        return Pair(b64, t)
+    }
+
+    // Null scratchYuv is allowed only from ui/experiment:
+    // ExperimentAlignmentScreen.kt, ExperimentPumpScreen.kt, DeskewOdoCropExport.kt.
+    @Deprecated("Null scratchYuv is experiment-only. Production must pass a BufferSet.")
+    @JvmName("takeSnapshotNullScratch")
+    internal suspend fun takeSnapshot(
+        source: Any,
+        sourceRect: Rect? = null,
+        targetW: Int = 0,
+        targetH: Int = 0,
+        annotations: List<Any> = emptyList(),
+        scratchArgb: Bitmap? = null,
+        scratchYuv: BufferSet?,
     ): Pair<String, Long> {
         val (jpeg, t) = takeSnapshotJpeg(source, sourceRect, targetW, targetH, annotations, scratchArgb, scratchYuv)
         val b64 = if (jpeg.isEmpty()) {
@@ -268,10 +246,11 @@ object OcrUtils {
             finalW = roiW; finalH = roiH
         }
 
-        val destW = if (scratchYuv != null) scratchYuv.s.width else 4096
-        val destH = if (scratchYuv != null) scratchYuv.s.height else 4096
-        val boxW = min(if (targetW > 0) targetW else destW, min(destW, 4096))
-        val boxH = min(if (targetH > 0) targetH else destH, min(destH, 4096))
+        val bufferSet = scratchYuv ?: throw IllegalStateException("takeSnapshotJpeg: scratch missing")
+        val destW = bufferSet.s.width
+        val destH = bufferSet.s.height
+        val boxW = if (targetW > 0) targetW else destW
+        val boxH = if (targetH > 0) targetH else destH
         if (finalW > boxW || finalH > boxH) {
             val sx = boxW.toFloat() / finalW.toFloat()
             val sy = boxH.toFloat() / finalH.toFloat()
@@ -288,12 +267,7 @@ object OcrUtils {
         finalW = finalW.coerceAtLeast(2)
         finalH = finalH.coerceAtLeast(2)
 
-        Log.d("ExperimentPump", "takeSnapshot: buffer pointed at ${srcW}x${srcH} (roi ${roiW}x${roiH}) target size ${targetW}x${targetH} (0=unlimited) final ${finalW}x${finalH}")
-
-        if (scratchYuv == null) {
-            return@withContext Pair(ByteArray(0), System.currentTimeMillis() - tStart)
-        }
-        val bufferSet = scratchYuv
+        Log.d("OcrEngine", "takeSnapshot: buffer pointed at ${srcW}x${srcH} (roi ${roiW}x${roiH}) target size ${targetW}x${targetH} (0=unlimited) final ${finalW}x${finalH}")
         val workspace = bufferSet.s
         val snapCropId = workspace.createCrop(0, 0, finalW, finalH)
 
@@ -359,12 +333,6 @@ object OcrUtils {
         } finally {
             bufferSet.c[snapCropId].release()
         }
-    }
-
-    fun bitmapToBase64(bitmap: Bitmap, quality: Int = 80): String {
-        val outputStream = java.io.ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
-        return android.util.Base64.encodeToString(outputStream.toByteArray(), android.util.Base64.NO_WRAP)
     }
 
     fun isBlockInCrop(block: TextBlock, crop: android.graphics.RectF?, w: Int, h: Int): Boolean {

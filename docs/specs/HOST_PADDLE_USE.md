@@ -37,10 +37,10 @@ Dynamic shapes MUST be configured via the `NNADAPTER_DYNAMIC_SHAPE_INFO` environ
 | **Rec V3** | Mono | `x:1,1,48,32:1,1,48,320:1,1,48,1280` |
 
 ## 3. Automation Scripts
-Standard host-side scripts in `app/src/main/assets/paddle/scripts/`:
-*   `convert_mono.py`: Weight averaging and graph modification for 1-channel models.
-*   `optimize_models.sh`: Orchestrates the `opt` tool for all targets.
-*   `optimize_mono_int8_models.sh`: INT8 dynamic quant (`--quant_model=true --quant_type=QUANT_INT8`) + analytic input pass; outputs `*_int8_*.nb` (set `OPT_TOOL` to host `opt_linux_x86_int8` from paddle-build output).
+Production models are rebuilt only by the `paddle-models` pin:
+*   `third_party/paddle-models/convert_mono.py`: Weight averaging and graph modification for 1-channel models.
+*   `third_party/paddle-models/build` (via `./third_party/fetch-deps build paddle-models`): runs `convert_mono.py` and the `paddle-opt` pin `opt` for every product ABI; writes `artifact/app/<arch>/*.nb` (embedded by app CMake) and tailor lists.
+*   The old `app/src/main/assets/paddle/scripts/optimize_*.sh` scripts were retired (they wrote models into `app/`). Never use `--quant_model` / `QUANT_INT8` for product models (all-zero heatmaps).
 
 ## 4. UINT8 → INT8 Runtime Contract (App)
 

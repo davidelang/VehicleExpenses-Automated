@@ -68,6 +68,7 @@ class GoogleDrivePhotoBackend @Inject constructor(
                     var deleteSkipped = false
                     try {
                         drive.files().delete(created.id).execute()
+                    // kept: failure stays on this call so the screen or caller can continue
                     } catch (e: Exception) {
                         android.util.Log.d(TAG, "Drive probe delete best-effort failed: ${e.message}")
                         deleteSkipped = true
@@ -81,8 +82,9 @@ class GoogleDrivePhotoBackend @Inject constructor(
                 } finally {
                     tempFile.delete()
                 }
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
-                handleError("Drive test failed", e)
+                handleError("drive.testConnection", dest, e)
             }
         }
 
@@ -118,8 +120,9 @@ class GoogleDrivePhotoBackend @Inject constructor(
         return photoStorage.resolveFolderId(hint, dest)
     }
 
-    private fun handleError(logMsg: String, e: Exception): PhotoBackupResult {
-        android.util.Log.e(TAG, logMsg, e)
+    private fun handleError(operation: String, dest: PhotoDestination?, e: Exception): PhotoBackupResult {
+        val detail = dest?.let { "destId=${it.id}" }
+        GoogleRestApiFailureLog.log(operation, detail, e)
         val wrapped = DriveAuthRecovery.wrapIfRecoverable(e)
         if (wrapped is DriveRecoverableAuthException) {
             return PhotoBackupResult(

@@ -11,7 +11,7 @@ import java.util.Locale
  * despite the field name.
  *
  * Display must use [formatVolume] / [shortLabel] — do not invent conversion at display time
- * except at Quick Fill save and Settings convert-all.
+ * except at Fill save and Settings convert-all.
  */
 object VolumeUnits {
     const val GALLONS = "G"
@@ -32,7 +32,6 @@ object VolumeUnits {
 
     fun shortLabel(unit: String): String = if (unit == LITERS) "L" else "G"
 
-    fun longLabel(unit: String): String = if (unit == LITERS) "Liters" else "Gallons"
 
     /**
      * User-facing volume string. Spacing: `"12.34 L"` (space before unit).

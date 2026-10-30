@@ -132,7 +132,7 @@ extern "C" void* __wrap_realloc(void* p, size_t n) {
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeVeRssSetPath(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeVeRssSetPath(
     JNIEnv* env, jobject, jstring path) {
     std::lock_guard<std::mutex> lock(g_rssMu);
     if (!path) {
@@ -1019,7 +1019,7 @@ static void countPullYFromU8Gray(
 );
 
 extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCountPullbackOriented(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeCountPullbackOriented(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr,
     jfloatArray seedPts,
@@ -2088,22 +2088,6 @@ static void fillAabbEnergySweep(
     }
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeChromaMag(
-    JNIEnv* /*env*/, jobject /*thiz*/,
-    jlong yPtr, jlong uvPtr, jlong dstPtr
-) {
-    auto* y = reinterpret_cast<cv::Mat*>(yPtr);
-    auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
-    auto* dst = reinterpret_cast<cv::Mat*>(dstPtr);
-    if (!y || !dst) return JNI_FALSE;
-    if (!uv) {
-        cv::Mat empty;
-        return fillChromaMag(*y, empty, dst) ? JNI_TRUE : JNI_FALSE;
-    }
-    return fillChromaMag(*y, *uv, dst) ? JNI_TRUE : JNI_FALSE;
-}
-
 /** 3×3 Sobel weights (ksize=3) at one pixel; gx/gy in registers (about ±1020). */
 static void sobelGxGyU8(const cv::Mat& gray, int x, int y, int* gx, int* gy) {
     const int h = gray.rows, w = gray.cols;
@@ -2153,7 +2137,7 @@ static cv::Mat* energyLookAs(jlong scratchPtr, const cv::Mat& gray) {
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeFillEnergyLookU8(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeFillEnergyLookU8(
     JNIEnv* /*env*/, jobject /*thiz*/,
     jlong grayPtr, jlong destPtr
 ) {
@@ -2564,7 +2548,7 @@ static jintArray energyAabbOnLook(
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyAabbTight(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeEnergyAabbTight(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong scratchPtr
@@ -2573,7 +2557,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnerg
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyAabbRetract(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeEnergyAabbRetract(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong scratchPtr
@@ -2582,7 +2566,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnerg
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyAabbExpand(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeEnergyAabbExpand(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong scratchPtr
@@ -2859,7 +2843,7 @@ static jfloatArray energyOrientOnLook(
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyOrientTight(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeEnergyOrientTight(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jfloatArray seedsArr, jshortArray sweepArr, jlong scratchPtr
 ) {
@@ -2868,7 +2852,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnerg
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyOrientRetract(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeEnergyOrientRetract(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jfloatArray seedsArr, jshortArray sweepArr, jlong scratchPtr
 ) {
@@ -2877,7 +2861,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnerg
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyOrientExpand(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeEnergyOrientExpand(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jfloatArray seedsArr, jshortArray sweepArr, jlong scratchPtr
 ) {
@@ -6713,7 +6697,7 @@ static jintArray aabbGrayMany(
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayAabbTight(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeGrayAabbTight(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
@@ -6725,7 +6709,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayA
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayAabbRetract(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeGrayAabbRetract(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
@@ -6737,7 +6721,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayA
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayAabbExpand(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeGrayAabbExpand(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
@@ -6865,7 +6849,7 @@ static jintArray aabbColorMany(
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbTight(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeColorAabbTight(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
@@ -6877,7 +6861,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbRetract(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeColorAabbRetract(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
@@ -6889,7 +6873,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbTightVsp(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeColorAabbTightVsp(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
@@ -6901,7 +6885,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbRetractVsp(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeColorAabbRetractVsp(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
@@ -6913,7 +6897,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbExpand(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeColorAabbExpand(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
@@ -8052,7 +8036,7 @@ static jfloatArray seg7OrientedMany(
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayOrientTight(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeGrayOrientTight(
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
@@ -8065,7 +8049,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayO
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayOrientRetract(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeGrayOrientRetract(
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
@@ -8078,7 +8062,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayO
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayOrientExpand(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeGrayOrientExpand(
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
@@ -8091,7 +8075,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayO
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientTight(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeColorOrientTight(
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
@@ -8105,7 +8089,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientRetract(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeColorOrientRetract(
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
@@ -8119,7 +8103,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientTightVsp(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeColorOrientTightVsp(
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
@@ -8134,7 +8118,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientRetractVsp(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeColorOrientRetractVsp(
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
@@ -8149,7 +8133,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientExpand(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeColorOrientExpand(
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
@@ -9373,7 +9357,7 @@ static void seedOrUnionBands(
 }
 
 extern "C" JNIEXPORT jobjectArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbeSeedInk(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeProbeSeedInk(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr,
     jint l, jint t, jint r, jint b,
@@ -9752,6 +9736,129 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
     return packSeedInkThrs(env, thrs);
 }
 
+// strokeWidthInSeed hist + horiz/vert runs. Otsu doubles are not FMA-fused.
+#pragma clang fp contract(off)
+static bool strokeWidthInSeedNative(
+    const cv::Mat& gray, int l, int t, int seedW, int seedH,
+    int* thrOut, int* nzOut, int* nNonSpanOut, int* maxRunOut,
+    std::vector<int>* hh, std::vector<int>* vh
+) {
+    if (seedW < 1 || seedH < 1 || !thrOut || !nzOut || !nNonSpanOut || !maxRunOut || !hh || !vh) {
+        return false;
+    }
+    const int nPix = static_cast<int>(static_cast<uint32_t>(seedW) * static_cast<uint32_t>(seedH));
+    int hist[256];
+    std::fill(hist, hist + 256, 0);
+    for (int y = 0; y < seedH; ++y) {
+        const uint8_t* row = gray.ptr<uint8_t>(t + y);
+        for (int x = 0; x < seedW; ++x) hist[row[l + x]]++;
+    }
+    double sum = 0.0;
+    for (int i = 0; i <= 255; ++i) sum += static_cast<double>(i) * static_cast<double>(hist[i]);
+    double sumB = 0.0;
+    int wB = 0;
+    double maxVar = -1.0;
+    int thr = 0;
+    for (int tbin = 0; tbin <= 255; ++tbin) {
+        wB += hist[tbin];
+        if (wB == 0) continue;
+        const int wF = nPix - wB;
+        if (wF == 0) break;
+        sumB += static_cast<double>(tbin) * static_cast<double>(hist[tbin]);
+        const double mB = sumB / static_cast<double>(wB);
+        const double mF = (sum - sumB) / static_cast<double>(wF);
+        const double d = mB - mF;
+        const double vr = static_cast<double>(wB) * static_cast<double>(wF) * d * d;
+        if (vr >= maxVar) {
+            maxVar = vr;
+            thr = tbin;
+        }
+    }
+    int nz = 0;
+    for (int i = 0; i <= thr; ++i) nz += hist[i];
+    const float inkFrac = nPix > 0
+        ? static_cast<float>(nz) / static_cast<float>(nPix)
+        : 0.f;
+    const bool darkInk = !(inkFrac >= 0.45f);
+    hh->assign(static_cast<size_t>(seedW) + 1, 0);
+    vh->assign(static_cast<size_t>(seedH) + 1, 0);
+    int nNonSpan = 0;
+    int maxRun = 0;
+    for (int y = 0; y < seedH; ++y) {
+        const uint8_t* row = gray.ptr<uint8_t>(t + y);
+        int run = 0;
+        auto close = [&]() {
+            if (run <= 0) return;
+            if (run != seedW) {
+                (*hh)[static_cast<size_t>(run)]++;
+                nNonSpan++;
+                if (run > maxRun) maxRun = run;
+            }
+        };
+        for (int x = 0; x < seedW; ++x) {
+            const int v = row[l + x];
+            const bool on = darkInk ? (v <= thr) : (v > thr);
+            if (on) run++;
+            else if (run > 0) {
+                close();
+                run = 0;
+            }
+        }
+        if (run > 0) close();
+    }
+    for (int x = 0; x < seedW; ++x) {
+        int run = 0;
+        for (int y = 0; y < seedH; ++y) {
+            const int v = gray.ptr<uint8_t>(t + y)[l + x];
+            const bool on = darkInk ? (v <= thr) : (v > thr);
+            if (on) run++;
+            else if (run > 0) {
+                if (run != seedH) (*vh)[static_cast<size_t>(run)]++;
+                run = 0;
+            }
+        }
+        if (run > 0 && run != seedH) (*vh)[static_cast<size_t>(run)]++;
+    }
+    *thrOut = thr;
+    *nzOut = nz;
+    *nNonSpanOut = nNonSpan;
+    *maxRunOut = maxRun;
+    return true;
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_ContentExpandUtilsQa_nativeStrokeWidthInSeed(
+    JNIEnv* env, jobject /*thiz*/, jlong matPtr, jint l, jint t, jint r, jint b
+) {
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
+    if (l < 0 || t < 0 || r > mat->cols || b > mat->rows || r <= l || b <= t) return nullptr;
+    const int seedW = r - l;
+    const int seedH = b - t;
+    int thr = 0, nz = 0, nNonSpan = 0, maxRun = 0;
+    std::vector<int> hh, vh;
+    try {
+        if (!strokeWidthInSeedNative(*mat, l, t, seedW, seedH, &thr, &nz, &nNonSpan, &maxRun, &hh, &vh)) {
+            return nullptr;
+        }
+    } catch (const std::bad_alloc&) {
+        return nullptr;
+    }
+    const int nOut = 4 + static_cast<int>(hh.size()) + static_cast<int>(vh.size());
+    std::vector<jint> out;
+    out.reserve(static_cast<size_t>(nOut));
+    out.push_back(thr);
+    out.push_back(nz);
+    out.push_back(nNonSpan);
+    out.push_back(maxRun);
+    for (int v : hh) out.push_back(v);
+    for (int v : vh) out.push_back(v);
+    jintArray arr = env->NewIntArray(nOut);
+    if (!arr) return nullptr;
+    env->SetIntArrayRegion(arr, 0, nOut, out.data());
+    return arr;
+}
+
 #if defined(VE_IDEAL_MASK_MAIN)
 // Host/device driver. Ink calls the post-poison walk on a 254 look plane.
 // Energy stays on the energy JNI entry points (stroke Y=255, no UV).
@@ -9989,11 +10096,11 @@ static int runOne(const char* path) {
         inkBox(tightS, 0, b0);
         inkBox(outS, 2, b1);
         scratch.setTo(0);
-        box4(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyAabbTight(
+        box4(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeEnergyAabbTight(
             &gEnv, nullptr, eP, 0, hostInts(tightS, 4), nullptr, nullptr, sP),
             tightS, b2);
         scratch.setTo(0);
-        box4(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyAabbRetract(
+        box4(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeEnergyAabbRetract(
             &gEnv, nullptr, eP, 0, hostInts(outS, 4), nullptr, nullptr, sP),
             outS, b3);
         std::printf("OK aabb %s %s %s %s\n", b0, b1, b2, b3);
@@ -10024,11 +10131,11 @@ static int runOne(const char* path) {
         inkRot(tq, 0, b0);
         inkRot(oq, 2, b1);
         scratch.setTo(0);
-        box8(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyOrientTight(
+        box8(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeEnergyOrientTight(
             &gEnv, nullptr, eP, hostFloats(tq, 8), nullptr, sP),
             tq, b2);
         scratch.setTo(0);
-        box8(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyOrientRetract(
+        box8(Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtilsQa_nativeEnergyOrientRetract(
             &gEnv, nullptr, eP, hostFloats(oq, 8), nullptr, sP),
             oq, b3);
         std::printf("OK rot %s %s %s %s\n", b0, b1, b2, b3);

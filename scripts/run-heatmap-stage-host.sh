@@ -7,8 +7,13 @@ VE=$(cd "$HERE/.." && pwd)
 PHOTOS="${PHOTOS:-/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/research/photos/pump}"
 OUT="${OUT:-/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/scratch/heatmap-stage-host/run-$(date +%Y%m%d-%H%M%S)}"
 BIN="${BIN:-$VE/third_party/paddle/tests/heatmap_stage_host/out/heatmap_stage_host}"
-ASSETS_X86="$VE/app/src/x86_64/assets/paddle"
-HOST_NBS="$VE/third_party/paddle/prod_models_host"
+# Models from the paddle-models pin (fetch-deps ro paddle-models):
+#   fp32 = shipped x86_64 product (artifact/app), fp16 = host-only comparison pack (artifact/host).
+DET_FP16="$VE/third_party/paddle-models/artifact/host/prod_u8fp16_det_x86_64.nb"
+DET_FP32="$VE/third_party/paddle-models/artifact/app/x86_64/det_x86_64.nb"
+for m in "$DET_FP16" "$DET_FP32"; do
+  [[ -f "$m" ]] || { echo "ERROR: model missing: $m (run ./third_party/fetch-deps ro paddle-models)" >&2; exit 2; }
+done
 WORKDIR="$OUT/work"
 mkdir -p "$OUT" "$WORKDIR"
 
@@ -83,8 +88,8 @@ EOF
   echo "Wrote $jsonl ($i lines)"
 }
 
-run_pack fp16 uint8_fp16_u8 "$HOST_NBS/prod_u8fp16_det_x86_64.nb"
-run_pack fp32 uint8_fp32_u8 "$ASSETS_X86/prod_u8fp32_u8/det_x86_64.nb"
+run_pack fp16 uint8_fp16_u8 "$DET_FP16"
+run_pack fp32 uint8_fp32_u8 "$DET_FP32"
 
 echo "HOST DONE under $OUT"
 ls -la "$OUT"

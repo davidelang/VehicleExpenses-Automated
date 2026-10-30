@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.data.storage
 
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
@@ -7,7 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import android.provider.OpenableColumns
+import java.io.FileNotFoundException
 import com.davidlang.vehicleexpensesautomated.data.sync.DriveAuthRecovery
 import com.davidlang.vehicleexpensesautomated.data.sync.GoogleDriveAuth
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoDestination
@@ -79,6 +80,7 @@ class PhotoStorageManager @Inject constructor(
             } finally {
                 tempFile.delete()
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             throw DriveAuthRecovery.wrapIfRecoverable(e)
         }
@@ -105,6 +107,7 @@ class PhotoStorageManager @Inject constructor(
                     .setFields("id")
                     .execute()
                 return updated.id
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (_: Exception) {
                 // Stale manifest id — fall through to name lookup / create.
             }
@@ -137,131 +140,196 @@ class PhotoStorageManager @Inject constructor(
     }
 
     /**
-     * Creates a MediaStore URI in the shared Pictures/VehicleExpenses folder.
-     * This is used by the camera to save photos directly to shared storage.
+     * Insert a gallery photo in Pictures/VehicleExpenses, or reuse an item with the same
+     * display name, size, and first 64 KB. Never overwrites, updates, or deletes.
      */
-    fun createMediaStoreUri(fileName: String, photoType: PhotoType): Uri? {
-        val resolver = context.contentResolver
-        val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, "${photoType.name.lowercase()}_$fileName")
-            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/VehicleExpenses")
-                put(MediaStore.MediaColumns.IS_PENDING, 1)
-            }
-        }
-
-        val contentUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-        return resolver.insert(contentUri, contentValues)
-    }
-
-    suspend fun savePhoto(uri: Uri, fileName: String, photoType: PhotoType): String? {
-        val prefs = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
-        val provider = prefs.getString("photo_storage_provider", "google_drive") ?: "google_drive"
-
-        val localUriString = saveLocally(uri, fileName, photoType)
-
-        return if (provider == "google_drive" && localUriString != null) {
-            val localUri = Uri.parse(localUriString)
-            val driveUrl = uploadToDriveLegacy(localUri, fileName, photoType)
-            driveUrl ?: localUriString
+    fun saveGalleryPhoto(displayName: String, mimeType: String, source: File): Uri {
+        val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val reusable = findReusableGalleryUri(collection, displayName, source)
+        if (reusable != null) return reusable
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            saveGalleryPhotoFromPart(displayName, mimeType, source, collection)
         } else {
-            localUriString
+            saveGalleryPhotoLegacy(displayName, mimeType, source, collection)
         }
     }
 
-    /** Legacy path used by PhotoPicker; destination-aware sync uses [uploadToDestination]. */
-    private suspend fun uploadToDriveLegacy(uri: Uri, fileName: String, photoType: PhotoType): String? {
-        return try {
-            val drive = buildDriveService(null)
-            val folderName = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
-                .getString("drive_folder", "Vehicle Expenses Photos") ?: "Vehicle Expenses Photos"
-
-            val folderId = findOrCreateFolder(drive, folderName)
-
-            val tempFile = File(context.cacheDir, fileName)
-            openInputStream(uri)?.use { input ->
-                FileOutputStream(tempFile).use { output ->
-                    input.copyTo(output)
-                }
+    private fun copySourceToPart(source: File, part: File) {
+        try {
+            source.inputStream().use { input ->
+                FileOutputStream(part).use { out -> input.copyTo(out) }
             }
-
-            val mediaContent = FileContent("image/jpeg", tempFile)
-
-            val fileMetadata = com.google.api.services.drive.model.File().apply {
-                name = "${photoType.name.lowercase()}_$fileName"
-                parents = listOf(folderId)
-            }
-
-            val uploaded = drive.files().create(fileMetadata, mediaContent)
-                .setFields("id,webViewLink")
-                .execute()
-
-            tempFile.delete()
-            uploaded.webViewLink ?: "https://drive.google.com/file/d/${uploaded.id}/view"
         } catch (e: Exception) {
-            null // Drive failed → will fall back to local
+            part.delete()
+            throw e
         }
     }
 
-    private fun saveLocally(uri: Uri, fileName: String, photoType: PhotoType): String? {
-        // If it's already a MediaStore URI (starts with content://media/), it's already saved locally
-        if (uri.toString().startsWith("content://media/")) {
-            // Finalize the file by removing IS_PENDING on Android Q+
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                try {
-                    val contentValues = ContentValues().apply {
-                        put(MediaStore.MediaColumns.IS_PENDING, 0)
-                    }
-                    context.contentResolver.update(uri, contentValues, null, null)
-                } catch (e: Exception) {
-                    android.util.Log.e("PhotoStorageManager", "Failed to update IS_PENDING to 0", e)
-                }
+    private fun uniqueGalleryFile(dir: File, displayName: String): File {
+        var dest = File(dir, displayName)
+        var n = 1
+        while (dest.exists()) {
+            val dot = displayName.lastIndexOf('.')
+            val unique = if (dot > 0) {
+                displayName.substring(0, dot) + " ($n)" + displayName.substring(dot)
+            } else {
+                "$displayName ($n)"
             }
-            return uri.toString()
+            dest = File(dir, unique)
+            n++
         }
+        return dest
+    }
 
-        // Otherwise, copy it to a new MediaStore location
-        val destUri = createMediaStoreUri(fileName, photoType) ?: return null
-        return try {
-            openInputStream(uri)?.use { input ->
-                context.contentResolver.openOutputStream(destUri)?.use { output ->
-                    input.copyTo(output)
-                }
+    private fun saveGalleryPhotoLegacy(
+        displayName: String,
+        mimeType: String,
+        source: File,
+        collection: Uri,
+    ): Uri {
+        val dir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+            "VehicleExpenses",
+        )
+        if (!dir.exists()) dir.mkdirs()
+        val dest = uniqueGalleryFile(dir, displayName)
+        val part = File(dir, "${dest.name}.part")
+        copySourceToPart(source, part)
+        if (!part.renameTo(dest)) {
+            part.delete()
+            throw IllegalStateException("Cannot rename gallery part ${part.absolutePath}")
+        }
+        try {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                put(MediaStore.MediaColumns.DATA, dest.absolutePath)
             }
-            // Finalize
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.MediaColumns.IS_PENDING, 0)
-                }
-                context.contentResolver.update(destUri, contentValues, null, null)
-            }
+            return context.contentResolver.insert(collection, values)
+                ?: throw IllegalStateException("Cannot create MediaStore URI")
+        } catch (e: Exception) {
+            dest.delete()
+            throw e
+        }
+    }
 
-            // Explicitly notify the MediaScanner so the photo appears in the Gallery immediately
+    private fun saveGalleryPhotoFromPart(
+        displayName: String,
+        mimeType: String,
+        source: File,
+        collection: Uri,
+    ): Uri {
+        val part = File(context.cacheDir, "gallery_${System.nanoTime()}.part")
+        copySourceToPart(source, part)
+        try {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, GALLERY_RELATIVE_PATH)
+            }
+            val uri = context.contentResolver.insert(collection, values)
+                ?: throw IllegalStateException("Cannot create MediaStore URI")
             try {
-                val projection = arrayOf(MediaStore.MediaColumns.DATA)
-                context.contentResolver.query(destUri, projection, null, null, null)?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val pathIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
-                        val path = cursor.getString(pathIndex)
-                        android.media.MediaScannerConnection.scanFile(
-                            context,
-                            arrayOf(path),
-                            arrayOf("image/jpeg")
-                        ) { scannedPath, scannedUri ->
-                            android.util.Log.i("PhotoStorageManager", "MediaScanner scanned: $scannedPath -> $scannedUri")
-                        }
-                    }
+                val out = context.contentResolver.openOutputStream(uri)
+                    ?: throw IllegalStateException("Cannot open MediaStore output")
+                out.use { stream ->
+                    part.inputStream().use { input -> input.copyTo(stream) }
                 }
-            } catch (scanEx: Exception) {
-                android.util.Log.e("PhotoStorageManager", "MediaScanner notification failed", scanEx)
+            } catch (e: Exception) {
+                android.util.Log.e("PhotoStorageManager", "gallery stream failed for $uri", e)
+                throw e
             }
+            return uri
+        } finally {
+            part.delete()
+        }
+    }
 
-            destUri.toString()
-        } catch (e: Exception) {
-            android.util.Log.e("PhotoStorageManager", "Failed to save photo locally", e)
+    fun saveGalleryBytes(displayName: String, mimeType: String, bytes: ByteArray): Uri {
+        val file = File(context.cacheDir, "gallery_${System.currentTimeMillis()}_$displayName")
+        return try {
+            file.writeBytes(bytes)
+            saveGalleryPhoto(displayName, mimeType, file)
+        } finally {
+            file.delete()
+        }
+    }
+
+    private fun findReusableGalleryUri(collection: Uri, displayName: String, source: File): Uri? {
+        val resolver = context.contentResolver
+        val q = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+        val projection = if (q) {
+            arrayOf(
+                MediaStore.MediaColumns._ID,
+                MediaStore.MediaColumns.SIZE,
+                MediaStore.MediaColumns.RELATIVE_PATH,
+            )
+        } else {
+            arrayOf(
+                MediaStore.MediaColumns._ID,
+                MediaStore.MediaColumns.SIZE,
+                MediaStore.MediaColumns.DATA,
+            )
+        }
+        val selection = "${MediaStore.MediaColumns.DISPLAY_NAME}=?"
+        val picturesDir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+            "VehicleExpenses",
+        ).absolutePath.trimEnd('/')
+        val cursor = resolver.query(
+            collection,
+            projection,
+            selection,
+            arrayOf(displayName),
+            null,
+        ) ?: return null
+        return cursor.use {
+            val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+            val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
+            val pathCol = cursor.getColumnIndex(
+                if (q) MediaStore.MediaColumns.RELATIVE_PATH else MediaStore.MediaColumns.DATA,
+            )
+            while (cursor.moveToNext()) {
+                if (q) {
+                    if (pathCol >= 0) {
+                        val relative = cursor.getString(pathCol).orEmpty().trimEnd('/')
+                        if (!relative.endsWith("VehicleExpenses")) continue
+                    }
+                } else {
+                    if (pathCol < 0) continue
+                    val path = File(cursor.getString(pathCol).orEmpty()).absolutePath
+                    if (path != picturesDir && !path.startsWith("$picturesDir/")) continue
+                }
+                if (cursor.getLong(sizeCol) != source.length()) continue
+                val uri = ContentUris.withAppendedId(
+                    collection,
+                    cursor.getLong(idCol),
+                )
+                if (galleryHeadMatches(uri, source)) return uri
+            }
             null
         }
+    }
+
+    private fun readUpTo(input: java.io.InputStream, dest: ByteArray): Int {
+        var off = 0
+        while (off < dest.size) {
+            val n = input.read(dest, off, dest.size - off)
+            if (n < 0) break
+            off += n
+        }
+        return off
+    }
+
+    private fun galleryHeadMatches(uri: Uri, source: File): Boolean {
+        val want = minOf(GALLERY_HEAD_BYTES, source.length()).toInt()
+        if (want == 0) return source.length() == 0L
+        val fromStore = ByteArray(want)
+        val fromFile = ByteArray(want)
+        val storeN = context.contentResolver.openInputStream(uri)?.use { readUpTo(it, fromStore) } ?: return false
+        val fileN = source.inputStream().use { readUpTo(it, fromFile) }
+        if (storeN != want || fileN != want) return false
+        return fromStore.contentEquals(fromFile)
     }
 
     private fun findOrCreateFolder(drive: Drive, folderName: String): String {
@@ -278,31 +346,7 @@ class PhotoStorageManager @Inject constructor(
         return created.id
     }
 
-    suspend fun savePhotoFromUri(uri: Uri, photoType: PhotoType): String {
-        val fileName = getFileNameFromUri(uri) ?: "imported_${System.currentTimeMillis()}.jpg"
-        return savePhoto(uri, fileName, photoType) ?: throw IllegalArgumentException("Cannot save photo from URI")
-    }
 
-    fun savePhotoFromBitmap(bitmap: Bitmap, photoType: PhotoType): String {
-        val fileName = "${photoType.name.lowercase()}_${System.currentTimeMillis()}.jpg"
-        val destUri = createMediaStoreUri(fileName, photoType) ?: throw IllegalArgumentException("Cannot create MediaStore URI")
-
-        return try {
-            context.contentResolver.openOutputStream(destUri)?.use { output ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output)
-            }
-            // Finalize
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.MediaColumns.IS_PENDING, 0)
-                }
-                context.contentResolver.update(destUri, contentValues, null, null)
-            }
-            destUri.toString()
-        } catch (e: Exception) {
-            throw IllegalArgumentException("Cannot save photo from Bitmap", e)
-        }
-    }
 
     private fun materializeToTempFile(localSource: String, fileName: String): File {
         val tempFile = File(context.cacheDir, "drive_upload_$fileName")
@@ -322,16 +366,6 @@ class PhotoStorageManager @Inject constructor(
         return dir
     }
 
-    private fun getFileNameFromUri(uri: Uri): String? {
-        var name: String? = null
-        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (index >= 0) name = cursor.getString(index)
-            }
-        }
-        return name
-    }
 
     fun openInputStream(uri: Uri): java.io.InputStream? {
         return try {
@@ -340,29 +374,42 @@ class PhotoStorageManager @Inject constructor(
             } else {
                 context.contentResolver.openInputStream(uri)
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             android.util.Log.e("PhotoStorageManager", "Failed to open input stream for URI: $uri", e)
             null
         }
     }
 
-    fun isLocalReadable(localPath: String?): Boolean {
-        if (localPath.isNullOrBlank()) return false
+    enum class LocalRead { READABLE, NOT_FOUND, NEEDS_ACCESS, UNKNOWN }
+
+    fun localRead(localPath: String?): LocalRead {
+        if (localPath.isNullOrBlank()) return LocalRead.NOT_FOUND
         return try {
             when {
                 localPath.startsWith("content://") -> {
-                    context.contentResolver.openInputStream(Uri.parse(localPath))?.use { true } ?: false
+                    val stream = context.contentResolver.openInputStream(Uri.parse(localPath))
+                        ?: return LocalRead.NOT_FOUND
+                    stream.close()
+                    LocalRead.READABLE
                 }
                 localPath.startsWith("file://") -> {
                     val path = Uri.parse(localPath).path
-                    path != null && File(path).exists()
+                    if (path != null && File(path).exists()) LocalRead.READABLE else LocalRead.NOT_FOUND
                 }
-                else -> File(localPath).exists()
+                else -> if (File(localPath).exists()) LocalRead.READABLE else LocalRead.NOT_FOUND
             }
-        } catch (_: Exception) {
-            false
+        } catch (e: SecurityException) {
+            LocalRead.NEEDS_ACCESS
+        } catch (_: FileNotFoundException) {
+            LocalRead.NOT_FOUND
+        } catch (e: Exception) {
+            android.util.Log.e("PhotoStorageManager", "local read unknown: $localPath", e)
+            LocalRead.UNKNOWN
         }
     }
+
+    fun isLocalReadable(localPath: String?): Boolean = localRead(localPath) == LocalRead.READABLE
 
     /** Prefer a readable on-disk path when sheet merge would otherwise wipe local-only photo URLs. */
     fun pickPreferredLocalPath(incoming: String?, existing: String?): String? {
@@ -402,18 +449,15 @@ class PhotoStorageManager @Inject constructor(
         return try {
             val drive = buildDriveService(accountHint)
             if (useMediaStore) {
-                val uri = createMediaStoreUri(localFileName, photoType)
-                    ?: throw IllegalStateException("Cannot create MediaStore URI")
-                context.contentResolver.openOutputStream(uri)?.use { out ->
-                    drive.files().get(fileId).executeMediaAndDownloadTo(out)
-                } ?: throw IllegalStateException("Cannot open MediaStore output")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    val contentValues = ContentValues().apply {
-                        put(MediaStore.MediaColumns.IS_PENDING, 0)
+                val temp = File(context.cacheDir, "drive_dl_$localFileName")
+                try {
+                    FileOutputStream(temp).use { out ->
+                        drive.files().get(fileId).executeMediaAndDownloadTo(out)
                     }
-                    context.contentResolver.update(uri, contentValues, null, null)
+                    saveGalleryPhoto(localFileName, mimeForGalleryName(localFileName), temp).toString()
+                } finally {
+                    temp.delete()
                 }
-                uri.toString()
             } else {
                 val destFile = File(vehicleRefsDir(), localFileName)
                 destFile.parentFile?.mkdirs()
@@ -422,30 +466,24 @@ class PhotoStorageManager @Inject constructor(
                 }
                 destFile.absolutePath
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             throw DriveAuthRecovery.wrapIfRecoverable(e)
         }
     }
 
-    /** Write inline JSON/text to a temp file and upload; used for landmark JSON backup. */
-    fun writeTextToVehicleRefs(fileName: String, text: String): String {
-        val file = File(vehicleRefsDir(), fileName)
-        file.parentFile?.mkdirs()
-        file.writeText(text)
-        return file.absolutePath
-    }
+    companion object {
+        private const val GALLERY_RELATIVE_PATH = "Pictures/VehicleExpenses"
+        private const val GALLERY_HEAD_BYTES = 64 * 1024L
 
-    /** Read text file from local path. */
-    fun readTextFile(localPath: String): String? {
-        return try {
-            val file = when {
-                localPath.startsWith("file://") -> File(Uri.parse(localPath).path ?: return null)
-                else -> File(localPath)
-            }
-            if (!file.exists()) return null
-            file.readText()
-        } catch (_: Exception) {
-            null
+        fun mimeForGalleryName(name: String): String = when {
+            name.endsWith(".png", ignoreCase = true) -> "image/png"
+            name.endsWith(".webp", ignoreCase = true) -> "image/webp"
+            name.endsWith(".dng", ignoreCase = true) -> PickedImageReader.DNG_MIME
+            name.endsWith(".heic", ignoreCase = true) || name.endsWith(".heif", ignoreCase = true) -> "image/heic"
+            else -> "image/jpeg"
         }
     }
+
+
 }

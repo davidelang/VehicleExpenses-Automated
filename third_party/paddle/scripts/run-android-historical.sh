@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # In-container historical VE Android slim (or tailor) build.
-# Env: ABI, ARCH, EXTRA_FLAGS, PADDLE_PROFILE=slim|tailor
+# Env: ABI, ARCH, HOST_UID, HOST_GID, EXTRA_FLAGS, PADDLE_PROFILE=slim|tailor
 # Mounts: /pin-src, /patches, /patches-int8, /apply_patches.sh, /apply_int8_patches.sh,
 #         /patch_x86_thin_jni.py, /patch_tailor_depthwise_common.py (optional),
 #         /tailor_models (optional), /output
 set -euo pipefail
 : "${ABI:?}"
 : "${ARCH:?}"
+: "${HOST_UID:?HOST_UID required (products in /output must be owned by the host build user)}"
+: "${HOST_GID:?HOST_GID required}"
 PROFILE=${PADDLE_PROFILE:-slim}
 
 WORKDIR=/workspace/Paddle-Lite
@@ -72,9 +74,9 @@ fi
 # Historical lite_CMakeLists still tried to cp benchmark_bin on x86 tiny_publish; patches
 # neutralize that, but belt-and-suspenders here too:
 if [[ -f lite/CMakeLists.txt ]]; then
-  sed -i 's|COMMAND cp "${PADDLE_BINARY_DIR}/lite/api/tools/benchmark/benchmark_bin" "${INFER_LITE_PUBLISH_ROOT}/bin"|COMMAND true  # skip benchmark_bin|g' lite/CMakeLists.txt || true
-  sed -i 's|add_dependencies(tiny_publish_cxx_lib benchmark_bin)|# add_dependencies(tiny_publish_cxx_lib benchmark_bin)|g' lite/CMakeLists.txt || true
-  sed -i 's|add_dependencies(publish_inference_cxx_lib benchmark_bin)|# add_dependencies(publish_inference_cxx_lib benchmark_bin)|g' lite/CMakeLists.txt || true
+  sed -i 's|COMMAND cp "${PADDLE_BINARY_DIR}/lite/api/tools/benchmark/benchmark_bin" "${INFER_LITE_PUBLISH_ROOT}/bin"|COMMAND true  # skip benchmark_bin|g' lite/CMakeLists.txt
+  sed -i 's|add_dependencies(tiny_publish_cxx_lib benchmark_bin)|# add_dependencies(tiny_publish_cxx_lib benchmark_bin)|g' lite/CMakeLists.txt
+  sed -i 's|add_dependencies(publish_inference_cxx_lib benchmark_bin)|# add_dependencies(publish_inference_cxx_lib benchmark_bin)|g' lite/CMakeLists.txt
 fi
 
 chmod +x lite/tools/build_android.sh
@@ -93,12 +95,15 @@ STRIP_FLAGS=""
 if [[ "$PROFILE" == "tailor" ]]; then
   TAILOR_SUB="$(tailor_subdir_for "$ARCH")"
   if [[ ! -d "/tailor_models/$TAILOR_SUB" ]]; then
-    # fallback: ABI-named dir
-    TAILOR_SUB="$(tailor_subdir_for "$ABI")"
-  fi
-  if [[ ! -d "/tailor_models/$TAILOR_SUB" ]]; then
     echo "FAIL: tailor profile needs /tailor_models/$TAILOR_SUB (.nb + .tailored_*)" >&2
-    echo "  (mounted from paddle-models/src or PADDLE_TAILOR_DIR; have: $(ls /tailor_models 2>/dev/null | tr '\n' ' '))" >&2
+    if [[ -n "${PADDLE_TAILOR_DIR:-}" ]]; then
+      tailor_from="PADDLE_TAILOR_DIR"
+    elif [[ "$ABI" == arm64-v8a || "$ABI" == armeabi-v7a || "$ARCH" == armv8 || "$ARCH" == armv7 ]]; then
+      tailor_from="paddle-models/artifact/tailor"
+    else
+      tailor_from="paddle-models/src"
+    fi
+    echo "  (mounted from $tailor_from; have: $(ls /tailor_models 2>/dev/null | tr '\n' ' '))" >&2
     exit 1
   fi
   if [[ ! -f "/tailor_models/$TAILOR_SUB/.tailored_kernels_list" ]]; then
@@ -106,10 +111,10 @@ if [[ "$PROFILE" == "tailor" ]]; then
     exit 1
   fi
   if [[ -f /patch_tailor_depthwise_common.py ]]; then
-    python3 /patch_tailor_depthwise_common.py lite/kernels/CMakeLists.txt || true
+    python3 /patch_tailor_depthwise_common.py lite/kernels/CMakeLists.txt
   fi
   if [[ -f /patch_tailor_conv_copy_safe.py ]]; then
-    python3 /patch_tailor_conv_copy_safe.py lite/kernels/CMakeLists.txt || true
+    python3 /patch_tailor_conv_copy_safe.py lite/kernels/CMakeLists.txt
   fi
   STRIP_FLAGS="--with_strip=ON --opt_model_dir=/tailor_models/$TAILOR_SUB"
   echo "PROFILE=tailor (LITE_BUILD_TAILOR opt_model_dir=/tailor_models/$TAILOR_SUB)"
@@ -131,11 +136,11 @@ if [[ "${PADDLE_ALLOW_FAST_MATH:-0}" != "1" ]]; then
         -e 's/-ffast-math//g' \
         -e 's/-Ofast/-O2/g' \
         -e 's/-funsafe-math-optimizations//g' \
-        "$f" || true
+        "$f"
       # Ensure fp-contract off where we still have a CXX_FLAGS line
       if grep -q 'CMAKE_CXX_FLAGS' "$f" && ! grep -q 'ffp-contract' "$f"; then
         sed -i 's/set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")/set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -ffp-contract=off")/' \
-          "$f" 2>/dev/null || true
+          "$f"
       fi
       echo "product-fp: stripped fast-math/Ofast in $f (PADDLE_ALLOW_FAST_MATH=0)"
     fi
@@ -153,16 +158,16 @@ if [[ -f cmake/os/common.cmake ]]; then
 fi
 if [[ -f cmake/postproject.cmake ]]; then
   sed -i 's/check_linker_flag(-Wl,--gc-sections)/# check_linker_flag(-Wl,--gc-sections)  # keep registries/' \
-    cmake/postproject.cmake 2>/dev/null || true
+    cmake/postproject.cmake
 fi
 for f in cmake/postproject.cmake lite/CMakeLists.txt; do
   [[ -f "$f" ]] || continue
-  sed -i 's/-Wl,--gc-sections//g' "$f" 2>/dev/null || true
+  sed -i 's/-Wl,--gc-sections//g' "$f"
 done
 # Also strip LTO from CMAKE_CXX_FLAGS_RELEASE if set in toolchain files.
 for f in cmake/os/common.cmake cmake/linux.cmake cmake/cross_compiling/android.cmake; do
   [[ -f "$f" ]] || continue
-  sed -i -E 's/-flto(=thin)?//g' "$f" 2>/dev/null || true
+  sed -i -E 's/-flto(=thin)?//g' "$f"
 done
 if [[ -f lite/core/op_registry.h ]] && ! grep -q 'TAILOR_KEEP_REGISTRY' lite/core/op_registry.h; then
   sed -i 's/static paddle::lite::KernelRegistrar  */static paddle::lite::KernelRegistrar __attribute__((used)) /' \
@@ -177,22 +182,22 @@ copy_products_to_output() {
   local bd jni light jar
   mkdir -p "/output/$abi"
   # Prefer newest build.lite.android.* dir (avoid ls/glob parse edge cases).
-  bd="$(find . -maxdepth 1 -type d -name 'build.lite.android.*' -printf '%T@ %p\n' 2>/dev/null \
-    | sort -nr | head -1 | cut -d' ' -f2- || true)"
+  bd="$(find . -maxdepth 1 -type d -name 'build.lite.android.*' -printf '%T@ %p\n' \
+    | sort -nr | head -1 | cut -d' ' -f2-)"
   if [[ -z "$bd" || ! -d "$bd" ]]; then
     echo "copy_products: no build.lite.android.* under $(pwd)" >&2
     return 1
   fi
   echo "copy_products: BUILD_DIR=$bd"
-  jni="$(find "$bd" -name 'libpaddle_lite_jni.so' -print -quit 2>/dev/null || true)"
-  light="$(find "$bd" -name 'libpaddle_light_api_shared.so' -print -quit 2>/dev/null || true)"
-  jar="$(find "$bd" -name 'PaddlePredictor.jar' -print -quit 2>/dev/null || true)"
+  jni="$(find "$bd" -name 'libpaddle_lite_jni.so' -print -quit)"
+  light="$(find "$bd" -name 'libpaddle_light_api_shared.so' -print -quit)"
+  jar="$(find "$bd" -name 'PaddlePredictor.jar' -print -quit)"
   if [[ -n "$jni" && -f "$jni" ]]; then
     cp -f "$jni" "/output/$abi/libpaddle_lite_jni.so"
     echo "copy_products: jni $(stat -c%s "/output/$abi/libpaddle_lite_jni.so") bytes"
   else
     echo "copy_products: jni missing under $bd" >&2
-    find "$bd" -name '*.so' 2>/dev/null | head -40 >&2 || true
+    find "$bd" -name '*.so' | head -40 >&2
     return 1
   fi
   if [[ -n "$light" && -f "$light" ]]; then
@@ -219,6 +224,9 @@ copy_products_to_output || {
   echo "FAIL: could not copy paddle products for ABI=$ABI" >&2
   exit 1
 }
+# Container runs as root; hand products back to the host build user so fetch-deps
+# can make the pin tree read-only (a root-owned file cannot be chmod'ed by ai-coder).
+chown -R "$HOST_UID:$HOST_GID" /output
 
 # Do NOT patchelf arm dynsym here — historical working SOs did not need it;
 # patchelf can leave LOCAL ABS markers that NDK28 lld rejects.

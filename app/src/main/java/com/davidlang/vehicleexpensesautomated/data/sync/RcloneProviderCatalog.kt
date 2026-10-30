@@ -99,6 +99,7 @@ object RcloneProviderCatalog {
             val output = runtime.rpc("config/providers", "{}")
             val parsed = parseProviders(output).ifEmpty { curatedFallback() }
             filterForOtherCreateUI(parsed)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             filterForOtherCreateUI(curatedFallback())
         }
@@ -108,6 +109,7 @@ object RcloneProviderCatalog {
         val all = try {
             val output = runtime.rpc("config/providers", "{}")
             parseProviders(output).ifEmpty { curatedFallback() }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             curatedFallback()
         }

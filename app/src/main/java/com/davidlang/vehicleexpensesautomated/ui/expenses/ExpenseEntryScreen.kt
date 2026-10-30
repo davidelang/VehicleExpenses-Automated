@@ -1,14 +1,10 @@
 package com.davidlang.vehicleexpensesautomated.ui.expenses
 
-import android.net.Uri
-import android.util.Log
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.ImageCapture
-import androidx.camera.core.ImageCaptureException
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
+import com.davidlang.vehicleexpensesautomated.ui.util.deviceHasCamera
 import com.davidlang.vehicleexpensesautomated.ui.util.CaptureLocation
 import com.davidlang.vehicleexpensesautomated.ui.util.NetworkStatus
 import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifMetaReader
@@ -42,10 +38,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
-import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookup
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
@@ -71,8 +65,7 @@ import java.util.Calendar
 import java.util.Currency
 import java.util.Date
 import java.util.Locale
-
-private const val TAG = "ExpenseEntry"
+import java.util.concurrent.atomic.AtomicReference
 
 private fun surfaceRotationToDegrees(rotation: Int): Int = when (rotation) {
     android.view.Surface.ROTATION_0 -> 0
@@ -107,6 +100,104 @@ private fun relativeRotationDegreesForCapture(
     }
 }
 
+private data class ClickSnapshot(
+    val surfaceRotation: Int,
+    val location: android.location.Location?,
+)
+
+private fun expenseFireCapturedShot(
+    setIsPhotoSaving: (Boolean) -> Unit,
+    setPhotoStatus: (String?) -> Unit,
+    takePhoto: () -> Unit,
+) {
+    setIsPhotoSaving(true)
+    setPhotoStatus("Saving photo…")
+    takePhoto()
+}
+
+private fun expenseShutterClick(
+    saveExpensePhotos: Boolean,
+    hasCamera: Boolean,
+    isPhotoSaving: Boolean,
+    shotPending: Boolean,
+    previewBound: Boolean,
+    previewBindFailed: Boolean,
+    showLiveCamera: Boolean,
+    hasCloudOnlyReceipt: Boolean,
+    context: android.content.Context,
+    surfaceRotation: Int,
+    deviceLocation: android.location.Location?,
+    clickSnapshot: AtomicReference<ClickSnapshot?>,
+    setPhotoUrl: (String?) -> Unit,
+    setPhotoStatus: (String?) -> Unit,
+    setShowLiveCamera: (Boolean) -> Unit,
+    setPhotoFromGallery: (Boolean) -> Unit,
+    setRowLat: (Double?) -> Unit,
+    setRowLon: (Double?) -> Unit,
+    setRowAccuracyM: (Double?) -> Unit,
+    setShotPending: (Boolean) -> Unit,
+    setPreviewBindFailed: (Boolean) -> Unit,
+    setIsPhotoSaving: (Boolean) -> Unit,
+    takePhoto: () -> Unit,
+) {
+    if (!saveExpensePhotos) {
+        setPhotoUrl(null)
+        setPhotoStatus(null)
+        setShowLiveCamera(true)
+        return
+    }
+    if (!hasCamera || isPhotoSaving || shotPending) return
+    val snapshot = ClickSnapshot(surfaceRotation, deviceLocation)
+    clickSnapshot.set(snapshot)
+    setPhotoFromGallery(false)
+    setRowLat(snapshot.location?.latitude)
+    setRowLon(snapshot.location?.longitude)
+    setRowAccuracyM(snapshot.location?.let { if (it.hasAccuracy()) it.accuracy.toDouble() else null })
+    if (!previewBound) {
+        // The live preview's factory binds once. A false already delivered means no later onBound.
+        // A cloud-only receipt stays in front of that preview, so this tap gets no onBound either.
+        val previewAlreadyComposed = showLiveCamera && !hasCloudOnlyReceipt
+        setShowLiveCamera(true)
+        if (hasCloudOnlyReceipt || (previewBindFailed && previewAlreadyComposed)) {
+            clickSnapshot.set(null)
+            Toast.makeText(context, "Camera unavailable", Toast.LENGTH_LONG).show()
+            return
+        }
+        setPreviewBindFailed(false)
+        setShotPending(true)
+        return
+    }
+    expenseFireCapturedShot(setIsPhotoSaving, setPhotoStatus, takePhoto)
+}
+
+private fun expensePreviewOnBound(
+    bound: Boolean,
+    shotPending: Boolean,
+    context: android.content.Context,
+    clickSnapshot: AtomicReference<ClickSnapshot?>,
+    setPreviewBound: (Boolean) -> Unit,
+    setShotPending: (Boolean) -> Unit,
+    setPreviewBindFailed: (Boolean) -> Unit,
+    setIsPhotoSaving: (Boolean) -> Unit,
+    setPhotoStatus: (String?) -> Unit,
+    takePhoto: () -> Unit,
+) {
+    setPreviewBound(bound)
+    if (bound) {
+        setPreviewBindFailed(false)
+        if (!shotPending) return
+        setShotPending(false)
+        expenseFireCapturedShot(setIsPhotoSaving, setPhotoStatus, takePhoto)
+    } else {
+        setPreviewBindFailed(true)
+        if (shotPending) {
+            setShotPending(false)
+            clickSnapshot.set(null)
+            Toast.makeText(context, "Camera unavailable", Toast.LENGTH_LONG).show()
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExpenseEntryScreen(
@@ -134,6 +225,7 @@ private fun ExpenseEntryScreenBody(
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val photoStorage = settingsViewModel.photoStorageManager
     val context = LocalContext.current
+    val hasCamera = remember { deviceHasCamera(context) }
     val prefs = remember { context.getSharedPreferences("vehicle_settings", android.content.Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
     val editId = (mode as? ExpenseEntryMode.Edit)?.id
@@ -165,9 +257,13 @@ private fun ExpenseEntryScreenBody(
     var zoomControl by remember { mutableStateOf<CameraZoomControl?>(null) }
     var listenerSurfaceRotation by remember { mutableIntStateOf(android.view.Surface.ROTATION_0) }
     var isPhotoSaving by remember { mutableStateOf(false) }
+    var previewBound by remember { mutableStateOf(false) }
+    var previewBindFailed by remember { mutableStateOf(false) }
+    var shotPending by remember { mutableStateOf(false) }
+    val clickSnapshot = remember { AtomicReference<ClickSnapshot?>(null) }
     var isDownloadingCloud by remember { mutableStateOf(false) }
     var photoStatus by remember { mutableStateOf<String?>(null) }
-    var showLiveCamera by remember { mutableStateOf(true) }
+    var showLiveCamera by remember { mutableStateOf(hasCamera) }
 
     var amount by rememberSaveable { mutableStateOf("") }
     val defaultCurrencySymbol = remember {
@@ -219,58 +315,63 @@ private fun ExpenseEntryScreenBody(
     var showStationPicker by remember { mutableStateOf(false) }
     val photoDest = remember { SyncDestinationStore(context).photoDestination() }
 
-    // One-shot device GPS for camera path (not re-fetched per shutter).
-    LaunchedEffect(Unit) {
-        val fix = CaptureLocation.captureLocationOrNull(context)
-        deviceLocation = fix
-        if (fix != null && editId == null && !photoFromGallery) {
-            rowLat = fix.latitude
-            rowLon = fix.longitude
-            rowAccuracyM = if (fix.hasAccuracy()) fix.accuracy.toDouble() else null
+    @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+    @Composable
+    fun rememberRowLocation() {
+        // One-shot device GPS for camera path (not re-fetched per shutter).
+        LaunchedEffect(Unit) {
+            val fix = CaptureLocation.captureLocationOrNull(context)
+            deviceLocation = fix
+            if (fix != null && editId == null && !photoFromGallery) {
+                rowLat = fix.latitude
+                rowLon = fix.longitude
+                rowAccuracyM = if (fix.hasAccuracy()) fix.accuracy.toDouble() else null
+            }
         }
-    }
 
-    LaunchedEffect(rowLat, rowLon, category) {
-        val la = rowLat
-        val lo = rowLon
-        if (la == null || lo == null) {
-            locationStatus = ""
-            lookupName = null
-            lookupAddress = null
-            lookupSource = null
-            return@LaunchedEffect
-        }
-        if (!NetworkStatus.hasUsableNetwork(context)) {
-            locationStatus = "Offline — place lookup when online"
-            lookupName = null
-            lookupAddress = null
-            lookupSource = null
-            return@LaunchedEffect
-        }
-        locationStatus = "Looking up place…"
-        val kind = LocationLookup.kindForExpenseCategory(category)
-        val result = LocationLookup.lookup(
-            lat = la,
-            lon = lo,
-            kind = kind,
-            accuracyM = rowAccuracyM,
-            uiTimeout = true,
-        )
-        if (result != null && result.hasPlace()) {
-            placeName = result.name
-            placeAddress = result.address
-            lookupName = result.name
-            lookupAddress = result.address
-            lookupSource = result.source
-            // Happy path: address fields only — no duplicate "Resolved:" banner.
-            locationStatus = ""
-        } else {
-            lookupName = null
-            lookupAddress = null
-            lookupSource = null
-            locationStatus = "No place found (will retry after save if online)"
+        LaunchedEffect(rowLat, rowLon, category) {
+            val la = rowLat
+            val lo = rowLon
+            if (la == null || lo == null) {
+                locationStatus = ""
+                lookupName = null
+                lookupAddress = null
+                lookupSource = null
+                return@LaunchedEffect
+            }
+            if (!NetworkStatus.hasUsableNetwork(context)) {
+                locationStatus = "Offline — place lookup when online"
+                lookupName = null
+                lookupAddress = null
+                lookupSource = null
+                return@LaunchedEffect
+            }
+            locationStatus = "Looking up place…"
+            val kind = LocationLookup.kindForExpenseCategory(category)
+            val result = LocationLookup.lookup(
+                lat = la,
+                lon = lo,
+                kind = kind,
+                accuracyM = rowAccuracyM,
+                uiTimeout = true,
+            )
+            if (result != null && result.hasPlace()) {
+                placeName = result.name
+                placeAddress = result.address
+                lookupName = result.name
+                lookupAddress = result.address
+                lookupSource = result.source
+                // Happy path: address fields only — no duplicate "Resolved:" banner.
+                locationStatus = ""
+            } else {
+                lookupName = null
+                lookupAddress = null
+                lookupSource = null
+                locationStatus = "No place found (will retry after save if online)"
+            }
         }
     }
+    rememberRowLocation()
     val localPhotoMissing = remember(photoUrl) {
         expenseLocalMissingOrDead(photoUrl, photoStorage)
     }
@@ -311,7 +412,8 @@ private fun ExpenseEntryScreenBody(
                     placeName = blob?.name.orEmpty()
                     placeAddress = blob?.address.orEmpty()
                     photoFromGallery = false
-                    showLiveCamera = expenseLocalMissingOrDead(e.photoUrl, photoStorage) &&
+                    showLiveCamera = hasCamera &&
+                        expenseLocalMissingOrDead(e.photoUrl, photoStorage) &&
                         !expenseHasArchiveIdentity(e, photoDest?.id)
                     loadedExpense = e
                     loadedId = editId
@@ -327,7 +429,7 @@ private fun ExpenseEntryScreenBody(
             if (selectedVehicleId == null && vehicles.isNotEmpty()) {
                 selectedVehicleId = vehicles.first().id
             }
-            if (photoUrl == null) {
+            if (photoUrl == null && hasCamera) {
                 showLiveCamera = true
             }
         }
@@ -340,23 +442,50 @@ private fun ExpenseEntryScreenBody(
         }
     }
 
-    val pickImageLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            if (prefs.getBoolean("save_expense_photos", true)) {
-                photoUrl = uri.toString()
-                photoStatus = null
-                showLiveCamera = false
-                // Gallery: row lat/lon from EXIF only — never current device GPS.
-                photoFromGallery = true
-                val meta = PhotoExifMetaReader.read(context, uri)
-                rowLat = meta.latitude
-                rowLon = meta.longitude
-                rowAccuracyM = meta.accuracyM
-                Toast.makeText(context, "Photo selected", Toast.LENGTH_SHORT).show()
-            } else {
-                photoUrl = null
+    val imagePicker = com.davidlang.vehicleexpensesautomated.ui.components.rememberImagePicker(
+        allowCamera = true,
+        photoStorageManager = photoStorage,
+        captureProfile = CameraCaptureProfile.RECEIPT_MAX,
+        imageCapture = imageCapture,
+        displayName = { "expense_${System.currentTimeMillis()}.jpg" },
+        beforeSave = { file ->
+            val snapshot = clickSnapshot.get()
+                ?: throw IllegalStateException("missing click snapshot")
+            PhotoExifWriter.writeGpsAndOrientation(
+                context,
+                file.absolutePath,
+                snapshot.location,
+                relativeRotationDegreesForCapture(context, snapshot.surfaceRotation),
+                userComment = "ve:tag=expense",
+            )
+        },
+        onCaptured = { uri ->
+            photoUrl = uri.toString()
+            photoFromGallery = false
+            isPhotoSaving = false
+            photoStatus = null
+            clickSnapshot.set(null)
+            showLiveCamera = false
+        },
+        onCaptureFailed = {
+            isPhotoSaving = false
+            photoStatus = "Photo save failed"
+            clickSnapshot.set(null)
+        },
+    ) { uri ->
+        if (prefs.getBoolean("save_expense_photos", true)) {
+            photoUrl = uri.toString()
+            photoStatus = null
+            showLiveCamera = false
+            photoFromGallery = true
+            val meta = PhotoExifMetaReader.read(context, uri)
+            rowLat = meta.latitude
+            rowLon = meta.longitude
+            rowAccuracyM = meta.accuracyM
+            Toast.makeText(context, "Photo selected", Toast.LENGTH_SHORT).show()
+        } else {
+            photoUrl = null
+            if (hasCamera) {
                 showLiveCamera = true
             }
         }
@@ -443,6 +572,7 @@ private fun ExpenseEntryScreenBody(
                     popUpTo("expenselist") { inclusive = false }
                     launchSingleTop = true
                 } ?: navController?.popBackStack()
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 Toast.makeText(
                     context,
@@ -455,109 +585,6 @@ private fun ExpenseEntryScreenBody(
         }
     }
 
-    fun takePicture() {
-        if (isPhotoSaving) return
-        if (!prefs.getBoolean("save_expense_photos", true)) {
-            photoUrl = null
-            photoStatus = null
-            showLiveCamera = true
-            isPhotoSaving = false
-            return
-        }
-        isPhotoSaving = true
-        photoStatus = "Saving photo…"
-        showLiveCamera = true
-        // Camera path: row uses once-per-screen device fix (restore after any gallery pick).
-        photoFromGallery = false
-        val locForExif = deviceLocation
-        rowLat = locForExif?.latitude
-        rowLon = locForExif?.longitude
-        rowAccuracyM = locForExif?.let { if (it.hasAccuracy()) it.accuracy.toDouble() else null }
-        val orientForExif = try {
-            relativeRotationDegreesForCapture(context, listenerSurfaceRotation)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to compute capture rotation", e)
-            0
-        }
-
-        try {
-            val resolver = context.contentResolver
-            val contentValues = android.content.ContentValues().apply {
-                put(
-                    android.provider.MediaStore.MediaColumns.DISPLAY_NAME,
-                    "expense_${System.currentTimeMillis()}.jpg"
-                )
-                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                    put(
-                        android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
-                        android.os.Environment.DIRECTORY_DCIM + "/Camera"
-                    )
-                }
-            }
-            val captureMetadata = ImageCapture.Metadata().apply {
-                location = locForExif
-            }
-            val outputOptions = ImageCapture.OutputFileOptions.Builder(
-                resolver,
-                android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                contentValues
-            ).setMetadata(captureMetadata).build()
-
-            imageCapture.takePicture(
-                outputOptions,
-                ContextCompat.getMainExecutor(context),
-                object : ImageCapture.OnImageSavedCallback {
-                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                        val savedUri = output.savedUri
-                        Log.i(TAG, "Expense photo saved: $savedUri")
-                        if (savedUri == null) {
-                            photoStatus = "Photo save failed"
-                            Toast.makeText(
-                                context,
-                                "Could not save expense photo to Camera roll: missing MediaStore URI",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        } else {
-                            PhotoExifWriter.writeGpsAndOrientation(
-                                context,
-                                savedUri,
-                                locForExif,
-                                orientForExif,
-                                timestampMs = System.currentTimeMillis(),
-                                userComment = "ve:tag=expense",
-                            )
-                            photoUrl = savedUri.toString()
-                            photoStatus = null
-                            showLiveCamera = false
-                            Toast.makeText(context, "Photo saved to Camera", Toast.LENGTH_SHORT).show()
-                        }
-                        isPhotoSaving = false
-                    }
-
-                    override fun onError(exception: ImageCaptureException) {
-                        Log.e(TAG, "Expense photo capture failed", exception)
-                        photoStatus = "Photo save failed"
-                        isPhotoSaving = false
-                        Toast.makeText(
-                            context,
-                            "Could not save expense photo to Camera roll: ${exception.message ?: exception}",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                }
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Expense takePicture setup failed", e)
-            photoStatus = "Photo save failed"
-            isPhotoSaving = false
-            Toast.makeText(
-                context,
-                "Could not save expense photo to Camera roll: ${e.message ?: e}",
-                Toast.LENGTH_LONG
-            ).show()
-        }
-    }
 
     if (showDatePicker) {
         val state = rememberDatePickerState(
@@ -597,429 +624,492 @@ private fun ExpenseEntryScreenBody(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Photo / camera region
-        Box(
-            modifier = Modifier
-                .weight(0.40f)
-                .fillMaxWidth()
-                .background(Color.Black)
-        ) {
-            if (hasCloudOnlyReceipt) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        "Receipt is in cloud backup only",
-                        color = Color.White,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Button(
-                        onClick = {
-                            val entry = loadedExpense ?: return@Button
-                            scope.launch {
-                                isDownloadingCloud = true
-                                photoStatus = "Fetching image…"
-                                try {
-                                    val scrubbed = viewModel.scrubUnreadableExpensePhotos(entry)
-                                    loadedExpense = scrubbed
-                                    val local = viewModel.downloadExpensePhoto(scrubbed)
-                                    if (local != null) {
-                                        photoUrl = local
-                                        showLiveCamera = false
-                                        photoStatus = null
-                                        val refreshed = viewModel.getExpenseById(scrubbed.id)
-                                        if (refreshed != null) loadedExpense = refreshed
-                                        Toast.makeText(context, "Image fetched", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        photoStatus = "Fetch failed"
-                                        Toast.makeText(context, "Could not fetch image", Toast.LENGTH_LONG).show()
-                                    }
-                                } catch (e: Exception) {
-                                    photoStatus = "Fetch failed"
-                                    Toast.makeText(context, e.message ?: "Fetch failed", Toast.LENGTH_LONG).show()
-                                } finally {
-                                    isDownloadingCloud = false
-                                }
-                            }
-                        },
-                        enabled = !isDownloadingCloud,
-                        modifier = Modifier.padding(top = 12.dp),
+        @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+        @Composable
+        fun ColumnScope.ExpensePhotoRegion() {
+            // Photo / camera region
+            Box(
+                modifier = Modifier
+                    .weight(0.40f)
+                    .fillMaxWidth()
+                    .background(Color.Black)
+            ) {
+                if (hasCloudOnlyReceipt) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Text(if (isDownloadingCloud) "Fetching…" else "Fetch image from archive")
-                    }
-                }
-            } else if (showLiveCamera || localPhotoMissing) {
-                CameraPreview(
-                    modifier = Modifier.fillMaxSize(),
-                    imageCapture = imageCapture,
-                    onZoomControlChanged = { zoomControl = it },
-                    onListenerSurfaceRotation = { listenerSurfaceRotation = it },
-                )
-                zoomControl?.let { zoom ->
-                    if (zoom.availableRatios.size > 1) {
-                        Column(
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            zoom.availableRatios.forEach { ratio ->
-                                val selected = kotlin.math.abs(zoom.currentRatio - ratio) < 0.05f
-                                FilledTonalButton(
-                                    onClick = { zoom.setZoomRatio(ratio) },
-                                    modifier = Modifier.height(32.dp),
-                                    colors = ButtonDefaults.filledTonalButtonColors(
-                                        containerColor = if (selected) {
-                                            MaterialTheme.colorScheme.primary
+                        Text(
+                            "Receipt is in cloud backup only",
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Button(
+                            onClick = {
+                                val entry = loadedExpense ?: return@Button
+                                scope.launch {
+                                    isDownloadingCloud = true
+                                    photoStatus = "Fetching image…"
+                                    try {
+                                        val scrubbed = viewModel.scrubUnreadableExpensePhotos(entry)
+                                        loadedExpense = scrubbed
+                                        val local = viewModel.downloadExpensePhoto(scrubbed)
+                                        if (local != null) {
+                                            photoUrl = local
+                                            showLiveCamera = false
+                                            photoStatus = null
+                                            val refreshed = viewModel.getExpenseById(scrubbed.id)
+                                            if (refreshed != null) loadedExpense = refreshed
+                                            Toast.makeText(context, "Image fetched", Toast.LENGTH_SHORT).show()
                                         } else {
-                                            MaterialTheme.colorScheme.surfaceVariant
+                                            photoStatus = "Fetch failed"
+                                            Toast.makeText(context, "Could not fetch image", Toast.LENGTH_LONG).show()
                                         }
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                                ) {
-                                    Text(
-                                        text = if (ratio == ratio.toLong().toFloat()) {
-                                            "${ratio.toLong()}x"
-                                        } else {
-                                            "${ratio}x"
-                                        },
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
+                                    // kept: failure stays on this call so the screen or caller can continue
+                                    } catch (e: Exception) {
+                                        photoStatus = "Fetch failed"
+                                        Toast.makeText(context, e.message ?: "Fetch failed", Toast.LENGTH_LONG).show()
+                                    } finally {
+                                        isDownloadingCloud = false
+                                    }
+                                }
+                            },
+                            enabled = !isDownloadingCloud,
+                            modifier = Modifier.padding(top = 12.dp),
+                        ) {
+                            Text(if (isDownloadingCloud) "Fetching…" else "Fetch image from archive")
+                        }
+                    }
+                } else if (showLiveCamera) {
+                    // A new composition is a new factory and binds again. Clear the previous
+                    // instance's failure here, before this instance reports onBound.
+                    DisposableEffect(Unit) {
+                        previewBindFailed = false
+                        onDispose { }
+                    }
+                    CameraPreview(
+                        modifier = Modifier.fillMaxSize(),
+                        imageCapture = imageCapture,
+                        onZoomControlChanged = { zoomControl = it },
+                        onListenerSurfaceRotation = { listenerSurfaceRotation = it },
+                        onBound = { bound ->
+                            expensePreviewOnBound(
+                                bound = bound,
+                                shotPending = shotPending,
+                                context = context,
+                                clickSnapshot = clickSnapshot,
+                                setPreviewBound = { previewBound = it },
+                                setShotPending = { shotPending = it },
+                                setPreviewBindFailed = { previewBindFailed = it },
+                                setIsPhotoSaving = { isPhotoSaving = it },
+                                setPhotoStatus = { photoStatus = it },
+                                takePhoto = { imagePicker.takePhoto() },
+                            )
+                        },
+                    )
+                    zoomControl?.let { zoom ->
+                        if (zoom.availableRatios.size > 1) {
+                            Column(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                zoom.availableRatios.forEach { ratio ->
+                                    val selected = kotlin.math.abs(zoom.currentRatio - ratio) < 0.05f
+                                    FilledTonalButton(
+                                        onClick = { zoom.setZoomRatio(ratio) },
+                                        modifier = Modifier.height(32.dp),
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = if (selected) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.surfaceVariant
+                                            }
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                    ) {
+                                        Text(
+                                            text = if (ratio == ratio.toLong().toFloat()) {
+                                                "${ratio.toLong()}x"
+                                            } else {
+                                                "${ratio}x"
+                                            },
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            } else {
-                var showZoom by remember(photoUrl) { mutableStateOf(false) }
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clickable { showZoom = true },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Image(
-                        painter = rememberAsyncImagePainter(photoUrl),
-                        contentDescription = "Expense photo — tap to zoom",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit,
-                    )
-                    Text(
-                        "Tap to zoom",
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(8.dp)
-                            .background(Color.Black.copy(alpha = 0.45f))
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-                if (showZoom) {
-                    com.davidlang.vehicleexpensesautomated.ui.components.ZoomablePhotoDialog(
-                        uris = listOf(photoUrl!!),
-                        title = "Expense photo",
-                        onDismiss = { showZoom = false },
-                    )
-                }
-            }
-        }
-
-        // Controls: Save | Shutter | Gallery | Retake when photo shown
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = { saveExpense() },
-                enabled = !isPhotoSaving && !isSaving && editLoadReady
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Save,
-                    contentDescription = "Save expense",
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-
-            IconButton(
-                onClick = {
-                    showLiveCamera = true
-                    takePicture()
-                },
-                enabled = !isPhotoSaving,
-                modifier = Modifier
-                    .size(64.dp)
-                    .background(Color.White, CircleShape)
-                    .border(4.dp, Color.Gray, CircleShape)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(
-                            if (isPhotoSaving) MaterialTheme.colorScheme.error else Color.White,
-                            CircleShape
-                        )
-                )
-            }
-
-            IconButton(
-                onClick = { pickImageLauncher.launch("image/*") },
-                enabled = !isPhotoSaving
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.PhotoLibrary,
-                    contentDescription = "Pick picture from gallery",
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-
-            if (photoUrl != null) {
-                TextButton(
-                    onClick = {
-                        photoUrl = null
-                        showLiveCamera = true
-                        photoStatus = null
-                    },
-                    enabled = !isPhotoSaving,
-                ) {
-                    Text("Retake")
-                }
-            }
-        }
-
-        photoStatus?.let { status ->
-            Text(
-                text = status,
-                style = MaterialTheme.typography.labelSmall,
-                color = if (isPhotoSaving) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else if (!photoUrl.isNullOrBlank() && localPhotoMissing) {
+                    ExpenseMissingMark(photoUrl!!)
                 } else {
-                    MaterialTheme.colorScheme.error
-                },
+                    var showZoom by remember(photoUrl) { mutableStateOf(false) }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable { showZoom = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        com.davidlang.vehicleexpensesautomated.ui.components.DecodedPhotoImage(
+                            uri = photoUrl!!,
+                            contentDescription = "Expense photo — tap to zoom",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit,
+                        )
+                        Text(
+                            "Tap to zoom",
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(8.dp)
+                                .background(Color.Black.copy(alpha = 0.45f))
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
+                    if (showZoom) {
+                        com.davidlang.vehicleexpensesautomated.ui.components.ZoomablePhotoDialog(
+                            uris = listOf(photoUrl!!),
+                            title = "Expense photo",
+                            onDismiss = { showZoom = false },
+                        )
+                    }
+                }
+            }
+        }
+        ExpensePhotoRegion()
+
+        @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+        @Composable
+        fun ExpenseCaptureControls() {
+            // Controls: Save | Shutter | Gallery | Retake when photo shown
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            )
-        }
-
-        // Form
-        Column(
-            modifier = Modifier
-                .weight(0.60f)
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(
-                    checked = timeIsNow,
-                    onCheckedChange = { checked ->
-                        timeIsNow = checked
-                        if (checked) date = System.currentTimeMillis()
-                    },
-                )
-                Text("Time is now", style = MaterialTheme.typography.bodyMedium)
-            }
-            if (!timeIsNow) {
-                AppDateTimeField(
-                    label = "Date: ${dateFmt.format(Date(date))}",
-                    onClick = { showDatePicker = true },
-                )
-            }
-
-            val vehicleName = vehicles.find { it.id == selectedVehicleId }?.name ?: "Select vehicle"
-            ExposedDropdownMenuBox(
-                expanded = vehicleDropdownExpanded,
-                onExpandedChange = { vehicleDropdownExpanded = it },
-                modifier = Modifier.fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedTextField(
-                    value = vehicleName,
-                    onValueChange = {},
-                    label = { Text("Vehicle") },
+                IconButton(
+                    onClick = { saveExpense() },
+                    enabled = !isPhotoSaving && !isSaving && editLoadReady
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Save,
+                        contentDescription = "Save expense",
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = {
+                        expenseShutterClick(
+                            saveExpensePhotos = prefs.getBoolean("save_expense_photos", true),
+                            hasCamera = hasCamera,
+                            isPhotoSaving = isPhotoSaving,
+                            shotPending = shotPending,
+                            previewBound = previewBound,
+                            previewBindFailed = previewBindFailed,
+                            showLiveCamera = showLiveCamera,
+                            hasCloudOnlyReceipt = hasCloudOnlyReceipt,
+                            context = context,
+                            surfaceRotation = listenerSurfaceRotation,
+                            deviceLocation = deviceLocation,
+                            clickSnapshot = clickSnapshot,
+                            setPhotoUrl = { photoUrl = it },
+                            setPhotoStatus = { photoStatus = it },
+                            setShowLiveCamera = { showLiveCamera = it },
+                            setPhotoFromGallery = { photoFromGallery = it },
+                            setRowLat = { rowLat = it },
+                            setRowLon = { rowLon = it },
+                            setRowAccuracyM = { rowAccuracyM = it },
+                            setShotPending = { shotPending = it },
+                            setPreviewBindFailed = { previewBindFailed = it },
+                            setIsPhotoSaving = { isPhotoSaving = it },
+                            takePhoto = { imagePicker.takePhoto() },
+                        )
+                    },
+                    enabled = !isPhotoSaving,
+                    modifier = Modifier
+                        .size(64.dp)
+                        .background(Color.White, CircleShape)
+                        .border(4.dp, Color.Gray, CircleShape)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                if (isPhotoSaving) MaterialTheme.colorScheme.error else Color.White,
+                                CircleShape
+                            )
+                    )
+                }
+
+                IconButton(
+                    onClick = { imagePicker.pickFromGallery() },
+                    enabled = !isPhotoSaving && !shotPending
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.PhotoLibrary,
+                        contentDescription = "Pick picture from gallery",
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+
+                if (photoUrl != null) {
+                    TextButton(
+                        onClick = {
+                            photoUrl = null
+                            showLiveCamera = true
+                            photoStatus = null
+                            shotPending = false
+                            clickSnapshot.set(null)
+                        },
+                        enabled = !isPhotoSaving,
+                    ) {
+                        Text("Retake")
+                    }
+                }
+            }
+
+            photoStatus?.let { status ->
+                Text(
+                    text = status,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isPhotoSaving) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
-                    readOnly = true,
+                        .padding(horizontal = 16.dp)
+                )
+            }
+        }
+        ExpenseCaptureControls()
+
+        @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+        @Composable
+        fun ColumnScope.ExpenseForm() {
+            // Form
+            Column(
+                modifier = Modifier
+                    .weight(0.60f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = timeIsNow,
+                        onCheckedChange = { checked ->
+                            timeIsNow = checked
+                            if (checked) date = System.currentTimeMillis()
+                        },
+                    )
+                    Text("Time is now", style = MaterialTheme.typography.bodyMedium)
+                }
+                if (!timeIsNow) {
+                    AppDateTimeField(
+                        label = "Date: ${dateFmt.format(Date(date))}",
+                        onClick = { showDatePicker = true },
+                    )
+                }
+
+                val vehicleName = vehicles.find { it.id == selectedVehicleId }?.name ?: "Select vehicle"
+                ExposedDropdownMenuBox(
+                    expanded = vehicleDropdownExpanded,
+                    onExpandedChange = { vehicleDropdownExpanded = it },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = vehicleName,
+                        onValueChange = {},
+                        label = { Text("Vehicle") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
+                        readOnly = true,
+                        singleLine = true
+                    )
+                    ExposedDropdownMenu(
+                        expanded = vehicleDropdownExpanded,
+                        onDismissRequest = { vehicleDropdownExpanded = false }
+                    ) {
+                        vehicles.forEach { vehicle ->
+                            DropdownMenuItem(
+                                text = { Text(vehicle.name) },
+                                onClick = {
+                                    selectedVehicleId = vehicle.id
+                                    vehicleDropdownExpanded = false
+                                    if (editId == null) {
+                                        category = ExpenseCategories.defaultCategory(
+                                            vehicle.expenseCategoriesJson,
+                                        )
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
+                    value = vendor,
+                    onValueChange = { vendor = it },
+                    label = { Text("Vendor") },
+                    modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
-                ExposedDropdownMenu(
-                    expanded = vehicleDropdownExpanded,
-                    onDismissRequest = { vehicleDropdownExpanded = false }
-                ) {
-                    vehicles.forEach { vehicle ->
-                        DropdownMenuItem(
-                            text = { Text(vehicle.name) },
-                            onClick = {
-                                selectedVehicleId = vehicle.id
-                                vehicleDropdownExpanded = false
-                                if (editId == null) {
-                                    category = ExpenseCategories.defaultCategory(
-                                        vehicle.expenseCategoriesJson,
+
+                com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                    maxLines = 4,
+                )
+
+                var showCurrencyMenu by remember { mutableStateOf(false) }
+                val currencySymbols = remember {
+                    Currency.getAvailableCurrencies()
+                        .map { it.getSymbol(Locale.getDefault()) }
+                        .distinct()
+                        .sorted()
+                }
+                com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it },
+                    label = {
+                        Box {
+                            Text(
+                                text = currencySymbol.take(1),
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.clickable { showCurrencyMenu = true }
+                            )
+                            DropdownMenu(
+                                expanded = showCurrencyMenu,
+                                onDismissRequest = { showCurrencyMenu = false }
+                            ) {
+                                currencySymbols.forEach { symbol ->
+                                    DropdownMenuItem(
+                                        text = { Text(symbol) },
+                                        onClick = {
+                                            currencySymbol = symbol
+                                            showCurrencyMenu = false
+                                        }
                                     )
                                 }
                             }
-                        )
-                    }
-                }
-            }
-
-            com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
-                value = vendor,
-                onValueChange = { vendor = it },
-                label = { Text("Vendor") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-
-            com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
-                value = description,
-                onValueChange = { description = it },
-                label = { Text("Description") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = false,
-                maxLines = 4,
-            )
-
-            var showCurrencyMenu by remember { mutableStateOf(false) }
-            val currencySymbols = remember {
-                Currency.getAvailableCurrencies()
-                    .map { it.getSymbol(Locale.getDefault()) }
-                    .distinct()
-                    .sorted()
-            }
-            com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
-                value = amount,
-                onValueChange = { amount = it },
-                label = {
-                    Box {
-                        Text(
-                            text = currencySymbol.take(1),
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.clickable { showCurrencyMenu = true }
-                        )
-                        DropdownMenu(
-                            expanded = showCurrencyMenu,
-                            onDismissRequest = { showCurrencyMenu = false }
-                        ) {
-                            currencySymbols.forEach { symbol ->
-                                DropdownMenuItem(
-                                    text = { Text(symbol) },
-                                    onClick = {
-                                        currencySymbol = symbol
-                                        showCurrencyMenu = false
-                                    }
-                                )
-                            }
                         }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                showCaretButtons = true,
-            )
-
-            ExposedDropdownMenuBox(
-                expanded = categoryMenuExpanded,
-                onExpandedChange = { categoryMenuExpanded = it },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                OutlinedTextField(
-                    value = category.ifBlank {
-                        ExpenseCategories.defaultCategory(selectedVehicle?.expenseCategoriesJson)
                     },
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Category") },
-                    trailingIcon = {
-                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryMenuExpanded)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true),
+                    modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    showCaretButtons = true,
                 )
-                ExposedDropdownMenuWithManageFooter(
+
+                ExposedDropdownMenuBox(
                     expanded = categoryMenuExpanded,
-                    onDismissRequest = { categoryMenuExpanded = false },
-                    items = categoryOptions,
-                    onItemClick = { cat ->
-                        category = cat
-                        categoryMenuExpanded = false
-                    },
-                    manageLabel = "Manage categories…",
-                    onManageClick = {
-                        categoryMenuExpanded = false
-                        if (selectedVehicle == null) {
-                            Toast.makeText(
-                                context,
-                                "Select a vehicle first",
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        } else {
-                            showManageCategories = true
-                        }
-                    },
-                )
-            }
-
-            com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
-                value = odometerText,
-                onValueChange = { if (it.length <= 8 && it.all { c -> c.isDigit() }) odometerText = it },
-                label = { Text("Odometer (optional)") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                showCaretButtons = true,
-            )
-
-            if (rowLat != null && rowLon != null) {
-                val expenseKind = LocationLookup.kindForExpenseCategory(category)
-                LocationConfirmBlock(
-                    statusLine = locationStatus,
-                    name = placeName,
-                    address = placeAddress,
-                    onNameChange = { placeName = it },
-                    onAddressChange = { placeAddress = it },
-                    pickerKind = expenseKind,
-                    hasCoords = true,
-                    onWrongStationClick = if (expenseKind != LocationLookupKind.ADDRESS_ONLY) {
-                        { showStationPicker = true }
-                    } else {
-                        null
-                    },
-                )
-            }
-            if (showStationPicker) {
-                val pla = rowLat
-                val plo = rowLon
-                val expenseKind = LocationLookup.kindForExpenseCategory(category)
-                if (pla != null && plo != null && expenseKind != LocationLookupKind.ADDRESS_ONLY) {
-                    StationPickerDialog(
-                        lat = pla,
-                        lon = plo,
-                        kind = expenseKind,
-                        onSelect = { picked ->
-                            placeName = picked.name
-                            placeAddress = picked.address
-                            lookupName = picked.name
-                            lookupAddress = picked.address
-                            lookupSource = "user"
-                            showStationPicker = false
+                    onExpandedChange = { categoryMenuExpanded = it },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    OutlinedTextField(
+                        value = category.ifBlank {
+                            ExpenseCategories.defaultCategory(selectedVehicle?.expenseCategoriesJson)
                         },
-                        onManual = { showStationPicker = false },
-                        onDismiss = { showStationPicker = false },
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Category") },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryMenuExpanded)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true),
+                        singleLine = true,
                     )
-                } else {
-                    showStationPicker = false
+                    ExposedDropdownMenuWithManageFooter(
+                        expanded = categoryMenuExpanded,
+                        onDismissRequest = { categoryMenuExpanded = false },
+                        items = categoryOptions,
+                        onItemClick = { cat ->
+                            category = cat
+                            categoryMenuExpanded = false
+                        },
+                        manageLabel = "Manage categories…",
+                        onManageClick = {
+                            categoryMenuExpanded = false
+                            if (selectedVehicle == null) {
+                                Toast.makeText(
+                                    context,
+                                    "Select a vehicle first",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            } else {
+                                showManageCategories = true
+                            }
+                        },
+                    )
+                }
+
+                com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
+                    value = odometerText,
+                    onValueChange = { if (it.length <= 8 && it.all { c -> c.isDigit() }) odometerText = it },
+                    label = { Text("Odometer (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    showCaretButtons = true,
+                )
+
+                if (rowLat != null && rowLon != null) {
+                    val expenseKind = LocationLookup.kindForExpenseCategory(category)
+                    LocationConfirmBlock(
+                        statusLine = locationStatus,
+                        name = placeName,
+                        address = placeAddress,
+                        onNameChange = { placeName = it },
+                        onAddressChange = { placeAddress = it },
+                        pickerKind = expenseKind,
+                        hasCoords = true,
+                        onWrongStationClick = if (expenseKind != LocationLookupKind.ADDRESS_ONLY) {
+                            { showStationPicker = true }
+                        } else {
+                            null
+                        },
+                    )
+                }
+                if (showStationPicker) {
+                    val pla = rowLat
+                    val plo = rowLon
+                    val expenseKind = LocationLookup.kindForExpenseCategory(category)
+                    if (pla != null && plo != null && expenseKind != LocationLookupKind.ADDRESS_ONLY) {
+                        StationPickerDialog(
+                            lat = pla,
+                            lon = plo,
+                            kind = expenseKind,
+                            onSelect = { picked ->
+                                placeName = picked.name
+                                placeAddress = picked.address
+                                lookupName = picked.name
+                                lookupAddress = picked.address
+                                lookupSource = "user"
+                                showStationPicker = false
+                            },
+                            onManual = { showStationPicker = false },
+                            onDismiss = { showStationPicker = false },
+                        )
+                    } else {
+                        showStationPicker = false
+                    }
                 }
             }
         }
+        ExpenseForm()
     }
 
     if (showManageCategories && selectedVehicle != null) {

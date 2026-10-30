@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
 
+import android.util.Log
+import com.davidlang.vehicleexpensesautomated.data.model.StoredParse
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -8,6 +10,8 @@ data class FuelPhotoRef(
     val tag: String,
     val uri: String,
     val ts: Long = 0L,
+    val missing: Boolean = false,
+    val fallbackFrame: Boolean = false,
 )
 
 /**
@@ -16,27 +20,50 @@ data class FuelPhotoRef(
  * Legacy plain path → single dash entry.
  */
 object FuelPhotoJson {
-    fun parse(photoUrl: String?): List<FuelPhotoRef> {
-        if (photoUrl.isNullOrBlank()) return emptyList()
+    private const val TAG = "FuelPhotoJson"
+
+    fun read(photoUrl: String?): StoredParse<List<FuelPhotoRef>> {
+        if (photoUrl.isNullOrBlank()) return StoredParse.Blank()
         val trimmed = photoUrl.trim()
+        if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) {
+            return StoredParse.Valid(listOf(FuelPhotoRef(tag = "dash", uri = trimmed, ts = 0L)))
+        }
         if (!trimmed.startsWith("[")) {
-            return listOf(FuelPhotoRef(tag = "dash", uri = trimmed, ts = 0L))
+            Log.e(TAG, "photo reference unreadable")
+            return StoredParse.Corrupt(trimmed)
         }
         return try {
             val arr = JSONArray(trimmed)
-            buildList {
+            val refs = buildList {
                 for (i in 0 until arr.length()) {
-                    val o = arr.optJSONObject(i) ?: continue
+                    val o = arr.optJSONObject(i) ?: return StoredParse.Corrupt(trimmed)
                     val tag = o.optString("tag", "dash").ifBlank { "dash" }
                     val uri = o.optString("uri", "")
                     if (uri.isBlank()) continue
                     val ts = o.optLong("ts", 0L)
-                    add(FuelPhotoRef(tag = tag, uri = uri, ts = ts))
+                    add(
+                        FuelPhotoRef(
+                            tag = tag,
+                            uri = uri,
+                            ts = ts,
+                            missing = o.optBoolean("missing", false),
+                            fallbackFrame = o.optBoolean("fallback", false),
+                        ),
+                    )
                 }
             }
-        } catch (_: Exception) {
-            listOf(FuelPhotoRef(tag = "dash", uri = trimmed, ts = 0L))
+            StoredParse.Valid(refs)
+        } catch (e: Exception) {
+            Log.e(TAG, "photo reference unreadable", e)
+            StoredParse.Corrupt(trimmed)
         }
+    }
+
+    /** Valid refs only. Blank and corrupt are empty; use [read] for the marker. */
+    fun parse(photoUrl: String?): List<FuelPhotoRef> = when (val parsed = read(photoUrl)) {
+        is StoredParse.Valid -> parsed.value
+        is StoredParse.Blank -> emptyList()
+        is StoredParse.Corrupt -> emptyList()
     }
 
     fun serialize(photos: List<FuelPhotoRef>): String? {
@@ -56,6 +83,8 @@ object FuelPhotoJson {
                     put("tag", p.tag)
                     put("uri", p.uri)
                     put("ts", p.ts)
+                    if (p.missing) put("missing", true)
+                    if (p.fallbackFrame) put("fallback", true)
                 },
             )
         }
@@ -106,25 +135,5 @@ object FuelPhotoJson {
             out.add(p.copy(tag = tag))
         }
         return serialize(out)
-    }
-
-    /** Append a pump photo; assigns next free pump / pump_N tag. */
-    fun addPumpPhoto(existing: String?, uri: String, ts: Long): String {
-        val list = parse(existing).toMutableList()
-        if (list.any { it.uri == uri }) return serialize(list) ?: single("pump", uri, ts)
-        val tag = nextPumpTag(list.map { it.tag })
-        list.add(FuelPhotoRef(tag = tag, uri = uri, ts = ts))
-        return serialize(list)!!
-    }
-
-    fun addDashPhoto(existing: String?, uri: String, ts: Long): String {
-        val list = parse(existing).toMutableList()
-        if (list.any { it.uri == uri }) return serialize(list) ?: single("dash", uri, ts)
-        if (list.none { it.tag == "dash" }) {
-            list.add(0, FuelPhotoRef(tag = "dash", uri = uri, ts = ts))
-        } else {
-            list.add(FuelPhotoRef(tag = "dash_2", uri = uri, ts = ts))
-        }
-        return serialize(list)!!
     }
 }

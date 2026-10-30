@@ -33,13 +33,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
-import coil.compose.rememberAsyncImagePainter
+import com.davidlang.vehicleexpensesautomated.ui.components.DecodedPhotoImage
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.forManageList
-import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
+import com.davidlang.vehicleexpensesautomated.data.storage.PickedImageReader
+import com.davidlang.vehicleexpensesautomated.data.sync.CloudManifest
 import com.davidlang.vehicleexpensesautomated.ui.components.LandmarkDebugDialog
 import com.davidlang.vehicleexpensesautomated.ui.components.LandmarkGlyphFont
-import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
+import com.davidlang.vehicleexpensesautomated.ui.components.rememberImagePicker
 import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.*
@@ -47,12 +48,15 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ensureActive
 import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.imgproc.Imgproc
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.coroutines.coroutineContext
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,6 +105,7 @@ fun ManageVehicles2Screen(
     var odometerRolloverCount by remember { mutableStateOf("0") }
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
+    var pickedOriginalUri by remember { mutableStateOf<String?>(null) }
     var landmarkTextBlocksJson by remember { mutableStateOf<String?>(null) }
 
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
@@ -109,6 +114,7 @@ fun ManageVehicles2Screen(
     var odoSeedSelectActive by remember { mutableStateOf(false) }
     var imageSize by remember { mutableStateOf(Offset.Zero) }
     var originalImageSize by remember { mutableStateOf(Offset.Zero) }
+    var photoCannotDisplay by remember { mutableStateOf(false) }
 
     var showLandmarkCheck by remember { mutableStateOf(false) }
     var discoveryResults by remember { mutableStateOf<OcrResult?>(null) }
@@ -147,14 +153,6 @@ fun ManageVehicles2Screen(
             append('|')
             append(v.odometerCropBottom)
             append('|')
-            append(v.otherTextCropLeft)
-            append('|')
-            append(v.otherTextCropTop)
-            append('|')
-            append(v.otherTextCropRight)
-            append('|')
-            append(v.otherTextCropBottom)
-            append('|')
             append(v.referenceDashPhotoUrl)
             append('|')
             append(v.cleanedReferenceDashPhotoUrl)
@@ -178,17 +176,16 @@ fun ManageVehicles2Screen(
         landmarkTextBlocksJson = v.landmarkTextBlocksJson
 
         originalImageSize = Offset.Zero
+        photoCannotDisplay = false
         referencePhotoUrl?.let { path ->
-            try {
-                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeFile(path, options)
-                originalImageSize = Offset(options.outWidth.toFloat(), options.outHeight.toFloat())
-            } catch (e: Exception) {
-                Log.e("ManageVehicles2", "Failed dimensions", e)
+            val sized = mv2UprightSize(context, path)
+            if (sized == null) {
+                photoCannotDisplay = true
+            } else {
+                originalImageSize = Offset(sized.fullW.toFloat(), sized.fullH.toFloat())
             }
         }
-        val (odo, _) = vehicleViewModel.getCrops(v)
-        odometerCropRect = odo
+        odometerCropRect = vehicleViewModel.getCrops(v)
 
         discoveryResults = null
         seedBlocks = emptyList()
@@ -196,11 +193,18 @@ fun ManageVehicles2Screen(
     }
 
     fun cancelOpenVehicleDiscovery() {
-        discoveryGen[0]++
-        discoveryJob?.cancel()
-        discoveryJob = null
-        discoveryInFlightPhoto = null
-        isLoadingDiscovery = false
+        val prev = discoveryJob
+        val gen = ++discoveryGen[0]
+        prev?.cancel()
+        isLoadingDiscovery = true
+        val job = scope.launch {
+            withContext(NonCancellable) { prev?.join() }
+            if (gen != discoveryGen[0]) return@launch
+            isLoadingDiscovery = false
+            discoveryInFlightPhoto = null
+            photoImportActive = false
+        }
+        discoveryJob = job
     }
 
     /**
@@ -208,20 +212,28 @@ fun ManageVehicles2Screen(
      * Save/Clear key change does not cancel it.
      */
     fun launchOpenVehicleDiscovery(photoPath: String) {
+        val prev = discoveryJob
         val gen = ++discoveryGen[0]
-        discoveryJob?.cancel()
+        prev?.cancel()
         discoveryInFlightPhoto = photoPath
         isLoadingDiscovery = true
         val job = scope.launch {
-            isLoadingDiscovery = true
             try {
+                withContext(NonCancellable) { prev?.join() }
+                if (gen != discoveryGen[0]) return@launch
                 val rawResult = withContext(Dispatchers.Default) {
-                    val rawBmp = OdometerOcrUtils.decodeBitmapSafely(context, photoPath) ?: return@withContext null
-                    val uprightBmp = OdometerOcrUtils.rotateImageIfRequired(rawBmp, photoPath)
+                    val sized = mv2UprightSize(context, photoPath) ?: return@withContext null
+                    val rawBmp = mv2DecodeForDiscovery(context, photoPath, sized.sample)
+                        ?: return@withContext null
                     try {
-                        runMv2PaddleDiscovery(context, uprightBmp)
+                        coroutineContext.ensureActive()
+                        val uprightBmp = OdometerOcrUtils.rotateImageIfRequired(context, rawBmp, photoPath)
+                        try {
+                            runMv2PaddleDiscovery(context, uprightBmp, sized.fullW, sized.fullH)
+                        } finally {
+                            if (uprightBmp != rawBmp) uprightBmp.recycle()
+                        }
                     } finally {
-                        if (uprightBmp != rawBmp) uprightBmp.recycle()
                         rawBmp.recycle()
                     }
                 }
@@ -231,15 +243,20 @@ fun ManageVehicles2Screen(
                     seedBlocks = rawResult.textBlocks
                     originalImageSize = Offset(rawResult.imageWidth.toFloat(), rawResult.imageHeight.toFloat())
                     discoverySettledPhoto = photoPath
+                } else {
+                    Toast.makeText(context, "Could not read that photo", Toast.LENGTH_SHORT).show()
                 }
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: CancellationException) {
                 throw e
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 Log.e("ManageVehicles2", "Hydrate paddle discovery failed", e)
             } finally {
                 if (gen == discoveryGen[0]) {
                     isLoadingDiscovery = false
                     discoveryInFlightPhoto = null
+                    photoImportActive = false
                 }
             }
         }
@@ -289,82 +306,166 @@ fun ManageVehicles2Screen(
         launchOpenVehicleDiscovery(photoPath)
     }
 
+    fun manifestWithOriginal(base: String?): String? {
+        val uri = pickedOriginalUri ?: return base
+        return CloudManifest.merge(
+            base,
+            listOf(
+                CloudManifest.Entry(
+                    destId = "local",
+                    provider = CloudManifest.PROVIDER_GOOGLE_DRIVE,
+                    fileId = "",
+                    name = uri,
+                    role = CloudManifest.ROLE_VEHICLE_REF_ORIGINAL,
+                    mimeType = PickedImageReader.DNG_MIME,
+                    updatedAt = System.currentTimeMillis(),
+                    localUri = uri,
+                ),
+            ),
+        )
+    }
+
     fun processImportedPhoto(url: String) {
-        cancelOpenVehicleDiscovery()
-        photoImportActive = true
+        val prev = discoveryJob
+        val gen = ++discoveryGen[0]
+        prev?.cancel()
         isLoadingDiscovery = true
-        scope.launch(Dispatchers.IO) {
+        photoImportActive = true
+        val job = scope.launch {
             try {
-                val rawBmp = OdometerOcrUtils.decodeBitmapSafely(context, url)
-                if (rawBmp == null) {
-                    withContext(Dispatchers.Main) {
-                        photoImportActive = false
-                        isLoadingDiscovery = false
+                withContext(NonCancellable) { prev?.join() }
+                if (gen != discoveryGen[0]) return@launch
+                withContext(Dispatchers.IO) {
+                    val refFile = File(context.filesDir, "vehicle_ref_${System.currentTimeMillis()}.jpg")
+                    val rawBmp = try {
+                        PickedImageReader.developToJpeg(context, android.net.Uri.parse(url), refFile)
+                        BitmapFactory.decodeFile(refFile.absolutePath)
+                    // kept: failure stays on this call so the screen or caller can continue
+                    } catch (e: Exception) {
+                        Log.e("ManageVehicles2", "developToJpeg failed", e)
+                        null
                     }
-                    return@launch
+                    if (rawBmp == null) {
+                        withContext(Dispatchers.Main) {
+                            if (gen != discoveryGen[0]) return@withContext
+                            Toast.makeText(context, "Could not read that photo", Toast.LENGTH_SHORT).show()
+                        }
+                        return@withContext
+                    }
+                    try {
+                        coroutineContext.ensureActive()
+                        val uprightBmp = rawBmp
+                        try {
+
+                            val detBmp = mv2DetBitmap(uprightBmp)
+                            val rawResult = try {
+                                runMv2PaddleDiscovery(
+                                    context,
+                                    detBmp,
+                                    uprightBmp.width,
+                                    uprightBmp.height,
+                                )
+                            } finally {
+                                if (detBmp != uprightBmp) detBmp.recycle()
+                            }
+                            val landmarkJson = OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf("ML Kit" to rawResult))
+                            val path = refFile.absolutePath
+                            val width = uprightBmp.width.toFloat()
+                            val height = uprightBmp.height.toFloat()
+
+                            withContext(Dispatchers.Main) {
+                                if (gen != discoveryGen[0]) return@withContext
+                                pickedPhotoUrl = path
+                                referencePhotoUrl = path
+                                landmarkTextBlocksJson = landmarkJson
+                                discoveryResults = rawResult
+                                seedBlocks = rawResult.textBlocks
+                                discoverySettledPhoto = path
+                                originalImageSize = Offset(width, height)
+                            }
+                        } finally {
+                            if (uprightBmp != rawBmp) uprightBmp.recycle()
+                        }
+                    } finally {
+                        rawBmp.recycle()
+                    }
                 }
-                val uprightBmp = OdometerOcrUtils.rotateImageIfRequired(rawBmp, url)
-
-                val refFile = File(context.filesDir, "vehicle_ref_${System.currentTimeMillis()}.jpg")
-                refFile.outputStream().use { uprightBmp.compress(Bitmap.CompressFormat.JPEG, 95, it) }
-
-                val rawResult = runMv2PaddleDiscovery(context, uprightBmp)
-                val landmarkJson = OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf("ML Kit" to rawResult))
-
-                withContext(Dispatchers.Main) {
-                    pickedPhotoUrl = refFile.absolutePath
-                    referencePhotoUrl = refFile.absolutePath
-                    landmarkTextBlocksJson = landmarkJson
-                    discoveryResults = rawResult
-                    seedBlocks = rawResult.textBlocks
-                    discoverySettledPhoto = refFile.absolutePath
-                    originalImageSize = Offset(uprightBmp.width.toFloat(), uprightBmp.height.toFloat())
-                    photoImportActive = false
-                    isLoadingDiscovery = false
-                }
-                if (uprightBmp != rawBmp) uprightBmp.recycle()
-                rawBmp.recycle()
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: CancellationException) {
-                withContext(NonCancellable + Dispatchers.Main) { photoImportActive = false }
                 throw e
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 Log.e("ManageVehicles2", "Photo processing failed", e)
-                withContext(Dispatchers.Main) {
+                if (gen == discoveryGen[0]) {
+                    Toast.makeText(context, "Could not read that photo", Toast.LENGTH_SHORT).show()
+                }
+            } finally {
+                if (gen == discoveryGen[0]) {
                     photoImportActive = false
                     isLoadingDiscovery = false
+                    discoveryInFlightPhoto = null
                 }
             }
         }
+        discoveryJob = job
     }
 
     val tryOcr: () -> Unit = {
         referencePhotoUrl?.let { photoPathOrUri ->
-            scope.launch {
+            val prev = discoveryJob
+            val gen = ++discoveryGen[0]
+            prev?.cancel()
+            isLoadingDiscovery = true
+            val job = scope.launch {
                 try {
-                    isLoadingDiscovery = true
+                    withContext(NonCancellable) { prev?.join() }
+                    if (gen != discoveryGen[0]) return@launch
                     val rawResult = withContext(Dispatchers.Default) {
-                        val rawBmp = OdometerOcrUtils.decodeBitmapSafely(context, photoPathOrUri)
+                        val sized = mv2UprightSize(context, photoPathOrUri) ?: return@withContext null
+                        val rawBmp = mv2DecodeForDiscovery(context, photoPathOrUri, sized.sample)
                             ?: return@withContext null
-                        val uprightBmp = OdometerOcrUtils.rotateImageIfRequired(rawBmp, photoPathOrUri)
                         try {
-                            runMv2PaddleDiscovery(context, uprightBmp)
+                            coroutineContext.ensureActive()
+                            val uprightBmp = OdometerOcrUtils.rotateImageIfRequired(
+                                context,
+                                rawBmp,
+                                photoPathOrUri,
+                            )
+                            try {
+                                runMv2PaddleDiscovery(context, uprightBmp, sized.fullW, sized.fullH)
+                            } finally {
+                                if (uprightBmp != rawBmp) uprightBmp.recycle()
+                            }
                         } finally {
-                            if (uprightBmp != rawBmp) uprightBmp.recycle()
                             rawBmp.recycle()
                         }
-                    } ?: return@launch
+                    }
+                    if (gen != discoveryGen[0]) return@launch
+                    if (rawResult == null) {
+                        Toast.makeText(context, "Could not read that photo", Toast.LENGTH_SHORT).show()
+                        return@launch
+                    }
 
                     landmarkTextBlocksJson =
                         OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf("ML Kit" to rawResult))
                     discoveryResults = rawResult
                     seedBlocks = rawResult.textBlocks
                     showLandmarkCheck = true
-                    isLoadingDiscovery = false
+                // kept: failure stays on this call so the screen or caller can continue
+                } catch (e: CancellationException) {
+                    throw e
+                // kept: failure stays on this call so the screen or caller can continue
                 } catch (e: Exception) {
                     Log.e("ManageVehicles2", "OCR failed", e)
-                    isLoadingDiscovery = false
+                } finally {
+                    if (gen == discoveryGen[0]) {
+                        isLoadingDiscovery = false
+                        discoveryInFlightPhoto = null
+                        photoImportActive = false
+                    }
                 }
             }
+            discoveryJob = job
         }
     }
 
@@ -379,7 +480,7 @@ fun ManageVehicles2Screen(
     }
 
     /**
-     * Writes odo crop and null ignore. No row yet: keep the rect in memory.
+     * Writes odo crop. No row yet: keep the rect in memory.
      * A replacement photo is included so the box is not stored on the previous file.
      * Name and the other form fields stay in memory until Save Changes.
      */
@@ -395,10 +496,6 @@ fun ManageVehicles2Screen(
             odometerCropTop = rect?.top,
             odometerCropRight = rect?.right,
             odometerCropBottom = rect?.bottom,
-            otherTextCropLeft = null,
-            otherTextCropTop = null,
-            otherTextCropRight = null,
-            otherTextCropBottom = null,
             landmarkTextBlocksJson = if (photoChanged) landmarkJsonForSave() else base.landmarkTextBlocksJson,
         )
         cropPersistEcho = written
@@ -429,9 +526,21 @@ fun ManageVehicles2Screen(
         }
 
         if (isNewVehicle || editingVehicle != null) {
-            PhotoPicker(photoStorageManager = hiltViewModel<SettingsViewModel>().photoStorageManager, photoType = PhotoType.FUEL, currentPhotoUrl = pickedPhotoUrl, onPhotoUrlChanged = { url -> if (url != null) processImportedPhoto(url) })
+            val imagePicker = rememberImagePicker(
+                allowCamera = true,
+                photoStorageManager = hiltViewModel<SettingsViewModel>().photoStorageManager,
+            ) { uri ->
+                pickedOriginalUri = if (PickedImageReader.isDng(context, uri)) uri.toString() else null
+                processImportedPhoto(uri.toString())
+            }
+            Row {
+                TextButton(onClick = { imagePicker.pickFromGallery() }) { Text("Gallery") }
+                TextButton(onClick = { imagePicker.takePhoto() }) { Text("Camera") }
+            }
 
-            if (referencePhotoUrl != null) {
+            if (photoCannotDisplay) {
+                Text("Cannot display")
+            } else if (referencePhotoUrl != null) {
                 var showFullPhoto by remember(referencePhotoUrl) { mutableStateOf(false) }
                 TextButton(onClick = { showFullPhoto = true }) {
                     Text("View full photo (zoom +/−)")
@@ -538,7 +647,7 @@ fun ManageVehicles2Screen(
                         Column(modifier = Modifier.padding(8.dp)) {
                             val result = discoveryResults!!
                             Card(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { showLandmarkCheck = true },
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable(enabled = !isLoadingDiscovery) { showLandmarkCheck = true },
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
@@ -597,11 +706,11 @@ fun ManageVehicles2Screen(
                                 referencePhotoUrl,
                                 referencePhotoUrl,
                                 odometerCropRect,
-                                null,
                                 odometerReading.toIntOrNull() ?: 0,
                                 jsonToSave,
                                 odometerDigitCount = dig,
                                 odometerRolloverCount = rolls,
+                                cloudManifest = manifestWithOriginal(null),
                             )
                         } else {
                             editingVehicle?.let {
@@ -617,13 +726,10 @@ fun ManageVehicles2Screen(
                                     odometerCropTop = odometerCropRect?.top,
                                     odometerCropRight = odometerCropRect?.right,
                                     odometerCropBottom = odometerCropRect?.bottom,
-                                    otherTextCropLeft = null,
-                                    otherTextCropTop = null,
-                                    otherTextCropRight = null,
-                                    otherTextCropBottom = null,
                                     landmarkTextBlocksJson = jsonToSave,
                                     odometerDigitCount = dig,
                                     odometerRolloverCount = rolls,
+                                    cloudManifest = manifestWithOriginal(it.cloudManifest),
                                 )
                                 vehicleViewModel.updateVehicle(updated)
                             }
@@ -642,7 +748,6 @@ fun ManageVehicles2Screen(
         LandmarkDebugDialog(
             photoPath = referencePhotoUrl,
             odometerCrop = odometerCropRect,
-            otherTextCrop = null,
             landmarks = res.textBlocks,
             odometerText = "N/A",
             engineName = res.engineName,
@@ -820,7 +925,7 @@ private fun EditCropsView(
             }
         ) {
             Box(modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y)) {
-                Image(painter = rememberAsyncImagePainter(photoUrl), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                DecodedPhotoImage(uri = photoUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val pxW = size.width; val pxH = size.height
                     val fitRect = if (originalSize.x > 0f) calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y) else Rect(0f, 0f, pxW, pxH)
@@ -941,12 +1046,110 @@ private fun mv2IcrsFromSeed(block: TextBlock, imgW: Int, imgH: Int): Rect {
     return Rect(minOf(p1.x, p2.x), minOf(p1.y, p2.y), maxOf(p1.x, p2.x), maxOf(p1.y, p2.y))
 }
 
+private class Mv2UprightSize(val fullW: Int, val fullH: Int, val sample: Int)
+
+/** Power-of-two inSampleSize; ceil(longEdge / sample) stays <= 2048. At or under 2048 stays 1. */
+private fun mv2InSampleSize(longEdge: Int): Int {
+    if (longEdge <= 2048) return 1
+    var sample = 1
+    val edge = longEdge.toLong()
+    while (sample > 0 && sample < longEdge && (edge + sample - 1) / sample > 2048L) {
+        val next = sample shl 1
+        if (next <= 0) break
+        sample = next
+    }
+    return sample
+}
+
+private fun mv2ExifDegrees(context: Context, path: String): Float? {
+    return try {
+        val orientation = if (path.startsWith("content://")) {
+            val stream = context.contentResolver.openInputStream(Uri.parse(path)) ?: return null
+            stream.use {
+                android.media.ExifInterface(it).getAttributeInt(
+                    android.media.ExifInterface.TAG_ORIENTATION,
+                    android.media.ExifInterface.ORIENTATION_NORMAL,
+                )
+            }
+        } else {
+            android.media.ExifInterface(path).getAttributeInt(
+                android.media.ExifInterface.TAG_ORIENTATION,
+                android.media.ExifInterface.ORIENTATION_NORMAL,
+            )
+        }
+        when (orientation) {
+            android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("ManageVehicles2", "cannot display $path", e)
+        null
+    }
+}
+
+private fun mv2UprightSize(context: Context, path: String): Mv2UprightSize? {
+    return try {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        if (path.startsWith("content://")) {
+            val opened = context.contentResolver.openInputStream(Uri.parse(path))?.use {
+                BitmapFactory.decodeStream(it, null, options)
+                true
+            } ?: false
+            if (!opened) return null
+        } else {
+            BitmapFactory.decodeFile(path, options)
+        }
+        val rawW = options.outWidth
+        val rawH = options.outHeight
+        if (rawW <= 0 || rawH <= 0) return null
+        val degrees = mv2ExifDegrees(context, path) ?: return null
+        val swap = degrees == 90f || degrees == 270f
+        Mv2UprightSize(
+            fullW = if (swap) rawH else rawW,
+            fullH = if (swap) rawW else rawH,
+            sample = mv2InSampleSize(maxOf(rawW, rawH)),
+        )
+    // kept: failure stays on this call so the screen or caller can continue
+    } catch (e: Exception) {
+        Log.e("ManageVehicles2", "Failed dimensions", e)
+        null
+    }
+}
+
+private fun mv2DecodeForDiscovery(context: Context, path: String, sample: Int): Bitmap? {
+    return try {
+        val options = BitmapFactory.Options().apply { inSampleSize = sample }
+        if (path.startsWith("content://")) {
+            context.contentResolver.openInputStream(Uri.parse(path))?.use {
+                BitmapFactory.decodeStream(it, null, options)
+            }
+        } else {
+            BitmapFactory.decodeFile(path, options)
+        }
+    // kept: failure stays on this call so the screen or caller can continue
+    } catch (e: Exception) {
+        Log.e("ManageVehicles2", "Failed to decode bitmap: $path", e)
+        null
+    }
+}
+
+/** Copy scaled so the long edge is at most 2048. A smaller bitmap is returned as-is. */
+private fun mv2DetBitmap(src: Bitmap): Bitmap {
+    val longEdge = maxOf(src.width, src.height)
+    if (longEdge <= 2048) return src
+    val dw = (src.width.toLong() * 2048L / longEdge).toInt().coerceAtLeast(1)
+    val dh = (src.height.toLong() * 2048L / longEdge).toInt().coerceAtLeast(1)
+    return Bitmap.createScaledBitmap(src, dw, dh, true)
+}
+
 private fun bitmapToGrayMat(bitmap: Bitmap): Mat {
     val tmp = Mat()
     org.opencv.android.Utils.bitmapToMat(bitmap, tmp)
     val gray = Mat()
     if (tmp.channels() > 1) {
-        Imgproc.cvtColor(tmp, gray, Imgproc.COLOR_BGR2GRAY)
+        Imgproc.cvtColor(tmp, gray, Imgproc.COLOR_RGBA2GRAY)
     } else {
         tmp.copyTo(gray)
     }
@@ -954,21 +1157,41 @@ private fun bitmapToGrayMat(bitmap: Bitmap): Mat {
     return gray
 }
 
-private suspend fun runMv2PaddleDiscovery(context: Context, bitmap: Bitmap): OcrResult {
+private fun scaleBlockToFull(block: TextBlock, fullW: Int, fullH: Int, decodedW: Int, decodedH: Int): TextBlock {
+    val sx = fullW.toDouble() / decodedW.toDouble()
+    val sy = fullH.toDouble() / decodedH.toDouble()
+    val bb = block.boundingBox
+    val box = android.graphics.Rect(
+        (bb.left * sx).roundToInt(),
+        (bb.top * sy).roundToInt(),
+        (bb.right * sx).roundToInt(),
+        (bb.bottom * sy).roundToInt(),
+    )
+    val pts = block.points.map { p -> org.opencv.core.Point(p.x * sx, p.y * sy) }
+    return block.copy(boundingBox = box, points = pts)
+}
+
+private suspend fun runMv2PaddleDiscovery(
+    context: Context,
+    bitmap: Bitmap,
+    fullW: Int,
+    fullH: Int,
+): OcrResult {
     val t0 = System.currentTimeMillis()
-    val work = OdometerOcrUtils.applyGrayscale(bitmap)
-    val w = work.width
-    val h = work.height
-    val gray = bitmapToGrayMat(work)
+    val decodedW = bitmap.width
+    val decodedH = bitmap.height
+    val gray = bitmapToGrayMat(bitmap)
     try {
+        coroutineContext.ensureActive()
         val blocks = MultiScaleDetRunner.productDetLandmarks2048(context, gray, 0.40f)
-        val landmarks = OdometerOcrUtils.processRawLandmarks(blocks, null, null, w, h)
+        val landmarks = OdometerOcrUtils.processRawLandmarks(blocks, null, decodedW, decodedH)
+        val scaled = landmarks.map { scaleBlockToFull(it, fullW, fullH, decodedW, decodedH) }
         return OcrResult(
             engineName = "ML Kit",
-            debugText = landmarks.joinToString(" ") { it.text },
-            textBlocks = landmarks,
-            imageWidth = w,
-            imageHeight = h,
+            debugText = scaled.joinToString(" ") { it.text },
+            textBlocks = scaled,
+            imageWidth = fullW,
+            imageHeight = fullH,
             discoveryTimeMs = System.currentTimeMillis() - t0,
         )
     } finally {

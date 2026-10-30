@@ -27,6 +27,6 @@ Size knobs kept: `DYNAMIC_ARCH=0 TARGET=CORE2 ONLY_CBLAS=1` (see `docs/specs/PAD
 PADDLE_ABIS=x86_64 PADDLE_SKIP_IMAGE_BUILD=1 \
   PADDLE_SKIP_SO_SMOKE=0 PADDLE_SKIP_OCR_QEMU=1 \
   ./third_party/fetch-deps build paddle
-# get-artifacts (via build) → app/src/main/jniLibs/x86_64/libpaddle_light_api_shared.so
+# get-artifacts (via build) → third_party/paddle/artifact/jni/x86_64/libpaddle_light_api_shared.so (the app reads it from there)
 # Verify: openblas_get_num_threads no longer hardcodes 1; nm/objdump goto_set_num_threads is non-empty
 ```

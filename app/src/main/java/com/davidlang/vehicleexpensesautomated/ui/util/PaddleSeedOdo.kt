@@ -1,7 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.util.Base64
-import com.davidlang.vehicleexpensesautomated.ui.experiment.ocrPumpFeedOriented40
+import com.davidlang.vehicleexpensesautomated.ui.ocr.ocrPumpFeedOriented40
 import org.opencv.imgproc.Imgproc
 
 /** Union of paddle seeds overlapping the red odometer quad, padded at [seedVert], clipped, Raw + Bin-Trials. */
@@ -10,7 +10,7 @@ object PaddleSeedOdo {
     const val SEED_VERT_PRODUCTION: Float = 0.40f
 
     data class SeedRecRun(
-        val harness: OcrHarnessResult,
+        val harness: OcrHarnessResult?,
         val trace: RefinementTrace,
         val odometerValue: String?,
     )
@@ -38,7 +38,8 @@ object PaddleSeedOdo {
     }
 
     /**
-     * Union of seeds overlapping [crop], clipped to the red odometer quad, read once from [gray].
+     * Union of seeds overlapping [crop], clipped to the red odometer quad.
+     * Luma is [graySet].p.mat at the feed call (not a Mat held across [ocrPumpFeedOriented40]).
      * [seedVert] null: bare seeds only (ML Kit). Non-null: each overlapping bare seed is rot-G-- padded
      * (side fractions 0.54 / 0.55), then the padded quads are unioned and clipped.
      * No overlap returns null (empty odometer for production callers).
@@ -46,13 +47,14 @@ object PaddleSeedOdo {
     suspend fun readSeedRec(
         seeds: List<TextBlock>,
         crop: ContentExpandUtils.OrientedQuad,
-        gray: org.opencv.core.Mat,
+        graySet: BufferSet,
         recBuffer: BufferSet,
         paddleEngine: NativePaddleEngine,
         displayName: String,
         seedVert: Float?,
         preferredDigitLen: Int,
         allowLenPlusOne: Boolean,
+        collectHarness: Boolean,
     ): SeedRecRun? {
         val bare = seeds.map { bareSeedQuad(it) }
         val clipped = if (seedVert == null) {
@@ -74,38 +76,42 @@ object PaddleSeedOdo {
             }
         } ?: return null
         val fed = ocrPumpFeedOriented40(
-            gray, clipped, NativePaddleEngine.bufferSetA, recBuffer,
+            graySet.p.mat, clipped, NativePaddleEngine.bufferSetA, recBuffer,
         ) ?: return null
-        val slice = recBuffer.c[fed.recCropId]
+        val recId = fed.recCropId
         val tH0 = System.currentTimeMillis()
+        var trialCropId = -1
         try {
-            val rawSnap = PumpCostVolUtils.snapRecCrop(recBuffer, fed.recCropId, fed.targetW, fed.targetH)
+            val rawSnap = if (collectHarness) {
+                PumpCostVolUtils.snapRecCrop(recBuffer, recId, fed.targetW, fed.targetH)
+            } else {
+                ""
+            }
 
             val tRaw0 = System.currentTimeMillis()
-            val rawDigits = paddleEngine.recognizeNumericDecimal(slice)
+            val rawDigits = paddleEngine.recognizeNumericDecimal(recBuffer.c[recId])
             val rawMs = System.currentTimeMillis() - tRaw0
             val rawText = digitText(rawDigits.debugText)
 
             val tBin0 = System.currentTimeMillis()
-            val stats = OdometerOcrUtils.getHistStats(slice.mat)
+            val stats = OdometerOcrUtils.getHistStats(recBuffer.c[recId].mat)
             val midpoints = OdometerOcrUtils.findValleyMidpoints(stats.rawBins)
             data class BinTrial(val text: String, val sumProb: Float, val minProb: Float, val snap: String)
             val trials = mutableListOf<BinTrial>()
+            val srcSlice = recBuffer.c[recId]
+            trialCropId = recBuffer.s.createCrop(0, 0, srcSlice.width, srcSlice.height)
+            val trialMat = recBuffer.c[trialCropId].mat
             midpoints.forEach { binIdx ->
                 val threshold = binIdx * 4.0
-                val binMat = org.opencv.core.Mat()
                 Imgproc.threshold(
-                    slice.mat, binMat, threshold, 255.0, Imgproc.THRESH_BINARY,
+                    recBuffer.c[recId].mat, trialMat, threshold, 255.0, Imgproc.THRESH_BINARY,
                 )
-                try {
-                    val dig = paddleEngine.recognizeNumericDecimal(binMat)
-                    val text = digitText(dig.debugText)
-                    if (text.isEmpty()) return@forEach
-                    val (sumP, minP) = probStats(dig.perCharProbs)
-                    trials.add(BinTrial(text, sumP, minP, matJpegB64(binMat)))
-                } finally {
-                    binMat.release()
-                }
+                val dig = paddleEngine.recognizeNumericDecimal(trialMat)
+                val text = digitText(dig.debugText)
+                if (text.isEmpty()) return@forEach
+                val (sumP, minP) = probStats(dig.perCharProbs)
+                val snap = if (collectHarness) matJpegB64(trialMat) else ""
+                trials.add(BinTrial(text, sumP, minP, snap))
             }
             val binMs = System.currentTimeMillis() - tBin0
 
@@ -128,41 +134,46 @@ object PaddleSeedOdo {
             )
             val totalMs = System.currentTimeMillis() - tH0
 
-            val recImgRaw = if (rawSnap.isNotEmpty()) "<img src='data:image/jpeg;base64,$rawSnap'><br>" else ""
-            val recImgBin = if (binSnap.isNotEmpty()) "<img src='data:image/jpeg;base64,$binSnap'><br>" else ""
-            val htmlCell = buildString {
-                append("<div class='ocr-step'><b>Raw:</b> ($rawMs ms)<br>${rawText.ifEmpty { "---" }}<br>$recImgRaw</div>")
-                append("<div class='ocr-step'><b>Bin-Trials:</b> ($binMs ms)<br>${binText.ifEmpty { "---" }}<br>$recImgBin</div>")
+            val harness = if (collectHarness) {
+                val recImgRaw = if (rawSnap.isNotEmpty()) "<img src='data:image/jpeg;base64,$rawSnap'><br>" else ""
+                val recImgBin = if (binSnap.isNotEmpty()) "<img src='data:image/jpeg;base64,$binSnap'><br>" else ""
+                val htmlCell = buildString {
+                    append("<div class='ocr-step'><b>Raw:</b> ($rawMs ms)<br>${rawText.ifEmpty { "---" }}<br>$recImgRaw</div>")
+                    append("<div class='ocr-step'><b>Bin-Trials:</b> ($binMs ms)<br>${binText.ifEmpty { "---" }}<br>$recImgBin</div>")
+                }
+                val jsonStages = com.google.gson.JsonObject()
+                jsonStages.add(
+                    "Raw",
+                    com.google.gson.JsonObject().apply {
+                        addProperty("text", rawText)
+                        addProperty("time", rawMs)
+                    },
+                )
+                jsonStages.add(
+                    "Bin-Trials",
+                    com.google.gson.JsonObject().apply {
+                        addProperty("text", binText)
+                        addProperty("time", binMs)
+                    },
+                )
+                OcrHarnessResult(
+                    htmlHeader = displayName,
+                    htmlCell = htmlCell,
+                    jsonSection = com.google.gson.JsonObject().apply {
+                        addProperty("odometer", bestOdo ?: "")
+                        add("stages", jsonStages)
+                    },
+                    odometerValue = bestOdo,
+                    thumbB64 = rawSnap.ifEmpty { null },
+                    totalTimeMs = totalMs,
+                )
+            } else {
+                null
             }
-            val jsonStages = com.google.gson.JsonObject()
-            jsonStages.add(
-                "Raw",
-                com.google.gson.JsonObject().apply {
-                    addProperty("text", rawText)
-                    addProperty("time", rawMs)
-                },
-            )
-            jsonStages.add(
-                "Bin-Trials",
-                com.google.gson.JsonObject().apply {
-                    addProperty("text", binText)
-                    addProperty("time", binMs)
-                },
-            )
-            val harness = OcrHarnessResult(
-                htmlHeader = displayName,
-                htmlCell = htmlCell,
-                jsonSection = com.google.gson.JsonObject().apply {
-                    addProperty("odometer", bestOdo ?: "")
-                    add("stages", jsonStages)
-                },
-                odometerValue = bestOdo,
-                thumbB64 = rawSnap.ifEmpty { null },
-                totalTimeMs = totalMs,
-            )
             return SeedRecRun(harness, RefinementTrace(displayName, totalMs, steps), bestOdo)
         } finally {
-            slice.release()
+            recBuffer.c[recId].release()
+            if (trialCropId >= 0) recBuffer.c[trialCropId].release()
         }
     }
 
@@ -180,11 +191,11 @@ object PaddleSeedOdo {
     private fun matJpegB64(mat: org.opencv.core.Mat): String {
         val buf = org.opencv.core.MatOfByte()
         return try {
-            if (!org.opencv.imgcodecs.Imgcodecs.imencode(".jpg", mat, buf)) "" else {
+            if (!org.opencv.imgcodecs.Imgcodecs.imencode(".jpg", mat, buf)) {
+                throw IllegalStateException("imencode jpg failed")
+            } else {
                 Base64.encodeToString(buf.toArray(), Base64.NO_WRAP)
             }
-        } catch (_: Exception) {
-            ""
         } finally {
             buf.release()
         }

@@ -9,8 +9,8 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 ## Data Models (Room Entities)
 
 ### `Vehicle.kt`
-- `Vehicle(id, name, make, model, year, licensePlate, vin, notes, referenceDashPhotoUrl, cleanedReferenceDashPhotoUrl, odometerCropLeft, odometerCropTop, odometerCropRight, odometerCropBottom, otherTextCropLeft, otherTextCropTop, otherTextCropRight, otherTextCropBottom, landmarkTextBlocksJson)`
-  - Core entity for vehicle management. Crop boxes are stored as ICRS (Isotropic Center-Relative Space) or raw pixel bounds. (Normalized 0.0–1.0 per-axis is obsolete.) `landmarkTextBlocksJson` holds the multi-engine JSON manifest. See `docs/specs/ISOTROPIC_COORDINATE_SPEC.md`.
+- `Vehicle(id, name, make, model, year, licensePlate, vin, notes, referenceDashPhotoUrl, cleanedReferenceDashPhotoUrl, odometerCropLeft, odometerCropTop, odometerCropRight, odometerCropBottom, landmarkTextBlocksJson, tripTypesJson, expenseCategoriesJson, odometerDigitCount, odometerRolloverCount, cloudManifest, deleted, deletedAt, syncId, originDeviceId, updatedAt)`
+  - Core entity for vehicle management. The odometer crop and landmarks are ICRS (Isotropic Center-Relative Space). Auto-fill does not read the reference photo. (Normalized 0.0–1.0 per-axis is obsolete.) `landmarkTextBlocksJson` holds the multi-engine JSON manifest. See `docs/specs/ISOTROPIC_COORDINATE_SPEC.md`.
 
 ### `FuelEntry.kt`
 - `FuelEntry(id, vehicleId, odometer, gallons, cost, timestamp, photoUrl, isPartialFill, latitude, longitude, location, cloudManifest)`
@@ -24,7 +24,7 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 
 ### `OcrHarness.kt`
 - `OcrHarness` (Object): Production OCR orchestration (`runAutoFillPipeline` = alignment Set V valley expand, `runPumpCostVolPipeline`).
-- `OcrHarnessResult`: Structured harness output for experiments and Quick Fill debug.
+- `OcrHarnessResult`: Structured harness output for experiments and Fill debug.
 
 ### `OcrEngine.kt`
 - `OcrResult`, `TextBlock`: Shared OCR result types.
@@ -36,7 +36,7 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 - `OdometerOcrUtils` (Object): Odometer-specific sanitization, landmark serialize/deserialize, and photo OCR helpers.
 
 ### `PumpCostVolUtils.kt`
-- `PumpCostVolUtils` (Object): Quick Fill pump panel cost/volume classification (production path).
+- `PumpCostVolUtils` (Object): Fill pump panel cost/volume classification (production path).
 
 ### `ImageAlignmentUtils.kt` & `NativeImageUtils.kt`
 - `ImageAlignmentUtils` (Object): Anchors-based triangulation and veto logic.
@@ -49,9 +49,9 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 - `PhotoBackupCoordinator.kt` / `PhotoBackupWorker.kt` / `PhotoStorageManager.kt`: Multi-destination photo backup (Google Drive, OneDrive, S3, rclone Other); manual Sync now is ViewModel-scoped.
 
 ## UI Components (production)
-- `QuickFillupScreen.kt`: Primary fuel fill-up capture and OCR.
+- `FillScreen.kt`: Primary fuel fill-up capture and OCR.
 - `TripTrackingScreen.kt`: Start trip (open-only trip types).
-- `ManageVehiclesScreen.kt`: Vehicle metadata and OCR crop regions.
+- `ManageVehicles2Screen.kt`: Vehicle metadata, reference dash photo, Select Odo / Edit Odo (`managevehicles`).
 - `ExpenseEntryScreen.kt` / `ExpenseListScreen.kt`: Expense capture and history (list via Reports hub).
 - `ui/reports/lab/*`: Product **Reports** hub and children (efficiency, costs, trips, …).
 - `PageHelp.kt` / `RegisterPageHelp`: Top-bar page Info registry.
@@ -59,6 +59,3 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 
 ## Debug / experiment (temporary)
 - `ExperimentAlignmentScreen.kt`, `ExperimentPumpScreen.kt`: Research harnesses; scheduled for removal.
-
-## Unwired (future)
-- `ConflictResolutionScreen.kt`: Sync conflict UI — not yet routed in `MainActivity`.

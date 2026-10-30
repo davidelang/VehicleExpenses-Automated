@@ -68,7 +68,7 @@ class VehicleRepository @Inject constructor(
         )
     }
 
-    /** Real vehicles only (exclude system Unassigned) for OCR / Quick Fill / assign targets. */
+    /** Real vehicles only (exclude system Unassigned) for OCR / Fill / assign targets. */
     fun isSystemUnassigned(v: Vehicle): Boolean =
         v.id == UNASSIGNED_VEHICLE_ID || v.syncId == UNASSIGNED_VEHICLE_SYNC_ID
 

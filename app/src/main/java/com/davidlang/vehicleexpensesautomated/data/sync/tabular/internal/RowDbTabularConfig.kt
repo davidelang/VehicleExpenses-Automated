@@ -102,6 +102,7 @@ data class RowDbTabularConfig(
                     baseId = baseId,
                     tables = tables,
                 )
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (_: Exception) {
                 null
             }

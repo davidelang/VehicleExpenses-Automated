@@ -8,8 +8,7 @@ import com.davidelang.extractmail.Extractmail
  * **Type detect SoT:** [Extractmail.detectType] (extractmail AAR).
  * HTML field extraction remains in-app Kotlin ([ShellReceiptParser] /
  * [SamsClubReceiptParser]) until a pure-Kotlin port of host goldens —
- * no Node on device. Offline samples use extractmail golden JSON
- * ([EmailReceiptFixtureIngest]).
+ * no Node on device. Offline samples use extractmail golden JSON.
  */
 object ReceiptParsers {
 
@@ -63,6 +62,4 @@ object ReceiptParsers {
     /** @deprecated Prefer [Extractmail.looksShell] / [detectType]. */
     fun looksShell(blob: String): Boolean = Extractmail.looksShell(blob)
 
-    /** @deprecated Prefer [Extractmail.looksSamsClub] / [detectType]. */
-    fun looksSams(blob: String): Boolean = Extractmail.looksSamsClub(blob)
 }

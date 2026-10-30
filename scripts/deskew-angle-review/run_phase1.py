@@ -40,7 +40,8 @@ SCRATCH_ROOT = Path("/home/dlang/git/VehicleExpenses-automated/dev-ai-interactio
 PHOTOS = Path("/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/research/photos")
 HOST_OUT = VE / "third_party/paddle/tests/heatmap_stage_host/out"
 HOST_BIN = HOST_OUT / "heatmap_stage_host"
-DET_NB = VE / "app/src/main/assets/paddle/prod_u8fp32_u8/det_x86_64.nb"
+# Shipped x86_64 product det from the paddle-models pin (fetch-deps ro paddle-models).
+DET_NB = VE / "third_party/paddle-models/artifact/app/x86_64/det_x86_64.nb"
 EXISTING_GT = Path(
     "/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/ground_truth_angles.json"
 )
@@ -487,7 +488,7 @@ def main() -> int:
         print("Missing heatmap_stage_host — run scripts/build-heatmap-stage-host.sh", file=sys.stderr)
         return 2
     if not DET_NB.is_file():
-        print(f"Missing det model {DET_NB}", file=sys.stderr)
+        print(f"ERROR: product model missing: {DET_NB} (run ./third_party/fetch-deps ro paddle-models)", file=sys.stderr)
         return 2
 
     sets = [s.strip() for s in args.sets.split(",") if s.strip()]

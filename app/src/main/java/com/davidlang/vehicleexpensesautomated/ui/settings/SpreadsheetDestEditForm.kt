@@ -25,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -139,11 +140,7 @@ internal fun SpreadsheetDestEditForm(
         mutableStateOf(
             existing?.let {
                 if (it.configJson.isNotBlank()) {
-                    try {
-                        JSONObject(it.configJson).optString("baseUrl", it.targetUrl)
-                    } catch (_: Exception) {
-                        it.targetUrl
-                    }
+                    JSONObject(it.configJson).optString("baseUrl", it.targetUrl)
                 } else {
                     it.targetUrl
                 }
@@ -154,11 +151,7 @@ internal fun SpreadsheetDestEditForm(
         mutableStateOf(
             existing?.let {
                 if (it.configJson.isNotBlank()) {
-                    try {
-                        JSONObject(it.configJson).optString("roomPrefix", "ve")
-                    } catch (_: Exception) {
-                        "ve"
-                    }
+                    JSONObject(it.configJson).optString("roomPrefix", "ve")
                 } else {
                     it.targetId.ifBlank { "ve" }
                 }
@@ -211,6 +204,7 @@ internal fun SpreadsheetDestEditForm(
         }
     }
     var showBrowseDialog by remember { mutableStateOf(false) }
+    var driveBrowseReloadNonce by remember { mutableIntStateOf(0) }
     val consentRecovery = rememberConsentRecoveryHandle()
     val displayNameRequired = totalDestCount > 1
     val formTitle = if (isNew) "Add ${provider.displayLabel()}" else "Edit ${provider.displayLabel()}"
@@ -315,6 +309,8 @@ internal fun SpreadsheetDestEditForm(
         viewModel.rescheduleBackgroundSync()
     }
 
+    var driveReadonlyGranted by remember { mutableStateOf(viewModel.driveAuth.hasReadonlyBrowseScope()) }
+
     val signInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -322,22 +318,23 @@ internal fun SpreadsheetDestEditForm(
             val account = viewModel.auth.parseSignInResult(result.data)
             val email = account.email ?: ""
             viewModel.auth.persistAccountEmail(email)
+            viewModel.driveAuth.persistAccountEmail(email)
             accountHint = email
+            driveReadonlyGranted = viewModel.driveAuth.hasReadonlyBrowseScope()
             statusText = "Signed in as $email"
             Toast.makeText(context, "Signed in as $email", Toast.LENGTH_SHORT).show()
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: ApiException) {
             statusText = "Sign-in failed — try again or pick a Google account with Sheets access"
             Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
         }
     }
 
-    var driveReadonlyGranted by remember { mutableStateOf(viewModel.driveAuth.hasReadonlyBrowseScope()) }
-
     val driveReadonlyLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         try {
-            val account = viewModel.auth.parseSignInResult(result.data)
+            val account = viewModel.driveAuth.parseSignInResult(result.data)
             val email = account.email ?: ""
             if (email.isNotBlank()) {
                 viewModel.driveAuth.persistAccountEmail(email)
@@ -348,6 +345,7 @@ internal fun SpreadsheetDestEditForm(
             } else {
                 statusText = "Drive browse access not granted — try again"
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: ApiException) {
             statusText = "Drive browse sign-in failed"
             Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
@@ -358,11 +356,18 @@ internal fun SpreadsheetDestEditForm(
         when (provider) {
             SpreadsheetProvider.GOOGLE_SHEETS -> {
                 OutlinedButton(
-                    onClick = { signInLauncher.launch(viewModel.auth.signInIntent()) },
+                    onClick = {
+                        signInLauncher.launch(viewModel.auth.spreadsheetDestinationSignInIntent())
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(if (accountHint.isBlank()) "Sign in with Google" else "Signed in: $accountHint")
                 }
+                Text(
+                    "One sign-in covers Sheets and browsing spreadsheets you own or that are shared with you.",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
                 Spacer(modifier = Modifier.height(16.dp))
             }
             SpreadsheetProvider.EXCEL_GRAPH -> {
@@ -377,6 +382,7 @@ internal fun SpreadsheetDestEditForm(
                                     val result = viewModel.msAuth.signInInteractive(activity, accountHint.ifBlank { null })
                                     accountHint = result.email
                                     statusText = "Signed in as ${result.email}"
+                                // kept: failure stays on this call so the screen or caller can continue
                                 } catch (e: Exception) {
                                     statusText = e.message ?: "Microsoft sign-in failed"
                                     Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
@@ -459,13 +465,20 @@ internal fun SpreadsheetDestEditForm(
                         onRequestReadonlyAccess = {
                             driveReadonlyLauncher.launch(viewModel.driveAuth.readonlyBrowseSignInIntent())
                         },
+                        onRecoverableDriveAuth = { intent ->
+                            consentRecovery.launch(intent) { driveBrowseReloadNonce++ }
+                        },
+                        reloadKey = driveBrowseReloadNonce,
                         listItems = { search, catalog ->
                             try {
                                 viewModel.listSpreadsheetsForBrowse(accountHint, search, catalog)
+                            // kept: failure stays on this call so the screen or caller can continue
                             } catch (e: DriveRecoverableAuthException) {
                                 throw e
+                            // kept: failure stays on this call so the screen or caller can continue
                             } catch (e: SheetsRecoverableAuthException) {
                                 throw e
+                            // kept: failure stays on this call so the screen or caller can continue
                             } catch (e: Exception) {
                                 throw DriveAuthRecovery.wrapIfRecoverable(
                                     SheetsAuthRecovery.wrapIfRecoverable(e),
@@ -475,8 +488,10 @@ internal fun SpreadsheetDestEditForm(
                         createItem = { title ->
                             try {
                                 viewModel.createSpreadsheetForBrowse(accountHint, title)
+                            // kept: failure stays on this call so the screen or caller can continue
                             } catch (e: SheetsRecoverableAuthException) {
                                 throw e
+                            // kept: failure stays on this call so the screen or caller can continue
                             } catch (e: Exception) {
                                 throw SheetsAuthRecovery.wrapIfRecoverable(e)
                             }
@@ -603,6 +618,7 @@ internal fun SpreadsheetDestEditForm(
                                     accountHint = "zoho"
                                     statusText = "Signed in with Zoho"
                                     Toast.makeText(context, statusText, Toast.LENGTH_SHORT).show()
+                                // kept: failure stays on this call so the screen or caller can continue
                                 } catch (e: Exception) {
                                     statusText = e.message ?: "Zoho sign-in failed"
                                     Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
@@ -732,6 +748,7 @@ internal fun SpreadsheetDestEditForm(
                             statusIsError = !ok
                             statusText = if (ok) "Connection test passed" else "Connection test failed"
                             Toast.makeText(context, statusText, Toast.LENGTH_SHORT).show()
+                        // kept: failure stays on this call so the screen or caller can continue
                         } catch (e: SheetsRecoverableAuthException) {
                             statusIsError = true
                             statusText = e.message ?: SheetsAuthRecovery.NEED_REMOTE_CONSENT_MESSAGE
@@ -740,6 +757,7 @@ internal fun SpreadsheetDestEditForm(
                             } else {
                                 Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
                             }
+                        // kept: failure stays on this call so the screen or caller can continue
                         } catch (e: Exception) {
                             statusIsError = true
                             statusText = SheetsAuthRecovery.userMessage(e)

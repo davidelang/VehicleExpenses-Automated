@@ -202,4 +202,42 @@ class FuelRowMergeEngineFieldMergeTest {
         assertEquals(50.0, merged.cost, 0.001)
         assertEquals(t0 + 10_000L, merged.timestamp)
     }
+
+    /** Older pump outscores a newer partial odo-only dash; survivor keeps the pump id and syncId. */
+    @Test
+    fun planMerge_olderPumpKeepsSyncIdWhenNewerPartialDash() {
+        val pump = entry(
+            id = 70,
+            vehicleId = 1,
+            odometer = 0,
+            gallons = 12.5,
+            cost = 45.0,
+            timestamp = t0,
+            syncId = "pump-keep",
+            isPartialFill = false,
+        )
+        val dash = entry(
+            id = 71,
+            vehicleId = 1,
+            odometer = 10000,
+            gallons = 0.0,
+            cost = 0.0,
+            timestamp = t0 + 60_000L,
+            syncId = "dash-drop",
+            isPartialFill = true,
+        )
+        val plan = FuelRowMergeEngine.planMerge(listOf(pump, dash))
+        assertEquals(1, plan.updates.size)
+        val survivor = plan.updates.single()
+        assertEquals(pump.id, survivor.id)
+        assertEquals("pump-keep", survivor.syncId)
+        assertEquals(10000, survivor.odometer)
+        assertEquals(45.0, survivor.cost, 0.001)
+        assertEquals(12.5, survivor.gallons, 0.001)
+        assertEquals(t0 + 60_000L, survivor.timestamp)
+        assertEquals(1, plan.hardDeletes.size)
+        val dropped = plan.hardDeletes.single()
+        assertEquals(dash.id, dropped.id)
+        assertEquals("dash-drop", dropped.syncId)
+    }
 }

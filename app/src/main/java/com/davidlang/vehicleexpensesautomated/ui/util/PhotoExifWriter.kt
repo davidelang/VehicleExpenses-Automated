@@ -17,9 +17,9 @@ import java.util.concurrent.TimeUnit
  * (file path or MediaStore content URI). Errors are logged only — photo is already saved.
  */
 object PhotoExifWriter {
-    private const val TAG = "PhotoExifWriter"
+    internal const val TAG = "PhotoExifWriter"
 
-    private val EXIF_DT = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US).apply {
+    internal val EXIF_DT = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US).apply {
         timeZone = TimeZone.getDefault()
     }
 
@@ -51,6 +51,7 @@ object PhotoExifWriter {
                     writePath(uriOrPath, location, rotationDegrees, timestampMs, userComment)
                 }
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "writeGpsAndOrientation failed for $uriOrPath: ${e.message}")
         }
@@ -66,6 +67,7 @@ object PhotoExifWriter {
     ) {
         try {
             writeUri(context, uri, location, rotationDegrees, timestampMs, userComment)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "writeGpsAndOrientation failed for $uri: ${e.message}")
         }
@@ -147,6 +149,7 @@ object PhotoExifWriter {
                 exif.setAttribute(ExifInterface.TAG_OFFSET_TIME_ORIGINAL, offset)
                 exif.setAttribute(ExifInterface.TAG_OFFSET_TIME, offset)
                 exif.setAttribute(ExifInterface.TAG_OFFSET_TIME_DIGITIZED, offset)
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 // Older platform builds may lack offset tags — still keep DateTime*.
                 Log.w(TAG, "OffsetTime tags not set: ${e.message}")
@@ -155,6 +158,7 @@ object PhotoExifWriter {
         if (!userComment.isNullOrBlank()) {
             try {
                 exif.setAttribute(ExifInterface.TAG_USER_COMMENT, userComment)
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (_: Exception) {
                 // optional
             }

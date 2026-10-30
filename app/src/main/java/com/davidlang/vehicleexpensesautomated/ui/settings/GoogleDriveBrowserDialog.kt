@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
+import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,8 +33,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.davidlang.vehicleexpensesautomated.data.sync.DriveAuthRecovery
 import com.davidlang.vehicleexpensesautomated.data.sync.DriveBrowserItem
+import com.davidlang.vehicleexpensesautomated.data.sync.DriveRecoverableAuthException
 import com.davidlang.vehicleexpensesautomated.data.sync.GoogleDriveBrowseCatalog
+import com.davidlang.vehicleexpensesautomated.data.sync.SheetsAuthRecovery
+import com.davidlang.vehicleexpensesautomated.data.sync.SheetsRecoverableAuthException
 import kotlinx.coroutines.launch
 
 enum class GoogleDriveBrowserMode {
@@ -52,12 +57,22 @@ fun GoogleDriveBrowserDialog(
     enableHybridCatalog: Boolean = false,
     readonlyAccessGranted: Boolean = true,
     onRequestReadonlyAccess: () -> Unit = {},
+    onRecoverableDriveAuth: ((Intent) -> Unit)? = null,
+    reloadKey: Int = 0,
     emptyMessage: String =
         "No items visible. With Drive access limited to this app, open or create files here first.",
 ) {
     val scope = rememberCoroutineScope()
     var searchQuery by remember { mutableStateOf("") }
-    var catalog by remember { mutableStateOf(GoogleDriveBrowseCatalog.APP) }
+    var catalog by remember {
+        mutableStateOf(
+            if (enableHybridCatalog && mode == GoogleDriveBrowserMode.SPREADSHEETS) {
+                GoogleDriveBrowseCatalog.ALL
+            } else {
+                GoogleDriveBrowseCatalog.APP
+            },
+        )
+    }
     var items by remember { mutableStateOf<List<DriveBrowserItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var errorText by remember { mutableStateOf("") }
@@ -65,6 +80,19 @@ fun GoogleDriveBrowserDialog(
     var createName by remember { mutableStateOf("") }
     var creating by remember { mutableStateOf(false) }
     var needsReadonlyConsent by remember { mutableStateOf(false) }
+    var driveConsentInFlight by remember { mutableStateOf(false) }
+
+    fun browseFailureMessage(error: Throwable): String = when (error) {
+        is SheetsRecoverableAuthException -> SheetsAuthRecovery.userMessage(error)
+        else -> DriveAuthRecovery.userMessage(error)
+    }
+
+    fun maybeLaunchDriveConsent(error: Throwable) {
+        val launch = onRecoverableDriveAuth ?: return
+        if (error !is DriveRecoverableAuthException || driveConsentInFlight) return
+        driveConsentInFlight = true
+        launch(error.recoveryIntent)
+    }
 
     val title = when (mode) {
         GoogleDriveBrowserMode.SPREADSHEETS -> "Browse spreadsheets"
@@ -102,16 +130,19 @@ fun GoogleDriveBrowserDialog(
             errorText = ""
             try {
                 items = listItems(searchQuery, catalog)
+                driveConsentInFlight = false
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
-                errorText = e.message ?: "Failed to load"
+                errorText = browseFailureMessage(e)
                 items = emptyList()
+                maybeLaunchDriveConsent(e)
             } finally {
                 loading = false
             }
         }
     }
 
-    LaunchedEffect(accountHint, searchQuery, catalog, readonlyAccessGranted) {
+    LaunchedEffect(accountHint, searchQuery, catalog, readonlyAccessGranted, reloadKey) {
         reload()
     }
 
@@ -142,8 +173,10 @@ fun GoogleDriveBrowserDialog(
                                 val created = createItem(name)
                                 showCreatePrompt = false
                                 onSelect(created)
+                            // kept: failure stays on this call so the screen or caller can continue
                             } catch (e: Exception) {
-                                errorText = e.message ?: "Create failed"
+                                errorText = browseFailureMessage(e)
+                                maybeLaunchDriveConsent(e)
                             } finally {
                                 creating = false
                             }
@@ -250,7 +283,13 @@ fun GoogleDriveBrowserDialog(
                     }
                     errorText.isNotBlank() -> {
                         Text(errorText, color = MaterialTheme.colorScheme.error)
-                        OutlinedButton(onClick = { reload() }, modifier = Modifier.padding(top = 8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                driveConsentInFlight = false
+                                reload()
+                            },
+                            modifier = Modifier.padding(top = 8.dp),
+                        ) {
                             Text("Retry")
                         }
                     }

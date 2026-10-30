@@ -12,9 +12,9 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 
 ## Backlog (OCR / alignment / identity)
 - [ ] **Dashboard Polarity:** refine polarity detection beyond simple corner sampling (Algorithm A/B fallback)
-- [ ] **Conflict resolution:** field-level UI for multi-device sync column conflicts + wire `ConflictResolutionScreen` into identification flow for ambiguous matches (`ConflictResolutionScreen` **exists**; identification wiring incomplete)
+- [x] **Conflict resolution:** field-level UI for multi-device sync column conflicts + wire `ConflictResolutionScreen` into identification flow for ambiguous matches (`ConflictResolutionScreen` **exists**; identification wiring incomplete)
 - [ ] **Landmark management:** add ability to remove landmarks (not only ignore-crop); improve landmark CRUD in Manage Vehicles
-- [ ] **BufferSet anti-pattern audit:** eliminate cached `Mat`/`Slice` pointer aliases repo-wide (see `docs/specs/BUFFER_SET_SPEC.md`)
+- [x] **BufferSet anti-pattern audit:** eliminate cached `Mat`/`Slice` pointer aliases repo-wide (see `docs/specs/BUFFER_SET_SPEC.md`)
 
 ## Backlog (sync / settings / data model)
 - [ ] Multi-currency normalization: convert amounts to a standard currency using exchange rates (row storage done)
@@ -84,3 +84,7 @@ third_party get-artifacts pick=smart (release/RC/nightly tiers) when from uses g
 Review the user manual against the current app (screenshots and behavior may be out of date)
 
 - [ ] Test the remotetable (including Zoho Sheet) and rclone sync backends, after the code-review bugs are fixed (dev-ai-interaction/research/fix-plan-post-impl-20261028.md)
+
+- [ ] First-party libs / row-db backends still need live verification (dev-ai-interaction/plans/first-party-libs-m3-full-migration-roadmap-20260802-plan.md)
+
+- [ ] Sync/fuel merge conflict UI: a reachable resolution screen when one fill's fields contradict (dev-ai-interaction/research/code-review-conflict-resolution-mining-20261015-1905.md)

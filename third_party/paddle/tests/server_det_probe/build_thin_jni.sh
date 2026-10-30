@@ -3,7 +3,7 @@
 # product libpaddle_light_api_shared.so. Avoids multi-hour full Lite Docker builds.
 #
 # Output: out/thin_jni/<abi>/libpaddle_lite_jni.so  (DT_NEEDED light_api)
-# Install: cp into app/src/main/jniLibs/<abi>/ (keep light SO next to it).
+# Install: cp into third_party/paddle/artifact/jni/<abi>/ (keep light SO next to it).
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 VE_ROOT=$(cd "$HERE/../../../.." && pwd)
@@ -23,11 +23,7 @@ INC_PUB="$VE_ROOT/app/src/main/cpp/include/paddle"
 # Full tree for "lite/api/..." includes in convert_util
 INC_SRC="$PADDLE_SRC"
 
-if [[ -d "$VE_ROOT/third_party/paddle/artifact/jni" ]]; then
-  LIGHT_ROOT="$VE_ROOT/third_party/paddle/artifact/jni"
-else
-  LIGHT_ROOT="$VE_ROOT/app/src/main/jniLibs"
-fi
+LIGHT_ROOT="$VE_ROOT/third_party/paddle/artifact/jni"
 
 # Define LITE_ON_TINY_PUBLISH so CxxConfig path is stubbed (product is tiny publish)
 CXXFLAGS=(
@@ -45,7 +41,6 @@ CXXFLAGS=(
 build_abi() {
   local abi=$1 cxx=$2 triple=$3
   local light="$LIGHT_ROOT/$abi/libpaddle_light_api_shared.so"
-  [[ -f "$light" ]] || light="$VE_ROOT/app/src/main/jniLibs/$abi/libpaddle_light_api_shared.so"
   [[ -f "$light" ]] || { echo "SKIP $abi no light"; return 0; }
   local stage="$OUT/$abi"
   mkdir -p "$stage"
@@ -58,6 +53,8 @@ build_abi() {
     -L"$(dirname "$light")" -lpaddle_light_api_shared \
     -llog -lc -lm -ldl -lc++_shared \
     -Wl,-rpath,'$ORIGIN' \
+    -Wl,-z,max-page-size=16384 \
+    -Wl,-soname,libpaddle_lite_jni.so \
     2>"$OUT/build.$abi.log" || {
       echo "FAIL $abi" >&2
       tail -50 "$OUT/build.$abi.log" >&2

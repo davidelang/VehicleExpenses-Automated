@@ -225,6 +225,7 @@ class ZohoSheetTabularBackend @Inject constructor(
                 val msg = result["message"]?.toString().orEmpty()
                 if (!ok) TabularTestResult(false, msg.ifBlank { "Connection test failed" })
                 else TabularTestResult(true, msg.ifBlank { "Connection test passed" })
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 TabularTestResult(false, e.message ?: "Connection test failed")
             }

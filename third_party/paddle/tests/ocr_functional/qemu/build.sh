@@ -18,11 +18,10 @@ SRC="$HERE/functional_main.cpp"
 LOADER="$HERE/loader_main.c"
 STUB="$HERE/liblog_stub.c"
 INC="$VE_ROOT/app/src/main/cpp/include"
-if [[ -d "$VE_ROOT/third_party/paddle/artifact/jni" ]]; then
-  JNI_ROOT="$VE_ROOT/third_party/paddle/artifact/jni"
-else
-  JNI_ROOT="$VE_ROOT/app/src/main/jniLibs"
-fi
+# Paddle SOs to link and ship with the harness: PADDLE_JNI_ROOT (./build exports src/bin;
+# ./test sets it from artifact/jni or src/bin). Default when unset: the committed artifact/jni.
+JNI_ROOT="${PADDLE_JNI_ROOT:-$VE_ROOT/third_party/paddle/artifact/jni}"
+echo "ocr build: JNI_ROOT=$JNI_ROOT"
 mkdir -p "$OUT"
 
 # Ensure C export exists

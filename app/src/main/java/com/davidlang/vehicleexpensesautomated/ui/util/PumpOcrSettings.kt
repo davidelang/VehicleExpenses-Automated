@@ -48,26 +48,6 @@ object PumpOcrSettings {
             .getFloat(KEY_RATIO_BAND_HI, DEFAULT_RATIO_BAND_HI)
             .coerceIn(MIN_RATIO_BAND, MAX_RATIO_BAND)
 
-    /** Smallest-area rect among [valueRects] defines the Y band for label center matching. */
-    fun smallestRect(rects: List<Rect>): Rect? =
-        rects.minByOrNull { (it.width().coerceAtLeast(1)) * (it.height().coerceAtLeast(1)) }
 
-    /**
-     * True when [labelCenterY] falls inside the smallest value rect's [top,bottom], optionally
-     * expanded by [extraFraction] × rect height (resolution-independent).
-     */
-    fun labelCenterYInValueBand(
-        labelCenterY: Float,
-        valueRects: List<Rect>,
-        extraFraction: Float,
-    ): Boolean {
-        val base = smallestRect(valueRects) ?: return false
-        val h = base.height().coerceAtLeast(1)
-        val pad = (extraFraction * h).toInt()
-        val top = base.top - pad
-        val bottom = base.bottom + pad
-        return labelCenterY in top.toFloat()..bottom.toFloat()
-    }
 
-    fun rectCenterY(rect: Rect): Float = (rect.top + rect.bottom) / 2f
 }

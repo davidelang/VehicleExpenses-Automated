@@ -44,20 +44,16 @@ class FuelReceiptIngest @Inject constructor(
             Log.i(TAG, "skip duplicate syncId=$syncId")
             return Result(inserted = false, skippedDuplicate = true, syncId = syncId, entryId = existing.id)
         }
-        val manifest = try {
-            JSONObject()
-                .put("src", "email")
-                .put("provider", parsed.brand.lowercase())
-                .put("msgId", mid ?: parsed.messageKey)
-                .put("transport", messageProvider)
-                .apply {
-                    if (!parsed.siteId.isNullOrBlank()) put("siteId", parsed.siteId)
-                    if (!parsed.product.isNullOrBlank()) put("product", parsed.product)
-                }
-                .toString()
-        } catch (_: Exception) {
-            null
-        }
+        val manifest = JSONObject()
+            .put("src", "email")
+            .put("provider", parsed.brand.lowercase())
+            .put("msgId", mid ?: parsed.messageKey)
+            .put("transport", messageProvider)
+            .apply {
+                if (!parsed.siteId.isNullOrBlank()) put("siteId", parsed.siteId)
+                if (!parsed.product.isNullOrBlank()) put("product", parsed.product)
+            }
+            .toString()
         val entry = FuelEntry(
             vehicleId = Extractmail.FUEL_VEHICLE_ID_UNASSIGNED,
             odometer = Extractmail.FUEL_ODOMETER,

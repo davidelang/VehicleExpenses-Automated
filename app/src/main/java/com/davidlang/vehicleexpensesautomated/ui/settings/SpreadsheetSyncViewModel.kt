@@ -81,8 +81,10 @@ class SpreadsheetSyncViewModel @Inject constructor(
                 _manualSyncStatus.value = result.message
                 _manualSyncIsError.value = !result.success
                 _manualSyncResult.value = result
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: CancellationException) {
                 throw e
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 _manualSyncIsError.value = true
                 _manualSyncStatus.value = e.message ?: "Sync failed"
@@ -137,6 +139,7 @@ class SpreadsheetSyncViewModel @Inject constructor(
             sheetsClient.ensureHeaders(id, TabularSchema.TAB_EXPENSES, TabularSchema.EXPENSE_HEADERS, accountHint.ifBlank { null })
             val url = GoogleSheetsClient.spreadsheetUrlFromId(id)
             return id to url
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             throw SheetsAuthRecovery.wrapIfRecoverable(e)
         }
@@ -149,7 +152,4 @@ class SpreadsheetSyncViewModel @Inject constructor(
 
     fun rescheduleBackgroundSync() = syncManager.scheduleFromDestination()
 
-    fun googleBackend() = tabularApi.backendFor(
-        SpreadsheetDestination(provider = SpreadsheetProvider.GOOGLE_SHEETS),
-    )
 }

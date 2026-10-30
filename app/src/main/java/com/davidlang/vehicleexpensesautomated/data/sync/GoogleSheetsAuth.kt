@@ -18,6 +18,19 @@ class GoogleSheetsAuth @Inject constructor(
 ) {
     fun getSignInClient(): GoogleSignInClient = legacy.signInClient(SHEETS_SCOPE)
 
+    /** Sheets plus Drive file and readonly browse, for the spreadsheet destination sign-in. */
+    fun spreadsheetDestinationSignInClient(): GoogleSignInClient =
+        legacy.signInClient(
+            listOf(
+                SHEETS_SCOPE,
+                GoogleDriveAuth.DRIVE_SCOPE,
+                GoogleDriveAuth.DRIVE_READONLY_SCOPE,
+            ),
+        )
+
+    fun spreadsheetDestinationSignInIntent(): Intent =
+        spreadsheetDestinationSignInClient().signInIntent
+
     fun getLastAccount(): GoogleSignInAccount? = legacy.lastAccount()
 
     fun signInIntent(): Intent = getSignInClient().signInIntent
@@ -28,11 +41,6 @@ class GoogleSheetsAuth @Inject constructor(
 
     fun getPersistedAccountEmail(): String? = legacy.persistedEmail(PREFS_SHEETS_ACCOUNT)
 
-    fun buildSheetsService(account: GoogleSignInAccount): Sheets {
-        val resolved = legacy.resolveAccount(account)
-            ?: throw IllegalStateException("No Google account signed in for Sheets")
-        return buildSheetsServiceForAccount(resolved)
-    }
 
     fun buildSheetsServiceForAccountName(accountName: String): Sheets {
         val resolved = legacy.accountFromEmail(accountName)

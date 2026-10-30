@@ -9,8 +9,8 @@ Read in full early on startup/new cycle.
 
 ## Build and commit
 - **Standard build:** debug
-- **Test build:** none
-- Build: `./build_app --standard` (Test build: none). When the `qa` build type is merged here, declare `- **Test build:** qa` above and switch to `./build_app --standard --test`. Never `--play`: it needs David at a terminal.
+- **Test build:** qa
+- Build: `./build_app --standard --test`. Never `--play`: it needs David at a terminal.
 - Commit: the same flags, then `"<message>"|@<msg_file> <paths...>` (commits exactly the named paths, builds, and tags builds)
 
 ## App docs (master `docs/`)
@@ -18,7 +18,7 @@ Read in full early on startup/new cycle.
 - `docs/README.md` — index
 - `docs/OVERVIEW.md` — product story
 - `docs/QUICK_GUIDE.md` — short use
-- `docs/reference/QUICK_FILL_CAMERA.md` — dash, pump, location
+- `docs/reference/FILL_CAMERA.md` — dash, pump, location
 - Locked contracts: `docs/specs/` (code is wrong if it disagrees)
 - Coordinates: ICRS or raw pixel integers (`docs/specs/ISOTROPIC_COORDINATE_SPEC.md`)
 
@@ -66,10 +66,10 @@ Read in full early on startup/new cycle.
 - Host installers (`grok-install.sh`, `antigravity-install`) are **local only** (gitignored); `run-*` launchers sync to worktrees. `./update-rules.sh` skips worktree-ahead/dirty paths unless `--force`; supports `--dry-run`.
 
 ## Application ABI / Paddle assets
-- Production models: `app/src/arm64/assets/paddle/prod_u8fp16/*_armv8.nb`, `app/src/x86_64/assets/paddle/prod_u8fp32_u8/*_x86_64.nb`, `app/src/armv7/assets/paddle/prod_u8fp32_u8/*_armv7.nb`; shared dict `app/src/main/assets/paddle/en_dict.txt`; scheduled exp dets `app/src/<abi>/assets/paddle/exp_det_ab/` (`product_det` only); v4/v5 mobile and server nbs are unscheduled and not in the APK (`third_party/paddle/exp_det_ab_unscheduled/`)
-- Runtime: `app/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86_64}/`, `app/libs/PaddlePredictor.jar`
-- JNI sizing: arm64-v8a tailored ~1.6MB; x86_64 slim jni + `libpaddle_light_api_shared.so`; armeabi-v7a fat multi-path lib (interim)
-- Product ABIs: arm64-v8a + armeabi-v7a + x86_64 flavor APKs (`useLegacyPackaging = false`). arm64/x86 jni ship stamp `so45e4733a` (arm64 jni 1842712, arm64 light 1826072, x86 jni 30936, x86 light 10430904).
+- Production models: `third_party/paddle-models/artifact/app/{armv8,armv7,x86_64}/{det,rec_v3,rec_numeric}_<arch>.nb` (pin artifact, `fetch-deps build paddle-models`), embedded into `libpaddle_models.so` via CMake `.incbin` (not assets; asset keys `paddle/prod_u8fp16/` arm64, `paddle/prod_u8fp32_u8/` armv7 + x86_64); no model copies or model-writing scripts under `app/`; shared dict `app/src/main/assets/paddle/en_dict.txt`; exp dets `app/src/<flavor>/paddle-models/exp_det_ab/product_det_<arch>.nb` (embedded only in the qa build type, `VE_EMBED_EXP_DET`); v4/v5 mobile and server nbs are unscheduled and not in the APK (`third_party/paddle/exp_det_ab_unscheduled/`)
+- Runtime: `third_party/paddle/artifact/jni/{arm64-v8a,armeabi-v7a,x86_64}/`, `third_party/paddle/artifact/PaddlePredictor.jar` (the app reads them there; no copies under `app/`)
+- JNI builds: arm64-v8a tailored + fp16; armeabi-v7a tailored + int8; x86_64 slim thin jni + `libpaddle_light_api_shared.so` (not tailored)
+- Product ABIs: arm64-v8a + armeabi-v7a + x86_64 flavor APKs (`useLegacyPackaging = false`). arm64/x86 jni ship stamp `so45e4733a`; sizes in `third_party/paddle/SOURCE.md` (Verified products).
 
 ## Worktree layout
 - App worktrees (`agent-N/`, `master/`): `app/` + root scripts + symlink `dev-ai-interaction -> ../@@SANDBOX_PATH@@`
@@ -107,6 +107,9 @@ Update only with orientation facts valid for future work. Effort/plan details �
 - Stance: avoid native plan mode for multi-agent; capability_mode not general policy; personas held; memory ⊂ project-facts; `/goal` `/deep-research` workflows opt-in. Completeness Stop hook opt-in: `VE_STOP_COMPLETENESS=1` (`.grok/hooks/stop-completeness-gate.*`).
 - The coding model is the one in that OS user’s Grok config. `grok -c` keeps the stored session model. Planner launchers set `GROK_SUBAGENTS=0` and `GROK_WORKFLOWS=0`. Coder launchers set `GROK_WORKFLOWS=0`. Process is `AGENT_MANDATES.md`.
 - **Permission blocks:** authoritative rule is **`AGENT_MANDATES.md` §1.1** (report; do not work around). Orientation only here.
+
+## Google Sheets destination sign-in
+- Before changing spreadsheet Google sign-in: `GoogleSheetsAuth.spreadsheetDestinationSignInClient` requests spreadsheets plus `drive.file` and `drive.readonly` in one flow. Do not drop the Drive scopes. Photo backup stays `GoogleDriveAuth.getSignInClient` (`drive.file` only). Setup note: `docs/user-manual/manual.md` example "add Google Sheets".
 
 ## Review after implement
 - Record HEAD before the executor starts. Each phase: `git diff` that phase's paths against that phase's observable, then commit and build green before the next phase. Before handoff, re-read the plan once.

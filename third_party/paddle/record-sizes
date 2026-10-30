@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Write the byte sizes of the collected artifact/jni .so files into the
+# "Verified products" table of SOURCE.md (the one place sizes are documented).
+# Run after `third_party/fetch-deps build --record paddle`, which collects artifact/
+# and records the new sha256 values in libpin.toml.
+# Usage: third_party/paddle/record-sizes [SOURCE.md]   (default: next to this script)
+set -euo pipefail
+HERE=$(cd "$(dirname "$0")" && pwd)
+DOC=${1:-$HERE/SOURCE.md}
+[[ -f "$DOC" ]] || { echo "record-sizes: FAIL missing $DOC" >&2; exit 1; }
+/usr/bin/python3 - "$HERE/artifact/jni" "$DOC" <<'PY'
+import os, re, sys
+jni, doc = sys.argv[1], sys.argv[2]
+lines = open(doc, encoding="utf-8").read().split("\n")
+out = list(lines)
+for abi in ("arm64-v8a", "armeabi-v7a", "x86_64"):
+    sizes = []
+    for so in ("libpaddle_lite_jni.so", "libpaddle_light_api_shared.so"):
+        p = os.path.join(jni, abi, so)
+        if not os.path.isfile(p):
+            sys.exit(f"record-sizes: FAIL missing {p}")
+        sizes.append(os.path.getsize(p))
+    pat = re.compile(r"^\| " + re.escape(abi) + r" \|[^|]*\| [^|]* \| [^|]* \|.*\|$")
+    hits = [i for i, l in enumerate(lines) if pat.match(l)]
+    if len(hits) != 1:
+        sys.exit(f"record-sizes: FAIL {doc}: expected exactly one '| {abi} |' size row, found {len(hits)}")
+    cells = lines[hits[0]].split("|")
+    old = (cells[3].strip(), cells[4].strip())
+    cells[3], cells[4] = f" {sizes[0]} B ", f" {sizes[1]} B "
+    out[hits[0]] = "|".join(cells)
+    print(f"record-sizes: {abi}: jni {old[0]} -> {sizes[0]} B, light {old[1]} -> {sizes[1]} B")
+tmp = doc + ".tmp"
+with open(tmp, "w", encoding="utf-8") as fh:
+    fh.write("\n".join(out))
+os.replace(tmp, doc)
+PY

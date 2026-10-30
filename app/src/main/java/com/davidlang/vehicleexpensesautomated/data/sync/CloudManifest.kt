@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.data.sync
 
+import android.util.Log
+import com.davidlang.vehicleexpensesautomated.data.model.StoredParse
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -26,6 +28,8 @@ object CloudManifest {
     const val ROLE_FUEL_DASH = "fuel_dash"
     const val ROLE_FUEL_PUMP = "fuel_pump"
     const val ROLE_EXPENSE_RECEIPT = "expense_receipt"
+    const val ROLE_VEHICLE_REF_ORIGINAL = "vehicle_ref_original"
+    const val ROLE_EXPENSE_ORIGINAL = "expense_original"
 
     data class Entry(
         val destId: String,
@@ -35,20 +39,27 @@ object CloudManifest {
         val role: String,
         val mimeType: String,
         val updatedAt: Long,
+        val localUri: String = "",
+        val size: Long = 0,
     )
 
-    fun parse(json: String?): List<Entry> {
-        if (json.isNullOrBlank()) return emptyList()
+    fun read(json: String?): StoredParse<List<Entry>> {
+        if (json.isNullOrBlank()) return StoredParse.Blank()
+        val trimmed = json.trim()
+        if (!trimmed.startsWith("{")) return StoredParse.Corrupt(trimmed)
         return try {
-            val root = JSONObject(json)
-            val array = root.optJSONArray(KEY_DESTINATIONS) ?: return emptyList()
-            buildList {
+            val root = JSONObject(trimmed)
+            if (!root.has(KEY_DESTINATIONS)) return StoredParse.Corrupt(trimmed)
+            val array = root.optJSONArray(KEY_DESTINATIONS) ?: return StoredParse.Corrupt(trimmed)
+            val entries = buildList {
                 for (i in 0 until array.length()) {
-                    val obj = array.optJSONObject(i) ?: continue
+                    val obj = array.optJSONObject(i) ?: return StoredParse.Corrupt(trimmed)
                     val destId = obj.optString("destId", "")
                     val fileId = obj.optString("fileId", "")
                     val role = obj.optString("role", "")
-                    if (destId.isBlank() || fileId.isBlank() || role.isBlank()) continue
+                    if (destId.isBlank() || role.isBlank()) continue
+                    val keepEmptyFile = role == "vehicle_ref_original" || role.startsWith("expense_original")
+                    if (fileId.isBlank() && !keepEmptyFile) continue
                     add(
                         Entry(
                             destId = destId,
@@ -58,13 +69,22 @@ object CloudManifest {
                             role = role,
                             mimeType = obj.optString("mimeType", "image/jpeg"),
                             updatedAt = obj.optLong("updatedAt", 0L),
+                            localUri = obj.optString("localUri", ""),
+                            size = obj.optLong("size", 0L),
                         ),
                     )
                 }
             }
+            StoredParse.Valid(entries)
         } catch (_: Exception) {
-            emptyList()
+            StoredParse.Corrupt(trimmed)
         }
+    }
+
+    fun parse(json: String?): List<Entry> = when (val parsed = read(json)) {
+        is StoredParse.Valid -> parsed.value
+        is StoredParse.Blank -> emptyList()
+        is StoredParse.Corrupt -> emptyList()
     }
 
     /** Removes obsolete [ROLE_VEHICLE_LANDMARKS] entries (no longer uploaded to Drive). */
@@ -76,6 +96,10 @@ object CloudManifest {
     }
 
     fun merge(existingJson: String?, newEntries: List<Entry>): String {
+        if (read(existingJson) is StoredParse.Corrupt) {
+            Log.e(TAG, "refuse merge onto corrupt cloud manifest")
+            return existingJson ?: toJson(emptyList())
+        }
         val existing = parse(stripObsoleteRoles(existingJson))
             .associateBy { key(it.destId, it.role) }
             .toMutableMap()
@@ -149,27 +173,6 @@ object CloudManifest {
         val mimeType: String = "image/jpeg",
     )
 
-    /** @deprecated Collapses multi-dest history; use [bindLocalDestAfterDownload] instead. */
-    @Deprecated("Rewrites foreign destIds; use bindLocalDestAfterDownload for add-only merge")
-    fun remintDestIdForRoles(json: String?, localDestId: String, roles: Collection<String>): String? {
-        if (json.isNullOrBlank() || roles.isEmpty()) return json
-        val roleSet = roles.toSet()
-        val entries = parse(json)
-        if (entries.isEmpty()) return json
-        var changed = false
-        val reminted = entries.map { entry ->
-            if (entry.role in roleSet &&
-                entry.destId != localDestId &&
-                entry.provider == PROVIDER_GOOGLE_DRIVE
-            ) {
-                changed = true
-                entry.copy(destId = localDestId)
-            } else {
-                entry
-            }
-        }
-        return if (changed) toJson(reminted) else json
-    }
 
     fun toJson(entries: List<Entry>): String {
         val root = JSONObject()
@@ -184,6 +187,8 @@ object CloudManifest {
                     put("role", entry.role)
                     put("mimeType", entry.mimeType)
                     put("updatedAt", entry.updatedAt)
+                    if (entry.localUri.isNotEmpty()) put("localUri", entry.localUri)
+                    if (entry.size > 0L) put("size", entry.size)
                 },
             )
         }
@@ -194,4 +199,5 @@ object CloudManifest {
     private fun key(destId: String, role: String): String = "$destId::$role"
 
     private const val KEY_DESTINATIONS = "destinations"
+    private const val TAG = "CloudManifest"
 }

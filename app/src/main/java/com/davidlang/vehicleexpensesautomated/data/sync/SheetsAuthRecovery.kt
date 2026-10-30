@@ -30,7 +30,7 @@ object SheetsAuthRecovery {
         else -> {
             val intent = extractRecoveryIntent(throwable)
             if (intent != null) NEED_REMOTE_CONSENT_MESSAGE
-            else throwable.message ?: "Sheets operation failed"
+            else "${throwable.javaClass.simpleName}: ${throwable.message ?: "Sheets operation failed"}"
         }
     }
 

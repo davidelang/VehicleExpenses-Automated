@@ -37,9 +37,11 @@ object SyncSetupDocs {
     fun open(context: Context, url: String) {
         try {
             CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url))
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             try {
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (_: Exception) {
                 Toast.makeText(context, "Could not open link", Toast.LENGTH_LONG).show()
             }

@@ -303,12 +303,14 @@ class CsvZipTabularBackend @Inject constructor(
         val lines = csv.lines().filter { it.isNotBlank() }
         if (lines.isEmpty()) return
         val headerIndex = parseCsvLine(lines.first()).withIndex().associate { (i, h) -> h to i }
+        val locals = vehicleRepository.getAllIncludingDeleted().associateBy { it.syncId }
         lines.drop(1).forEach { line ->
             val parts = parseCsvLine(line)
             if (parts.size < 2) return@forEach
             val vehicle = TabularSchema.rowToVehicle(parts, headerIndex)
             if (vehicle.name.isBlank()) return@forEach
-            vehicleRepository.insert(vehicle)
+            val shielded = TabularSchema.shieldVehicle(vehicle, locals[vehicle.syncId], vehicle)
+            vehicleRepository.insert(shielded)
         }
     }
 
@@ -334,17 +336,19 @@ class CsvZipTabularBackend @Inject constructor(
         if (lines.isEmpty()) return
         val headerIndex = TabularSchema.headerIndex(parseCsvLine(lines.first()))
         val vehicleIdBySyncId = vehicleIdBySyncId()
+        val locals = fuelRepository.getAllIncludingDeleted().associateBy { it.syncId }
         lines.drop(1).forEach { line ->
             val parts = parseCsvLine(line)
             if (parts.isEmpty()) return@forEach
             val parsed = TabularSchema.rowToFuel(parts, headerIndex)
+            val shielded = TabularSchema.shieldFuel(parsed, locals[parsed.syncId], parsed, "Fuel")
             val vehicleSyncId = TabularSchema.rowToFuelVehicleSyncId(parts, headerIndex)
             val resolvedVehicleId = resolveVehicleIdFromSyncId(
                 vehicleSyncId,
                 parsed.vehicleId,
                 vehicleIdBySyncId,
             ) ?: fuelTabVehicleId ?: return@forEach
-            fuelRepository.insertFuelEntry(parsed.copy(vehicleId = resolvedVehicleId))
+            fuelRepository.insertFuelEntry(shielded.copy(vehicleId = resolvedVehicleId))
         }
     }
 
@@ -357,15 +361,20 @@ class CsvZipTabularBackend @Inject constructor(
             return
         }
         val vehicleIdBySyncId = vehicleIdBySyncId()
+        val locals = expenseRepository.getAllIncludingDeleted().associateBy { it.syncId }
         lines.drop(1).forEach { line ->
             val parts = parseCsvLine(line)
             if (parts.isEmpty()) return@forEach
             val parsed = TabularSchema.rowToExpense(parts, headerIndex)
             val vehicleSyncIds = TabularSchema.rowToExpenseVehicleSyncIds(parts, headerIndex)
-            val resolved = ExpenseVehicleSyncIds.applyResolvedVehicles(
+            val resolved = TabularSchema.shieldExpense(
+                ExpenseVehicleSyncIds.applyResolvedVehicles(
+                    parsed,
+                    vehicleSyncIds,
+                    vehicleIdBySyncId,
+                ),
+                locals[parsed.syncId],
                 parsed,
-                vehicleSyncIds,
-                vehicleIdBySyncId,
             )
             if (resolved.vehicleId == 0 && vehicleSyncIds.isEmpty()) return@forEach
             expenseRepository.insertExpenseEntry(resolved)

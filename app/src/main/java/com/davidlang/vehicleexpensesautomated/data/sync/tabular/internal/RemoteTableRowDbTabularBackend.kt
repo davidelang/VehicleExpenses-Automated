@@ -195,6 +195,7 @@ abstract class RemoteTableRowDbTabularBackend(
                     }
                     TabularTestResult(true, message)
                 }
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 TabularTestResult(false, e.message ?: "Connection test failed")
             }

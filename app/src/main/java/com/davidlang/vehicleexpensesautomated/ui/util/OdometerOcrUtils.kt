@@ -94,33 +94,7 @@ object OdometerOcrUtils {
             bitmap.setPixels(argb, 0, w, 0, 0, w, h)
         }
     }
-
-    data class HistMarker(val value: Double, val color: Int)
     data class HistStats(val intensityLow: Double, val intensityHigh: Double, val p80: Double, val rawBins: FloatArray)
-    fun clusterRects(fragments: List<android.graphics.Rect>): List<android.graphics.Rect> {
-        val clusters = mutableListOf<MutableList<android.graphics.Rect>>()
-        for (frag in fragments) {
-            val matchingClusters = mutableListOf<Int>()
-            for ((idx, cluster) in clusters.withIndex()) {
-                if (cluster.any { c ->
-                    val overlapTop = kotlin.math.max(frag.top, c.top); val overlapBottom = kotlin.math.min(frag.bottom, c.bottom)
-                    val overlapHeight = overlapBottom - overlapTop
-                    overlapHeight > 0 && overlapHeight >= kotlin.math.min(frag.height(), c.height()) * 0.20
-                }) matchingClusters.add(idx)
-            }
-            if (matchingClusters.isEmpty()) clusters.add(mutableListOf(frag))
-            else {
-                val firstIdx = matchingClusters[0]; clusters[firstIdx].add(frag)
-                for (k in matchingClusters.size - 1 downTo 1) {
-                    clusters[firstIdx].addAll(clusters[matchingClusters[k]])
-                    clusters.removeAt(matchingClusters[k])
-                }
-            }
-        }
-        return clusters.map { cluster ->
-            android.graphics.Rect(cluster.minOf { it.left }, cluster.minOf { it.top }, cluster.maxOf { it.right }, cluster.maxOf { it.bottom })
-        }
-    }
 
 
     init {
@@ -131,372 +105,6 @@ object OdometerOcrUtils {
         }
     }
 
-    data class EngineResult(
-        val angle: Float,
-        val timesMs: List<Long>,
-        val blocks: List<TextBlock> = emptyList(),
-        val metadata: Map<String, String> = emptyMap(),
-        val cppBlocks: List<TextBlock> = emptyList()
-    )
-    data class DeskewResult(
-        val angle: Float,
-        val mlAngle: Float,
-        val mlTimeMs: Long,
-        val paddleTimeMs: Long,
-        val paddleCppAngle: Float = 0f,
-        val paddleOptimizedAngle: Float = 0f,
-        val paddleOptimizedTimeMs: Long = 0L,
-        val mlBlocks: List<TextBlock> = emptyList(),
-        val paddleBlocks: List<TextBlock> = emptyList(),
-        val paddleCppBlocks: List<TextBlock> = emptyList(),
-        val engines: Map<String, EngineResult> = emptyMap(),
-        val metadata: Map<String, String> = emptyMap()
-    )
-
-    /**
-     * @param longEdgeTarget long-edge letterbox size for det heatmap used for angle
-     *   (alignment + pump experiments: 256; production default maps to the 608 set).
-     */
-    suspend fun calculateAverageTextAngle(input: Any, longEdgeTarget: Int = 2048): DeskewResult {
-        val t0 = System.currentTimeMillis()
-        val pTargetSize = longEdgeTarget.coerceIn(64, 2048)
-        val (optAngle, optTime) = calculatePaddleAngleOptimized(input, pTargetSize)
-        val pack = packDeskewLetterbox(input, pTargetSize)
-        val tPrep = System.currentTimeMillis() - t0
-        val results = mutableMapOf<String, EngineResult>()
-
-        val tPd0 = System.currentTimeMillis()
-        val pdRes = deskewPaddleDual(pack)
-        val tPd = System.currentTimeMillis() - tPd0
-        results["Paddle V3"] = pdRes.copy(timesMs = listOf(tPrep, tPd))
-
-        val paddleCppAngle = pdRes.metadata["paddle_cpp_angle"]?.toFloatOrNull() ?: 0f
-        return DeskewResult(
-            angle = optAngle.coerceIn(-20f, 20f),
-            mlAngle = 0f,
-            mlTimeMs = 0L,
-            paddleTimeMs = results["Paddle V3"]?.timesMs?.sum() ?: 0L,
-            paddleCppAngle = paddleCppAngle,
-            paddleOptimizedAngle = optAngle,
-            paddleOptimizedTimeMs = optTime,
-            mlBlocks = emptyList(),
-            paddleBlocks = pdRes.blocks,
-            paddleCppBlocks = pdRes.cppBlocks,
-            engines = results,
-            metadata = mapOf(
-                "t_prep_ms" to tPrep.toString(),
-                "deskew_long_edge" to pTargetSize.toString(),
-            ),
-        )
-    }
-
-    /**
-     * @param longEdgeTarget long-edge letterbox for paddle det angle
-     *   (pump experiment: 256; production default maps to the 608 set).
-     */
-    suspend fun calculateDeskewAnglePaddleOnly(input: Any, longEdgeTarget: Int = 2048): DeskewResult {
-        val t0 = System.currentTimeMillis()
-        val pTargetSize = longEdgeTarget.coerceIn(64, 2048)
-        val pack = packDeskewLetterbox(input, pTargetSize)
-        val tPrep = System.currentTimeMillis() - t0
-        val results = mutableMapOf<String, EngineResult>()
-        val tPd0 = System.currentTimeMillis()
-        val pdRes = deskewPaddleDual(pack)
-        val tPd = System.currentTimeMillis() - tPd0
-        results["Paddle V3"] = pdRes.copy(timesMs = listOf(tPrep, tPd))
-        val paddleCppAngle = pdRes.metadata["paddle_cpp_angle"]?.toFloatOrNull() ?: 0f
-        return DeskewResult(
-            angle = paddleCppAngle.coerceIn(-20f, 20f),
-            mlAngle = 0f,
-            mlTimeMs = 0L,
-            paddleTimeMs = results["Paddle V3"]?.timesMs?.sum() ?: 0L,
-            paddleCppAngle = paddleCppAngle,
-            paddleOptimizedAngle = paddleCppAngle,
-            paddleOptimizedTimeMs = results["Paddle V3"]?.timesMs?.sum() ?: 0L,
-            paddleBlocks = pdRes.blocks,
-            paddleCppBlocks = pdRes.cppBlocks,
-            engines = results,
-            metadata = mapOf(
-                "t_prep_ms" to tPrep.toString(),
-                "deskew_long_edge" to pTargetSize.toString(),
-            ),
-        )
-    }
-
-    suspend fun calculatePaddleAngleOptimized(input: Any, longEdgeTarget: Int = 2048): Pair<Float, Long> {
-        val t0 = System.currentTimeMillis()
-        val pack = packDeskewLetterbox(input, longEdgeTarget.coerceIn(64, 2048))
-        val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return Pair(0f, 0L)
-        val det = paddleEngine.detect(pack.dest, pack.S, pack.S, copyHeatmap = false)
-        val cppAngle = det?.deskewAngleCpp(0.20f) ?: 0f
-        return Pair(cppAngle, System.currentTimeMillis() - t0)
-    }
-
-    fun consolidateRects(fragments: List<android.graphics.Rect>, threshold: Float = 0.75f): List<android.graphics.Rect> {
-        if (fragments.isEmpty()) return emptyList()
-        val merged = mutableListOf<android.graphics.Rect>()
-        val remaining = fragments.toMutableList()
-
-        while (remaining.isNotEmpty()) {
-            var current = remaining.removeAt(0)
-            var changed = true
-            while (changed) {
-                changed = false
-                val iterator = remaining.iterator()
-                while (iterator.hasNext()) {
-                    val next = iterator.next()
-                    val interL = Math.max(current.left, next.left); val interT = Math.max(current.top, next.top)
-                    val interR = Math.min(current.right, next.right); val interB = Math.min(current.bottom, next.bottom)
-
-                    val overlapW = if (interR > interL) interR - interL else 0
-                    val overlapH = if (interB > interT) interB - interT else 0
-                    val minW = Math.min(current.width(), next.width())
-                    val minH = Math.min(current.height(), next.height())
-
-                    val significant = overlapW >= (minW * threshold) && overlapH >= (minH * threshold)
-
-                    if (significant) {
-                        current = android.graphics.Rect(
-                            Math.min(current.left, next.left),
-                            Math.min(current.top, next.top),
-                            Math.max(current.right, next.right),
-                            Math.max(current.bottom, next.bottom)
-                        )
-                        iterator.remove()
-                        changed = true
-                    }
-                }
-            }
-            merged.add(current)
-        }
-        return merged
-    }
-
-
-    private data class DeskewPack(
-        val dest: BufferSet,
-        val S: Int,
-        val innerW: Int,
-        val innerH: Int,
-        val pScale: Float,
-        val srcW: Int,
-        val srcH: Int,
-    )
-
-    /** Packed letterbox into the 256 or 608 standing square. S = dest.width. */
-    private fun packDeskewLetterbox(input: Any, longEdgeTarget: Int): DeskewPack {
-        val dest = NativePaddleEngine.deskewSetFor(longEdgeTarget)
-        val S = dest.width
-        val letterEdge = minOf(longEdgeTarget.coerceIn(64, 2048), S)
-        val srcW: Int
-        val srcH: Int
-        val srcY: Mat
-        var tmpGray: Mat? = null
-        var tmpArgb: Mat? = null
-        when (input) {
-            is Bitmap -> {
-                srcW = input.width
-                srcH = input.height
-                tmpArgb = Mat()
-                org.opencv.android.Utils.bitmapToMat(input, tmpArgb)
-                tmpGray = Mat()
-                Imgproc.cvtColor(tmpArgb, tmpGray, Imgproc.COLOR_RGBA2GRAY)
-                srcY = tmpGray
-            }
-            is BufferSet.Slice -> {
-                srcW = input.width
-                srcH = input.height
-                srcY = input.mat
-            }
-            else -> throw IllegalArgumentException("Unsupported deskew input: ${input.javaClass.name}")
-        }
-        val currentLong = maxOf(srcW, srcH)
-        val scale = if (currentLong <= letterEdge) 1.0f else letterEdge.toFloat() / currentLong
-        val innerW = (srcW * scale).toInt().coerceAtLeast(1)
-        val innerH = (srcH * scale).toInt().coerceAtLeast(1)
-        val pScale = minOf(innerW.toFloat() / srcW, innerH.toFloat() / srcH)
-        val rawS = (dest.s as BufferSet.Instance).tensorBindRaw()
-        val rawP = (dest.p as BufferSet.Instance).tensorBindRaw()
-        NativeImageUtils.scalePackedU8(srcY, rawS, S, innerW, innerH)
-        NativeImageUtils.scalePackedU8(srcY, rawP, S, innerW, innerH)
-        tmpGray?.release()
-        tmpArgb?.release()
-        return DeskewPack(dest, S, innerW, innerH, pScale, srcW, srcH)
-    }
-
-    private suspend fun deskewPaddleDual(pack: DeskewPack): EngineResult {
-        val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return EngineResult(0f, emptyList())
-
-        val tDet0 = System.currentTimeMillis()
-        val det = paddleEngine.detect(pack.dest, pack.S, pack.S, copyHeatmap = false) ?: return EngineResult(0f, emptyList())
-        val tDetOnly = System.currentTimeMillis() - tDet0
-
-        // Parallel Angle Calculation
-        val tAngleCpp0 = System.currentTimeMillis()
-        val cppAngle = det.deskewAngleCpp(0.20f)
-        val tAngleCpp = System.currentTimeMillis() - tAngleCpp0
-
-        val newMeta = det.metadata.toMutableMap()
-        newMeta["paddle_cpp_angle"] = cppAngle.toString()
-
-        val invScaleX = pack.srcW.toFloat() / pack.innerW
-        val invScaleY = pack.srcH.toFloat() / pack.innerH
-        val cppBlocks = det.nativeBoxes.map { box ->
-            val points = box.points
-            val minX = minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) * invScaleX
-            val minY = minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) * invScaleY
-            val maxX = maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) * invScaleX
-            val maxY = maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) * invScaleY
-            val bounds = android.graphics.Rect(minX.toInt(), minY.toInt(), maxX.toInt(), maxY.toInt())
-
-            val scaledPoints = FloatArray(8)
-            for (i in 0 until 8) {
-                scaledPoints[i] = points[i] * if (i % 2 == 0) invScaleX else invScaleY
-            }
-            val angle = calculateBoxAngle(scaledPoints)
-            TextBlock("", bounds, angle, confidence = box.confidence)
-        }
-
-        return EngineResult(cppAngle, emptyList(), emptyList(), newMeta, cppBlocks = cppBlocks)
-    }
-
-    fun calculateBoxAngle(points: FloatArray): Float {
-        if (points.size < 8) return 0f
-        var minAbsAngle = 180f
-        var resAngle = 0f
-        for (i in 0 until 4) {
-            val x1 = points[i * 2]
-            val y1 = points[i * 2 + 1]
-            val x2 = points[((i + 1) % 4) * 2]
-            val y2 = points[((i + 1) % 4) * 2 + 1]
-            val dx = x2 - x1
-            val dy = y2 - y1
-            val ang = Math.toDegrees(Math.atan2(dy.toDouble(), dx.toDouble())).toFloat()
-            var normAng = ang
-            while (normAng <= -45f) normAng += 90f
-            while (normAng > 45f) normAng -= 90f
-            if (Math.abs(normAng) < minAbsAngle) {
-                minAbsAngle = Math.abs(normAng)
-                resAngle = normAng
-            }
-        }
-        return resAngle
-    }
-
-    private fun prepDeskewBuffer(input: Any, targetBitmap: Bitmap): Triple<Int, Int, Float> {
-        val pTargetSize = 2048
-        val srcW: Int
-        val srcH: Int
-        when (input) {
-            is Bitmap -> {
-                srcW = input.width
-                srcH = input.height
-            }
-            is BufferSet.Slice -> {
-                srcW = input.width
-                srcH = input.height
-            }
-            else -> throw IllegalArgumentException("Unsupported input type for deskew: ${input.javaClass.name}")
-        }
-
-        val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
-        val pWidth = (srcW * pScale).toInt()
-        val pHeight = (srcH * pScale).toInt()
-
-        val grayMat = when (input) {
-            is Bitmap -> {
-                val argbMat = Mat()
-                org.opencv.android.Utils.bitmapToMat(input, argbMat)
-                val g = Mat()
-                Imgproc.cvtColor(argbMat, g, Imgproc.COLOR_RGBA2GRAY)
-                argbMat.release()
-                g
-            }
-            is BufferSet.Slice -> input.mat
-            else -> throw IllegalStateException()
-        }
-
-        val targetSize = org.opencv.core.Size(pWidth.toDouble(), pHeight.toDouble())
-        val resizedGray = Mat(pTargetSize, pTargetSize, org.opencv.core.CvType.CV_8U, org.opencv.core.Scalar(0.0))
-        val roiMat = Mat(resizedGray, org.opencv.core.Rect(0, 0, pWidth, pHeight))
-
-        Imgproc.resize(grayMat, roiMat, roiMat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-
-        val resizedArgb = Mat()
-        Imgproc.cvtColor(resizedGray, resizedArgb, Imgproc.COLOR_GRAY2RGBA)
-        org.opencv.android.Utils.matToBitmap(resizedArgb, targetBitmap)
-
-        resizedGray.release(); resizedArgb.release(); roiMat.release()
-        if (input is Bitmap) grayMat.release()
-
-        return Triple(pWidth, pHeight, pScale)
-    }
-
-    private fun normalizeAngle(angle: Float): Float {
-        // Maps angle to [-45, 45] range using 90-degree rotational symmetry
-        var a = (angle + 45f) % 90f
-        if (a < 0) a += 90f
-        return a - 45f
-    }
-
-    private fun calculateWeightedAverage(candidates: List<TextBlock>, imgHeight: Int): Float {
-        val validCandidates = candidates.filter {
-            it.boundingBox.height() > 0 && it.boundingBox.width() > 0 && it.angle.isFinite()
-        }
-        if (validCandidates.isEmpty()) return 0f
-
-        // Thickness (Filter Basis): Use the shortest side to identify the text line thickness regardless of rotation.
-        val thicknesses = validCandidates.map {
-            kotlin.math.min(it.boundingBox.width(), it.boundingBox.height()).toFloat() / imgHeight.toFloat()
-        }
-        val roundedThicknesses = thicknesses.map { Math.round(it / 0.005f) * 0.005f }
-        val counts = roundedThicknesses.groupingBy { it }.eachCount()
-        val threshold = Math.max(2, (validCandidates.size * 0.15).toInt())
-        val peaks = counts.filter { it.value >= threshold }.keys
-
-        val floor = if (peaks.isNotEmpty()) {
-            peaks.minOrNull()!! * 0.7f
-        } else {
-            val sortedT = thicknesses.sorted()
-            sortedT[sortedT.size / 2] * 0.5f
-        }
-
-        val ceiling = if (peaks.isNotEmpty()) {
-            peaks.maxOrNull()!! * 1.5f
-        } else {
-            val sortedT = thicknesses.sorted()
-            sortedT[sortedT.size / 2] * 2.0f
-        }
-
-        val filtered = validCandidates.filter {
-            val t = kotlin.math.min(it.boundingBox.width(), it.boundingBox.height()).toFloat() / imgHeight.toFloat()
-            t >= floor && t <= ceiling
-        }
-
-        if (filtered.isEmpty()) return 0f
-
-        // RANSAC-lite: Pick the most frequent angle (the consensus)
-        // Group angles by +/- 0.5 degree bucket, normalized to [-45, 45]
-        val buckets = filtered.groupBy { Math.round(normalizeAngle(it.angle) * 2) / 2.0f }
-
-        // Weight by sqrt(Length) where Length is the longest side of the detection.
-        // sqrt dampens single large outliers while allowing multiple text blocks to outvote dust.
-        val bestBucket = buckets.maxByOrNull { bucket ->
-            bucket.value.sumOf {
-                kotlin.math.sqrt(kotlin.math.max(it.boundingBox.width(), it.boundingBox.height()).toDouble())
-            }
-        }
-
-        val finalAngle = bestBucket?.key ?: 0f
-        return if (finalAngle.isFinite()) finalAngle else 0f
-    }
-
-
-    fun matToBase64(mat: Mat, quality: Int = 80): String {
-        val bitmap = Bitmap.createBitmap(mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(mat, bitmap)
-        return OcrUtils.bitmapToBase64(bitmap, quality)
-    }
 
     fun cleanLandmarkString(text: String): String {
         val filtered = text.filter { it.code in 32..126 }
@@ -507,40 +115,17 @@ object OdometerOcrUtils {
     fun processRawLandmarks(
         allBlocks: List<TextBlock>,
         odometerCrop: android.graphics.RectF? = null,
-        otherTextCrop: android.graphics.RectF? = null,
         imgWidth: Int,
         imgHeight: Int
     ): List<TextBlock> {
         val filtered = allBlocks.filter { block ->
-            !OcrUtils.isBlockInCrop(block, odometerCrop, imgWidth, imgHeight) &&
-            !OcrUtils.isBlockInCrop(block, otherTextCrop, imgWidth, imgHeight)
+            !OcrUtils.isBlockInCrop(block, odometerCrop, imgWidth, imgHeight)
         }
         return filtered.map { block ->
             block.copy(text = cleanLandmarkString(block.text))
         }.filter { it.text.isNotEmpty() }.sortedBy { it.text }
     }
 
-    fun applyGrayscaleInPlace(bitmap: Bitmap) {
-        if (bitmap.config == Bitmap.Config.ALPHA_8) return
-        if (!wrapBitmapToGrayU8(bitmap, odoGrayU8)) return
-        grayU8ToBitmap(odoGrayU8, bitmap)
-    }
-
-    @Suppress("UNUSED_PARAMETER")
-    fun applyBilateralInPlace(bitmap: Bitmap, scratchBmp: Bitmap) {
-        val h = bitmap.height
-        val w = bitmap.width
-        if (!wrapBitmapToGrayU8(bitmap, odoGrayU8)) return
-        val src = standingU8(odoGrayU8, h, w) ?: return
-        val dst = standingU8(odoFiltU8, h, w) ?: run {
-            src.release()
-            return
-        }
-        Imgproc.bilateralFilter(src, dst, 5, 75.0, 75.0)
-        src.release()
-        grayU8ToBitmap(odoFiltU8, bitmap)
-        dst.release()
-    }
 
     fun applyGrayscale(bitmap: Bitmap): Bitmap {
         if (bitmap.config == Bitmap.Config.ALPHA_8) return bitmap
@@ -565,309 +150,7 @@ object OdometerOcrUtils {
         dst.release()
         return bitmap
     }
-    fun applyContrastStretch(mat: Mat, floorPercentile: Float) {
-        val hist = Mat()
-        Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
-        val totalPixels = mat.rows() * mat.cols(); var floorBin = 0; var ceilingBin = 255; var sum = 0.0
-        for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * floorPercentile) { floorBin = i; break } }
-        sum = 0.0; for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * 0.98) { ceilingBin = i; break } }
-        val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0; val beta = -floorBin * alpha
-        mat.convertTo(mat, CvType.CV_8U, alpha, beta)
-        hist.release()
-    }
 
-    fun applyContrastStretch(mat: Mat, intensityLow: Double, intensityHigh: Double) {
-        val alpha = if (intensityHigh > intensityLow) 255.0 / (intensityHigh - intensityLow) else 1.0
-        val beta = -intensityLow * alpha
-        mat.convertTo(mat, CvType.CV_8U, alpha, beta)
-    }
-
-    /**
-     * Non-mutating clip-stretch bounds from automaticContrastStretch peak-finding (robust + 2% fallback).
-     */
-    fun getClipStretchLowHigh(mat: Mat): Pair<Double, Double> {
-        val hist = Mat()
-        Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
-
-        val bins = FloatArray(64); hist.get(0, 0, bins)
-        val smoothed = FloatArray(64)
-        for (i in 0..63) {
-            val start = (i - 1).coerceAtLeast(0); val end = (i + 1).coerceAtMost(63)
-            smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
-        }
-
-        val totalPixels = mat.rows() * mat.cols()
-        val dropOffThreshold = totalPixels * 0.003 // 0.3% drop-off requirement
-
-        // Find robust peak from left
-        var pLow = 0.5
-        for (i in 1..61) {
-            if (smoothed[i] > smoothed[i-1] && smoothed[i] >= smoothed[i+1]) {
-                var peakConfirmed = false
-                for (j in i+1..62) {
-                    if (smoothed[j] < smoothed[i] - dropOffThreshold) {
-                        peakConfirmed = true; break
-                    }
-                    if (smoothed[j] > smoothed[i]) break
-                }
-                if (peakConfirmed) { pLow = i.toDouble(); break }
-            }
-        }
-
-        // Find robust peak from right
-        var pHigh = 62.5
-        for (i in 62 downTo 2) {
-            if (smoothed[i] > smoothed[i+1] && smoothed[i] >= smoothed[i-1]) {
-                var peakConfirmed = false
-                for (j in i-1 downTo 1) {
-                    if (smoothed[j] < smoothed[i] - dropOffThreshold) {
-                        peakConfirmed = true; break
-                    }
-                    if (smoothed[j] > smoothed[i]) break
-                }
-                if (peakConfirmed) { pHigh = i.toDouble(); break }
-            }
-        }
-
-        var intensityLow = pLow * 4.0
-        var intensityHigh = pHigh * 4.0
-
-        if (intensityHigh - intensityLow < 20.0) {
-            var iLow = 0.0; var iHigh = 255.0; var sum = 0.0
-            for (i in 0..63) { sum += bins[i]; if (sum >= totalPixels * 0.02) { iLow = i * 4.0; break } }
-            sum = 0.0; for (i in 63 downTo 0) { sum += bins[i]; if (sum >= totalPixels * 0.02) { iHigh = i * 4.0; break } }
-            intensityLow = iLow
-            intensityHigh = iHigh
-        }
-
-        hist.release()
-        return intensityLow to intensityHigh
-    }
-
-    fun automaticContrastStretch(mat: Mat): FloatArray {
-        val hist = Mat()
-        Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
-        val bins = FloatArray(64); hist.get(0, 0, bins)
-        hist.release()
-
-        val (intensityLow, intensityHigh) = getClipStretchLowHigh(mat)
-        applyContrastStretch(mat, intensityLow, intensityHigh)
-        return bins
-    }
-
-    fun shoulderContrastStretch(mat: Mat): FloatArray {
-        val hist = Mat()
-        Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
-
-        val bins = FloatArray(64); hist.get(0, 0, bins)
-        val smoothed = FloatArray(64)
-        for (i in 0..63) {
-            val start = (i - 1).coerceAtLeast(0); val end = (i + 1).coerceAtMost(63)
-            smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
-        }
-
-        var maxCount = 0f; var maxBin = 32
-        for (i in 0..63) { if (smoothed[i] > maxCount) { maxCount = smoothed[i]; maxBin = i } }
-
-        val shoulderThreshold = maxCount * 0.10f
-        var sLow = 0.0; var sHigh = 63.0
-
-        // Find Low Shoulder
-        for (i in maxBin downTo 0) {
-            if (smoothed[i] < shoulderThreshold) { sLow = (i + 1).coerceAtMost(63).toDouble(); break }
-        }
-        // Find High Shoulder
-        for (i in maxBin..63) {
-            if (smoothed[i] < shoulderThreshold) { sHigh = (i - 1).coerceAtLeast(0).toDouble(); break }
-        }
-
-        val intensityLow = sLow * 4.0
-        val intensityHigh = sHigh * 4.0
-
-        if (intensityHigh - intensityLow < 20.0) {
-            val totalPixels = mat.rows() * mat.cols()
-            var iLow = 0.0; var iHigh = 255.0; var sum = 0.0
-            for (i in 0..63) { sum += bins[i]; if (sum >= totalPixels * 0.02) { iLow = i * 4.0; break } }
-            sum = 0.0; for (i in 63 downTo 0) { sum += bins[i]; if (sum >= totalPixels * 0.02) { iHigh = i * 4.0; break } }
-            val alpha = if (iHigh > iLow) 255.0 / (iHigh - iLow) else 1.0
-            val beta = -iLow * alpha
-            mat.convertTo(mat, CvType.CV_8U, alpha, beta)
-        } else {
-            val alpha = 255.0 / (intensityHigh - intensityLow)
-            val beta = -intensityLow * alpha
-            mat.convertTo(mat, CvType.CV_8U, alpha, beta)
-        }
-
-        hist.release()
-        return bins
-    }
-
-    /**
-     * Robust peak bin indices from a 64-bin histogram (the logic valley push uses after finding valleys).
-     * Uses 3-bin smoothing + left-to-right and right-to-left local-max with drop-off confirmation.
-     * Returns sorted list of bin indices (0-63).
-     */
-    fun findPeakBinsFromHistogram(bins: FloatArray, totalPixels: Double = bins.sum().toDouble()): List<Int> {
-        val smoothed = FloatArray(64)
-        for (i in 0..63) {
-            val start = (i - 1).coerceAtLeast(0); val end = (i + 1).coerceAtMost(63)
-            smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
-        }
-        val peakBins = mutableListOf<Int>()
-        val dropOffThreshold = totalPixels * 0.003
-        // left-to-right
-        for (i in 1..61) {
-            if (smoothed[i] > smoothed[i-1] && smoothed[i] >= smoothed[i+1]) {
-                var peakConfirmed = false
-                for (j in i+1..62) {
-                    if (smoothed[j] < smoothed[i] - dropOffThreshold) { peakConfirmed = true; break }
-                    if (smoothed[j] > smoothed[i]) break
-                }
-                if (peakConfirmed) peakBins.add(i)
-            }
-        }
-        // right-to-left
-        for (i in 62 downTo 2) {
-            if (smoothed[i] > smoothed[i+1] && smoothed[i] >= smoothed[i-1]) {
-                var peakConfirmed = false
-                for (j in i-1 downTo 1) {
-                    if (smoothed[j] < smoothed[i] - dropOffThreshold) { peakConfirmed = true; break }
-                    if (smoothed[j] > smoothed[i]) break
-                }
-                if (peakConfirmed) peakBins.add(i)
-            }
-        }
-        return peakBins.distinct().sorted()
-    }
-
-    /**
-     * Non-mutating valley/peak gray lists from histogram (same discovery as valleyPushToPeaks).
-     * Returns (valleyGrays, peakGrays); empty lists if insufficient valleys/peaks.
-     */
-    fun getValleyPeakGrays(mat: Mat): Pair<List<Int>, List<Int>> {
-        val hist = Mat()
-        Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
-
-        val bins = FloatArray(64); hist.get(0, 0, bins)
-        hist.release()
-
-        val valleys = findValleyMidpoints(bins)
-        val totalPixels = mat.rows() * mat.cols().toDouble()
-        val peakList = findPeakBinsFromHistogram(bins, totalPixels)
-
-        if (peakList.size < 2 || valleys.isEmpty()) {
-            return emptyList<Int>() to emptyList()
-        }
-
-        val peakGrays = peakList.map { (it * 4 + 2).coerceIn(0, 255) }
-        val valleyGrays = valleys.map { (it * 4 + 2).coerceIn(0, 255) }
-        return valleyGrays to peakGrays
-    }
-
-    /**
-     * Apply valley-push LUT using precomputed valley/peak grays. In-place mutate; returns before-bins.
-     */
-    fun applyValleyPushWithGrays(mat: Mat, valleyGrays: List<Int>, peakGrays: List<Int>): FloatArray {
-        val hist = Mat()
-        Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
-        val bins = FloatArray(64); hist.get(0, 0, bins)
-        hist.release()
-
-        if (peakGrays.size < 2 || valleyGrays.isEmpty()) {
-            return bins
-        }
-
-        val lut = IntArray(256)
-        val minPeak = peakGrays.first().toDouble()
-        val maxPeak = peakGrays.last().toDouble()
-        val peakSpan = maxPeak - minPeak
-
-        for (g in 0..255) {
-            val closestValley = valleyGrays.minByOrNull { Math.abs(g - it) }
-            val targetPeak = if (closestValley != null) {
-                if (g < closestValley) {
-                    val leftPeaks = peakGrays.filter { it < closestValley }
-                    if (leftPeaks.isNotEmpty()) {
-                        leftPeaks.minByOrNull { Math.abs(g - it) }!!
-                    } else {
-                        peakGrays.first()
-                    }
-                } else {
-                    val rightPeaks = peakGrays.filter { it >= closestValley }
-                    if (rightPeaks.isNotEmpty()) {
-                        rightPeaks.minByOrNull { Math.abs(g - it) }!!
-                    } else {
-                        peakGrays.last()
-                    }
-                }
-            } else {
-                peakGrays.minByOrNull { Math.abs(g - it) }!!
-            }
-
-            val stretched = if (peakSpan > 0.0) {
-                Math.round((targetPeak - minPeak) * 255.0 / peakSpan).toInt().coerceIn(0, 255)
-            } else {
-                targetPeak
-            }
-            lut[g] = stretched
-        }
-
-        val total = mat.total().toInt()
-        if (total > 0) {
-            val lutMat = org.opencv.core.Mat(1, 256, org.opencv.core.CvType.CV_8U)
-            val lutData = ByteArray(256)
-            for (g in 0..255) {
-                lutData[g] = (lut[g] and 0xFF).toByte()
-            }
-            lutMat.put(0, 0, lutData)
-            org.opencv.core.Core.LUT(mat, lutMat, mat)
-            lutMat.release()
-        }
-
-        return bins
-    }
-
-    fun valleyPushToPeaks(mat: Mat): FloatArray {
-        // New for Set C per approved plan: histogram valley centers -> push values outward to peaks.
-        // Result: image with only a *small number* of brightness values (quantized to peaks/modes).
-        // Not binarization. Reuses findValleyMidpoints + findPeakBinsFromHistogram (same peak discovery as binPeak).
-        // In-place mutate like the stretch funcs. Returns before-bins (caller makes after-hist from mutated mat).
-        val hist = Mat()
-        Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
-        val bins = FloatArray(64); hist.get(0, 0, bins)
-        hist.release()
-
-        val (valleyGrays, peakGrays) = getValleyPeakGrays(mat)
-        if (peakGrays.size < 2 || valleyGrays.isEmpty()) {
-            return bins
-        }
-        return applyValleyPushWithGrays(mat, valleyGrays, peakGrays)
-    }
-
-    fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int): Bitmap {
-        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMat(bitmap) else {
-            val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
-        }
-        val gray = Mat()
-        if (src.channels() > 1) Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGR2GRAY) else src.copyTo(gray)
-
-        val hist = Mat()
-        Imgproc.calcHist(java.util.Collections.singletonList(gray), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
-        val totalPixels = gray.rows() * gray.cols(); var floorBin = 0; var ceilingBin = 255; var sum = 0.0
-        for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * (floorPercentile / 100.0)) { floorBin = i; break } }
-        sum = 0.0; for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * 0.98) { ceilingBin = i; break } }
-
-        val dst = Mat(); val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0; val beta = -floorBin * alpha
-        gray.convertTo(dst, CvType.CV_8U, alpha, beta)
-
-        // Phase 115: In-place update to long-lived buffer
-        if (bitmap.config == Bitmap.Config.ALPHA_8) {
-            matToBitmap(dst, bitmap)
-        } else {
-            org.opencv.android.Utils.matToBitmap(dst, bitmap)
-        }
-        src.release(); gray.release(); hist.release(); dst.release(); return bitmap
-    }
     // Phase 115: CV_8UC1 Monochrome Bridge (Zero-Allocation)
     fun bitmapToMat(bitmap: Bitmap): Mat {
         val mat = Mat(bitmap.height, bitmap.width, CvType.CV_8U)
@@ -882,118 +165,26 @@ object OdometerOcrUtils {
         return mat
     }
 
-    fun matToBitmap(mat: Mat, bitmap: Bitmap) {
-        val capacity = bitmap.width * bitmap.height
-        val bytes = ByteArray(capacity)
-        mat.get(0, 0, bytes)
-        val buffer = java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
-        buffer.rewind()
-        buffer.put(bytes, 0, capacity)
-        buffer.rewind()
-        bitmap.copyPixelsFromBuffer(buffer)
-    }
-
-
-    fun applyClahe(bitmap: Bitmap): Bitmap {
-        val mat = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
-        val gray = Mat()
-        if (mat.channels() > 1) Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY) else mat.copyTo(gray)
-        val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
-        val outMat = Mat()
-        clahe.apply(gray, outMat)
-        val out = Bitmap.createBitmap(outMat.cols(), outMat.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(outMat, out)
-        mat.release(); gray.release(); outMat.release()
-        return out
-    }
-
-    /** In-place CLAHE 2.0, tile 8×8. For rec H=48 strips. */
-    fun applyClaheMat(mat: Mat) {
-        val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
-        val out = Mat()
-        clahe.apply(mat, out)
-        out.copyTo(mat)
-        out.release()
-    }
-
-    /** Gaussian residual sharpen: 1.5·src − 0.5·gauss3. In-place. */
-    fun applyUnsharpMat(mat: Mat) {
-        val blur = Mat()
-        Imgproc.GaussianBlur(mat, blur, Size(3.0, 3.0), 0.0)
-        Core.addWeighted(mat, 1.5, blur, -0.5, 0.0, mat)
-        blur.release()
-    }
-
-    /** Homomorphic-lite: src / (gaussσ + ε), rescale 0–255. In-place. No Otsu. */
-    fun applyDivBlurMat(mat: Mat, sigma: Double = 8.0) {
-        val blur = Mat()
-        Imgproc.GaussianBlur(mat, blur, Size(0.0, 0.0), sigma)
-        val sf = Mat()
-        val bf = Mat()
-        val out = Mat()
-        mat.convertTo(sf, CvType.CV_32F)
-        blur.convertTo(bf, CvType.CV_32F)
-        Core.add(bf, org.opencv.core.Scalar(1.0), bf)
-        Core.divide(sf, bf, out)
-        Core.normalize(out, out, 0.0, 255.0, Core.NORM_MINMAX)
-        out.convertTo(mat, CvType.CV_8U)
-        blur.release(); sf.release(); bf.release(); out.release()
-    }
-
-    /** Logistic LUT around histogram valley (soft split). Not THRESH_OTSU. In-place. */
-    fun applySigmoidValleyMat(mat: Mat) {
-        val (valleys, _) = getValleyPeakGrays(mat)
-        val v = if (valleys.isNotEmpty()) valleys.sorted()[valleys.size / 2] else 128
-        val k = 0.12
-        val lutData = ByteArray(256)
-        for (g in 0..255) {
-            val s = 255.0 / (1.0 + exp(-k * (g - v)))
-            lutData[g] = s.roundToInt().coerceIn(0, 255).toByte()
-        }
-        val lutMat = Mat(1, 256, CvType.CV_8U)
-        lutMat.put(0, 0, lutData)
-        Core.LUT(mat, lutMat, mat)
-        lutMat.release()
-    }
-
-    fun applyOtsu(bitmap: Bitmap): Bitmap {
-        val mat = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
-        val gray = Mat()
-        if (mat.channels() > 1) Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY) else mat.copyTo(gray)
-        val threshed = Mat()
-        Imgproc.threshold(gray, threshed, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
-        val out = Bitmap.createBitmap(threshed.cols(), threshed.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(threshed, out)
-        mat.release(); gray.release(); threshed.release()
-        return out
-    }
 
     fun isBlockInCrop(block: TextBlock, crop: android.graphics.RectF?, w: Int, h: Int): Boolean {
         return OcrUtils.isBlockInCrop(block, crop, w, h)
     }
 
-    fun decodeBitmapSafely(context: Context, path: String): Bitmap? {
-        return try {
-            val options = BitmapFactory.Options().apply { inMutable = true }
-            if (path.startsWith("content://")) {
-                context.contentResolver.openInputStream(Uri.parse(path))?.use {
-                    BitmapFactory.decodeStream(it, null, options)
+    fun rotateImageIfRequired(context: Context, bitmap: Bitmap, path: String): Bitmap {
+        try {
+            val orientation = if (path.startsWith("content://")) {
+                context.contentResolver.openInputStream(Uri.parse(path))?.use { stream ->
+                    android.media.ExifInterface(stream).getAttributeInt(
+                        android.media.ExifInterface.TAG_ORIENTATION,
+                        android.media.ExifInterface.ORIENTATION_NORMAL,
+                    )
                 }
             } else {
-                BitmapFactory.decodeFile(path, options)
+                android.media.ExifInterface(path).getAttributeInt(
+                    android.media.ExifInterface.TAG_ORIENTATION,
+                    android.media.ExifInterface.ORIENTATION_NORMAL,
+                )
             }
-        } catch (e: Exception) {
-            Log.e("OdometerOcr", "Failed to decode bitmap: $path", e)
-            null
-        }
-    }
-
-    fun rotateImageIfRequired(bitmap: Bitmap, path: String): Bitmap {
-        try {
-            val exif = if (path.startsWith("content://")) null else android.media.ExifInterface(path)
-            val orientation = exif?.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)
             val degrees = when (orientation) {
                 android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90f
                 android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
@@ -1002,6 +193,7 @@ object OdometerOcrUtils {
             }
             if (degrees == 0f) return bitmap
             return rotateBitmap(bitmap, degrees)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             return bitmap
         }
@@ -1014,42 +206,12 @@ object OdometerOcrUtils {
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
-    fun addPadding(bitmap: Bitmap, padding: Int, color: Int = Color.BLACK): Bitmap {
-        val out = Bitmap.createBitmap(bitmap.width + 2 * padding, bitmap.height + 2 * padding, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(out)
-        canvas.drawColor(color)
-        canvas.drawBitmap(bitmap, padding.toFloat(), padding.toFloat(), null)
-        return out
-    }
-
-    /**
-     * Phase 117 Patch 3: Parallel Execution Harness with Checksums
-     * Evaluates Kotlin and C++ implementations side-by-side to verify speed, box count, and coordinate match.
-     * Note: Kotlin (legacyBlocks) will drive the application logic to guarantee safety, while C++ is used for reporting.
-     *
-     * DOCUMENTATION FOR FUTURE AGENTS:
-     * - The "invScale" maps coordinates from the letterboxed/resized target image space (around 2500x2500 max edge)
-     *   back to the original photo's full resolution.
-     * - C++ bounding boxes (nativeBoxes) are scaled inside NativePaddleEngine.kt from the 608x608 model output
-     *   up to the letterboxed/resized space (scaleX = alignedW / 608). Hence, they only require multiplication by invScale.
-     * - The legacy Kotlin blocks (legacyBlocks) were previously scaled directly from the 608x608 space by invScale,
-     *   which incorrectly bypassed the aligned image scale factor, resulting in boxes 4.15x too small. We fix this
-     *   here by dynamically extracting the aligned width/height from the sourceBuffer and applying scaleX/scaleY.
-     */
-    fun cropBitmap(bitmap: Bitmap, rect: Rect): Bitmap {
-        val left = rect.left.coerceIn(0, bitmap.width - 1)
-        val top = rect.top.coerceIn(0, bitmap.height - 1)
-        val width = rect.width().coerceAtMost(bitmap.width - left)
-        val height = rect.height().coerceAtMost(bitmap.height - top)
-        if (width <= 0 || height <= 0) return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
-        return Bitmap.createBitmap(bitmap, left, top, width, height)
-    }
 
     /**
      * Choose among stage texts (Raw / Bin-Trials) for a pure-digit odometer (face digits).
      *
      * @param preferredLen face width from [Vehicle.odometerDigitCount] (default 6)
-     * @param allowLenPlusOne allow preferredLen+1 (alignment always; Quick Fill when last face starts with 9)
+     * @param allowLenPlusOne allow preferredLen+1 (alignment always; Fill when last face starts with 9)
      * @param preferBin when true, within the chosen length pool prefer texts that appear on a Bin stage
      */
     fun pickBestOdometer(
@@ -1161,15 +323,11 @@ object OdometerOcrUtils {
 
     suspend fun rotate(set: BufferSet, angle: Float): Long = withContext(Dispatchers.IO) {
         val tRot0 = System.currentTimeMillis()
-        val src = set.p.mat
-        val dst = set.s.mat
-        val srcUv = set.p.uvMat
-        val dstUv = set.s.uvMat
 
         val matrixLocal = android.graphics.Matrix()
-        matrixLocal.postTranslate(-src.cols() / 2f, -src.rows() / 2f)
+        matrixLocal.postTranslate(-set.p.mat.cols() / 2f, -set.p.mat.rows() / 2f)
         matrixLocal.postRotate(angle)
-        matrixLocal.postTranslate(src.cols() / 2f, src.rows() / 2f)
+        matrixLocal.postTranslate(set.p.mat.cols() / 2f, set.p.mat.rows() / 2f)
         val values = FloatArray(9)
         matrixLocal.getValues(values)
 
@@ -1178,7 +336,7 @@ object OdometerOcrUtils {
         rotMat.put(1, 0, values[3].toDouble(), values[4].toDouble(), values[5].toDouble())
 
         org.opencv.imgproc.Imgproc.warpAffine(
-            src, dst, rotMat, src.size(),
+            set.p.mat, set.s.mat, rotMat, set.p.mat.size(),
             org.opencv.imgproc.Imgproc.INTER_LINEAR,
             org.opencv.core.Core.BORDER_CONSTANT,
             org.opencv.core.Scalar(0.0),
@@ -1188,7 +346,7 @@ object OdometerOcrUtils {
         uvScaleMat.put(0, 2, rotMat.get(0, 2)[0] / 2.0)
         uvScaleMat.put(1, 2, rotMat.get(1, 2)[0] / 2.0)
         org.opencv.imgproc.Imgproc.warpAffine(
-            srcUv, dstUv, uvScaleMat, srcUv.size(),
+            set.p.uvMat, set.s.uvMat, uvScaleMat, set.p.uvMat.size(),
             org.opencv.imgproc.Imgproc.INTER_LINEAR,
             org.opencv.core.Core.BORDER_CONSTANT,
             org.opencv.core.Scalar(128.0, 128.0),
@@ -1201,71 +359,39 @@ object OdometerOcrUtils {
         System.currentTimeMillis() - tRot0
     }
 
-    fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {
-        if (json.isNullOrEmpty()) return emptyList(); val list = mutableListOf<TextBlock>()
+    fun getIcrsLandmarksFromJson(json: String?, engineName: String): List<IcrsLandmark> {
+        if (json.isNullOrBlank()) return emptyList()
         try {
-            val root = org.json.JSONObject(json); val array = if (root.has(engineName)) root.getJSONArray(engineName) else if (json.startsWith("[")) org.json.JSONArray(json) else return emptyList()
+            val trimmed = json.trim()
+            val array = when {
+                trimmed.startsWith("[") -> org.json.JSONArray(trimmed)
+                else -> {
+                    val root = org.json.JSONObject(trimmed)
+                    if (!root.has(engineName)) return emptyList()
+                    root.getJSONArray(engineName)
+                }
+            }
+            val list = mutableListOf<IcrsLandmark>()
             for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i); val text = obj.getString("text"); val cx = obj.optDouble("cx", 0.0); val cy = obj.optDouble("cy", 0.0); val w = obj.optDouble("w", 0.0); val h = obj.optDouble("h", 0.0)
-                val centerPix = IcrsMath.icrsToPixel(cx.toFloat(), cy.toFloat(), imgW, imgH)
-                val sE = kotlin.math.min(imgW, imgH).toDouble(); val pW = (w * sE); val pH = (h * sE)
-                val inst = if (obj.has("instance")) obj.getInt("instance") else -1; val cT = OdometerOcrUtils.cleanLandmarkString(text)
-                list.add(TextBlock(cT, android.graphics.Rect((centerPix.x - pW/2.0).toInt(), (centerPix.y - pH/2.0).toInt(), (centerPix.x + pW/2.0).toInt(), (centerPix.y + pH/2.0).toInt()), instanceId = inst))
+                val obj = array.getJSONObject(i)
+                list.add(
+                    IcrsLandmark(
+                        text = cleanLandmarkString(obj.getString("text")),
+                        instanceId = if (obj.has("instance")) obj.getInt("instance") else -1,
+                        cx = obj.optDouble("cx", 0.0).toFloat(),
+                        cy = obj.optDouble("cy", 0.0).toFloat(),
+                        w = obj.optDouble("w", 0.0).toFloat(),
+                        h = obj.optDouble("h", 0.0).toFloat(),
+                    ),
+                )
             }
-        } catch (e: Exception) { Log.e("OdometerOcrUtils", "Failed to parse landmarks", e) }
-        return list
-    }
-
-    fun saveImageProxyToFile(imageProxy: androidx.camera.core.ImageProxy, file: java.io.File) {
-        val planeProxy = imageProxy.planes[0]
-        val buffer = planeProxy.buffer
-        val bytes = ByteArray(buffer.remaining())
-        buffer.get(bytes)
-        
-        // This only works if capture format is JPEG (ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-        // If it's YUV, we'd need to encode it.
-        // Assuming ImageCapture provides JPEG when not specified otherwise for proxy?
-        // Actually, ImageProxy from ImageCapture is usually JPEG.
-        file.writeBytes(bytes)
-    }
-
-    fun refineNumericResult(result: OcrResult): OcrResult {
-        val refinedBlocks = result.textBlocks.map { block ->
-            val isFlipped = Math.abs(block.angle) > 165f
-            val cleaned = clean7SegmentDigits(block.text, isFlipped)
-            block.copy(text = cleaned)
+            return list
+        // kept: failure stays on this call so the screen or caller can continue
+        } catch (e: Exception) {
+            throw IllegalStateException("getIcrsLandmarksFromJson: ${e.message}", e)
         }
-        return result.copy(textBlocks = refinedBlocks, debugText = refinedBlocks.joinToString(" ") { it.text })
     }
 
-    fun clean7SegmentDigits(text: String, isFlipped: Boolean): String {
-        val standardMap = mapOf('O' to '0', 'D' to '0', 'Q' to '0', 'U' to '0', 'Z' to '2', 'S' to '5', 'G' to '6', 'B' to '8', '!' to '1', 'I' to '1', 'l' to '1', '|' to '1')
-        val flipMap = mapOf('O' to '0', 'D' to '0', 'L' to '7', 'V' to '7', 'h' to '4', 'H' to '4', 'E' to '3', 'G' to '9', 'B' to '8', 'S' to '5', '!' to '1', 'I' to '1', 'l' to '1', '|' to '1', 'A' to 'V')
-        val workingText = if (isFlipped) text.reversed() else text
-        val activeMap = if (isFlipped) flipMap else standardMap
-        return workingText.map { char -> activeMap[char] ?: (activeMap[char.uppercaseChar()] ?: char) }.joinToString("")
-    }
-
-    fun serializeLandmarks(landmarks: List<TextBlock>, imgW: Int, imgH: Int): String {
-        val array = JSONArray()
-        landmarks.forEach { block ->
-            val cleaned = cleanLandmarkString(block.text)
-            if (cleaned.isNotEmpty()) {
-                val obj = JSONObject()
-                obj.put("text", cleaned)
-                val box = block.boundingBox
-                val icrs = IcrsMath.pixelToIcrs(box.centerX().toFloat(), box.centerY().toFloat(), imgW, imgH)
-                val s = minOf(imgW, imgH).toDouble()
-                obj.put("cx", icrs.x.toDouble())
-                obj.put("cy", icrs.y.toDouble())
-                obj.put("w", box.width().toDouble() / s)
-                obj.put("h", box.height().toDouble() / s)
-                obj.put("is_icrs", true)
-                array.put(obj)
-            }
-        }
-        return array.toString()
-    }
 
     fun serializeMultiEngineLandmarks(results: Map<String, OcrResult>): String {
         val t0 = System.currentTimeMillis()
@@ -1347,12 +473,14 @@ object OdometerOcrUtils {
                         val right = (centerPix.x + pixW / 2.0).toInt()
                         val bottom = (centerPix.y + pixH / 2.0).toInt()
                         blocks.add(TextBlock(obj.getString("text"), android.graphics.Rect(left, top, right, bottom), instanceId = instanceId))
+                    // kept: failure stays on this call so the screen or caller can continue
                     } catch (e: Exception) {
                         Log.w("OdometerOcr", "Skipping malformed landmark entry in JSON: ${e.message}")
                     }
                 }
                 results[name] = OcrResult(engineName = name, textBlocks = blocks, imageWidth = imgW, imageHeight = imgH, debugText = blocks.joinToString(" ") { it.text })
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) { Log.e("OdometerOcr", "Deserialization failed", e) }
         return results
     }

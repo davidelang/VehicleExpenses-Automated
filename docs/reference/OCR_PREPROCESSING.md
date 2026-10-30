@@ -6,17 +6,19 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 
 # OCR preprocessing
 
-How a crop is prepared before the recognizer runs. The Quick Fill stages that call this are in [QUICK_FILL_CAMERA.md](QUICK_FILL_CAMERA.md).
+How a crop is prepared before the recognizer runs. The Fill stages that call this are in [FILL_CAMERA.md](FILL_CAMERA.md).
 
 ## Odometer crop
 
-Implemented in `OcrHarness.runSetJPipeline`. The crop is resized into the vehicle’s odometer buffer. Detection runs on a letterbox that fits inside 512×128.
+Implemented in `OcrHarness.runAutoFillPipeline` via `PaddleSeedOdo.readSeedRec` (paddle seed). Fill and batch dash do not use Set J; that pipeline is removed. Set J remains an obsolete alignment experiment only.
 
-**Raw.** Detection boxes are expanded with `expandByValleyDiagnostic` (default; threshold factor 0.40). The expanded rectangles are clustered into lines (`clusterRects`) and each piece is fed to `recognizeNumeric` through `RecBufferFeed.feedSourceBorderLetterbox`.
+The red odometer quad is the crop. Paddle seeds that overlap it are padded at `PaddleSeedOdo.SEED_VERT_PRODUCTION` (0.40), unioned, clipped to the quad, and fed with `ocrPumpFeedOriented40` (40-in-48 rec window).
 
-**Bin trials.** A histogram of the grayscale crop supplies valley midpoints (`findValleyMidpoints`). Each midpoint is a binary threshold. After threshold, boxes are filtered so a box fully inside another is dropped (`nestFilter`). The largest remaining box is recognized the same way. A trial with no stroke histogram is skipped.
+**Raw.** `recognizeNumericDecimal` on that feed. Digits only.
 
-`OdometerOcrUtils.pickBestOdometer` then chooses among the Raw string and the bin-trial strings. It keeps digit-only texts, prefers the vehicle’s digit count (plus one when a rollover is allowed), and prefers a string that came from a bin trial when both lengths match.
+**Bin trials.** A histogram of the fed grayscale supplies valley midpoints (`findValleyMidpoints`). Each midpoint is a binary threshold on the same feed; each binary image is recognized the same way. Empty digit text is skipped. Among trials whose minimum character probability is at least 0.40, the highest sum of probabilities wins; otherwise the highest sum overall.
+
+`OdometerOcrUtils.pickBestOdometer` then chooses among the Raw string and the bin-trial string. It keeps digit-only texts, prefers the vehicle’s digit count (plus one when a rollover is allowed), and prefers a string that came from a bin trial when both lengths match.
 
 ## Pump rectangles
 

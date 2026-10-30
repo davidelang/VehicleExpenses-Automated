@@ -30,6 +30,7 @@ class EtherCalcClient @Inject constructor() {
                 val base = obj.optString("baseUrl", "").trim()
                 if (base.isBlank()) return null
                 Config(base, obj.optString("roomPrefix", "ve"))
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (_: Exception) {
                 null
             }

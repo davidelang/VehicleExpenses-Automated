@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# paddle-opt pin build (libpin.toml build[]): host linux-x86_64 `opt` model optimizer.
+#
+# Overlays are copied on demand every build into src/work/overlay from ../paddle
+# (patches/, patches-int8/, scripts/apply_patches.sh, scripts/apply_int8_patches.sh;
+# ../paddle stays the source of truth), then patches-opt/ (opt-only, e.g. kUInt8 in
+# paddle_place.cc; zero-padded opt_version in model_parser.cc) goes on top.
+#
+# Product: src/bin/linux-x86_64/opt -> get-artifacts -> artifact/linux-x86_64/opt
+# Run via:  ./third_party/fetch-deps build paddle-opt
+#
+# Env:
+#   PADDLE_DOCKER_IMAGE=ve-paddle-ndk28c   image (must exist; no fallback)
+#   PADDLE_ALLOW_FAST_MATH=1               keep upstream -ffast-math (default: stripped)
+#   PADDLE_OPT_JOBS=N                      make -j (default: nproc in the container)
+set -euo pipefail
+HERE=$(cd "$(dirname "$0")" && pwd)
+SRC="$HERE/src"
+PADDLE="$HERE/../paddle"
+PATCHES_OPT="$HERE/patches-opt"
+OUT="$SRC/bin/linux-x86_64"
+OVL="$SRC/work/overlay"
+
+[[ -d "$SRC/lite" ]] || { echo "build-opt: no pin src at $SRC (./third_party/fetch-deps ro paddle-opt)" >&2; exit 1; }
+for need in "$PADDLE/patches" "$PADDLE/patches-int8" "$PATCHES_OPT/code/lite"; do
+  [[ -d "$need" ]] || { echo "build-opt: FAIL missing overlay dir $need" >&2; exit 1; }
+done
+for need in "$PADDLE/scripts/apply_patches.sh" "$PADDLE/scripts/apply_int8_patches.sh"; do
+  [[ -f "$need" ]] || { echo "build-opt: FAIL missing overlay script $need" >&2; exit 1; }
+done
+
+IMAGE=${PADDLE_DOCKER_IMAGE:-ve-paddle-ndk28c}
+if ! docker image inspect "$IMAGE" >/dev/null; then
+  echo "build-opt: FAIL docker image $IMAGE not found (no fallback; build it per third_party/paddle/SOURCE.md)" >&2
+  exit 1
+fi
+
+# RO pin: unlock only src/bin and src/work.
+chmod u+w "$SRC"
+mkdir -p "$SRC/bin" "$SRC/work"
+chmod u+w "$SRC/bin" "$SRC/work"
+mkdir -p "$OUT"; chmod -R u+w "$OUT"
+rm -f "$OUT/opt" "$OUT/opt.pin"
+
+# On-demand overlay copy (fresh each build).
+rm -rf "$OVL"
+mkdir -p "$OVL"
+cp -a "$PADDLE/patches" "$OVL/patches"
+cp -a "$PADDLE/patches-int8" "$OVL/patches-int8"
+cp -a "$PADDLE/scripts/apply_patches.sh" "$OVL/apply_patches.sh"
+cp -a "$PADDLE/scripts/apply_int8_patches.sh" "$OVL/apply_int8_patches.sh"
+cp -a "$PATCHES_OPT" "$OVL/patches-opt"
+
+echo "build-opt: image=$IMAGE -> $OUT/opt"
+docker run --rm \
+  -v "$SRC:/pin-src:ro" \
+  -v "$OVL/patches:/patches:ro" \
+  -v "$OVL/patches-int8:/patches-int8:ro" \
+  -v "$OVL/patches-opt:/patches-opt:ro" \
+  -v "$OVL/apply_patches.sh:/apply_patches.sh:ro" \
+  -v "$OVL/apply_int8_patches.sh:/apply_int8_patches.sh:ro" \
+  -v "$OUT:/output" \
+  -e "PADDLE_ALLOW_FAST_MATH=${PADDLE_ALLOW_FAST_MATH:-0}" \
+  -e "HOST_UID=$(id -u)" -e "HOST_GID=$(id -g)" \
+  -e "OPT_JOBS=${PADDLE_OPT_JOBS:-}" \
+  "$IMAGE" \
+  bash -c 'set -euo pipefail
+    rm -rf /workspace/Paddle-Lite
+    cp -a /pin-src /workspace/Paddle-Lite
+    cd /workspace/Paddle-Lite
+    rm -rf bin build.*
+    git config --global --add safe.directory /workspace/Paddle-Lite
+    FBS_SAVE=""
+    if [[ -d third-party/flatbuffers/pre-build ]]; then
+      FBS_SAVE=$(mktemp -d); cp -a third-party/flatbuffers/pre-build "$FBS_SAVE/"
+    fi
+    if [[ ! -d third-party/gflags || -z "$(ls -A third-party/gflags)" ]]; then
+      wget -q -O /tmp/tp.tgz \
+        https://paddlelite-data.bj.bcebos.com/third_party_libs/third-party-651c7c4.tar.gz
+      mkdir -p third-party
+      tar -xzf /tmp/tp.tgz -C third-party --strip-components=1
+      rm -f /tmp/tp.tgz
+    fi
+    if [[ -n "$FBS_SAVE" && -d "$FBS_SAVE/pre-build" ]]; then
+      mkdir -p third-party/flatbuffers
+      rm -rf third-party/flatbuffers/pre-build
+      cp -a "$FBS_SAVE/pre-build" third-party/flatbuffers/pre-build
+      rm -rf "$FBS_SAVE"
+    fi
+    bash /apply_patches.sh
+    PATCH_ROOT=/patches-int8 bash /apply_int8_patches.sh
+    cp -r /patches-opt/code/lite/. lite/
+    grep -q "\"kUInt8\"" lite/api/paddle_place.cc || { echo "FAIL: patches-opt kUInt8 not applied"; exit 1; }
+    grep -q VE_ZERO_PADDED_OPT_VERSION lite/model_parser/model_parser.cc || { echo "FAIL: patches-opt zero-padded opt_version not applied"; exit 1; }
+    if [[ "${PADDLE_ALLOW_FAST_MATH:-0}" != "1" ]]; then
+      for f in cmake/os/common.cmake cmake/linux.cmake; do
+        if [[ -f "$f" ]]; then sed -i "s/-ffast-math//g; s/-Ofast/-O2/g" "$f"; fi
+      done
+    fi
+    # Configure like upstream build_linux.sh build_optimize_tool (LITE_ON_MODEL_OPTIMIZE_TOOL,
+    # WITH_TESTING=OFF, LITE_BUILD_EXTRA, WITH_MKL=OFF; make opt), plus the host-x86 target
+    # defines that build_linux.sh --arch=x86 passes (as the host light build does). Without
+    # ARM_TARGET_ARCH_ABI the VE overlay lite/api/tools/benchmark/CMakeLists.txt:53 expands
+    # an unquoted empty ${ARM_TARGET_ARCH_ABI} and configure aborts. benchmark_bin is only
+    # configured, never built (make opt).
+    rm -f lite/api/paddle_use_ops.h lite/api/paddle_use_kernels.h
+    rm -rf build.opt && mkdir -p build.opt && cd build.opt
+    cmake .. \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DLITE_ON_MODEL_OPTIMIZE_TOOL=ON \
+      -DWITH_TESTING=OFF \
+      -DLITE_BUILD_EXTRA=ON \
+      -DWITH_MKL=OFF \
+      -DWITH_MKLDNN=OFF \
+      -DLITE_WITH_ARM=OFF \
+      -DLITE_WITH_X86=ON \
+      -DARM_TARGET_ARCH_ABI=x86 \
+      -DARM_TARGET_OS= \
+      -DLITE_WITH_PYTHON=OFF \
+      -DLITE_WITH_CV=OFF \
+      -DLITE_WITH_LOG=ON
+    make opt -j"${OPT_JOBS:-$(nproc)}"
+    cd ..
+    OPT=build.opt/lite/api/opt
+    [[ -x "$OPT" ]] || { echo "FAIL: no $OPT"; find build.opt -name opt -type f | head; exit 1; }
+    cp "$OPT" /output/opt
+    chown -R "$HOST_UID:$HOST_GID" /output
+  '
+
+# Gate: explicit-norm analytic pass, output calib pass, and the patches-opt kUInt8 name.
+for need in analytic_input_mean analytic_input_std analytic_input_quant_pass output_calib_pass kUInt8; do
+  grep -q "$need" <<<"$(strings "$OUT/opt")" || { echo "build-opt: FAIL $OUT/opt lacks $need" >&2; exit 1; }
+done
+help_rc=0
+help_txt=$("$OUT/opt" --help 2>&1) || help_rc=$?
+echo "build-opt: opt --help exit $help_rc"
+grep -q analytic_input_mean <<<"$help_txt" \
+  || { echo "build-opt: FAIL opt --help has no --analytic_input_mean" >&2; exit 1; }
+git -C "$SRC" rev-parse HEAD > "$OUT/opt.pin"
+sha256sum "$OUT/opt"
+echo "build-opt: OK"

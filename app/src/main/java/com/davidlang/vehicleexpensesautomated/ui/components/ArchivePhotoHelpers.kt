@@ -1,7 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.components
 
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
+import com.davidlang.vehicleexpensesautomated.data.model.ExpensePhotoUrls
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
+import com.davidlang.vehicleexpensesautomated.data.model.StoredParse
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.sync.CloudManifest
 import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
@@ -45,20 +47,27 @@ fun expenseHasArchiveIdentity(expense: ExpenseEntry?, destId: String?): Boolean 
 }
 
 /** First readable local fuel photo uri, or null. */
-fun firstReadableFuelPhotoUri(photoUrl: String?, photoStorage: PhotoStorageManager): String? =
-    FuelPhotoJson.parse(photoUrl).firstOrNull { photoStorage.isLocalReadable(it.uri) }?.uri
+fun firstReadableFuelPhotoUri(photoUrl: String?, photoStorage: PhotoStorageManager): String? {
+    val parsed = FuelPhotoJson.read(photoUrl)
+    val refs = (parsed as? StoredParse.Valid)?.value ?: return null
+    return refs.firstOrNull { !it.missing && photoStorage.isLocalReadable(it.uri) }?.uri
+}
 
-/** True if any stored local path is present but none are readable. */
+/** True when a stored photo is not found and not already marked missing. */
 fun fuelHasDeadLocalOnly(photoUrl: String?, photoStorage: PhotoStorageManager): Boolean {
-    val photos = FuelPhotoJson.parse(photoUrl)
+    val parsed = FuelPhotoJson.read(photoUrl)
+    val photos = (parsed as? StoredParse.Valid)?.value ?: return false
     if (photos.isEmpty()) return false
-    return photos.none { photoStorage.isLocalReadable(it.uri) }
+    return photos.any { ref ->
+        !ref.missing && photoStorage.localRead(ref.uri) == PhotoStorageManager.LocalRead.NOT_FOUND
+    }
 }
 
 fun expenseLocalMissingOrDead(photoUrl: String?, photoStorage: PhotoStorageManager): Boolean {
     if (photoUrl.isNullOrBlank()) return true
-    // Multi-page: missing if none readable
-    val pages = com.davidlang.vehicleexpensesautomated.data.model.ExpensePhotoUrls.parse(photoUrl)
-    if (pages.isEmpty()) return !photoStorage.isLocalReadable(photoUrl)
-    return pages.none { photoStorage.isLocalReadable(it.uri) }
+    return when (val parsed = ExpensePhotoUrls.read(photoUrl)) {
+        is StoredParse.Corrupt -> true
+        is StoredParse.Blank -> true
+        is StoredParse.Valid -> parsed.value.none { photoStorage.isLocalReadable(it.uri) }
+    }
 }

@@ -19,7 +19,7 @@ if [[ -z "$JNI_ROOT" ]]; then
     JNI_ROOT="$ROOT/third_party/paddle/src/bin"
   fi
 fi
-REPORT_DIR="${PADDLE_SMOKE_REPORT:-$ROOT/dev-ai-interaction/scratch/paddle-so-smoke-$(date +%Y%m%d-%H%M%S)}"
+REPORT_DIR="${PADDLE_SMOKE_REPORT:-$ROOT/third_party/paddle/tests/out/paddle-so-smoke-$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$REPORT_DIR"
 ABIS="${PADDLE_SMOKE_ABIS:-arm64-v8a armeabi-v7a x86_64}"
 REBUILD="${PADDLE_SMOKE_REBUILD:-1}"
