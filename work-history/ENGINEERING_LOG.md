@@ -12467,3 +12467,7 @@ feature-group: label=''
 
 - Host models, tailor lists, and the paddle test scripts follow the tip.
 - The sandbox symlink is not part of the branch.
+
+## 2026-10-29 - Server det probe outputs stay out of the branch
+
+- The thin JNI libraries under the server det probe out directory are local build output. The tip does not carry them.
