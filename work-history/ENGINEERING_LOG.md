@@ -12476,3 +12476,7 @@ feature-group: label=''
 
 - The facts file is the tip copy, including the Fill camera path.
 - The worktree scripts the tip does not carry are removed.
+
+## 2026-10-29 - code-review PR prepared
+
+- Local PR doc: dev-ai-interaction/PRs/PR-code-review.md. Master reviews from there. Nothing is merged or pushed.
