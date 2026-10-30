@@ -7,15 +7,11 @@ VE_ROOT=$(cd "$HERE/../../../../.." && pwd)
 OUT="${PADDLE_OCR_OUT:-$HERE/out}"
 ROOTFS="${PADDLE_OCR_ROOTFS_CACHE:-$HERE/rootfs}"
 ABI="${PADDLE_OCR_HOP_ABI:-x86_64}"
-# Product x86 rec (tablet/emu), not the host leftover u8fp16 copy.
-REC="${PADDLE_OCR_REC:-$VE_ROOT/app/src/x86_64/assets/paddle/prod_u8fp32_u8/rec_v3_x86_64.nb}"
+# Product x86 rec (tablet/emu) from the paddle-models pin, not the host leftover u8fp16 copy.
+REC="${PADDLE_OCR_REC:-$VE_ROOT/third_party/paddle-models/artifact/app/x86_64/rec_v3_x86_64.nb}"
 JNI_ROOT="${PADDLE_JNI_ROOT:-}"
 if [[ -z "$JNI_ROOT" ]]; then
-  if [[ -d "$VE_ROOT/third_party/paddle/artifact/jni" ]]; then
-    JNI_ROOT="$VE_ROOT/third_party/paddle/artifact/jni"
-  else
-    JNI_ROOT="$VE_ROOT/app/src/main/jniLibs"
-  fi
+  JNI_ROOT="$VE_ROOT/third_party/paddle/artifact/jni"
 fi
 
 if [[ "${PADDLE_OCR_REBUILD:-1}" == "1" ]] || [[ ! -x $OUT/$ABI/paddle_ocr_functional ]]; then

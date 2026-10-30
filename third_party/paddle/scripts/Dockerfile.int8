@@ -1,14 +1,14 @@
 # VE Paddle-Lite build image: Ubuntu 20.04 + Android NDK + JDK8 + patchelf.
 # Source tree is NOT baked in — mount pin src at runtime (libpin).
 #
-# Default NDK = r20b (historical VE working products + full patches).
+# Default NDK = r28c.
 # Newer NDK (toward app NDK 28): rebuild with
-#   docker build --build-arg NDK_VERSION=r26b -t ve-paddle-ndk26 -f scripts/Dockerfile.int8 .
-#   PADDLE_DOCKER_IMAGE=ve-paddle-ndk26 PADDLE_NDK_VERSION=r26b ./build
+#   docker build --build-arg NDK_VERSION=r28c -t ve-paddle-ndk28c -f scripts/Dockerfile.int8 .
+#   PADDLE_DOCKER_IMAGE=ve-paddle-ndk28c PADDLE_NDK_VERSION=r28c ./build
 # Zip names follow Google's layout: android-ndk-<ver>-linux{,-x86_64}.zip
 FROM ubuntu:20.04
 
-ARG NDK_VERSION=r20b
+ARG NDK_VERSION=r28c
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NDK_VERSION=${NDK_VERSION}
 

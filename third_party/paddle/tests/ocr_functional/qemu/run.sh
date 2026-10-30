@@ -18,21 +18,26 @@ EXPECT_ANGLE="${PADDLE_OCR_EXPECT_ANGLE:-15}"
 ANGLE_TOL="${PADDLE_OCR_ANGLE_TOL:-10}"
 MAX_EDIT="${PADDLE_OCR_MAX_EDIT:-2}"
 
-# Models live in ABI flavor source sets (or host leftovers for fp16 x86).
+# Product models come from the paddle-models pin (same files the app embeds via
+# app/src/main/cpp/CMakeLists.txt): third_party/paddle-models/artifact/app/<arch>/.
+MODELS_APP="$VE_ROOT/third_party/paddle-models/artifact/app"
 model_for_abi() {
   local abi=$1 kind=$2  # kind=det|rec_v3
   case "$abi" in
-    arm64-v8a)
-      echo "$VE_ROOT/app/src/arm64/assets/paddle/prod_u8fp16/${kind}_armv8.nb"
-      ;;
-    armeabi-v7a)
-      echo "$VE_ROOT/app/src/armv7/assets/paddle/prod_u8fp32_u8/${kind}_armv7.nb"
-      ;;
-    x86_64)
-      echo "$VE_ROOT/third_party/paddle/prod_models_host/prod_u8fp16_${kind}_x86_64.nb"
-      ;;
+    arm64-v8a) echo "$MODELS_APP/armv8/${kind}_armv8.nb" ;;
+    armeabi-v7a) echo "$MODELS_APP/armv7/${kind}_armv7.nb" ;;
+    x86_64) echo "$MODELS_APP/x86_64/${kind}_x86_64.nb" ;;
+    *) echo "ERROR: no product model known for abi=$abi" >&2; return 1 ;;
   esac
 }
+
+# Every requested ABI must have its product models; a missing model is an error.
+for abi in $ABIS; do
+  for kind in det rec_v3; do
+    m=$(model_for_abi "$abi" "$kind")
+    [[ -s "$m" ]] || { echo "ERROR: product model missing for abi=$abi: $m (run: ./third_party/fetch-deps build paddle-models)" >&2; exit 2; }
+  done
+done
 
 find_qemu() {
   local base=$1
@@ -93,11 +98,6 @@ for abi in $ABIS; do
   fi
   det=$(model_for_abi "$abi" det)
   rec=$(model_for_abi "$abi" rec_v3)
-  if [[ ! -f "$det" || ! -f "$rec" ]]; then
-    echo "SKIP $abi — models missing det=$det rec=$rec"
-    FAIL=$((FAIL + 1))
-    continue
-  fi
   log="$REPORT/$abi.log"
   echo "==> $abi"
   set +e

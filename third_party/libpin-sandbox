@@ -17,7 +17,9 @@
 # Env:
 #   LIBPIN_NO_BWRAP=1 / LIBPIN_NO_LANDLOCK=1
 #   LIBPIN_SANDBOX=<mode>   already in bwrap — do not nest bwrap
-#   GIT_HOME + --lib NAME → auto-allow only $GIT_HOME/<lib>/.git (linked worktree metadata)
+#   GIT_HOME + --lib NAME → auto-allow only $GIT_HOME/<lib>/.git (rw/upgrade linked worktree metadata;
+#     ro uses a shared clone and does not write it);
+#     libpin.toml host_repo overrides <lib> (relative = under GIT_HOME, "/" = absolute)
 #   LIBPIN_BWRAP_DEBUG=1 / LIBPIN_LANDLOCK_DEBUG=1
 set -euo pipefail
 
@@ -53,11 +55,33 @@ if [[ -z "$MODE" ]]; then
 fi
 
 # Narrow host allow: only this lib's object store / worktree registry (not whole GIT_HOME).
+# Top-level host_repo from third_party/<lib>/libpin.toml; empty when absent. rc != 0 = unreadable.
+host_repo_of_lib() {
+  local pin="$HERE/$1/libpin.toml"
+  [[ -f "$pin" ]] || return 0
+  python3 - "$pin" <<'PY2'
+import sys, tomllib
+from pathlib import Path
+v = tomllib.loads(Path(sys.argv[1]).read_text(encoding="utf-8")).get("host_repo")
+if v is not None:
+    print(v)
+PY2
+}
+
 resolve_host_git() {
-  local lib="$1" gh p
+  local lib="$1" hr="$2" gh p
   gh="${GIT_HOME:-}"
-  [[ -n "$lib" && -n "$gh" ]] || return 1
-  p="$gh/$lib"
+  if [[ "$hr" == /* ]]; then
+    p="$hr"
+  else
+    [[ -n "$lib" && -n "$gh" ]] || return 1
+    p="$gh/${hr:-$lib}"
+  fi
+  local gerr
+  if [[ -e "$p/.git" ]] && ! gerr="$(git -C "$p" rev-parse --git-dir 2>&1)"; then
+    echo "libpin-sandbox: git rejects $p: $gerr" >&2
+    return 1
+  fi
   if [[ -d "$p/.git" ]]; then
     if command -v realpath >/dev/null 2>&1; then realpath "$p/.git"; else readlink -f "$p/.git"; fi
     return 0
@@ -79,7 +103,18 @@ resolve_host_git() {
 
 HOST_GIT=""
 if [[ -n "$LIB" ]]; then
-  HOST_GIT="$(resolve_host_git "$LIB" 2>/dev/null || true)"
+  if ! HOST_REPO="$(host_repo_of_lib "$LIB")"; then
+    echo "libpin-sandbox: cannot read host_repo from $HERE/$LIB/libpin.toml" >&2
+    exit 2
+  fi
+  if [[ -n "$HOST_REPO" ]]; then
+    if ! HOST_GIT="$(resolve_host_git "$LIB" "$HOST_REPO")"; then
+      echo "libpin-sandbox: host_repo '$HOST_REPO' for $LIB does not resolve to a git dir (GIT_HOME=${GIT_HOME:-<unset>})" >&2
+      exit 2
+    fi
+  else
+    HOST_GIT="$(resolve_host_git "$LIB" "" || true)"
+  fi
 fi
 if [[ -n "$HOST_GIT" ]]; then
   export LIBPIN_HOST_GIT="$HOST_GIT"

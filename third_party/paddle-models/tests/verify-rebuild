@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Host check cited by SOURCE.md. Materialise, build twice, compare artifact
+# sha256 values to each other and to libpin.toml, then check the mono models.
+# Does not pass --record and does not rebuild libpaddle_models.so.
+set -euo pipefail
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(cd "$HERE/../../.." && pwd)
+LIB="$ROOT/third_party/paddle-models"
+PADDLE_PY="${PADDLE_PY:-/home/dlang/miniconda3/envs/paddle_env_v3/bin/python}"
+cd "$ROOT"
+
+./third_party/fetch-deps ro paddle-models
+
+hash_artifacts() {
+  python3 - "$LIB/libpin.toml" "$LIB" <<'PY'
+import hashlib, re, sys
+pin, lib = sys.argv[1], sys.argv[2]
+text = open(pin, encoding="utf-8").read()
+rows = re.findall(
+    r"\[\[artifact\]\]\s+from = \"([^\"]+)\"\s+path = \"([^\"]+)\"\s+sha256 = \"([0-9a-f]+)\"",
+    text,
+)
+if len(rows) != 23:
+    sys.exit("ERROR: expected 23 [[artifact]] rows, found %d" % len(rows))
+nb = [r for r in rows if r[0].endswith(".nb")]
+lists = [r for r in rows if r[0].endswith("_list")]
+if len(nb) != 15 or len(lists) != 8:
+    sys.exit("ERROR: expected 15 .nb and 8 list artifacts, found %d and %d" % (len(nb), len(lists)))
+for src, path, want in rows:
+    full = os_path = __import__("os").path.join(lib, src)
+    if not __import__("os").path.isfile(full):
+        sys.exit("ERROR: missing build output " + full)
+    h = hashlib.sha256(open(full, "rb").read()).hexdigest()
+    if h != want:
+        sys.exit("ERROR: %s sha256 %s != pin %s" % (src, h, want))
+    print("%s %s" % (src, h))
+PY
+}
+
+echo "=== paddle-models build 1 ==="
+./third_party/fetch-deps build paddle-models
+snap1=$(mktemp)
+hash_artifacts > "$snap1"
+
+echo "=== first-conv weight check ==="
+if [ ! -x "$PADDLE_PY" ]; then
+  echo "ERROR: PADDLE_PY is not executable: $PADDLE_PY" >&2
+  exit 1
+fi
+FLAGS_enable_pir_api=0 "$PADDLE_PY" - "$LIB/src/work" <<'PY'
+import json, os, sys
+os.environ["FLAGS_enable_pir_api"] = "0"
+import paddle
+
+work = sys.argv[1]
+for model in ("det", "rec_v3", "rec_numeric"):
+    d = os.path.join(work, model + "_mono")
+    norm_path = os.path.join(d, "mono_norm.json")
+    norm = json.load(open(norm_path, encoding="utf-8"))
+    if norm.get("legacy_mean"):
+        sys.exit("ERROR: %s has legacy_mean" % norm_path)
+    paddle.enable_static()
+    exe = paddle.static.Executor(paddle.CPUPlace())
+    prefix = os.path.join(d, "inference")
+    prog, feed_names, _ = paddle.static.load_inference_model(prefix, exe)
+    block = prog.block(0)
+    in_name = feed_names[0]
+    conv = next(
+        (op for op in block.ops
+         if op.type in ("conv2d", "depthwise_conv2d") and in_name in op.input("Input")),
+        None,
+    )
+    if conv is None:
+        sys.exit("ERROR: %s first conv does not read the feed" % model)
+    wname = conv.input("Filter")[0]
+    shape = block.var(wname).shape
+    if len(shape) < 2 or int(shape[1]) != 1:
+        sys.exit("ERROR: %s first conv %s shape %s is not channel 1" % (model, wname, shape))
+    print("first conv OK: %s %s %s" % (model, wname, shape))
+PY
+
+echo "=== paddle-models build 2 ==="
+./third_party/fetch-deps build paddle-models
+snap2=$(mktemp)
+hash_artifacts > "$snap2"
+diff -u "$snap1" "$snap2"
+rm -f "$snap1" "$snap2"
+echo "verify-rebuild OK"

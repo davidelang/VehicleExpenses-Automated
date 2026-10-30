@@ -18,8 +18,8 @@ VE=$(cd "$HERE/.." && pwd)
 STAGE_ROOT="$VE/third_party/paddle/tests/ocr_functional/qemu/out"
 ROOTFS_ROOT="$VE/third_party/paddle/tests/ocr_functional/qemu/rootfs"
 FIX="$VE/third_party/paddle/tests/ocr_functional/fixtures"
-ASSETS_ARM64="$VE/app/src/arm64/assets/paddle"
-HOST_NBS="$VE/third_party/paddle/prod_models_host"
+# Product models from the paddle-models pin (fetch-deps ro paddle-models).
+MODELS_APP="$VE/third_party/paddle-models/artifact/app"
 ABI=x86_64
 SOA=""; SOB=""
 SIDES="224 608 1024"
@@ -48,17 +48,20 @@ done
 
 case $ABI in
   x86_64)
-    DET=$HOST_NBS/prod_u8fp16_det_x86_64.nb
-    REC=$HOST_NBS/prod_u8fp16_rec_v3_x86_64.nb
+    DET=$MODELS_APP/x86_64/det_x86_64.nb
+    REC=$MODELS_APP/x86_64/rec_v3_x86_64.nb
     Q=qemu-x86_64; LP=/lib64:/system/lib64
     ;;
   arm64-v8a)
-    DET=$ASSETS_ARM64/prod_u8fp16/det_armv8.nb
-    REC=$ASSETS_ARM64/prod_u8fp16/rec_v3_armv8.nb
+    DET=$MODELS_APP/armv8/det_armv8.nb
+    REC=$MODELS_APP/armv8/rec_v3_armv8.nb
     Q=qemu-aarch64; LP=/lib64:/system/lib64
     ;;
   *) echo "unsupported abi $ABI" >&2; exit 2;;
 esac
+for m in "$DET" "$REC"; do
+  [[ -f "$m" ]] || { echo "ERROR: product model missing: $m (run ./third_party/fetch-deps ro paddle-models)" >&2; exit 2; }
+done
 
 STAGE=$STAGE_ROOT/$ABI
 ROOTFS=$ROOTFS_ROOT/$ABI

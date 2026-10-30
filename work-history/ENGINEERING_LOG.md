@@ -12462,3 +12462,8 @@ feature-group: label=''
 
 - Email fixtures, experiment dumps, and the photo picker follow the tip. Test-only helpers live on qa.
 - The Fill camera reference and the user-manual images use the Fill names.
+
+## 2026-10-29 - Pin scripts and host model seeds match the tip
+
+- Host models, tailor lists, and the paddle test scripts follow the tip.
+- The sandbox symlink is not part of the branch.

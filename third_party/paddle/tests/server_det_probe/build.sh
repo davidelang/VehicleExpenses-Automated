@@ -15,22 +15,13 @@ SRC="$HERE/server_det_probe.cpp"
 LOADER="$VE_ROOT/third_party/paddle/tests/ocr_functional/qemu/loader_main.c"
 STUB="$VE_ROOT/third_party/paddle/tests/ocr_functional/qemu/liblog_stub.c"
 INC="$VE_ROOT/app/src/main/cpp/include/paddle"
-if [[ -d "$VE_ROOT/third_party/paddle/artifact/jni" ]]; then
-  JNI_ROOT="$VE_ROOT/third_party/paddle/artifact/jni"
-else
-  JNI_ROOT="$VE_ROOT/app/src/main/jniLibs"
-fi
+JNI_ROOT="$VE_ROOT/third_party/paddle/artifact/jni"
 mkdir -p "$OUT"
 
 build_one() {
   local abi=$1 cxx=$2 cc=$3 triple=$4
   local so_dir="$JNI_ROOT/$abi"
   local light="$so_dir/libpaddle_light_api_shared.so"
-  if [[ ! -f "$light" ]]; then
-    # fall back to app jniLibs
-    light="$VE_ROOT/app/src/main/jniLibs/$abi/libpaddle_light_api_shared.so"
-    so_dir="$(dirname "$light")"
-  fi
   if [[ ! -f "$light" ]]; then
     echo "SKIP $abi — missing light SO" >&2
     return 0

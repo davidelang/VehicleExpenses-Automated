@@ -61,15 +61,15 @@ PADDLE_SKIP_OCR_QEMU=1 ./third_party/paddle/test
 
 | ABI | QEMU | Full pipeline | Models |
 |-----|------|---------------|--------|
-| **arm64-v8a** | `qemu-aarch64` | **Yes** — angle ≈15°, OCR exact | `prod_u8fp16/*_armv8.nb` |
-| **x86_64** | `qemu-x86_64` | **Yes** — same | `prod_u8fp16/*_x86_64.nb` |
-| **armeabi-v7a** | `qemu-arm` + bwrap PID1 | **Yes** — angle ≈15°, OCR exact (fixed 2026-08-04) | `prod_u8fp32_u8/*_armv7.nb` |
+| **arm64-v8a** | `qemu-aarch64` | **Yes** — angle ≈15°, OCR exact | `paddle-models/artifact/app/armv8/*_armv8.nb` |
+| **x86_64** | `qemu-x86_64` | **Yes** — same | `paddle-models/artifact/app/x86_64/*_x86_64.nb` |
+| **armeabi-v7a** | `qemu-arm` + bwrap PID1 | **Yes** — angle ≈15°, OCR exact (fixed 2026-08-04) | `paddle-models/artifact/app/armv7/*_armv7.nb` |
 
 ### armv7 zero-heatmap — root cause & fix (2026-08-04)
 
 **Symptom:** After feed + `Run()`, det heatmap was all zeros (`uint8 max=0`). Repro on Pixel + QEMU.
 
-**Root cause:** `optimize_armv7_prod_u8fp32_u8.sh` passed **`--quant_model=true --quant_type=QUANT_INT8`**. That post-training weight quant produced a broken armv7 det graph (size ~1.0MB vs healthy ~2.5MB). Slim/full SOs and feed path were fine — float mono models OCR-passed on the same SO.
+**Root cause:** `optimize_armv7_prod_u8fp32_u8.sh` (since retired; models now come from `fetch-deps build paddle-models`) passed **`--quant_model=true --quant_type=QUANT_INT8`**. That post-training weight quant produced a broken armv7 det graph (size ~1.0MB vs healthy ~2.5MB). Slim/full SOs and feed path were fine — float mono models OCR-passed on the same SO.
 
 **Fix:**
 - Re-opt **without** `quant_model`: analytic uint8 input only; det keeps `--output_calib_precision=uint8`; **rec keeps float CTC out** (no output calib).
