@@ -28,7 +28,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.email.EmailReceiptPrefs
 import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
-import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentReportHtml
 import com.davidlang.vehicleexpensesautomated.ui.util.PumpOcrSettings
 import com.davidlang.vehicleexpensesautomated.ui.util.FillDebugStore
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
@@ -54,13 +53,18 @@ private fun hasMediaImagesPermission(context: Context): Boolean {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(navController: NavHostController) {
+fun SettingsScreen(
+    navController: NavHostController,
+    experimentsAvailable: Boolean = false,
+    ingestOfflineFixtures: (suspend () -> String)? = null,
+    experimentExtras: @Composable () -> Unit = {},
+) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
     val viewModel: SettingsViewModel = hiltViewModel()
     RegisterPageHelp(
         title = "Settings",
-        "Units, photo save toggles, debug Quick Fill, and experiment screens live here.",
+        "Units, photo save toggles, debug Fill, and experiment screens live here.",
         "Spreadsheet and photo destinations are under Menu → Syncing (not only this page).",
         "Show experiment screens reveals Alignment, Pump Experiment, and Import Old Pictures in the drawer.",
     )
@@ -72,19 +76,16 @@ fun SettingsScreen(navController: NavHostController) {
 
     var saveFuelPhotos by remember { mutableStateOf(prefs.getBoolean("save_fuel_photos", true)) }
     var saveExpensePhotos by remember { mutableStateOf(prefs.getBoolean("save_expense_photos", true)) }
-    var debugQuickFill by remember {
+    var debugFill by remember {
         mutableStateOf(
-            if (prefs.contains("debug_quick_fill")) {
-                prefs.getBoolean("debug_quick_fill", false)
-            } else {
-                prefs.getBoolean("debug_ocr_pipeline", false)
-            }
+            prefs.getBoolean("debug_capture", false)
         )
     }
     var showExperimentScreens by remember {
         mutableStateOf(prefs.getBoolean("show_experiment_screens", false))
     }
-    var debugMaxSessions by remember { mutableIntStateOf(prefs.getInt("debug_quick_fill_max_sessions", 10)) }
+    val experimentsEnabled = experimentsAvailable && showExperimentScreens
+    var debugMaxSessions by remember { mutableIntStateOf(prefs.getInt("debug_fill_max_sessions", 10)) }
     var pumpMaxRedBoxes by remember {
         mutableIntStateOf(prefs.getInt(PumpOcrSettings.KEY_MAX_RED_BOXES, PumpOcrSettings.DEFAULT_MAX_RED_BOXES))
     }
@@ -106,9 +107,6 @@ fun SettingsScreen(navController: NavHostController) {
             prefs.getFloat(PumpOcrSettings.KEY_RATIO_BAND_HI, PumpOcrSettings.DEFAULT_RATIO_BAND_HI).toString(),
         )
     }
-    var experimentHtmlRowsPerFile by remember {
-        mutableIntStateOf(ExperimentReportHtml.htmlRowsPerFile(prefs))
-    }
     var darkModePref by remember { mutableStateOf(prefs.getString("dark_mode", "system") ?: "system") }
     var shutterSounds by remember { mutableStateOf(prefs.getBoolean("shutter_sounds", true)) }
     var currencySymbol by remember {
@@ -124,6 +122,7 @@ fun SettingsScreen(navController: NavHostController) {
     val systemCurrencySymbol = remember {
         try {
             Currency.getInstance(Locale.getDefault()).getSymbol(Locale.getDefault())
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             "$"
         }
@@ -188,7 +187,7 @@ fun SettingsScreen(navController: NavHostController) {
         if (!isGranted) {
             Toast.makeText(
                 context,
-                "Photos permission denied. Grant Photos access in App info → Permissions so fuel photos can save to Camera roll.",
+                "Photos permission denied. Grant Photos access in App info → Permissions so fuel photos can save to gallery.",
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -215,14 +214,14 @@ fun SettingsScreen(navController: NavHostController) {
     }
 
     LaunchedEffect(debugMaxSessions) {
-        prefs.edit().putInt("debug_quick_fill_max_sessions", debugMaxSessions.coerceIn(1, 50)).apply()
+        prefs.edit().putInt("debug_fill_max_sessions", debugMaxSessions.coerceIn(1, 50)).apply()
         FillDebugStore.pruneToMax(context)
     }
 
     LaunchedEffect(
         saveFuelPhotos,
         saveExpensePhotos,
-        debugQuickFill,
+        debugFill,
         showExperimentScreens,
         darkModePref,
         shutterSounds,
@@ -232,7 +231,6 @@ fun SettingsScreen(navController: NavHostController) {
         pumpLabelYBandExtra,
         pumpRatioBandLo,
         pumpRatioBandHi,
-        experimentHtmlRowsPerFile,
     ) {
         val yExtra = pumpLabelYBandExtra.toFloatOrNull()
             ?.coerceIn(0f, 1f) ?: PumpOcrSettings.DEFAULT_LABEL_Y_BAND_EXTRA_FRACTION
@@ -245,7 +243,7 @@ fun SettingsScreen(navController: NavHostController) {
         prefs.edit().apply {
             putBoolean("save_fuel_photos", saveFuelPhotos)
             putBoolean("save_expense_photos", saveExpensePhotos)
-            putBoolean("debug_quick_fill", debugQuickFill)
+            putBoolean("debug_capture", debugFill)
             putBoolean("show_experiment_screens", showExperimentScreens)
             putString("dark_mode", darkModePref)
             putBoolean("shutter_sounds", shutterSounds)
@@ -261,10 +259,6 @@ fun SettingsScreen(navController: NavHostController) {
             putFloat(PumpOcrSettings.KEY_LABEL_Y_BAND_EXTRA_FRACTION, yExtra)
             putFloat(PumpOcrSettings.KEY_RATIO_BAND_LO, rLo)
             putFloat(PumpOcrSettings.KEY_RATIO_BAND_HI, maxOf(rLo, rHi))
-            putInt(
-                ExperimentReportHtml.KEY_HTML_ROWS_PER_FILE,
-                if (experimentHtmlRowsPerFile < 0) 0 else experimentHtmlRowsPerFile,
-            )
             apply()
         }
     }
@@ -284,337 +278,326 @@ fun SettingsScreen(navController: NavHostController) {
         )
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Email loyalty receipts (Gmail label → Room Unassigned fuel rows)
-        val emailPrefs = remember { EmailReceiptPrefs(context) }
-        var emailPollEnabled by remember { mutableStateOf(emailPrefs.enabled) }
-        var emailGmailEnabled by remember {
-            mutableStateOf(
-                emailPrefs.source != EmailReceiptPrefs.SOURCE_IMAP || !emailPrefs.imapEnabled,
-            )
-        }
-        var emailImapEnabled by remember {
-            mutableStateOf(
-                emailPrefs.imapEnabled ||
-                    emailPrefs.source == EmailReceiptPrefs.SOURCE_IMAP ||
-                    emailPrefs.source == EmailReceiptPrefs.SOURCE_BOTH,
-            )
-        }
-        var emailLabel by remember {
-            mutableStateOf(
-                emailPrefs.labelName.ifBlank { EmailReceiptPrefs.DEFAULT_LABEL },
-            )
-        }
-        var emailAccount by remember { mutableStateOf(emailPrefs.accountEmail.orEmpty()) }
-        var imapHost by remember { mutableStateOf(emailPrefs.imapHost) }
-        var imapPort by remember { mutableStateOf(emailPrefs.imapPort.toString()) }
-        var imapUser by remember { mutableStateOf(emailPrefs.imapUsername) }
-        var imapPassword by remember { mutableStateOf(emailPrefs.imapPassword) }
-        var imapFolder by remember {
-            mutableStateOf(emailPrefs.imapFolder.ifBlank { EmailReceiptPrefs.DEFAULT_IMAP_FOLDER })
-        }
-        var emailLastSummary by remember { mutableStateOf(emailPrefs.lastRunSummary) }
-        var emailOfflineBusy by remember { mutableStateOf(false) }
-        var emailPollWatchToken by remember { mutableIntStateOf(0) }
-        fun persistEmailSource() {
-            emailPrefs.enabled = emailPollEnabled
-            emailPrefs.imapEnabled = emailImapEnabled
-            emailPrefs.source = when {
-                emailGmailEnabled && emailImapEnabled -> EmailReceiptPrefs.SOURCE_BOTH
-                emailImapEnabled -> EmailReceiptPrefs.SOURCE_IMAP
-                else -> EmailReceiptPrefs.SOURCE_GMAIL
+        @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+        @Composable
+        fun SettingsEmailReceipts() {
+            // Email loyalty receipts (Gmail label → Room Unassigned fuel rows)
+            val emailPrefs = remember { EmailReceiptPrefs(context) }
+            var emailPollEnabled by remember { mutableStateOf(emailPrefs.enabled) }
+            var emailGmailEnabled by remember {
+                mutableStateOf(
+                    emailPrefs.source != EmailReceiptPrefs.SOURCE_IMAP || !emailPrefs.imapEnabled,
+                )
             }
-            emailPrefs.labelName = emailLabel
-            emailPrefs.imapHost = imapHost
-            emailPrefs.imapPort = imapPort.toIntOrNull() ?: EmailReceiptPrefs.DEFAULT_IMAP_PORT
-            emailPrefs.imapUsername = imapUser
-            emailPrefs.imapPassword = imapPassword
-            emailPrefs.imapFolder = imapFolder
-            viewModel.rescheduleEmailReceiptPoll()
-        }
-        // Reload last-run when Settings is shown / recomposed after nav
-        LaunchedEffect(Unit) {
-            emailLastSummary = emailPrefs.lastRunSummary
-        }
-        // After Poll now: light delayed reloads so async worker summary appears without leaving
-        LaunchedEffect(emailPollWatchToken) {
-            if (emailPollWatchToken == 0) return@LaunchedEffect
-            val delaysMs = longArrayOf(500L, 1500L, 3000L, 5000L)
-            for (d in delaysMs) {
-                kotlinx.coroutines.delay(d)
+            var emailImapEnabled by remember {
+                mutableStateOf(
+                    emailPrefs.imapEnabled ||
+                        emailPrefs.source == EmailReceiptPrefs.SOURCE_IMAP ||
+                        emailPrefs.source == EmailReceiptPrefs.SOURCE_BOTH,
+                )
+            }
+            var emailLabel by remember {
+                mutableStateOf(
+                    emailPrefs.labelName.ifBlank { EmailReceiptPrefs.DEFAULT_LABEL },
+                )
+            }
+            var emailAccount by remember { mutableStateOf(emailPrefs.accountEmail.orEmpty()) }
+            var imapHost by remember { mutableStateOf(emailPrefs.imapHost) }
+            var imapPort by remember { mutableStateOf(emailPrefs.imapPort.toString()) }
+            var imapUser by remember { mutableStateOf(emailPrefs.imapUsername) }
+            var imapPassword by remember { mutableStateOf(emailPrefs.imapPassword) }
+            var imapFolder by remember {
+                mutableStateOf(emailPrefs.imapFolder.ifBlank { EmailReceiptPrefs.DEFAULT_IMAP_FOLDER })
+            }
+            var emailLastSummary by remember { mutableStateOf(emailPrefs.lastRunSummary) }
+            var emailOfflineBusy by remember { mutableStateOf(false) }
+            var emailPollWatchToken by remember { mutableIntStateOf(0) }
+            fun persistEmailSource() {
+                emailPrefs.enabled = emailPollEnabled
+                emailPrefs.imapEnabled = emailImapEnabled
+                emailPrefs.source = when {
+                    emailGmailEnabled && emailImapEnabled -> EmailReceiptPrefs.SOURCE_BOTH
+                    emailImapEnabled -> EmailReceiptPrefs.SOURCE_IMAP
+                    else -> EmailReceiptPrefs.SOURCE_GMAIL
+                }
+                emailPrefs.labelName = emailLabel
+                emailPrefs.imapHost = imapHost
+                emailPrefs.imapPort = imapPort.toIntOrNull() ?: EmailReceiptPrefs.DEFAULT_IMAP_PORT
+                emailPrefs.imapUsername = imapUser
+                emailPrefs.imapPassword = imapPassword
+                emailPrefs.imapFolder = imapFolder
+                viewModel.rescheduleEmailReceiptPoll()
+            }
+            // Reload last-run when Settings is shown / recomposed after nav
+            LaunchedEffect(Unit) {
                 emailLastSummary = emailPrefs.lastRunSummary
             }
-        }
-        val emailSignInLauncher = rememberLauncherForActivityResult(
-            ActivityResultContracts.StartActivityForResult(),
-        ) { result ->
-            try {
-                val account = viewModel.parseEmailReceiptSignIn(result.data)
-                val email = account.email?.trim().orEmpty()
-                if (email.isNotEmpty()) {
-                    emailPrefs.accountEmail = email
-                    emailAccount = email
-                    Toast.makeText(context, "Gmail account: $email", Toast.LENGTH_SHORT).show()
+            // After Poll now: light delayed reloads so async worker summary appears without leaving
+            LaunchedEffect(emailPollWatchToken) {
+                if (emailPollWatchToken == 0) return@LaunchedEffect
+                val delaysMs = longArrayOf(500L, 1500L, 3000L, 5000L)
+                for (d in delaysMs) {
+                    kotlinx.coroutines.delay(d)
+                    emailLastSummary = emailPrefs.lastRunSummary
                 }
-            } catch (e: Exception) {
-                Toast.makeText(
-                    context,
-                    "Gmail sign-in failed: ${e.message?.take(80)}",
-                    Toast.LENGTH_LONG,
-                ).show()
             }
-        }
-        Text("Email receipts (Shell + Sam's Club)", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Offline: packaged samples → Unassigned fuel. " +
-                "Live: Gmail label (OAuth) and/or generic IMAP folder (host + app password). " +
-                "Same label/folder may hold multiple vendors; parser auto-detects. " +
-                "Rows: vehicle Unassigned (id 0), odometer 0, Partial Fill off. " +
-                "IMAP uses TLS (port 993). Passwords are not written to logcat.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedButton(
-            onClick = {
-                if (emailOfflineBusy) return@OutlinedButton
-                emailOfflineBusy = true
-                scope.launch {
-                    try {
-                        val summary = withContext(Dispatchers.IO) {
-                            viewModel.ingestOfflineShellFixtures()
-                        }
-                        emailLastSummary = summary
-                        Toast.makeText(context, summary, Toast.LENGTH_LONG).show()
-                    } catch (e: Exception) {
-                        Toast.makeText(
-                            context,
-                            "Offline ingest failed: ${e.message?.take(100)}",
-                            Toast.LENGTH_LONG,
-                        ).show()
-                    } finally {
-                        emailOfflineBusy = false
+            val emailSignInLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.StartActivityForResult(),
+            ) { result ->
+                try {
+                    val account = viewModel.parseEmailReceiptSignIn(result.data)
+                    val email = account.email?.trim().orEmpty()
+                    if (email.isNotEmpty()) {
+                        emailPrefs.accountEmail = email
+                        emailAccount = email
+                        Toast.makeText(context, "Gmail account: $email", Toast.LENGTH_SHORT).show()
                     }
+                // kept: failure stays on this call so the screen or caller can continue
+                } catch (e: Exception) {
+                    Toast.makeText(
+                        context,
+                        "Gmail sign-in failed: ${e.message?.take(80)}",
+                        Toast.LENGTH_LONG,
+                    ).show()
                 }
-            },
-            enabled = !emailOfflineBusy,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
+            }
+            Text("Email receipts (Shell + Sam's Club)", style = MaterialTheme.typography.titleMedium)
             Text(
-                if (emailOfflineBusy) "Ingesting sample receipts…"
-                else "Ingest sample receipts (offline goldens)",
-            )
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        SwitchSetting("Enable scheduled email poll", emailPollEnabled) { enabled ->
-            emailPollEnabled = enabled
-            persistEmailSource()
-        }
-        SwitchSetting("Use Gmail (OAuth + label)", emailGmailEnabled) { on ->
-            emailGmailEnabled = on
-            if (!on && !emailImapEnabled) emailImapEnabled = true
-            persistEmailSource()
-        }
-        OutlinedTextField(
-            value = emailLabel,
-            onValueChange = {
-                emailLabel = it
-                emailPrefs.labelName = it
-            },
-            label = { Text("Gmail label name") },
-            singleLine = true,
-            enabled = emailGmailEnabled,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            if (emailAccount.isBlank()) "Gmail account: (not signed in)"
-            else "Gmail account: $emailAccount",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Button(
-            onClick = { emailSignInLauncher.launch(viewModel.emailReceiptSignInIntent()) },
-            enabled = emailGmailEnabled,
-        ) {
-            Text("Sign in for Gmail")
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-        SwitchSetting("Use IMAP (folder)", emailImapEnabled) { on ->
-            emailImapEnabled = on
-            if (!on && !emailGmailEnabled) emailGmailEnabled = true
-            persistEmailSource()
-        }
-        OutlinedTextField(
-            value = imapHost,
-            onValueChange = { imapHost = it },
-            label = { Text("IMAP host (e.g. imap.gmail.com)") },
-            singleLine = true,
-            enabled = emailImapEnabled,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = imapPort,
-            onValueChange = { imapPort = it.filter { ch -> ch.isDigit() }.take(5) },
-            label = { Text("IMAP port (993 TLS)") },
-            singleLine = true,
-            enabled = emailImapEnabled,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = imapUser,
-            onValueChange = { imapUser = it },
-            label = { Text("IMAP username") },
-            singleLine = true,
-            enabled = emailImapEnabled,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = imapPassword,
-            onValueChange = { imapPassword = it },
-            label = { Text("IMAP password / app password") },
-            singleLine = true,
-            enabled = emailImapEnabled,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = imapFolder,
-            onValueChange = { imapFolder = it },
-            label = { Text("IMAP folder (e.g. INBOX or Receipts)") },
-            singleLine = true,
-            enabled = emailImapEnabled,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedButton(
-            onClick = {
-                persistEmailSource()
-                emailPrefs.enabled = true
-                emailPollEnabled = true
-                viewModel.pollEmailReceiptsNow()
-                Toast.makeText(context, "Email receipt poll queued", Toast.LENGTH_SHORT).show()
-                emailLastSummary = emailPrefs.lastRunSummary
-                emailPollWatchToken++
-            },
-            enabled = emailPollEnabled && (
-                (emailGmailEnabled && emailLabel.isNotBlank()) ||
-                    (emailImapEnabled && imapHost.isNotBlank() && imapUser.isNotBlank())
-                ),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Poll now")
-        }
-        TextButton(onClick = {
-            emailLastSummary = viewModel.readEmailReceiptLastSummary()
-        }) {
-            Text("Refresh last run")
-        }
-        if (emailLastSummary.isNotBlank()) {
-            Text(
-                "Last run: $emailLastSummary",
+                (if (experimentsEnabled) "Offline: packaged samples → Unassigned fuel. " else "") +
+                    "Live: Gmail label (OAuth) and/or generic IMAP folder (host + app password). " +
+                    "Same label/folder may hold multiple vendors; parser auto-detects. " +
+                    "Rows: vehicle Unassigned (id 0), odometer 0, Partial Fill off. " +
+                    "IMAP uses TLS (port 993). Passwords are not written to logcat.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(modifier = Modifier.height(8.dp))
+            val ingestOffline = ingestOfflineFixtures
+            if (experimentsEnabled && ingestOffline != null) {
+                OutlinedButton(
+                    onClick = {
+                        if (emailOfflineBusy) return@OutlinedButton
+                        emailOfflineBusy = true
+                        scope.launch {
+                            try {
+                                val summary = withContext(Dispatchers.IO) {
+                                    ingestOffline()
+                                }
+                                emailLastSummary = summary
+                                Toast.makeText(context, summary, Toast.LENGTH_LONG).show()
+                            // kept: failure stays on this call so the screen or caller can continue
+                            } catch (e: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    "Offline ingest failed: ${e.message?.take(100)}",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            } finally {
+                                emailOfflineBusy = false
+                            }
+                        }
+                    },
+                    enabled = !emailOfflineBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        if (emailOfflineBusy) "Ingesting sample receipts…"
+                        else "Ingest sample receipts (offline goldens)",
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+            SwitchSetting("Enable scheduled email poll", emailPollEnabled) { enabled ->
+                emailPollEnabled = enabled
+                persistEmailSource()
+            }
+            SwitchSetting("Use Gmail (OAuth + label)", emailGmailEnabled) { on ->
+                emailGmailEnabled = on
+                if (!on && !emailImapEnabled) emailImapEnabled = true
+                persistEmailSource()
+            }
+            OutlinedTextField(
+                value = emailLabel,
+                onValueChange = {
+                    emailLabel = it
+                    emailPrefs.labelName = it
+                },
+                label = { Text("Gmail label name") },
+                singleLine = true,
+                enabled = emailGmailEnabled,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                if (emailAccount.isBlank()) "Gmail account: (not signed in)"
+                else "Gmail account: $emailAccount",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Button(
+                onClick = { emailSignInLauncher.launch(viewModel.emailReceiptSignInIntent()) },
+                enabled = emailGmailEnabled,
+            ) {
+                Text("Sign in for Gmail")
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            SwitchSetting("Use IMAP (folder)", emailImapEnabled) { on ->
+                emailImapEnabled = on
+                if (!on && !emailGmailEnabled) emailGmailEnabled = true
+                persistEmailSource()
+            }
+            OutlinedTextField(
+                value = imapHost,
+                onValueChange = { imapHost = it },
+                label = { Text("IMAP host (e.g. imap.gmail.com)") },
+                singleLine = true,
+                enabled = emailImapEnabled,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = imapPort,
+                onValueChange = { imapPort = it.filter { ch -> ch.isDigit() }.take(5) },
+                label = { Text("IMAP port (993 TLS)") },
+                singleLine = true,
+                enabled = emailImapEnabled,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = imapUser,
+                onValueChange = { imapUser = it },
+                label = { Text("IMAP username") },
+                singleLine = true,
+                enabled = emailImapEnabled,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = imapPassword,
+                onValueChange = { imapPassword = it },
+                label = { Text("IMAP password / app password") },
+                singleLine = true,
+                enabled = emailImapEnabled,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = imapFolder,
+                onValueChange = { imapFolder = it },
+                label = { Text("IMAP folder (e.g. INBOX or Receipts)") },
+                singleLine = true,
+                enabled = emailImapEnabled,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = {
+                    persistEmailSource()
+                    emailPrefs.enabled = true
+                    emailPollEnabled = true
+                    viewModel.pollEmailReceiptsNow()
+                    Toast.makeText(context, "Email receipt poll queued", Toast.LENGTH_SHORT).show()
+                    emailLastSummary = emailPrefs.lastRunSummary
+                    emailPollWatchToken++
+                },
+                enabled = emailPollEnabled && (
+                    (emailGmailEnabled && emailLabel.isNotBlank()) ||
+                        (emailImapEnabled && imapHost.isNotBlank() && imapUser.isNotBlank())
+                    ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Poll now")
+            }
+            TextButton(onClick = {
+                emailLastSummary = viewModel.readEmailReceiptLastSummary()
+            }) {
+                Text("Refresh last run")
+            }
+            if (emailLastSummary.isNotBlank()) {
+                Text(
+                    "Last run: $emailLastSummary",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
+        SettingsEmailReceipts()
         Spacer(modifier = Modifier.height(16.dp))
 
-        SwitchSetting("Save fuel fill photos locally", saveFuelPhotos) { enabled ->
+        SwitchSetting("Save fill and trip photos", saveFuelPhotos) { enabled ->
             saveFuelPhotos = enabled
             if (enabled) {
                 requestMediaPermissionIfNeeded()
             }
         }
-        SwitchSetting("Save Expense Photos Locally", saveExpensePhotos) { enabled ->
+        SwitchSetting("Save receipt photos", saveExpensePhotos) { enabled ->
             saveExpensePhotos = enabled
             if (enabled) {
                 requestMediaPermissionIfNeeded()
             }
         }
         SwitchSetting("Play Shutter Sound", shutterSounds) { shutterSounds = it }
-        // Order: title · Info · count/max · Delete · Send · toggle
-        // Wide: one line. Narrow: line1 title·Info·toggle; line2 count·Delete·Send end-aligned.
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val wideEnough = maxWidth >= 420.dp
-            val countMaxBlock: @Composable RowScope.() -> Unit = {
-                Text(
-                    "$debugReportCount /",
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                )
-                OutlinedTextField(
-                    value = debugMaxSessions.toString(),
-                    onValueChange = { text ->
-                        text.toIntOrNull()?.coerceIn(1, 50)?.let { debugMaxSessions = it }
-                    },
-                    modifier = Modifier
-                        .widthIn(min = 48.dp, max = 72.dp)
-                        .weight(1f, fill = false),
-                    singleLine = true,
-                )
-            }
-            val deleteSendBlock: @Composable () -> Unit = {
-                IconButton(
-                    onClick = { showClearDebugConfirm = true },
-                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-                ) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Delete debug reports",
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-                IconButton(
-                    onClick = {
-                        if (!hasDebugData) {
-                            Toast.makeText(context, "No debug reports to send", Toast.LENGTH_SHORT).show()
-                        } else {
-                            selectedSessionPaths = emptySet()
-                            selectedCrashPaths = emptySet()
-                            showSendReportPicker = true
-                        }
-                    },
-                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Send debug reports",
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-            }
-            if (wideEnough) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
+        @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+        @Composable
+        fun SettingsFillDebugRow() {
+            // Order: title · Info · count/max · Delete · Send · toggle
+            // Wide: one line. Narrow: line1 title·Info·toggle; line2 count·Delete·Send end-aligned.
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val wideEnough = maxWidth >= 420.dp
+                val countMaxBlock: @Composable RowScope.() -> Unit = {
                     Text(
-                        "Debug Quick Fill",
-                        modifier = Modifier.weight(1f),
-                        maxLines = 2,
-                        softWrap = true,
+                        "$debugReportCount /",
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
                     )
+                    OutlinedTextField(
+                        value = debugMaxSessions.toString(),
+                        onValueChange = { text ->
+                            text.toIntOrNull()?.coerceIn(1, 50)?.let { debugMaxSessions = it }
+                        },
+                        modifier = Modifier
+                            .widthIn(min = 48.dp, max = 72.dp)
+                            .weight(1f, fill = false),
+                        singleLine = true,
+                    )
+                }
+                val deleteSendBlock: @Composable () -> Unit = {
                     IconButton(
-                        onClick = { showDebugInfoDialog = true },
+                        onClick = { showClearDebugConfirm = true },
                         modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                     ) {
-                        Icon(Icons.Default.Info, contentDescription = "About Debug Quick Fill")
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete debug reports",
+                            modifier = Modifier.size(24.dp),
+                        )
                     }
-                    countMaxBlock()
-                    deleteSendBlock()
-                    Switch(checked = debugQuickFill, onCheckedChange = { debugQuickFill = it })
+                    IconButton(
+                        onClick = {
+                            if (!hasDebugData) {
+                                Toast.makeText(context, "No debug reports to send", Toast.LENGTH_SHORT).show()
+                            } else {
+                                selectedSessionPaths = emptySet()
+                                selectedCrashPaths = emptySet()
+                                showSendReportPicker = true
+                            }
+                        },
+                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Send debug reports",
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
                 }
-            } else {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                if (wideEnough) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 48.dp),
+                            .heightIn(min = 48.dp)
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
-                            "Debug Quick Fill",
+                            "Debug Fill",
                             modifier = Modifier.weight(1f),
                             maxLines = 2,
                             softWrap = true,
@@ -623,50 +606,82 @@ fun SettingsScreen(navController: NavHostController) {
                             onClick = { showDebugInfoDialog = true },
                             modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                         ) {
-                            Icon(Icons.Default.Info, contentDescription = "About Debug Quick Fill")
+                            Icon(Icons.Default.Info, contentDescription = "About Debug Fill")
                         }
-                        Switch(checked = debugQuickFill, onCheckedChange = { debugQuickFill = it })
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 48.dp)
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
-                    ) {
                         countMaxBlock()
                         deleteSendBlock()
+                        Switch(checked = debugFill, onCheckedChange = { debugFill = it })
+                    }
+                } else {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp),
+                        ) {
+                            Text(
+                                "Debug Fill",
+                                modifier = Modifier.weight(1f),
+                                maxLines = 2,
+                                softWrap = true,
+                            )
+                            IconButton(
+                                onClick = { showDebugInfoDialog = true },
+                                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                            ) {
+                                Icon(Icons.Default.Info, contentDescription = "About Debug Fill")
+                            }
+                            Switch(checked = debugFill, onCheckedChange = { debugFill = it })
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+                        ) {
+                            countMaxBlock()
+                            deleteSendBlock()
+                        }
                     }
                 }
             }
         }
-        Text("Setup tips", style = MaterialTheme.typography.titleSmall)
-        Text(
-            "First-run walkthroughs for adding a vehicle or connecting sync (also under Help).",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        OutlinedButton(
-            onClick = { navController.navigate("tutorial/tutorial_add_vehicle") },
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-        ) {
-            Text("Tutorial: Add a vehicle")
+        SettingsFillDebugRow()
+        @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+        @Composable
+        fun SettingsSetupTips() {
+            Text("Setup tips", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "First-run walkthroughs for adding a vehicle or connecting sync (also under Help).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = { navController.navigate("tutorial/tutorial_add_vehicle") },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            ) {
+                Text("Tutorial: Add a vehicle")
+            }
+            OutlinedButton(
+                onClick = { navController.navigate("tutorial/tutorial_setup_sync") },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            ) {
+                Text("Tutorial: Connect existing setup")
+            }
+            OutlinedButton(
+                onClick = { navController.navigate("onboarding") },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp),
+            ) {
+                Text("Show first-run welcome")
+            }
         }
-        OutlinedButton(
-            onClick = { navController.navigate("tutorial/tutorial_setup_sync") },
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-        ) {
-            Text("Tutorial: Connect existing setup")
-        }
-        OutlinedButton(
-            onClick = { navController.navigate("onboarding") },
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp),
-        ) {
-            Text("Show first-run welcome")
-        }
+        SettingsSetupTips()
+        if (experimentsAvailable) {
         SwitchSetting("Show experiment screens (dev)", showExperimentScreens) { showExperimentScreens = it }
-        if (showExperimentScreens) {
+        if (experimentsEnabled) {
             Spacer(modifier = Modifier.height(8.dp))
             Text("Pump OCR (advanced)", style = MaterialTheme.typography.titleSmall)
             Text(
@@ -707,281 +722,283 @@ fun SettingsScreen(navController: NavHostController) {
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
-            Text(
-                "Photos per HTML part. 0 = unlimited (one _part01). Default 50.",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.fillMaxWidth(),
-                softWrap = true,
-                maxLines = 4,
-            )
-            OutlinedTextField(
-                value = experimentHtmlRowsPerFile.toString(),
-                onValueChange = { text ->
-                    experimentHtmlRowsPerFile = ExperimentReportHtml.sanitizeHtmlRowsPerFileWrite(text)
-                },
-                label = { Text("Experiment HTML photos per file (0 = unlimited)") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
+            experimentExtras()
         }
-        if (showDebugInfoDialog) {
-            AlertDialog(
-                onDismissRequest = { showDebugInfoDialog = false },
-                title = { Text("Debug Quick Fill") },
-                text = {
-                    Text(
-                        "This captures images and OCR details during a quick fill that can be emailed for debugging.",
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = { showDebugInfoDialog = false }) {
-                        Text("OK")
-                    }
-                },
-            )
         }
-        if (showSendReportPicker) {
-            AlertDialog(
-                onDismissRequest = { showSendReportPicker = false },
-                title = { Text("Select items to attach") },
-                text = {
-                    LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
-                        if (debugSessions.isNotEmpty()) {
-                            item { Text("Quick Fill sessions", style = MaterialTheme.typography.titleSmall) }
-                            items(debugSessions, key = { it.absolutePath }) { session ->
-                                val path = session.absolutePath
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Checkbox(
-                                        checked = path in selectedSessionPaths,
-                                        onCheckedChange = { checked ->
-                                            selectedSessionPaths = if (checked) {
-                                                selectedSessionPaths + path
-                                            } else {
-                                                selectedSessionPaths - path
-                                            }
-                                        },
-                                    )
-                                    Text(
-                                        FillDebugStore.readSessionSummary(session),
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
-                                }
-                            }
-                        }
-                        if (crashReports.isNotEmpty()) {
-                            item { Text("Crash reports", style = MaterialTheme.typography.titleSmall) }
-                            items(crashReports, key = { it.absolutePath }) { crash ->
-                                val path = crash.absolutePath
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Checkbox(
-                                        checked = path in selectedCrashPaths,
-                                        onCheckedChange = { checked ->
-                                            selectedCrashPaths = if (checked) {
-                                                selectedCrashPaths + path
-                                            } else {
-                                                selectedCrashPaths - path
-                                            }
-                                        },
-                                    )
-                                    Text(crash.name, style = MaterialTheme.typography.bodySmall)
-                                }
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        val attachments = FillDebugStore.collectAttachmentFiles(
-                            selectedSessionPaths,
-                            selectedCrashPaths,
+        @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+        @Composable
+        fun SettingsDialogs() {
+            if (showDebugInfoDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDebugInfoDialog = false },
+                    title = { Text("Debug Fill") },
+                    text = {
+                        Text(
+                            "This captures images and OCR details during a fill that can be emailed for debugging.",
                         )
-                        if (attachments.isEmpty()) {
-                            Toast.makeText(context, "Select at least one item", Toast.LENGTH_SHORT).show()
-                            return@TextButton
-                        }
-                        val launched = FillDebugStore.launchFailureReport(context, attachments)
-                        if (launched) {
-                            showSendReportPicker = false
-                        } else {
-                            Toast.makeText(
-                                context,
-                                "No email app found to send report",
-                                Toast.LENGTH_LONG,
-                            ).show()
-                        }
-                    }) {
-                        Text("Send")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showSendReportPicker = false }) {
-                        Text("Cancel")
-                    }
-                },
-            )
-        }
-        if (showVolumeConvertDialog && pendingVolumeUnit != null) {
-            val targetPref = pendingVolumeUnit!!
-            AlertDialog(
-                onDismissRequest = {
-                    pendingVolumeUnit = null
-                    showVolumeConvertDialog = false
-                },
-                title = { Text("Convert fuel volumes?") },
-                text = {
-                    Text(
-                        "Convert existing fuel volumes between G and L?\n\n" +
-                            "If you choose No, historical numbers keep their current values but " +
-                            "display labels will change without conversion.",
-                    )
-                },
-                confirmButton = {
-                    Row {
-                        TextButton(onClick = {
-                            pendingVolumeUnit = null
-                            showVolumeConvertDialog = false
-                        }) {
-                            Text("Cancel")
-                        }
-                        TextButton(onClick = {
-                            volumeUnit = targetPref
-                            pendingVolumeUnit = null
-                            showVolumeConvertDialog = false
-                        }) {
-                            Text("No")
-                        }
-                        TextButton(onClick = {
-                            val fromUnit = resolveVolumePref(volumeUnit)
-                            val toUnit = resolveVolumePref(targetPref)
-                            fuelViewModel.convertAllVolumes(fromUnit, toUnit) {
-                                volumeUnit = targetPref
-                                pendingVolumeUnit = null
-                                showVolumeConvertDialog = false
-                            }
-                        }) {
-                            Text("Yes")
-                        }
-                    }
-                },
-            )
-        }
-        if (showClearDebugConfirm) {
-            AlertDialog(
-                onDismissRequest = { showClearDebugConfirm = false },
-                title = { Text("Clear debug data?") },
-                text = { Text("Deletes all Quick Fill debug sessions and crash reports.") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        FillDebugStore.clearAllDebugData(context)
-                        debugDataRefreshKey++
-                        showClearDebugConfirm = false
-                        Toast.makeText(context, "Debug data cleared", Toast.LENGTH_SHORT).show()
-                    }) {
-                        Text("Clear")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showClearDebugConfirm = false }) {
-                        Text("Cancel")
-                    }
-                },
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-        Text("Localization & Units", style = MaterialTheme.typography.titleMedium)
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                DropdownSetting(
-                    label = "Default Currency",
-                    selectedValue = if (currencySymbol == "system") {
-                        "System default ($systemCurrencySymbol)"
-                    } else {
-                        currencySymbol
                     },
-                    options = shortCurrencyOptions,
-                    onValueChange = { selected ->
-                        when {
-                            selected.startsWith("System default") -> currencySymbol = "system"
-                            selected == "See more" -> showMoreCurrencies = true
-                            else -> currencySymbol = selected
+                    confirmButton = {
+                        TextButton(onClick = { showDebugInfoDialog = false }) {
+                            Text("OK")
                         }
                     },
                 )
             }
-            if (showMoreCurrencies) {
-                val allCurrencies = remember {
-                    Currency.getAvailableCurrencies().sortedBy { it.currencyCode }
-                }
+            if (showSendReportPicker) {
                 AlertDialog(
-                    onDismissRequest = { showMoreCurrencies = false },
-                    title = { Text("All currencies") },
+                    onDismissRequest = { showSendReportPicker = false },
+                    title = { Text("Select items to attach") },
                     text = {
                         LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
-                            items(allCurrencies, key = { it.currencyCode }) { currency ->
-                                val sym = try {
-                                    currency.getSymbol(Locale.getDefault())
-                                } catch (_: Exception) {
-                                    currency.currencyCode
+                            if (debugSessions.isNotEmpty()) {
+                                item { Text("Fill sessions", style = MaterialTheme.typography.titleSmall) }
+                                items(debugSessions, key = { it.absolutePath }) { session ->
+                                    val path = session.absolutePath
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Checkbox(
+                                            checked = path in selectedSessionPaths,
+                                            onCheckedChange = { checked ->
+                                                selectedSessionPaths = if (checked) {
+                                                    selectedSessionPaths + path
+                                                } else {
+                                                    selectedSessionPaths - path
+                                                }
+                                            },
+                                        )
+                                        Text(
+                                            FillDebugStore.readSessionSummary(session),
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
                                 }
-                                TextButton(onClick = {
-                                    currencySymbol = sym
-                                    showMoreCurrencies = false
-                                }) {
-                                    Text("${currency.currencyCode} ($sym)")
+                            }
+                            if (crashReports.isNotEmpty()) {
+                                item { Text("Crash reports", style = MaterialTheme.typography.titleSmall) }
+                                items(crashReports, key = { it.absolutePath }) { crash ->
+                                    val path = crash.absolutePath
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Checkbox(
+                                            checked = path in selectedCrashPaths,
+                                            onCheckedChange = { checked ->
+                                                selectedCrashPaths = if (checked) {
+                                                    selectedCrashPaths + path
+                                                } else {
+                                                    selectedCrashPaths - path
+                                                }
+                                            },
+                                        )
+                                        Text(crash.name, style = MaterialTheme.typography.bodySmall)
+                                    }
                                 }
                             }
                         }
                     },
                     confirmButton = {
-                        TextButton(onClick = { showMoreCurrencies = false }) {
-                            Text("Close")
+                        TextButton(onClick = {
+                            val attachments = FillDebugStore.collectAttachmentFiles(
+                                selectedSessionPaths,
+                                selectedCrashPaths,
+                            )
+                            if (attachments.isEmpty()) {
+                                Toast.makeText(context, "Select at least one item", Toast.LENGTH_SHORT).show()
+                                return@TextButton
+                            }
+                            val launched = FillDebugStore.launchFailureReport(context, attachments)
+                            if (launched) {
+                                showSendReportPicker = false
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "No email app found to send report",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        }) {
+                            Text("Send")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showSendReportPicker = false }) {
+                            Text("Cancel")
                         }
                     },
                 )
             }
-            Box(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                DropdownSetting(
-                    label = "Default Unit",
-                    selectedValue = volumeDisplayLabel(volumeUnit),
-                    options = volumeOptions,
-                    onValueChange = { label ->
-                        val newPref = volumePrefFromLabel(label)
-                        if (newPref == volumeUnit) return@DropdownSetting
-                        val oldResolved = resolveVolumePref(volumeUnit)
-                        val newResolved = resolveVolumePref(newPref)
-                        if (hasFuelData && oldResolved != newResolved) {
-                            pendingVolumeUnit = newPref
-                            showVolumeConvertDialog = true
-                        } else {
-                            volumeUnit = newPref
+            if (showVolumeConvertDialog && pendingVolumeUnit != null) {
+                val targetPref = pendingVolumeUnit!!
+                AlertDialog(
+                    onDismissRequest = {
+                        pendingVolumeUnit = null
+                        showVolumeConvertDialog = false
+                    },
+                    title = { Text("Convert fuel volumes?") },
+                    text = {
+                        Text(
+                            "Convert existing fuel volumes between G and L?\n\n" +
+                                "If you choose No, historical numbers keep their current values but " +
+                                "display labels will change without conversion.",
+                        )
+                    },
+                    confirmButton = {
+                        Row {
+                            TextButton(onClick = {
+                                pendingVolumeUnit = null
+                                showVolumeConvertDialog = false
+                            }) {
+                                Text("Cancel")
+                            }
+                            TextButton(onClick = {
+                                volumeUnit = targetPref
+                                pendingVolumeUnit = null
+                                showVolumeConvertDialog = false
+                            }) {
+                                Text("No")
+                            }
+                            TextButton(onClick = {
+                                val fromUnit = resolveVolumePref(volumeUnit)
+                                val toUnit = resolveVolumePref(targetPref)
+                                fuelViewModel.convertAllVolumes(fromUnit, toUnit) {
+                                    volumeUnit = targetPref
+                                    pendingVolumeUnit = null
+                                    showVolumeConvertDialog = false
+                                }
+                            }) {
+                                Text("Yes")
+                            }
+                        }
+                    },
+                )
+            }
+            if (showClearDebugConfirm) {
+                AlertDialog(
+                    onDismissRequest = { showClearDebugConfirm = false },
+                    title = { Text("Clear debug data?") },
+                    text = { Text("Deletes all Fill debug sessions and crash reports.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            FillDebugStore.clearAllDebugData(context)
+                            debugDataRefreshKey++
+                            showClearDebugConfirm = false
+                            Toast.makeText(context, "Debug data cleared", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Text("Clear")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showClearDebugConfirm = false }) {
+                            Text("Cancel")
                         }
                     },
                 )
             }
         }
+        SettingsDialogs()
 
-        Spacer(modifier = Modifier.height(16.dp))
-        Text("Dark Mode", style = MaterialTheme.typography.titleMedium)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            RadioButton(selected = darkModePref == "system", onClick = { darkModePref = "system" })
-            Text("System")
-            Spacer(modifier = Modifier.width(8.dp))
-            RadioButton(selected = darkModePref == "off", onClick = { darkModePref = "off" })
-            Text("Light")
-            Spacer(modifier = Modifier.width(8.dp))
-            RadioButton(selected = darkModePref == "on", onClick = { darkModePref = "on" })
-            Text("Dark")
+        @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+        @Composable
+        fun SettingsLocalization() {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Localization & Units", style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                    DropdownSetting(
+                        label = "Default Currency",
+                        selectedValue = if (currencySymbol == "system") {
+                            "System default ($systemCurrencySymbol)"
+                        } else {
+                            currencySymbol
+                        },
+                        options = shortCurrencyOptions,
+                        onValueChange = { selected ->
+                            when {
+                                selected.startsWith("System default") -> currencySymbol = "system"
+                                selected == "See more" -> showMoreCurrencies = true
+                                else -> currencySymbol = selected
+                            }
+                        },
+                    )
+                }
+                if (showMoreCurrencies) {
+                    val allCurrencies = remember {
+                        Currency.getAvailableCurrencies().sortedBy { it.currencyCode }
+                    }
+                    AlertDialog(
+                        onDismissRequest = { showMoreCurrencies = false },
+                        title = { Text("All currencies") },
+                        text = {
+                            LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
+                                items(allCurrencies, key = { it.currencyCode }) { currency ->
+                                    val sym = try {
+                                        currency.getSymbol(Locale.getDefault())
+                                    // kept: failure stays on this call so the screen or caller can continue
+                                    } catch (_: Exception) {
+                                        currency.currencyCode
+                                    }
+                                    TextButton(onClick = {
+                                        currencySymbol = sym
+                                        showMoreCurrencies = false
+                                    }) {
+                                        Text("${currency.currencyCode} ($sym)")
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showMoreCurrencies = false }) {
+                                Text("Close")
+                            }
+                        },
+                    )
+                }
+                Box(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                    DropdownSetting(
+                        label = "Default Unit",
+                        selectedValue = volumeDisplayLabel(volumeUnit),
+                        options = volumeOptions,
+                        onValueChange = { label ->
+                            val newPref = volumePrefFromLabel(label)
+                            if (newPref == volumeUnit) return@DropdownSetting
+                            val oldResolved = resolveVolumePref(volumeUnit)
+                            val newResolved = resolveVolumePref(newPref)
+                            if (hasFuelData && oldResolved != newResolved) {
+                                pendingVolumeUnit = newPref
+                                showVolumeConvertDialog = true
+                            } else {
+                                volumeUnit = newPref
+                            }
+                        },
+                    )
+                }
+            }
         }
+        SettingsLocalization()
+
+        @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+        @Composable
+        fun SettingsDarkMode() {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Dark Mode", style = MaterialTheme.typography.titleMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = darkModePref == "system", onClick = { darkModePref = "system" })
+                Text("System")
+                Spacer(modifier = Modifier.width(8.dp))
+                RadioButton(selected = darkModePref == "off", onClick = { darkModePref = "off" })
+                Text("Light")
+                Spacer(modifier = Modifier.width(8.dp))
+                RadioButton(selected = darkModePref == "on", onClick = { darkModePref = "on" })
+                Text("Dark")
+            }
+        }
+        SettingsDarkMode()
 
         Spacer(modifier = Modifier.height(24.dp))
         Button(onClick = { exportLauncher.launch("vehicle_expenses_backup.zip") }, modifier = Modifier.fillMaxWidth()) { Text("Export to CSV (ZIP)") }

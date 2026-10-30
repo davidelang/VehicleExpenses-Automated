@@ -23,6 +23,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import com.davidlang.vehicleexpensesautomated.ui.util.calculateDeskewAnglePaddleOnly
+import com.davidlang.vehicleexpensesautomated.ui.util.doCrossScaleRedboxFilterPixel
+import com.davidlang.vehicleexpensesautomated.ui.util.pruneRectsToTopN
 
 /**
  * One-shot discover dump: prod × deskew/rot. No expand, no OCR, no pump_results.

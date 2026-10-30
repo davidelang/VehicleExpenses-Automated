@@ -100,6 +100,18 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.davidlang.vehicleexpensesautomated.data.batch.requestCancel
+import com.davidlang.vehicleexpensesautomated.data.batch.runIngest
+import com.davidlang.vehicleexpensesautomated.data.batch.runLocationEnhance
+import com.davidlang.vehicleexpensesautomated.data.batch.applyMerge
+import com.davidlang.vehicleexpensesautomated.data.batch.advancePhaseAndRebuild
+import com.davidlang.vehicleexpensesautomated.data.batch.analyzeOdoDisorder
+import com.davidlang.vehicleexpensesautomated.data.batch.applyOdoReorder
+import com.davidlang.vehicleexpensesautomated.data.batch.getFuelEntry
+import com.davidlang.vehicleexpensesautomated.data.batch.nearestFillBefore
+import com.davidlang.vehicleexpensesautomated.data.batch.nearestFillAfter
+import com.davidlang.vehicleexpensesautomated.data.batch.resolvePendingPhotoUris
+import com.davidlang.vehicleexpensesautomated.data.batch.PerVehicleNeighbor
 
 /**
  * Stage A/B/C: batch import, merge, image-first questions with manual entry.
@@ -830,11 +842,12 @@ private fun PendingQuestionCard(
     var expandNeighbors by remember(item.id) { mutableIntStateOf(0) }
     var neighbors by remember(item.id) { mutableStateOf<List<FuelEntry>>(emptyList()) }
     var perVehicleNeighbors by remember(item.id) {
-        mutableStateOf<List<BatchFuelImportCoordinator.PerVehicleNeighbor>>(emptyList())
+        mutableStateOf<List<PerVehicleNeighbor>>(emptyList())
     }
     var selectedVehicleId by remember(item.id) {
         mutableStateOf(item.suggestedVehicleId)
     }
+    var showAllDashVehicles by remember(item.id) { mutableStateOf(false) }
     /**
      * MPG_OUTLIER focus: true = **This fill** (leg end, default);
      * false = **Last fill** (leg start / prior full fill).
@@ -1090,7 +1103,7 @@ private fun PendingQuestionCard(
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(item.kind.name, style = MaterialTheme.typography.labelLarge)
+            Text(item.kindLabel(), style = MaterialTheme.typography.labelLarge)
             Text(item.message, style = MaterialTheme.typography.bodyMedium)
 
             if (item.kind == BatchPendingKind.MPG_OUTLIER) {
@@ -1750,15 +1763,39 @@ private fun PendingQuestionCard(
 
             // Dash vehicle reprocess (OCR)
             if (item.kind == BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE && vehicles.isNotEmpty()) {
+                val rawSurvivor = item.extra["survivorIds"]
+                val parsedIds = rawSurvivor
+                    ?.split(',')
+                    ?.mapNotNull { it.trim().toIntOrNull() }
+                    .orEmpty()
+                val cardIds = vehicles.map { it.id }.toSet()
+                val parsedSet = parsedIds.toSet()
+                val properSubset = rawSurvivor != null &&
+                    parsedIds.isNotEmpty() &&
+                    parsedSet.all { it in cardIds } &&
+                    parsedSet != cardIds
+                val shown = if (properSubset && !showAllDashVehicles) {
+                    vehicles.filter { it.id in parsedSet }
+                } else {
+                    vehicles
+                }
                 Text("Or reprocess OCR with vehicle:", style = MaterialTheme.typography.labelMedium)
                 VehiclePickRow(
-                    vehicles = vehicles,
+                    vehicles = shown,
                     enabled = enabled,
                     selectedId = null,
                     onSelect = { onAction(PendingAnswerAction.AssignVehicle(it)) },
                     pumpVol = null,
                     maxFillByVehicle = emptyMap(),
                 )
+                if (properSubset && !showAllDashVehicles) {
+                    TextButton(
+                        onClick = { showAllDashVehicles = true },
+                        enabled = enabled,
+                    ) {
+                        Text("Show all vehicles")
+                    }
+                }
             }
 
             // Phase 5: unreadable / ambiguous → may declare gap before MPG phase
@@ -2039,7 +2076,7 @@ private fun PendingQuestionCard(
         // Shared zoom chrome (+/−, pinch, Close); edit actions stay on the card
         ZoomablePhotoDialog(
             uris = listOf(path),
-            title = item.kind.name + " · " + path.substringAfterLast('/'),
+            title = item.kindLabel() + " · " + path.substringAfterLast('/'),
             onDismiss = { zoomPath = null },
         )
     }

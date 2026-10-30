@@ -76,18 +76,6 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
      * Copy one camera frame into this set. A release between the generation check and the
      * write throws instead of touching a freed handle.
      */
-    fun borrowYuv(
-        y: ByteBuffer,
-        u: ByteBuffer,
-        v: ByteBuffer,
-        yStride: Int,
-        uvStride: Int,
-        uPixelStride: Int,
-        vPixelStride: Int,
-    ) {
-        (p as Instance).borrow(y, u, v, yStride, uvStride, uPixelStride, vPixelStride)
-    }
-
     fun ingestCameraFrame(
         y: ByteBuffer,
         u: ByteBuffer,

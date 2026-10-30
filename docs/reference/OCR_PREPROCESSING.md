@@ -6,11 +6,11 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 
 # OCR preprocessing
 
-How a crop is prepared before the recognizer runs. The Quick Fill stages that call this are in [QUICK_FILL_CAMERA.md](QUICK_FILL_CAMERA.md).
+How a crop is prepared before the recognizer runs. The Fill stages that call this are in [FILL_CAMERA.md](FILL_CAMERA.md).
 
 ## Odometer crop
 
-Implemented in `OcrHarness.runAutoFillPipeline` via `PaddleSeedOdo.readSeedRec` (paddle seed). Quick Fill and batch dash do not use Set J; that pipeline is removed. Set J remains an obsolete alignment experiment only.
+Implemented in `OcrHarness.runAutoFillPipeline` via `PaddleSeedOdo.readSeedRec` (paddle seed). Fill and batch dash do not use Set J; that pipeline is removed. Set J remains an obsolete alignment experiment only.
 
 The red odometer quad is the crop. Paddle seeds that overlap it are padded at `PaddleSeedOdo.SEED_VERT_PRODUCTION` (0.40), unioned, clipped to the quad, and fed with `ocrPumpFeedOriented40` (40-in-48 rec window).
 

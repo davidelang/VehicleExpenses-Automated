@@ -1,7 +1,8 @@
-package com.davidlang.vehicleexpensesautomated.ui.util
+package com.davidlang.vehicleexpensesautomated.ui.experiment
 
 import android.os.Build
 import com.davidlang.vehicleexpensesautomated.BuildConfig
+import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 
 /**
  * Common fields for experiment pump/align JSON headers so reports identify
@@ -13,7 +14,7 @@ object ExperimentReportMeta {
         val primary = Build.SUPPORTED_ABIS.firstOrNull() ?: ""
         // Escape not needed: hex hashes and controlled BuildConfig strings.
         return buildString {
-            // Prefer last-loaded pack (precision A/B suite); fall back to ABI default.
+            // Last pack loaded by loadProductionModels (qa experiments may force a dir).
             val pathId = NativePaddleEngine.activeProductPathId
             val prodDir = NativePaddleEngine.activeProductDir
             append("  \"version\": \"${BuildConfig.VERSION_NAME}\",\n")

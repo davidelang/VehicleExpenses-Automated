@@ -36,14 +36,6 @@ object NativeImageUtils {
      * Fast JNI linear copy from ARGB Bitmap to any 1-channel Mat of matching size.
      * Extracts the Red channel (luminance) directly into native memory.
      */
-    fun nativeDevelopDngToJpeg(fd: Int, outPath: String, quality: Int) {
-        throw IllegalStateException("DNG develop is not linked in this build")
-    }
-
-    fun nativeDevelopDngToBitmap(fd: Int): Bitmap {
-        throw IllegalStateException("DNG develop is not linked in this build")
-    }
-
     fun syncMatFromArgb(src: Bitmap, dstMat: Mat) {
         if (src.width != dstMat.cols() || src.height != dstMat.rows()) {
             throw IllegalArgumentException("Dimension mismatch: Bitmap=${src.width}x${src.height}, Mat=${dstMat.cols()}x${dstMat.rows()}")
@@ -60,19 +52,6 @@ object NativeImageUtils {
             throw IllegalArgumentException("Dimension mismatch: Mat=${srcMat.cols() + 0}x${srcMat.rows() + 0}, Bitmap=${dst.width}x${dst.height}")
         }
         nativeSyncMatToArgb(srcMat.nativeObj, dst)
-    }
-
-    /**
-     * High-performance ingestion from ARGB Bitmap to BufferSet primary Mat.
-     * Uses cv::cvtColor for optimized SIMD conversion.
-     */
-    fun ingestArgbToYuv(src: Bitmap, target: BufferSet.Slice) {
-        if (target is BufferSet.Instance) {
-            nativeIngestArgbToYuv(src, target.nativePtr)
-        } else {
-            // Fallback for crops if ever needed, but usually we ingest to full buffer
-            syncMatFromArgb(src, target.mat)
-        }
     }
 
     /**
@@ -165,37 +144,12 @@ object NativeImageUtils {
         }
     }
 
-    /**
-     * Encodes a YuvHandle directly to a Base64 JPEG string using high-performance JNI merge.
-     */
-    fun compressYuvToBase64(handle: BufferSet.YuvHandle, quality: Int): String {
-        return nativeCompressYuvToBase64(
-            handle.planes[0].buffer,
-            handle.planes[1].buffer,
-            handle.planes[2].buffer,
-            handle.width,
-            handle.height,
-            handle.planes[0].rowStride,
-            quality
-        )
-    }
 
     /** Packed S×S scale of src Y into dest DirectByteBuffer[0, S²] (inner top-left; rest 0). */
     fun scalePackedU8(srcY: Mat, destRaw: ByteBuffer, s: Int, innerW: Int, innerH: Int): Boolean {
         if (srcY.empty() || s < 1) return false
         destRaw.clear()
         return nativeScalePackedU8(srcY.nativeObj, destRaw, s, innerW, innerH)
-    }
-
-    /** Header Mat on packed s.raw (S×S, step S). Does not own pixels. */
-    fun wrapPackedU8(destRaw: ByteBuffer, s: Int): Mat {
-        val m = Mat()
-        destRaw.clear()
-        if (!nativeWrapPackedU8(m.nativeObj, destRaw, s)) {
-            m.release()
-            return Mat()
-        }
-        return m
     }
 
     /** Scale src Y/UV ROI into dest crop (already sized). No third-plane alloc. */
@@ -208,176 +162,22 @@ object NativeImageUtils {
         )
     }
 
+    /**
+     * Area-scale [src] into the top-left [writeW]×[writeH] of [dest] at scale [s].
+     * Same kernel as [com.davidlang.vehicleexpensesautomated.ui.util.RecBufferFeed.scaleIsotropicNoPartial].
+     * Does not clear outside that rectangle. Pointers are used only for this call.
+     */
+    fun scaleIsotropicArea(src: Mat, dest: Mat, s: Float, writeW: Int, writeH: Int): Boolean {
+        if (src.empty() || dest.empty() || s <= 0f || writeW < 1 || writeH < 1) return false
+        return nativeScaleIsotropicArea(src.nativeObj, dest.nativeObj, s, writeW, writeH)
+    }
+
     /** JPEG bytes of dest-crop YUV. Native fail → empty. */
     fun encodeYuvMatJpeg(y: Mat, uv: Mat?, quality: Int): ByteArray {
         if (y.empty()) return ByteArray(0)
         return nativeEncodeYuvMatJpeg(y.nativeObj, uv?.nativeObj ?: 0L, quality) ?: ByteArray(0)
     }
 
-    /**
-     * High-performance ingestion from JPEG file directly to BufferSet YUV planes.
-     * Bypasses Java heap Bitmaps.
-     */
-    fun ingestJpegToYuv(path: String, target: BufferSet.Slice) {
-        if (target is BufferSet.Instance) {
-            if (!nativeIngestJpegToYuv(path, target.nativePtr)) {
-                throw Exception("Native JPEG ingestion failed for $path")
-            }
-        } else {
-            throw IllegalArgumentException("Native ingestion required an Instance handle")
-        }
-    }
-
-    /**
-     * Diagnostic: Probe image dimensions using native imread.
-     */
-    fun testImread(path: String): String {
-        return nativeTestImread(path)
-    }
-
-    /**
-     * Diagnostic: Probe DNG dimensions using LibRaw.
-     */
-    fun probeDngResolution(path: String): String {
-        return nativeProbeDngResolution(path)
-    }
-
-    /**
-     * High-performance ingestion from DNG file directly to BufferSet YUV planes using LibRaw.
-     * Bypasses Java heap Bitmaps.
-     */
-    fun ingestDngToYuv(path: String, target: BufferSet.Slice) {
-        if (target is BufferSet.Instance) {
-            if (!nativeIngestDngToYuv(path, target.nativePtr)) {
-                throw Exception("Native DNG ingestion failed for $path")
-            }
-        } else {
-            throw IllegalArgumentException("Native ingestion required an Instance handle")
-        }
-    }
-
-    /**
-     * Triage dump: LibRaw unpack CRC + developed RGB + Y after RGB2YUV.
-     * Writes [rgbPath] (W*H*3 RGB u8) and [yPath] (W*H Y u8).
-     * Returns JSON: ok, w, h, raw_crc32, rgb_crc32, rgb_sum, y_crc32, y_sum, …
-     */
-    fun dumpDngDevelopStages(path: String, rgbPath: String, yPath: String): String {
-        return nativeDumpDngDevelopStages(path, rgbPath, yPath)
-    }
-
-    /**
-     * High-performance population of a mono (1-channel) float tensor from an OpenCV Mat.
-     * Enforces strict dimension parity.
-     */
-    fun populateMonoTensor(src: Mat, dst: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float) {
-        nativePopulateMonoTensor(src.nativeObj, dst, tensorW, tensorH, mean, std)
-    }
-
-    fun quantizeMonoHandleToInt8(srcHandle: Long, dstHandle: Long, tensorW: Int, tensorH: Int, srcW: Int = 0, srcH: Int = 0) {
-        nativeQuantizeMonoHandleToInt8(srcHandle, dstHandle, tensorW, tensorH, srcW, srcH)
-    }
-
-
-    /**
-     * Offloads the entire Valley Expansion algorithm to C++.
-     * Reduces thousands of JNI calls to a single call.
-     */
-    fun expandByValley(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): android.graphics.Rect {
-        val res = nativeExpandByValley(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
-        return if (res != null && res.size == 4) {
-            android.graphics.Rect(res[0], res[1], res[2], res[3])
-        } else rect
-    }
-
-    fun expandByValleyDiagnostic(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): Pair<android.graphics.Rect, Map<String, String>> {
-        val res = nativeExpandByValleyDiagnostic(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
-        if (res != null && res.size == 2) {
-            val summary = res[0] as IntArray
-            val trace = res[1] as String
-            val finalRect = android.graphics.Rect(summary[8], summary[9], summary[10], summary[11])
-            val meta = mapOf(
-                "valley_start" to "${summary[0]},${summary[1]}-${summary[2]},${summary[3]}",
-                "valley_probed" to "${summary[4]},${summary[5]}-${summary[6]},${summary[7]}",
-                "valley_retracted" to "${summary[8]},${summary[9]}-${summary[10]},${summary[11]}",
-                "valley_threshold" to summary[12].toString(),
-                "valley_run" to summary[13].toString(),
-                "valley_lookahead" to (summary[14] / 100f).toString(),
-                "valley_image_width" to summary[15].toString(),
-                "valley_trace" to trace
-            )
-            return Pair(finalRect, meta)
-        }
-        return Pair(rect, emptyMap())
-    }
-
-    fun expandByCharacterAwareDiagnostic(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): Pair<android.graphics.Rect, Map<String, String>> {
-        val res = nativeExpandByCharacterAwareDiagnostic(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
-        if (res != null && res.size == 6) {
-            val summary = res[0] as IntArray
-            val trace = res[1] as String
-            val hArr = res[2] as IntArray
-            val vArr = res[3] as IntArray
-            val matchedSlots = res[4] as IntArray
-            val failedSlots = res[5] as IntArray
-
-            val finalRect = android.graphics.Rect(summary[8], summary[9], summary[10], summary[11])
-            val meta = mutableMapOf(
-                "charaware_start" to "${summary[0]},${summary[1]}-${summary[2]},${summary[3]}",
-                "charaware_strict" to "${summary[4]},${summary[5]}-${summary[6]},${summary[7]}",
-                "charaware_final" to "${summary[8]},${summary[9]}-${summary[10]},${summary[11]}",
-                "charaware_threshold" to summary[12].toString(),
-                "charaware_v_stroke" to summary[13].toString(),
-                "charaware_h_stroke" to summary[14].toString(),
-                "charaware_pitch" to summary[15].toString(),
-                "charaware_trace" to trace,
-                "charaware_h_hist" to hArr.joinToString(","),
-                "charaware_v_hist" to vArr.joinToString(","),
-                "charaware_matched_slots" to matchedSlots.joinToString(","),
-                "charaware_failed_slots" to failedSlots.joinToString(",")
-            )
-            return Pair(finalRect, meta)
-        }
-        return Pair(rect, emptyMap())
-    }
-
-    fun calculateHistograms(mat: Mat, rects: List<android.graphics.Rect>): Pair<Pair<IntArray, IntArray>, IntArray>? {
-        if (rects.isEmpty()) return null
-        val flatRects = IntArray(rects.size * 4)
-        rects.forEachIndexed { i, r ->
-            flatRects[i * 4] = r.left
-            flatRects[i * 4 + 1] = r.top
-            flatRects[i * 4 + 2] = r.right
-            flatRects[i * 4 + 3] = r.bottom
-        }
-        val res = nativeCalculateHistogramB64(mat.nativeObj, flatRects)
-        if (res != null && res.size == 3) {
-            return Pair(Pair(res[0] as IntArray, res[1] as IntArray), res[2] as IntArray)
-        }
-        return null
-    }
-
-    private external fun nativeCalculateHistogramB64(matPtr: Long, rects: IntArray): Array<Any>?
-
-    fun expandByCharacterAware(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): android.graphics.Rect {
-        val res = nativeExpandByCharacterAware(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
-        return if (res != null && res.size == 4) {
-            android.graphics.Rect(res[0], res[1], res[2], res[3])
-        } else rect
-    }
-
-    fun expandByUniformity(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): Pair<android.graphics.Rect, android.graphics.Rect> {
-        val res = nativeExpandByUniformity(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
-        return if (res != null && res.size == 8) {
-            Pair(
-                android.graphics.Rect(res[0], res[1], res[2], res[3]),
-                android.graphics.Rect(res[4], res[5], res[6], res[7])
-            )
-        } else Pair(rect, rect)
-    }
-
-    fun binarizeRange(src: Mat, dst: Mat, low: Int, high: Int) {
-        nativeBinarizeRange(src.nativeObj, dst.nativeObj, low, high)
-    }
 
     /**
      * One grow cell is 4 pixels on the output heat array (`packHeatmapBoxes` `cell = gc * 4`).
@@ -400,11 +200,6 @@ object NativeImageUtils {
      *
      * @param boxMode [HEATMAP_BOX_MIN_AREA_RECT] (default) or [HEATMAP_BOX_AABB]
      */
-    /** Default CC box pack cap (production / pump / non-expense multi-scale). */
-    const val HEATMAP_MAX_BOXES_DEFAULT: Int = 200
-    /** Dense expense receipts in multi-scale det (page text lines). */
-    const val HEATMAP_MAX_BOXES_EXPENSE: Int = 2000
-
     fun processHeatmap(
         tensor: Any,
         threshold: Float,
@@ -412,8 +207,8 @@ object NativeImageUtils {
         boxMode: Int = HEATMAP_BOX_MIN_AREA_RECT,
         /** 3x3 morph dilate passes on binary thr mask before CC (merges nearby heat). 0 = off. */
         maskDilatePasses: Int = 0,
-        /** Hard cap on packed boxes after minArea filter (native packHeatmapBoxes). */
-        maxBoxes: Int = HEATMAP_MAX_BOXES_DEFAULT,
+        /** 0 = no box cap. */
+        maxBoxes: Int = 0,
         /** 0 = CC AABB as-is; 1 = grow one 4×4 det cell (production default). */
         growCells: Int = 1,
         /** A.p Y: mask + CC labels + edges headers. Null = JNI fail (no heap). */
@@ -422,11 +217,11 @@ object NativeImageUtils {
         heatToPhoto: Float = 0f,
         photoW: Int = 0,
         photoH: Int = 0,
-    ): FloatArray? {
+    ): FloatArray {
         return nativeProcessHeatmap(
             tensor, threshold, minArea, boxMode, maskDilatePasses, maxBoxes, growCells,
             scratchY?.nativeObj ?: 0L, heatToPhoto, photoW, photoH,
-        )
+        ) ?: throw IllegalStateException("processHeatmap")
     }
 
     /**
@@ -440,17 +235,17 @@ object NativeImageUtils {
         minArea: Float,
         boxMode: Int = HEATMAP_BOX_MIN_AREA_RECT,
         maskDilatePasses: Int = 0,
-        maxBoxes: Int = HEATMAP_MAX_BOXES_DEFAULT,
+        maxBoxes: Int = 0,
         growCells: Int = 1,
         scratchY: Mat? = null,
         heatToPhoto: Float = 0f,
         photoW: Int = 0,
         photoH: Int = 0,
-    ): FloatArray? {
+    ): FloatArray {
         return nativeProcessHeatmapU8(
             heatU8, width, height, threshold, minArea, boxMode, maskDilatePasses, maxBoxes,
             growCells, scratchY?.nativeObj ?: 0L, heatToPhoto, photoW, photoH,
-        )
+        ) ?: throw IllegalStateException("processHeatmapU8")
     }
 
     /**
@@ -460,72 +255,49 @@ object NativeImageUtils {
     fun lastHeatmapPostPath(): String = nativeLastHeatmapPostPath() ?: "unknown"
 
     /**
-     * Deskew angle from det heatmap (degrees, ~[-45, 45]).
-     * Production: Hough lines on thresholded heat (phase-2 GT winner `hough_thr0.2`);
-     * falls back to legacy CC + minAreaRect 0.5° buckets if no lines.
-     */
-    fun heatmapToAngle(tensor: Any, threshold: Float, scratchY: Mat? = null): Float {
-        return nativeHeatmapToAngle(tensor, threshold, scratchY?.nativeObj ?: 0L)
-    }
-
-    /** Deskew angle from host u8 heat plane (tiled det). thr is float on heat in [0,1] (u8/255). */
-    fun heatmapToAngleU8(
-        heatU8: ByteArray,
-        width: Int,
-        height: Int,
-        threshold: Float,
-        scratchY: Mat? = null,
-    ): Float {
-        return nativeHeatmapToAngleU8(heatU8, width, height, threshold, scratchY?.nativeObj ?: 0L)
-    }
-
-    /**
      * Safe float heatmap plane from det output (float32 / uint8 / fp16).
      * Do not use Tensor.getFloatData on non-float tensors — that crashes native.
      */
-    fun heatmapToFloatArray(tensor: Any): FloatArray? {
-        return nativeHeatmapToFloatArray(tensor)
+    fun heatmapToFloatArray(tensor: Any): FloatArray {
+        return nativeHeatmapToFloatArray(tensor) ?: throw IllegalStateException("heatmapToFloatArray")
     }
 
     /**
      * Raw product heatmap as uint8 plane (row-major w*h). Prefers native u8 tensor copy;
      * float/fp16 tensors are quantized via round(x*255).
      */
-    fun heatmapToUInt8Array(tensor: Any): ByteArray? {
-        return nativeHeatmapToUInt8Array(tensor)
+    fun heatmapToUInt8Array(tensor: Any): ByteArray {
+        return nativeHeatmapToUInt8Array(tensor) ?: throw IllegalStateException("heatmapToUInt8Array")
     }
 
-    fun veRssSetPath(path: String) {
-        nativeVeRssSetPath(path)
-    }
+    @JvmStatic
+    external fun nativePredictorGuardEnter()
+
+    @JvmStatic
+    external fun nativePredictorGuardExit()
+
+    @JvmStatic
+    external fun nativeDevelopDngToJpeg(inFd: Int, outPath: String, quality: Int): IntArray
+
+    @JvmStatic
+    external fun nativeDevelopDngToBitmap(inFd: Int): android.graphics.Bitmap
 
     private external fun nativeSyncMatFromArgb(bitmap: Bitmap, matPtr: Long)
     private external fun nativeSyncMatToArgb(matPtr: Long, bitmap: Bitmap)
-    private external fun nativeIngestArgbToYuv(bitmap: Bitmap, handlePtr: Long)
-    private external fun nativeTestImread(path: String): String
-    private external fun nativeProbeDngResolution(path: String): String
-    private external fun nativeIngestJpegToYuv(path: String, handlePtr: Long): Boolean
-    private external fun nativeIngestDngToYuv(path: String, handlePtr: Long): Boolean
-    private external fun nativeDumpDngDevelopStages(path: String, rgbPath: String, yPath: String): String
-    private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
     private external fun nativeScalePackedU8(
         srcYPtr: Long, dstBuf: ByteBuffer, s: Int, innerW: Int, innerH: Int,
     ): Boolean
-    private external fun nativeWrapPackedU8(matPtr: Long, buf: ByteBuffer, s: Int): Boolean
     private external fun nativeScaleYuvRoi(
         srcYPtr: Long, srcUvPtr: Long,
         sl: Int, st: Int, sr: Int, sb: Int,
         dstYPtr: Long, dstUvPtr: Long,
     ): Boolean
+    private external fun nativeScaleIsotropicArea(
+        srcPtr: Long, destPtr: Long, s: Float, writeW: Int, writeH: Int,
+    ): Boolean
     private external fun nativeEncodeYuvMatJpeg(yPtr: Long, uvPtr: Long, quality: Int): ByteArray?
-    private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
-    private external fun nativeQuantizeMonoHandleToInt8(srcHandle: Long, dstHandle: Long, tensorW: Int, tensorH: Int, srcW: Int, srcH: Int)
-    private external fun nativePopulateMonoInt8Xor(srcMatPtr: Long, dstTensor: ByteArray, tensorW: Int, tensorH: Int)
     private external fun nativePopulateMonoUInt8(srcMatPtr: Long, dstTensor: ByteArray, tensorW: Int, tensorH: Int)
 
-    fun populateMonoInt8Xor(src: Mat, dst: ByteArray, tensorW: Int, tensorH: Int) {
-        nativePopulateMonoInt8Xor(src.nativeObj, dst, tensorW, tensorH)
-    }
 
     /** Raw greyscale copy for kUInt8 feed (no XOR). Still copies into [dst] for setData. */
     fun populateMonoUInt8(src: Mat, dst: ByteArray, tensorW: Int, tensorH: Int) {
@@ -562,66 +334,6 @@ object NativeImageUtils {
     ): Int
 
     private external fun nativeReleaseSharedTensorInputU8()
-    external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
-    external fun nativeExpandByValleyDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
-    private external fun nativeExpandByCharacterAware(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
-    private external fun nativeExpandByCharacterAwareDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
-    private external fun nativeExpandByUniformity(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
-    private external fun nativeChromaMag(yPtr: Long, uvPtr: Long, dstPtr: Long): Boolean
-    fun chromaMagNative(y: Mat, uv: Mat, dst: Mat): Boolean {
-        if (y.empty() || dst.empty()) return false
-        return nativeChromaMag(y.nativeObj, uv.nativeObj, dst.nativeObj)
-    }
-
-    fun fillEnergyLookU8(gray: Mat, dest: Mat): Boolean {
-        if (gray.empty() || dest.empty()) return false
-        return nativeFillEnergyLookU8(gray.nativeObj, dest.nativeObj)
-    }
-
-    private external fun nativeFillEnergyLookU8(grayPtr: Long, destPtr: Long): Boolean
-
-    private external fun nativeProbeSeedInk(
-        grayPtr: Long,
-        uvPtr: Long,
-        l: Int,
-        t: Int,
-        r: Int,
-        b: Int,
-        rotPts: FloatArray?,
-        imgW: Int,
-        wantColor: Boolean,
-        sheetYPtr: Long,
-        whiteYPtr: Long,
-        strokeYPtr: Long,
-        deskewPYPtr: Long,
-        destYPtr: Long,
-        destUvPtr: Long,
-        destW: Int,
-        destH: Int,
-    ): Array<Any>?
-
-    fun probeSeedInk(
-        grayPtr: Long,
-        uvPtr: Long,
-        l: Int,
-        t: Int,
-        r: Int,
-        b: Int,
-        rotPts: FloatArray?,
-        imgW: Int,
-        wantColor: Boolean,
-        sheetYPtr: Long,
-        whiteYPtr: Long,
-        strokeYPtr: Long,
-        deskewPYPtr: Long,
-        destYPtr: Long,
-        destUvPtr: Long,
-        destW: Int,
-        destH: Int,
-    ): Array<Any>? = nativeProbeSeedInk(
-        grayPtr, uvPtr, l, t, r, b, rotPts, imgW, wantColor,
-        sheetYPtr, whiteYPtr, strokeYPtr, deskewPYPtr, destYPtr, destUvPtr, destW, destH,
-    )
 
     const val SEG7_HIST_BINS: Int = 300
     const val SEG7_ENERGY_HIST_BINS: Int = 64
@@ -629,494 +341,6 @@ object NativeImageUtils {
     const val SEG7_ATTEMPT_F: Int = 15
     const val SEG7_TELE_N: Int =
         26 + SEG7_ENERGY_HIST_BINS * 2 + 6 + 1 + SEG7_ATTEMPT_MAX * SEG7_ATTEMPT_F + 11
-
-    private external fun nativeEnergyAabbTight(
-        grayPtr: Long, uvPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, scratchPtr: Long,
-    ): IntArray?
-    private external fun nativeEnergyAabbRetract(
-        grayPtr: Long, uvPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, scratchPtr: Long,
-    ): IntArray?
-
-    fun energyAabbTightNative(
-        gray: Mat, uv: Mat?, seeds: IntArray,
-        tele: FloatArray?, sweep: ShortArray?, scratch: Mat?,
-    ): IntArray? {
-        if (gray.empty()) return IntArray(0)
-        return nativeEnergyAabbTight(
-            gray.nativeObj, uv?.nativeObj ?: 0L, seeds, tele, sweep, scratch?.nativeObj ?: 0L,
-        )
-    }
-    private external fun nativeEnergyOrientTight(
-        grayPtr: Long, seeds: FloatArray, sweepArr: ShortArray?, scratchPtr: Long,
-    ): FloatArray?
-
-    fun energyOrientTightNative(
-        gray: Mat, seeds: FloatArray, sweep: ShortArray?, scratch: Mat?,
-    ): FloatArray? {
-        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
-        return nativeEnergyOrientTight(gray.nativeObj, seeds, sweep, scratch?.nativeObj ?: 0L)
-    }
-    private external fun nativeEnergyOrientRetract(
-        grayPtr: Long, seeds: FloatArray, sweepArr: ShortArray?, scratchPtr: Long,
-    ): FloatArray?
-    fun energyOrientRetractNative(
-        gray: Mat, seeds: FloatArray, sweep: ShortArray?, scratch: Mat?,
-    ): FloatArray? {
-        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
-        return nativeEnergyOrientRetract(gray.nativeObj, seeds, sweep, scratch?.nativeObj ?: 0L)
-    }
-
-    private external fun nativeEnergyOrientExpand(
-        grayPtr: Long, seeds: FloatArray, sweepArr: ShortArray?, scratchPtr: Long,
-    ): FloatArray?
-
-    fun energyOrientExpandNative(
-        gray: Mat, seeds: FloatArray, sweep: ShortArray?, scratch: Mat?,
-    ): FloatArray? {
-        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
-        return nativeEnergyOrientExpand(gray.nativeObj, seeds, sweep, scratch?.nativeObj ?: 0L)
-    }
-
-    fun energyAabbRetractNative(
-        gray: Mat, uv: Mat?, seeds: IntArray,
-        tele: FloatArray?, sweep: ShortArray?, scratch: Mat?,
-    ): IntArray? {
-        if (gray.empty()) return IntArray(0)
-        return nativeEnergyAabbRetract(
-            gray.nativeObj, uv?.nativeObj ?: 0L, seeds, tele, sweep, scratch?.nativeObj ?: 0L,
-        )
-    }
-
-    private external fun nativeEnergyAabbExpand(
-        grayPtr: Long, uvPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, scratchPtr: Long,
-    ): IntArray?
-
-    fun energyAabbExpandNative(
-        gray: Mat, uv: Mat?, seeds: IntArray,
-        tele: FloatArray?, sweep: ShortArray?, scratch: Mat?,
-    ): IntArray? {
-        if (gray.empty()) return IntArray(0)
-        return nativeEnergyAabbExpand(
-            gray.nativeObj, uv?.nativeObj ?: 0L, seeds, tele, sweep, scratch?.nativeObj ?: 0L,
-        )
-    }
-
-    private fun aabbPtrs(
-        gray: Mat, uv: Mat?, scratch: Mat?, combine: Mat?, overlayY: Mat?, overlayUv: Mat?,
-    ): LongArray = longArrayOf(
-        gray.nativeObj,
-        uv?.nativeObj ?: 0L,
-        scratch?.nativeObj ?: 0L,
-        combine?.nativeObj ?: 0L,
-        overlayY?.nativeObj ?: 0L,
-        overlayUv?.nativeObj ?: 0L,
-    )
-
-    private external fun nativeGrayAabbTight(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-        histArr: ShortArray?,
-    ): IntArray?
-    private external fun nativeGrayAabbRetract(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-        histArr: ShortArray?,
-    ): IntArray?
-
-    fun grayAabbTightNative(
-        gray: Mat, uv: Mat?, seeds: IntArray,
-        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
-        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
-        hist: ShortArray? = null,
-    ): IntArray? {
-        if (gray.empty()) return IntArray(0)
-        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeGrayAabbTight(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
-    }
-    fun grayAabbRetractNative(
-        gray: Mat, uv: Mat?, seeds: IntArray,
-        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
-        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
-        hist: ShortArray? = null,
-    ): IntArray? {
-        if (gray.empty()) return IntArray(0)
-        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeGrayAabbRetract(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
-    }
-
-    private external fun nativeGrayAabbExpand(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-        histArr: ShortArray?,
-    ): IntArray?
-
-    fun grayAabbExpandNative(
-        gray: Mat, uv: Mat?, seeds: IntArray,
-        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
-        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
-        hist: ShortArray? = null,
-    ): IntArray? {
-        if (gray.empty()) return IntArray(0)
-        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeGrayAabbExpand(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
-    }
-
-    private external fun nativeColorAabbTight(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-        histArr: ShortArray?,
-    ): IntArray?
-
-    fun colorAabbTightNative(
-        gray: Mat, uv: Mat?, seeds: IntArray,
-        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
-        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
-        hist: ShortArray? = null,
-    ): IntArray? {
-        if (gray.empty()) return IntArray(0)
-        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeColorAabbTight(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
-    }
-
-    private external fun nativeColorAabbRetract(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-        histArr: ShortArray?,
-    ): IntArray?
-
-    fun colorAabbRetractNative(
-        gray: Mat, uv: Mat?, seeds: IntArray,
-        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
-        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
-        hist: ShortArray? = null,
-    ): IntArray? {
-        if (gray.empty()) return IntArray(0)
-        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeColorAabbRetract(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
-    }
-
-    private external fun nativeColorAabbTightVsp(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-        histArr: ShortArray?,
-    ): IntArray?
-
-    fun colorAabbTightVspNative(
-        gray: Mat, uv: Mat?, seeds: IntArray,
-        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
-        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
-        hist: ShortArray? = null,
-    ): IntArray? {
-        if (gray.empty()) return IntArray(0)
-        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeColorAabbTightVsp(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
-    }
-
-    private external fun nativeColorAabbRetractVsp(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-        histArr: ShortArray?,
-    ): IntArray?
-
-    fun colorAabbRetractVspNative(
-        gray: Mat, uv: Mat?, seeds: IntArray,
-        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
-        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
-        hist: ShortArray? = null,
-    ): IntArray? {
-        if (gray.empty()) return IntArray(0)
-        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeColorAabbRetractVsp(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
-    }
-
-    private external fun nativeColorAabbExpand(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-        histArr: ShortArray?,
-    ): IntArray?
-
-    fun colorAabbExpandNative(
-        gray: Mat, uv: Mat?, seeds: IntArray,
-        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
-        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
-        hist: ShortArray? = null,
-    ): IntArray? {
-        if (gray.empty()) return IntArray(0)
-        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeColorAabbExpand(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
-    }
-
-    private external fun nativeGrayOrientTight(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-        histArr: ShortArray?,
-    ): FloatArray?
-    private external fun nativeGrayOrientRetract(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-        histArr: ShortArray?,
-    ): FloatArray?
-    private external fun nativeColorOrientTight(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-        tintPtr: Long,
-        histArr: ShortArray?,
-    ): FloatArray?
-    private external fun nativeColorOrientRetract(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-        tintPtr: Long,
-        histArr: ShortArray?,
-    ): FloatArray?
-
-    private fun orientPtrs(
-        gray: Mat, uv: Mat?, scratch: Mat?, combine: Mat?, overlayY: Mat?, overlayUv: Mat?,
-    ): LongArray = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-
-    fun grayOrientTightNative(
-        gray: Mat, uv: Mat?, seeds: FloatArray,
-        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
-        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
-        hist: ShortArray? = null,
-    ): FloatArray? {
-        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
-        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeGrayOrientTight(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
-    }
-    fun grayOrientRetractNative(
-        gray: Mat, uv: Mat?, seeds: FloatArray,
-        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
-        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
-        hist: ShortArray? = null,
-    ): FloatArray? {
-        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
-        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeGrayOrientRetract(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
-    }
-    fun colorOrientTightNative(
-        gray: Mat, uv: Mat?, seeds: FloatArray,
-        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
-        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
-        tint: Mat? = null,
-        hist: ShortArray? = null,
-    ): FloatArray? {
-        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
-        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeColorOrientTight(
-            p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats,
-            tint?.nativeObj ?: 0L, hist,
-        )
-    }
-    fun colorOrientRetractNative(
-        gray: Mat, uv: Mat?, seeds: FloatArray,
-        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
-        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
-        tint: Mat? = null,
-        hist: ShortArray? = null,
-    ): FloatArray? {
-        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
-        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeColorOrientRetract(
-            p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats,
-            tint?.nativeObj ?: 0L, hist,
-        )
-    }
-
-    private external fun nativeColorOrientTightVsp(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-        tintPtr: Long,
-        histArr: ShortArray?,
-    ): FloatArray?
-    private external fun nativeColorOrientRetractVsp(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-        tintPtr: Long,
-        histArr: ShortArray?,
-    ): FloatArray?
-
-    fun colorOrientTightVspNative(
-        gray: Mat, uv: Mat?, seeds: FloatArray,
-        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
-        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
-        tint: Mat? = null,
-        hist: ShortArray? = null,
-    ): FloatArray? {
-        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
-        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeColorOrientTightVsp(
-            p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats,
-            tint?.nativeObj ?: 0L, hist,
-        )
-    }
-    fun colorOrientRetractVspNative(
-        gray: Mat, uv: Mat?, seeds: FloatArray,
-        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
-        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
-        tint: Mat? = null,
-        hist: ShortArray? = null,
-    ): FloatArray? {
-        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
-        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeColorOrientRetractVsp(
-            p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats,
-            tint?.nativeObj ?: 0L, hist,
-        )
-    }
-
-    private external fun nativeGrayOrientExpand(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-        histArr: ShortArray?,
-    ): FloatArray?
-    private external fun nativeColorOrientExpand(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
-        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-        tintPtr: Long,
-        histArr: ShortArray?,
-    ): FloatArray?
-
-    fun grayOrientExpandNative(
-        gray: Mat, uv: Mat?, seeds: FloatArray,
-        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
-        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
-        hist: ShortArray? = null,
-    ): FloatArray? {
-        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
-        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeGrayOrientExpand(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
-    }
-    fun colorOrientExpandNative(
-        gray: Mat, uv: Mat?, seeds: FloatArray,
-        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
-        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
-        tint: Mat? = null,
-        hist: ShortArray? = null,
-    ): FloatArray? {
-        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
-        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeColorOrientExpand(
-            p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats,
-            tint?.nativeObj ?: 0L, hist,
-        )
-    }
-
-    /** Packed n×8 quads. Jump-retract along ±u. scratch = BufferSet.s. */
-    private external fun nativeCountPullbackOriented(
-        matPtr: Long,
-        seedPts: FloatArray,
-        existPts: FloatArray,
-        extraLook: Int,
-        stopUpEnergy: Boolean,
-        stopDownEnergy: Boolean,
-        clearFrac: Float,
-        growFrac: Float,
-        maxHFrac: Float,
-    ): FloatArray?
-
-    data class OrientedExpandNative(
-        val cx: Float,
-        val cy: Float,
-        val bw: Float,
-        val bh: Float,
-        val angDeg: Float,
-        val stepsVNeg: Int,
-        val stepsVPos: Int,
-        val padV: Int,
-        val hitVertCap: Boolean,
-        val stopEnergyUp: Float,
-        val stopEnergyDown: Float,
-        val base: Float,
-        val thr: Float,
-    )
-
-    data class OrientedCountNative(
-        val pulledTop: Boolean,
-        val pulledBot: Boolean,
-        val grewTop: Boolean,
-        val grewBot: Boolean,
-        val cSeed: Double,
-        val countThr: Double,
-        val gxThr: Double,
-        val vNegBefore: Double,
-        val vPosBefore: Double,
-        val vNegAfter: Double,
-        val vPosAfter: Double,
-        val padTop: Int,
-        val padBot: Int,
-        val y0: Int,
-        val counts: DoubleArray,
-        val seedCx: Float,
-        val seedCy: Float,
-        val existCu: Float,
-        val existBw: Float,
-        val angDeg: Float,
-        val seedBh: Float,
-    )
-
-    fun countPullbackOrientedNative(
-        gray: Mat,
-        seedPts: FloatArray,
-        existPts: FloatArray,
-        extraLook: Int,
-        stopUpEnergy: Boolean,
-        stopDownEnergy: Boolean,
-        clearFrac: Float,
-        growFrac: Float,
-        maxHFrac: Float,
-    ): OrientedCountNative? {
-        val r = nativeCountPullbackOriented(
-            gray.nativeObj, seedPts, existPts, extraLook,
-            stopUpEnergy, stopDownEnergy, clearFrac, growFrac, maxHFrac,
-        ) ?: return null
-        if (r.size < 24) return null
-        val n = r[14].toInt().coerceAtLeast(0)
-        if (r.size < 24 + n) return null
-        val counts = DoubleArray(n) { i -> r[24 + i].toDouble() }
-        return OrientedCountNative(
-            pulledTop = r[0] >= 0.5f,
-            pulledBot = r[1] >= 0.5f,
-            grewTop = r[2] >= 0.5f,
-            grewBot = r[3] >= 0.5f,
-            cSeed = r[4].toDouble(),
-            countThr = r[5].toDouble(),
-            gxThr = r[6].toDouble(),
-            vNegBefore = r[7].toDouble(),
-            vPosBefore = r[8].toDouble(),
-            vNegAfter = r[9].toDouble(),
-            vPosAfter = r[10].toDouble(),
-            padTop = r[11].toInt(),
-            padBot = r[12].toInt(),
-            y0 = r[13].toInt(),
-            counts = counts,
-            seedCx = r[15],
-            seedCy = r[16],
-            existCu = r[17],
-            existBw = r[18],
-            angDeg = r[19],
-            seedBh = r[20],
-        )
-    }
-    private external fun nativeBinarizeRange(srcPtr: Long, dstPtr: Long, low: Int, high: Int)
     private external fun nativeProcessHeatmap(
         tensor: Any,
         threshold: Float,
@@ -1146,43 +370,9 @@ object NativeImageUtils {
         photoH: Int,
     ): FloatArray?
     private external fun nativeLastHeatmapPostPath(): String?
-    private external fun nativeHeatmapToAngle(tensor: Any, threshold: Float, scratchPtr: Long): Float
-    private external fun nativeHeatmapToAngleU8(
-        heatU8: ByteArray,
-        width: Int,
-        height: Int,
-        threshold: Float,
-        scratchPtr: Long,
-    ): Float
     private external fun nativeHeatmapToFloatArray(tensor: Any): FloatArray?
     private external fun nativeHeatmapToUInt8Array(tensor: Any): ByteArray?
-    private external fun nativeVeRssSetPath(path: String)
 
-    // --------------------------------------------------------
-    // SET H MODULAR PIPELINE — New granular JNI bindings.
-    // No existing functions were modified.
-    // --------------------------------------------------------
-
-    /** Filters connected components in-place on a binary Mat (CV_8UC1).
-     *  mode 0=PassA, 1=PassB, 2=PassC. Pass odoBuffer.s.mat after binarizing from .p. */
-    fun filterComponents(mat: Mat, vSW: Float, hSW: Float, mode: Int) {
-        nativeFilterComponents(mat.nativeObj, vSW, hSW, mode)
-    }
-
-    /** Histogram + vSW/hSW peak estimation with explicit thresholdFactor on odoBuffer.p.mat.
-     *  Returns Pair(Pair(hArr, vArr), metaArr) where metaArr=[vSW,hSW,0,contentThreshold]. */
-    fun calculateHistogramWithThreshold(mat: Mat, rects: List<android.graphics.Rect>, thresholdFactor: Float): Pair<Pair<IntArray, IntArray>, IntArray>? {
-        if (rects.isEmpty()) return null
-        val flatRects = IntArray(rects.size * 4)
-        rects.forEachIndexed { i, r -> flatRects[i*4]=r.left; flatRects[i*4+1]=r.top; flatRects[i*4+2]=r.right; flatRects[i*4+3]=r.bottom }
-        if (!nativeCalculateHistogramWithThreshold(
-                mat.nativeObj, flatRects, thresholdFactor,
-                longLivedRunHistH, longLivedRunHistV, longLivedHistMeta, HIST_BIN_COUNT
-            )) return null
-        runHistReuseCount++
-        android.util.Log.d("HIST_BUF", "long-lived legacy hist path used (count=$runHistReuseCount)")
-        return Pair(Pair(longLivedRunHistH, longLivedRunHistV), longLivedHistMeta)
-    }
 
     /** Dump full native cv::Mat header fields for crash forensics (MAT_HEADER tag). */
     fun logMatHeader(mat: Mat, tag: String) {
@@ -1193,30 +383,6 @@ object NativeImageUtils {
         nativeLogMatHeader(mat.nativeObj, tag)
     }
 
-    /** Decoupled H-variants for Set H with stroke-width aware logic */
-    fun calculateHistogramWithThresholdH(mat: Mat, rects: List<android.graphics.Rect>, thresholdFactor: Float): Pair<Pair<IntArray, IntArray>, IntArray>? {
-        if (mat.empty() || rects.isEmpty()) return null
-        val valid = rects.filter { it.width() > 0 && it.height() > 0 }
-        if (valid.isEmpty()) return null
-        if (runHistReuseCount == 0L) {
-            android.util.Log.i("MAT_HEADER", "using longLivedRunHistH/V buffers (${HIST_BIN_COUNT} bins)")
-        }
-        logMatHeader(mat, "kotlin_pre_hist_H")
-        val flatRects = IntArray(valid.size * 4)
-        valid.forEachIndexed { i, r -> flatRects[i*4]=r.left; flatRects[i*4+1]=r.top; flatRects[i*4+2]=r.right; flatRects[i*4+3]=r.bottom }
-        if (!nativeCalculateHistogramWithThresholdH(
-                mat.nativeObj, flatRects, thresholdFactor,
-                longLivedRunHistH, longLivedRunHistV, longLivedHistMeta
-            )) return null
-        runHistReuseCount++
-        android.util.Log.i("MAT_HEADER", "long-lived H hist path used (count=$runHistReuseCount)")
-        return Pair(Pair(longLivedRunHistH, longLivedRunHistV), longLivedHistMeta)
-    }
-
-    fun expandBoundsH(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float, vSW: Float, hSW: Float): android.graphics.Rect {
-        val res = nativeExpandBoundsH(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor, vSW, hSW)
-        return if (res != null && res.size == 4) android.graphics.Rect(res[0], res[1], res[2], res[3]) else rect
-    }
 
     data class ComponentStats(
         val index: Int,
@@ -1227,79 +393,6 @@ object NativeImageUtils {
         val area: Int
     )
 
-    fun getComponentStats(mat: Mat): List<ComponentStats> {
-        val res = nativeGetAllComponentStatsH(mat.nativeObj) ?: return emptyList()
-        if (res.isEmpty()) return emptyList()
-        val n = res[0]
-        val list = mutableListOf<ComponentStats>()
-        var i = 1
-        repeat(n) {
-            if (i + 5 < res.size) {
-                list.add(ComponentStats(res[i], res[i + 1], res[i + 2], res[i + 3], res[i + 4], res[i + 5]))
-                i += 6
-            }
-        }
-        return list
-    }
-
-    fun findAllComponentsH(mat: Mat, vSW: Float, hSW: Float): List<android.graphics.Rect> {
-        val res = nativeFindAllComponentsH(mat.nativeObj, vSW, hSW) ?: return emptyList()
-        val list = mutableListOf<android.graphics.Rect>()
-        for (i in 0 until res.size step 4) {
-            if (i + 3 < res.size) {
-                list.add(android.graphics.Rect(res[i], res[i+1], res[i+2], res[i+3]))
-            }
-        }
-        return list
-    }
-
-    fun blackOutLargeAndSmallComponentsH(mat: Mat, vSW: Float, hSW: Float, maxWidth: Float) {
-        nativeBlackOutLargeAndSmallComponentsH(mat.nativeObj, vSW, hSW, maxWidth)
-    }
-
-    fun blackOutLargeAndSmallComponentsHWithEditedIndices(mat: Mat, vSW: Float, hSW: Float, maxWidth: Float): IntArray {
-        return nativeBlackOutLargeAndSmallComponentsH(mat.nativeObj, vSW, hSW, maxWidth) ?: intArrayOf()
-    }
-
-    fun calculatePitchH(mat: Mat, bounds: android.graphics.Rect, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray? {
-        return nativeCalculatePitchH(mat.nativeObj, bounds.left, bounds.top, bounds.right, bounds.bottom, thresholdFactor, vSW, hSW)
-    }
-
-    fun alignGridH(mat: Mat, bounds: android.graphics.Rect, pitch: Int, bestShift: Int, anchorMode: Int, vSW: Float, hSW: Float, thresholdFactor: Float): Triple<android.graphics.Rect, IntArray, IntArray>? {
-        val res = nativeAlignGridH(mat.nativeObj, bounds.left, bounds.top, bounds.right, bounds.bottom, pitch, bestShift, anchorMode, vSW, hSW, thresholdFactor)
-        if (res != null && res.size == 3) {
-            val fb = res[0] as IntArray
-            return Triple(android.graphics.Rect(fb[0], fb[1], fb[2], fb[3]), res[1] as IntArray, res[2] as IntArray)
-        }
-        return null
-    }
-
-    fun connectSegmentsH(mat: Mat, vSW: Float, hSW: Float): Int {
-        return nativeConnectSegmentsH(mat.nativeObj, vSW, hSW)
-    }
-
-    fun blackOutRollingDigitsH(mat: Mat, vSW: Float, hSW: Float) {
-        nativeBlackOutRollingDigitsH(mat.nativeObj, vSW, hSW)
-    }
-
-    private external fun nativeConnectSegmentsH(matPtr: Long, vSW: Float, hSW: Float): Int
-    private external fun nativeFilterComponents(matPtr: Long, vSW: Float, hSW: Float, mode: Int)
-    private external fun nativeCalculateHistogramWithThreshold(
-        matPtr: Long, rects: IntArray, thresholdFactor: Float,
-        outH: IntArray, outV: IntArray, outMeta: IntArray, histBinCount: Int
-    ): Boolean
-
     private external fun nativeLogMatHeader(matPtr: Long, tag: String)
-    private external fun nativeCalculateHistogramWithThresholdH(
-        matPtr: Long, rects: IntArray, thresholdFactor: Float,
-        outH: IntArray, outV: IntArray, outMeta: IntArray
-    ): Boolean
-    private external fun nativeExpandBoundsH(matPtr: Long, l: Int, t: Int, r: Int, b: Int, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray?
-    private external fun nativeFindAllComponentsH(matPtr: Long, vSW: Float, hSW: Float): IntArray?
-    private external fun nativeGetAllComponentStatsH(matPtr: Long): IntArray?
-    private external fun nativeCalculatePitchH(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray?
-    private external fun nativeAlignGridH(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, pitch: Int, bestShift: Int, anchorMode: Int, vSW: Float, hSW: Float, thresholdFactor: Float): Array<Any>?
-    private external fun nativeBlackOutLargeAndSmallComponentsH(matPtr: Long, vSW: Float, hSW: Float, maxWidth: Float): IntArray?
-    private external fun nativeBlackOutRollingDigitsH(matPtr: Long, vSW: Float, hSW: Float)
 
 }

@@ -21,11 +21,11 @@ import javax.inject.Singleton
  */
 @Singleton
 class MergeAckStore @Inject constructor(
-    @param:ApplicationContext private val context: Context,
-    private val dao: MergeAckDao,
+    @param:ApplicationContext internal val context: Context,
+    internal val dao: MergeAckDao,
 ) {
     companion object {
-        private const val TAG = "MergeAckStore"
+        internal const val TAG = "MergeAckStore"
 
         /** extra keys on [BatchPendingItem] that may hold member fuel syncIds. */
         val MEMBER_SYNC_ID_EXTRA_KEYS = listOf(
@@ -35,85 +35,7 @@ class MergeAckStore @Inject constructor(
         )
     }
 
-    /**
-     * Write a durable ack for [kind] covering [memberFuelSyncIds].
-     * For CONFLICT_ODO / AMBIGUOUS_MULTI_PUMP, also writes MERGE_EXEMPT when
-     * [alsoMergeExempt] is true (default) so re-merge will not absorb the pair.
-     */
-    suspend fun acknowledge(
-        kind: String,
-        memberFuelSyncIds: Collection<String>,
-        alsoMergeExempt: Boolean = true,
-    ) {
-        val members = MergeAck.sortedMembersCsv(memberFuelSyncIds)
-        if (members.isBlank()) {
-            Log.w(TAG, "acknowledge ignored: empty members kind=$kind")
-            return
-        }
-        val memberSet = members.split(',').toSet()
-        upsertLocal(kind, memberSet)
-        val needsExempt = alsoMergeExempt && (
-            kind == MergeAck.KIND_CONFLICT_ODO ||
-                kind == MergeAck.KIND_AMBIGUOUS_MULTI_PUMP ||
-                kind == MergeAck.KIND_MERGE_EXEMPT
-            )
-        if (needsExempt && kind != MergeAck.KIND_MERGE_EXEMPT) {
-            upsertLocal(MergeAck.KIND_MERGE_EXEMPT, memberSet)
-        }
-        // MERGE_EXEMPT-only path when caller already asked for MERGE_EXEMPT as kind
-        if (kind == MergeAck.KIND_MERGE_EXEMPT) {
-            // already upserted above
-        }
-    }
 
-    private suspend fun upsertLocal(kind: String, memberSet: Set<String>) {
-        val csv = MergeAck.sortedMembersCsv(memberSet)
-        val live = dao.getAllLive()
-        val existing = live.find {
-            it.kind == kind && MergeAck.sortedMembersCsv(it.memberSet()) == csv
-        }
-        val now = System.currentTimeMillis()
-        val deviceId = SyncIdentity.getOrCreateDeviceId(context)
-        if (existing != null) {
-            dao.update(
-                existing.copy(
-                    updatedAt = now,
-                    deleted = false,
-                    deletedAt = null,
-                    originDeviceId = existing.originDeviceId.ifBlank { deviceId },
-                ),
-            )
-            Log.i(TAG, "ack refresh kind=$kind members=$csv ackId=${existing.ackId}")
-        } else {
-            val ack = MergeAck(
-                ackId = SyncIdGenerator.randomSyncId(),
-                kind = kind,
-                memberSyncIds = csv,
-                createdAt = now,
-                updatedAt = now,
-                deleted = false,
-                deletedAt = null,
-                originDeviceId = deviceId,
-            )
-            dao.insert(ack)
-            Log.i(TAG, "ack create kind=$kind members=$csv ackId=${ack.ackId}")
-        }
-    }
-
-    suspend fun isAcked(kind: String, memberFuelSyncIds: Collection<String>): Boolean {
-        val csv = MergeAck.sortedMembersCsv(memberFuelSyncIds)
-        if (csv.isBlank()) return false
-        return dao.getAllLive().any {
-            it.kind == kind && MergeAck.sortedMembersCsv(it.memberSet()) == csv
-        }
-    }
-
-    /** True if any live MERGE_EXEMPT set is a subset of [clusterSyncIds]. */
-    suspend fun isMergeExemptCluster(clusterSyncIds: Collection<String>): Boolean {
-        val cluster = clusterSyncIds.map { it.trim() }.filter { it.isNotBlank() }.toSet()
-        if (cluster.isEmpty()) return false
-        return liveMergeExemptSets().any { exempt -> exempt.isNotEmpty() && exempt.all { it in cluster } }
-    }
 
     suspend fun liveMergeExemptSets(): List<Set<String>> =
         dao.getAllLive()

@@ -9,6 +9,7 @@ import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.ui.util.BufferSet
 import com.davidlang.vehicleexpensesautomated.ui.util.IcrsMath
 import com.davidlang.vehicleexpensesautomated.ui.util.ImageAlignmentUtils
+import com.davidlang.vehicleexpensesautomated.ui.util.disambiguateLandmarks
 import com.davidlang.vehicleexpensesautomated.ui.util.ImageIngestionProvider
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrUtils
@@ -23,6 +24,8 @@ import org.opencv.core.Mat
 import org.opencv.core.Scalar
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
+import com.davidlang.vehicleexpensesautomated.ui.util.fullImageIcrsRect
+import com.davidlang.vehicleexpensesautomated.ui.util.anchorAlign
 
 /**
  * Device export for deskew review HTML: per dash photo × angle bin → odometer crop JPEG

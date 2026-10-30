@@ -1,4 +1,4 @@
-package com.davidlang.vehicleexpensesautomated.ui.experiment
+package com.davidlang.vehicleexpensesautomated.ui.ocr
 
 import android.content.Context
 import android.util.Log
@@ -8,6 +8,7 @@ import com.davidlang.vehicleexpensesautomated.ui.util.PumpCostVolUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import com.davidlang.vehicleexpensesautomated.ui.util.runSetICostVolExtraction
 
 /**
  * Single-photo **pump experiment Set I** result for batch import.
@@ -42,7 +43,7 @@ object PumpSetIRunner {
 
         val paddleEngine = NativePaddleEngine(context, "Numeric")
         val recBuffer = NativePaddleEngine.recBufferSet
-        // Experiment Set I body (deskew + G/D/E hybrid + classify) — not Quick Fill G4
+        // Experiment Set I body (deskew + G/D/E hybrid + classify) — not Fill G4
         val cv = PumpCostVolUtils.runSetICostVolExtraction(
             master, paddleEngine, recBuffer, master.width, master.height,
         )

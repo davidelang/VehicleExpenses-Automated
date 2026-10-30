@@ -44,6 +44,12 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.BuildConfig
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
+import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentReportMeta
+import com.davidlang.vehicleexpensesautomated.ui.experiment.PumpSoDebugDump
+import com.davidlang.vehicleexpensesautomated.ui.ocr.ocrPumpFeedOriented40
+import com.davidlang.vehicleexpensesautomated.ui.reports.ExperimentReportHtml
+import com.davidlang.vehicleexpensesautomated.ui.reports.ReportCellRef
+import com.davidlang.vehicleexpensesautomated.ui.reports.ReportCollapser
 import com.davidlang.vehicleexpensesautomated.ui.util.*
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -74,6 +80,26 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 private const val TAG = "ExperimentPump"
+
+/** One row per blue from [expRotGmmRecognize]. Crop id -1 means nothing to snap or release. */
+class ExpRotGmmOut(
+    @JvmField val asis: Array<String>,
+    @JvmField val asisProbs: Array<String>,
+    @JvmField val digits: Array<String>,
+    @JvmField val digitsProbs: Array<String>,
+    @JvmField val recW: IntArray,
+    @JvmField val recH: IntArray,
+    @JvmField val recCropId: IntArray,
+)
+
+external fun expRotGmmRecognize(
+    grayNativeObj: Long,
+    quadPts: FloatArray,
+    recBuffer: BufferSet,
+    scratchW: Int,
+    scratchH: Int,
+    landmarkAlphabet: Boolean,
+): ExpRotGmmOut
 
 private val SEED_INK_PROBE_FLOWS = listOf(
     "Set aabb-tight",
@@ -133,7 +159,7 @@ private fun recordIncompleteLookIds(
     col: Int,
     si: Int,
     nSeeds: Int,
-    pd: ContentExpandUtils.PoisonDump,
+    pd: PoisonDump,
     branch: PumpBranch,
     onLog: (String) -> Unit,
 ) {
@@ -178,7 +204,7 @@ private fun dumpObjectPlanePng(plane: org.opencv.core.Mat, file: File): Boolean 
 private fun rectJson(r: Rect): JSONObject =
     JSONObject().put("l", r.left).put("t", r.top).put("r", r.right).put("b", r.bottom)
 
-private fun samplesJson(samples: List<ContentExpandUtils.VertEnergySample>): JSONArray {
+private fun samplesJson(samples: List<VertEnergySample>): JSONArray {
     val arr = JSONArray()
     samples.forEach { s ->
         arr.put(
@@ -193,7 +219,7 @@ private fun samplesJson(samples: List<ContentExpandUtils.VertEnergySample>): JSO
     return arr
 }
 
-private fun countPullJson(p: ContentExpandUtils.CountPullInfo?): Any {
+private fun countPullJson(p: CountPullInfo?): Any {
     if (p == null) return JSONObject.NULL
     val counts = JSONArray()
     p.counts.forEach { counts.put(it) }
@@ -220,7 +246,7 @@ private fun countPullJson(p: ContentExpandUtils.CountPullInfo?): Any {
         .put("padBot", p.padBot)
 }
 
-private fun rawRoiJson(roi: ContentExpandUtils.EnergyPixelRoi?): Any {
+private fun rawRoiJson(roi: EnergyPixelRoi?): Any {
     if (roi == null) return JSONObject.NULL
     return JSONObject()
         .put("l", roi.l)
@@ -239,7 +265,7 @@ private fun writeExpandEnergyTrace(
     out: File,
     fileName: String,
     maxFrac: Float,
-    traces: List<ContentExpandUtils.VertEnergyTrace>,
+    traces: List<VertEnergyTrace>,
     column: String,
 ) {
     val boxes = JSONArray()
@@ -846,7 +872,6 @@ data class PumpBranch(
 
 /**
  * Full pump experiment. Returns the main JSON results file, or null if no photos.
- * Package-visible for [ExperimentPrecisionAbScreen].
  */
 suspend fun runPumpExperiment(
     experimentDir: File,
@@ -870,7 +895,7 @@ suspend fun runPumpExperiment(
     val total = photos.size
     if (total == 0) return@withContext null
     val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
-    // Precision A/B for parallel phone+emu runs: true fp16 pack on device, true fp32 pack on emulator.
+    // Phone+emu runs: true fp16 pack on device, true fp32 pack on emulator.
     // ABI-split APKs: x86_64 ships prod_u8fp32_u8; arm64 ships prod_u8fp16.
     val experimentProdDir = experimentPumpProductDir()
     onLog("loadProductionModels forceProdDir=$experimentProdDir (fp16 phone / fp32 emu)")
@@ -1444,7 +1469,7 @@ suspend fun runPumpExperiment(
                     ocrQuads: List<ContentExpandUtils.OrientedQuad> = emptyList(),
                     seedQuads: List<ContentExpandUtils.OrientedQuad> = emptyList(),
                     scaleVariants: JSONArray = JSONArray(),
-                    inkSweeps: List<ContentExpandUtils.InkSweep?> = emptyList(),
+                    inkSweeps: List<InkSweep?> = emptyList(),
                 ): String {
                     val redsArr = JSONArray()
                     reds.forEach { redsArr.put(rectToJson(it)) }
@@ -1596,7 +1621,7 @@ suspend fun runPumpExperiment(
 
                 // Per-column top-4 box OCR (PUMP_COST_VOLUME_CLASSIFIER_SPEC.md): as-is (golden Y-band only) + digits on pixel rects; fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: clean text only; probs returned separately
                 suspend fun ocrPumpRectsAsisAndDigits(rects: List<android.graphics.Rect>): PumpRectOcrLists {
-                    // Delegate to shared util (source-border rec feed, same as Quick Fill / batch).
+                    // Delegate to shared util (source-border rec feed, same as Fill / batch).
                     return PumpCostVolUtils.ocrPumpRectsAsisAndDigits(
                         workspace, paddleEngine, experimentRecSet, rects, imgW, imgH,
                     )
@@ -1648,7 +1673,7 @@ suspend fun runPumpExperiment(
                         org.opencv.core.Mat?,
                         org.opencv.core.Mat?,
                         IntArray?,
-                    ) -> List<ContentExpandUtils.Seg7Expand>)? = null,
+                    ) -> List<Seg7Expand>)? = null,
                     chromaNote: String? = null,
                     boundNote: String? = null,
                 ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
@@ -1803,12 +1828,12 @@ suspend fun runPumpExperiment(
                 // Set G-family calculated: single blue/orange create from post-prune kept reds + dual OCR + one store
                 val customBlueG: List<PumpHunk>
                 val customOrangeG: List<PumpHunk>
-                val seg7Strokes: List<ContentExpandUtils.StrokeWidthInSeed>
+                val seg7Strokes: List<StrokeWidthInSeed>
                 val inkWalkSeeds: List<android.graphics.Rect>
                 val inkWalkBoxes: List<android.graphics.Rect>
                 val inkWalkPads: List<android.graphics.Rect>
-                val inkJumpOpts: ContentExpandUtils.ExpandOptions?
-                var makeGInkSweeps: List<ContentExpandUtils.InkSweep?> = emptyList()
+                val inkJumpOpts: ExpandOptions?
+                var makeGInkSweeps: List<InkSweep?> = emptyList()
                 val expandMode = if (chromaMode != 0) chromaMode else if (chromaExpand) 1 else 0
                 val inkFn = inkExpand
                 if (chromaNote != null) {
@@ -1818,7 +1843,7 @@ suspend fun runPumpExperiment(
                     branch.metadata["content_expand_bound"] = boundNote
                 }
                 if (inkFn != null) {
-                    val jumpOpts = ContentExpandUtils.ExpandOptions(
+                    val jumpOpts = ExpandOptions(
                         maxFrac = 0.4f,
                         enableJump = true,
                         jumpFrac = 0.60f,
@@ -1835,7 +1860,7 @@ suspend fun runPumpExperiment(
                     branch.metadata.remove("look_ink")
                     masterBuffer.s.clear()
                     NativePaddleEngine.bufferSetB.p.clear()
-                    val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
+                    val segs = ArrayList<Seg7Expand>(seeds.size)
                     var nextInk = 255
                     var nextNon = 1
                     var inkLo = 255
@@ -1929,7 +1954,7 @@ suspend fun runPumpExperiment(
                     branch.metadata["t_expand_ms"] =
                         (System.currentTimeMillis() - tExp0).toString()
                 } else if (seg7Stroke) {
-                    val jumpOpts = ContentExpandUtils.ExpandOptions(
+                    val jumpOpts = ExpandOptions(
                         maxFrac = 0.4f,
                         enableJump = true,
                         jumpFrac = 0.60f,
@@ -1944,10 +1969,10 @@ suspend fun runPumpExperiment(
                         )
                     }
                     branch.metadata.remove("look_ink")
-                    val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
+                    val segs = ArrayList<Seg7Expand>(seeds.size)
                     seeds.forEach { seed ->
                         val one = listOf(
-                            ContentExpandUtils.Seg7Expand(
+                            Seg7Expand(
                                 seed,
                                 ContentExpandUtils.strokeWidthInSeed(workspace.p.mat, seed),
                                 k = 0f,
@@ -2007,7 +2032,7 @@ suspend fun runPumpExperiment(
                     branch.metadata["t_expand_ms"] =
                         (System.currentTimeMillis() - tExp0).toString()
                 } else if (horizJump) {
-                    val jumpOpts = ContentExpandUtils.ExpandOptions(
+                    val jumpOpts = ExpandOptions(
                         maxFrac = 0.4f,
                         enableJump = true,
                         jumpFrac = 0.40f,
@@ -2257,7 +2282,7 @@ suspend fun runPumpExperiment(
                         org.opencv.core.Mat?,
                         org.opencv.core.Mat?,
                         IntArray?,
-                    ) -> List<ContentExpandUtils.Seg7Expand>,
+                    ) -> List<Seg7Expand>,
                     chromaNote: String? = null,
                     boundNote: String? = null,
                     boxMode: Int = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
@@ -2937,7 +2962,7 @@ suspend fun runPumpExperiment(
                     branch.metadata.remove("look_ink")
                     masterBuffer.s.clear()
                     NativePaddleEngine.bufferSetB.p.clear()
-                    val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
+                    val segs = ArrayList<Seg7Expand>(seeds.size)
                     var nextInk = 255
                     var nextNon = 1
                     var inkLo = 255
@@ -3249,7 +3274,7 @@ suspend fun runPumpExperiment(
                     branch.metadata.remove("look_ink")
                     masterBuffer.s.clear()
                     NativePaddleEngine.bufferSetB.p.clear()
-                    val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
+                    val segs = ArrayList<Seg7Expand>(seeds.size)
                     var nextInk = 255
                     var nextNon = 1
                     var inkLo = 255
@@ -3460,7 +3485,7 @@ suspend fun runPumpExperiment(
                         org.opencv.core.Mat?,
                         org.opencv.core.Mat?,
                         IntArray?,
-                    ) -> List<ContentExpandUtils.Seg7Expand>,
+                    ) -> List<Seg7Expand>,
                     note: String,
                 ) {
                     pdHunksDetectedTotal.clear()
@@ -3573,7 +3598,7 @@ suspend fun runPumpExperiment(
                     branch.metadata.remove("look_ink")
                     masterBuffer.s.clear()
                     NativePaddleEngine.bufferSetB.p.clear()
-                    val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
+                    val segs = ArrayList<Seg7Expand>(seeds.size)
                     var nextInk = 255
                     var nextNon = 1
                     var inkLo = 255
@@ -3810,7 +3835,7 @@ suspend fun runPumpExperiment(
                         val snap = PumpCostVolUtils.snapRecCrop(
                             experimentRecSet, fed.recCropId, fed.targetW, fed.targetH,
                         )
-                        val asisRes = paddleEngine.recognize(experimentRecSet.c[fed.recCropId])
+                        val asisRes = paddleEngine.recognizeQa(experimentRecSet.c[fed.recCropId])
                         val digitsRes = paddleEngine.recognizeNumericDecimal(
                             experimentRecSet.c[fed.recCropId],
                         )
@@ -4410,7 +4435,7 @@ suspend fun runPumpExperiment(
                         org.opencv.core.Mat?,
                         IntArray?,
                         org.opencv.core.Mat?,
-                    ) -> List<ContentExpandUtils.Seg7OrientedExpand>,
+                    ) -> List<Seg7OrientedExpand>,
                     note: String,
                 ) {
                     pdHunksDetectedTotal.clear()
@@ -4444,7 +4469,7 @@ suspend fun runPumpExperiment(
                     branch.metadata.remove("look_ink")
                     masterBuffer.s.clear()
                     NativePaddleEngine.bufferSetB.p.clear()
-                    val segs = ArrayList<ContentExpandUtils.Seg7OrientedExpand>(seedQuads.size)
+                    val segs = ArrayList<Seg7OrientedExpand>(seedQuads.size)
                     var nextInk = 255
                     var nextNon = 1
                     var inkLo = 255
@@ -5006,7 +5031,7 @@ suspend fun runPumpExperiment(
                         val snap = PumpCostVolUtils.snapRecCrop(
                             experimentRecSet, fed.recCropId, fed.targetW, fed.targetH,
                         )
-                        val asisRes = paddleEngine.recognize(experimentRecSet.c[fed.recCropId])
+                        val asisRes = paddleEngine.recognizeQa(experimentRecSet.c[fed.recCropId])
                         val digitsRes = paddleEngine.recognizeNumericDecimal(
                             experimentRecSet.c[fed.recCropId],
                         )
@@ -5084,7 +5109,7 @@ suspend fun runPumpExperiment(
                         org.opencv.core.Mat?,
                         IntArray?,
                         org.opencv.core.Mat?,
-                    ) -> List<ContentExpandUtils.Seg7OrientedExpand>)? = null,
+                    ) -> List<Seg7OrientedExpand>)? = null,
                 ) {
                     fun hunkFromAabb(r: android.graphics.Rect): PumpHunk =
                         PumpHunk(
@@ -5165,18 +5190,18 @@ suspend fun runPumpExperiment(
 
                     val seedQuads = kept.toList()
                     val tExpand0 = System.currentTimeMillis()
-                    val expDiag: List<ContentExpandUtils.OrientedExpand>
+                    val expDiag: List<OrientedExpand>
                     val expandedQuads: List<ContentExpandUtils.OrientedQuad>
                     val hitCaps: List<Boolean>
-                    val inkStrokes: List<ContentExpandUtils.StrokeWidthInSeed>
+                    val inkStrokes: List<StrokeWidthInSeed>
                     val inkWalkSeeds: List<ContentExpandUtils.OrientedQuad>
                     val inkWalkBoxes: List<ContentExpandUtils.OrientedQuad>
                     val inkWalkPadQuads: List<ContentExpandUtils.OrientedQuad>
-                    val inkJumpOptsRot: ContentExpandUtils.ExpandOptions?
-                    var rotInkSweeps: List<ContentExpandUtils.InkSweep?> = emptyList()
+                    val inkJumpOptsRot: ExpandOptions?
+                    var rotInkSweeps: List<InkSweep?> = emptyList()
                     val expandMode = if (chromaMode != 0) chromaMode else if (chromaExpand) 1 else 0
                     if (orientInk != null || seg7Stroke) {
-                        val jumpOpts = ContentExpandUtils.ExpandOptions(
+                        val jumpOpts = ExpandOptions(
                             maxFrac = 0.4f,
                             enableJump = true,
                             jumpFrac = 0.60f,
@@ -5186,7 +5211,7 @@ suspend fun runPumpExperiment(
                         branch.metadata.remove("look_ink")
                         val colIdx = flows.indexOf(branch.name).let { if (it < 0) 0 else it }
                         masterBuffer.s.clear()
-                        val segs = ArrayList<ContentExpandUtils.Seg7OrientedExpand>(seedQuads.size)
+                        val segs = ArrayList<Seg7OrientedExpand>(seedQuads.size)
                         var nextInk = 255
                         var nextNon = 1
                         var inkLo = 255
@@ -5213,7 +5238,7 @@ suspend fun runPumpExperiment(
                                 )
                             } else {
                                 listOf(
-                                    ContentExpandUtils.Seg7OrientedExpand(
+                                    Seg7OrientedExpand(
                                         q,
                                         ContentExpandUtils.strokeWidthInSeed(
                                             masterBuffer.p.mat, q.toAabb(),
@@ -5287,7 +5312,7 @@ suspend fun runPumpExperiment(
                                 if (boundStrategy == 2) "edge-retract" else "tight"
                         }
                     } else {
-                        val expandOpts = ContentExpandUtils.ExpandOptions(
+                        val expandOpts = ExpandOptions(
                             maxFrac = maxFrac,
                             enableJump = enableJump,
                             jumpFrac = jumpFrac,
@@ -5651,8 +5676,8 @@ suspend fun runPumpExperiment(
                     energyTraceOut: File? = null,
                     energyRatio: Float = 0.45f,
                     freezeHorzDuringVert: Boolean = false,
-                    vertEnergy: ContentExpandUtils.VertEnergyKind =
-                        ContentExpandUtils.VertEnergyKind.MAGNITUDE,
+                    vertEnergy: VertEnergyKind =
+                        VertEnergyKind.MAGNITUDE,
                     chi2K: Float = 3.5f,
                     vertPadFrac: Float = 0.0f,
                     seg7Stroke: Boolean = false,
@@ -5660,7 +5685,7 @@ suspend fun runPumpExperiment(
                     chromaExpand: Boolean = false,
                     chromaMode: Int = 0,
                     boundStrategy: Int = 0,
-                    aabbEnergy: ((org.opencv.core.Mat, org.opencv.core.Mat?, List<android.graphics.Rect>) -> List<ContentExpandUtils.AabbExpand>)? = null,
+                    aabbEnergy: ((org.opencv.core.Mat, org.opencv.core.Mat?, List<android.graphics.Rect>) -> List<AabbExpand>)? = null,
                     energyOrientNative: ((org.opencv.core.Mat, FloatArray, ShortArray?, org.opencv.core.Mat?) -> FloatArray?)? = null,
                     orientInk: ((
                         org.opencv.core.Mat,
@@ -5672,7 +5697,7 @@ suspend fun runPumpExperiment(
                         org.opencv.core.Mat?,
                         IntArray?,
                         org.opencv.core.Mat?,
-                    ) -> List<ContentExpandUtils.Seg7OrientedExpand>)? = null,
+                    ) -> List<Seg7OrientedExpand>)? = null,
                     boundNote: String? = null,
                     chromaNote: String? = null,
                 ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit =
@@ -5735,7 +5760,7 @@ suspend fun runPumpExperiment(
                             branch.metadata["content_expand_bound"] =
                                 if (boundStrategy == 2) "edge-retract" else "tight"
                         }
-                        if (vertEnergy == ContentExpandUtils.VertEnergyKind.CHI2) {
+                        if (vertEnergy == VertEnergyKind.CHI2) {
                             branch.metadata["content_expand_chi2_k"] = chi2K.toString()
                         }
                         branch.metadata["product_dir"] = NativePaddleEngine.activeProductDir
@@ -5830,7 +5855,7 @@ suspend fun runPumpExperiment(
                                 captureRedboxData(pdHunksRawTotal, workspace, branch)
                             }
 
-                            val expandOpts = ContentExpandUtils.ExpandOptions(
+                            val expandOpts = ExpandOptions(
                                 maxFrac = maxFrac,
                                 enableJump = enableJump,
                                 jumpFrac = jumpFrac,
@@ -6023,7 +6048,7 @@ suspend fun runPumpExperiment(
                                     "maxRetractFrac" to 0.50f,
                                     "note" to assemblyNote,
                                     "inkTelemetry" to JSONArray(branch.metadata["seg7_tele"] ?: "[]"),
-                                ) + if (vertEnergy == ContentExpandUtils.VertEnergyKind.CHI2) {
+                                ) + if (vertEnergy == VertEnergyKind.CHI2) {
                                     mapOf("chi2K" to chi2K)
                                 } else {
                                     emptyMap()
@@ -6119,7 +6144,7 @@ suspend fun runPumpExperiment(
                     maxFrac = 2.5f,
                     energyRatio = 0.65f,
                     freezeHorzDuringVert = true,
-                    vertEnergy = ContentExpandUtils.VertEnergyKind.MAGNITUDE,
+                    vertEnergy = VertEnergyKind.MAGNITUDE,
                     vertPadFrac = 0.08f,
                 )
                 val procProdRotInk = makeContentExpandProc(
@@ -6364,7 +6389,7 @@ suspend fun runPumpExperiment(
                 }
                 fun inkEnergyAabb(
                     name: String,
-                    aabb: (org.opencv.core.Mat, org.opencv.core.Mat?, List<android.graphics.Rect>) -> List<ContentExpandUtils.AabbExpand>,
+                    aabb: (org.opencv.core.Mat, org.opencv.core.Mat?, List<android.graphics.Rect>) -> List<AabbExpand>,
                     boundNote: String?,
                 ) = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
@@ -6411,7 +6436,7 @@ suspend fun runPumpExperiment(
                         org.opencv.core.Mat?,
                         IntArray?,
                         org.opencv.core.Mat?,
-                    ) -> List<ContentExpandUtils.Seg7OrientedExpand>,
+                    ) -> List<Seg7OrientedExpand>,
                     chromaNote: String?,
                     boundNote: String?,
                 ) = makeContentExpandProc(
@@ -6621,11 +6646,11 @@ suspend fun runPumpExperiment(
                             for (k in 0 until 8) pts[i * 8 + k] = p[k]
                         }
                         val recHold = BufferSet(
-                            NativePaddleEngine.REC_CANVAS_W,
+                            4096,
                             (blueQuads.size.coerceAtLeast(1) * RecBufferFeed.DEFAULT_REC_H),
                         )
                         try {
-                            val raw = recognizeRotGmmQuads(
+                            val raw = expRotGmmRecognize(
                                 workspace.p.mat.nativeObj,
                                 pts,
                                 recHold,
@@ -7070,6 +7095,49 @@ private fun ocrGeomPadQuadPlusU(
     return ContentExpandUtils.OrientedQuad(out)
 }
 
+/** Grow blue to the dest-frame parallelogram: −u/−v pad, +u/+v remainder (source px). */
+internal fun ocrGeomExpandQuadFrame(
+    quad: ContentExpandUtils.OrientedQuad,
+    minusU: Float,
+    plusU: Float,
+    minusV: Float,
+    plusV: Float,
+): ContentExpandUtils.OrientedQuad {
+    if (minusU == 0f && plusU == 0f && minusV == 0f && plusV == 0f) return quad
+    val ang = Math.toRadians(quad.uAngleDeg().toDouble())
+    val ux = cos(ang).toFloat()
+    val uy = sin(ang).toFloat()
+    var vx = -uy
+    var vy = ux
+    if (vy < 0f) {
+        vx = -vx
+        vy = -vy
+    }
+    val pts = quad.copyPts()
+    val us = FloatArray(4) { i -> pts[i * 2] * ux + pts[i * 2 + 1] * uy }
+    val vs = FloatArray(4) { i -> pts[i * 2] * vx + pts[i * 2 + 1] * vy }
+    var uMin = us[0]
+    var uMax = us[0]
+    var vMin = vs[0]
+    var vMax = vs[0]
+    for (i in 1 until 4) {
+        if (us[i] < uMin) uMin = us[i]
+        if (us[i] > uMax) uMax = us[i]
+        if (vs[i] < vMin) vMin = vs[i]
+        if (vs[i] > vMax) vMax = vs[i]
+    }
+    val uMid = (uMin + uMax) * 0.5f
+    val vMid = (vMin + vMax) * 0.5f
+    val out = FloatArray(8)
+    for (i in 0 until 4) {
+        val du = if (us[i] <= uMid) -minusU else plusU
+        val dv = if (vs[i] <= vMid) -minusV else plusV
+        out[i * 2] = pts[i * 2] + du * ux + dv * vx
+        out[i * 2 + 1] = pts[i * 2 + 1] + du * uy + dv * vy
+    }
+    return ContentExpandUtils.OrientedQuad(out)
+}
+
 private fun ocrGeomApplyRecPrep(work: Mat, prep: String) {
     when (prep) {
         "clip" -> OdometerOcrUtils.automaticContrastStretch(work)
@@ -7123,7 +7191,7 @@ private suspend fun ocrGeomPolarPair(
             crop.mat.copyTo(work)
             ocrGeomApplyRecPrep(work, prep)
             val snap = ocrGeomMatJpegB64(work)
-            val asisRes = paddleEngine.recognize(work)
+            val asisRes = paddleEngine.recognizeQa(work)
             val digRes = paddleEngine.recognizeNumericDecimal(work)
             work.release()
             val asis = PumpCostVolUtils.pumpOcrCleanAndProbs(asisRes.debugText, asisRes.perCharProbs)
@@ -7199,7 +7267,7 @@ private fun ocrGeomFeedRot(
         val ap = NativePaddleEngine.bufferSetA
         val bh = quad.shortAxisBh().coerceAtLeast(1f)
         val bw = quad.longAxisBw().coerceAtLeast(1f)
-        val maxW = NativePaddleEngine.REC_CANVAS_W
+        val maxW = 4096
             .coerceAtMost(ap.s.width.coerceAtLeast(2))
         val canvasH = RecBufferFeed.DEFAULT_REC_H
         val extraL = extraLeftDestPx.coerceAtLeast(0)
@@ -7652,7 +7720,7 @@ suspend fun runPumpOcrGeomExperiment(
 
 private fun pSerializePhotoResultToJson(
     lineNumber: Int, probedW: Int, probedH: Int, decodedW: Int, decodedH: Int,
-    isDegraded: Boolean, nativeProbe: String, deskewResA: OdometerOcrUtils.DeskewResult? = null,
+    isDegraded: Boolean, nativeProbe: String, deskewResA: DeskewResult? = null,
     tSnapOrig: Long = 0, tSnapDeskew: Long = 0, fileName: String = "",
     root: PumpBranch,
     originalHistogram: JSONArray
@@ -8012,7 +8080,7 @@ private fun seedInkLookDestSize(
 
 /** Per-threshold probe JPEG already encoded in native; height/short-axis 96. */
 private fun snapshotSeedInkProbe(
-    thr: ContentExpandUtils.SeedInkThr,
+    thr: SeedInkThr,
     boxN: Int,
     branch: PumpBranch,
     reportDir: File,
@@ -8130,10 +8198,10 @@ private suspend fun snapshotLookInk(
     imgW: Int,
     imgH: Int,
     branch: PumpBranch,
-    poisons: List<ContentExpandUtils.PoisonDump?> = emptyList(),
-    teles: List<ContentExpandUtils.Seg7Telemetry?> = emptyList(),
-    sweeps: List<ContentExpandUtils.InkSweep?> = emptyList(),
-    strokes: List<ContentExpandUtils.StrokeWidthInSeed?> = emptyList(),
+    poisons: List<PoisonDump?> = emptyList(),
+    teles: List<Seg7Telemetry?> = emptyList(),
+    sweeps: List<InkSweep?> = emptyList(),
+    strokes: List<StrokeWidthInSeed?> = emptyList(),
     reportDir: File,
     timestamp: String,
     fullRow: Int,
@@ -8574,10 +8642,10 @@ private suspend fun snapshotLookInkOriented(
     imgW: Int,
     imgH: Int,
     branch: PumpBranch,
-    poison: ContentExpandUtils.PoisonDump?,
-    tele: ContentExpandUtils.Seg7Telemetry?,
-    sweep: ContentExpandUtils.InkSweep?,
-    stroke: ContentExpandUtils.StrokeWidthInSeed?,
+    poison: PoisonDump?,
+    tele: Seg7Telemetry?,
+    sweep: InkSweep?,
+    stroke: StrokeWidthInSeed?,
     reportDir: File,
     timestamp: String,
     fullRow: Int,
@@ -8894,7 +8962,7 @@ private fun seedVRowsInWarp(
     return yT to yB
 }
 
-private fun putLookInkFillAttempts(j: org.json.JSONObject, tele: ContentExpandUtils.Seg7Telemetry) {
+private fun putLookInkFillAttempts(j: org.json.JSONObject, tele: Seg7Telemetry) {
     j.put("nKeep", tele.nKeep.roundToInt())
     j.put("nPoison", tele.nPoison.roundToInt())
     j.put("firstThr", tele.firstThr.roundToInt())
@@ -9429,7 +9497,7 @@ private fun pumpColumnLabels(columns: List<String>): List<String> {
     return labels
 }
 
-private fun seg7TeleJson(t: ContentExpandUtils.Seg7Telemetry): JSONObject {
+private fun seg7TeleJson(t: Seg7Telemetry): JSONObject {
     val hh = JSONArray(); t.histH.forEach { hh.put(it) }
     val hv = JSONArray(); t.histV.forEach { hv.put(it) }
     val hgh = JSONArray(); t.histGapH.forEach { hgh.put(it) }
@@ -9473,7 +9541,7 @@ private fun seg7TeleJson(t: ContentExpandUtils.Seg7Telemetry): JSONObject {
         .put("hist_gap_v", hgv)
 }
 
-private fun storeSeg7Tele(branch: PumpBranch, teles: List<ContentExpandUtils.Seg7Telemetry?>) {
+private fun storeSeg7Tele(branch: PumpBranch, teles: List<Seg7Telemetry?>) {
     val arr = JSONArray()
     teles.forEach { t -> if (t != null) arr.put(seg7TeleJson(t)) }
     if (arr.length() > 0) branch.metadata["seg7_tele"] = arr.toString()
@@ -9894,13 +9962,17 @@ private fun pPublishResultsSlots(
 private suspend fun pExtractZipToPhotos(uri: Uri, targetDir: File, context: Context): Boolean = withContext(Dispatchers.IO) {
     try {
         targetDir.mkdirs() // additive extract: do not wipe prior contents
+        val mtimesBefore = targetDir.walkTopDown().filter { it.isFile }
+            .associate { it.absolutePath to it.lastModified() }
         val input = context.contentResolver.openInputStream(uri) ?: return@withContext false
-        input.use {
+        val ok = input.use {
             ZipInputStream(it).use { zis ->
                 // flattenToBasename: images land flat at top-level of pump_photos (listFiles is non-recursive)
                 ZipExtractUtils.extractZipStreamToDir(zis, targetDir, flattenToBasename = true)
             }
         }
+        if (ok) PhotoExifWriter.stampChangedImagesMissingCaptureTime(targetDir, mtimesBefore)
+        ok
     } catch (e: Exception) { Log.e(TAG, "Failed to extract zip", e); false }
 }
 
@@ -9977,7 +10049,7 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
             return@map hunk
         }
 
-        val res = paddleEngine.recognize(recBuffer.c[fed.recCropId])
+        val res = paddleEngine.recognizeQa(recBuffer.c[fed.recCropId])
 
         recBuffer.c[fed.recCropId].release()
         PumpHunk(res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else "", hunk.rect)

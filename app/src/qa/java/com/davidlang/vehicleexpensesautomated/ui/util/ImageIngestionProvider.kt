@@ -2,6 +2,7 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
@@ -173,7 +174,11 @@ object ImageIngestionProvider {
             decodedBitmap.recycle()
             return meta
         } else {
-            val bmp = OdometerOcrUtils.decodeBitmapSafely(context, path) ?: throw Exception("Fallback decode failed")
+            val bmp = if (path.startsWith("content://")) {
+                context.contentResolver.openInputStream(Uri.parse(path))?.use { BitmapFactory.decodeStream(it) }
+            } else {
+                BitmapFactory.decodeFile(path)
+            } ?: throw Exception("Fallback decode failed")
             NativeImageUtils.ingestArgbToYuv(bmp, target)
             val meta = IngestionMetadata(bmp.width, bmp.height, bmp.width, bmp.height, "legacy", System.currentTimeMillis() - startTime, false)
             bmp.recycle()

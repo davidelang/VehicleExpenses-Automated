@@ -46,6 +46,7 @@ class VehicleViewModel @Inject constructor(
         imgH: Int = 0,
         odometerDigitCount: Int = 6,
         odometerRolloverCount: Int = 0,
+        cloudManifest: String? = null,
     ) {
         val newVehicle = Vehicle(
             name = name,
@@ -60,6 +61,7 @@ class VehicleViewModel @Inject constructor(
             odometerCropRight = odometerCropRect?.right,
             odometerCropBottom = odometerCropRect?.bottom,
             landmarkTextBlocksJson = landmarkTextBlocksJson,
+            cloudManifest = cloudManifest,
             odometerDigitCount = odometerDigitCount.coerceIn(3, 9),
             odometerRolloverCount = odometerRolloverCount.coerceAtLeast(0),
         )
@@ -69,6 +71,7 @@ class VehicleViewModel @Inject constructor(
                 repository.insert(newVehicle)
                 photoBackupCoordinator.enqueueAfterSave()
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Insert failed", e)
             throw e
@@ -83,6 +86,7 @@ class VehicleViewModel @Inject constructor(
                 repository.updateVehicle(vehicle)
                 photoBackupCoordinator.enqueueAfterSave()
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Update failed", e)
             throw e
@@ -106,14 +110,6 @@ class VehicleViewModel @Inject constructor(
     suspend fun ensureVehicleAssetsDownloaded(vehicleId: Int): Boolean =
         photoBackupCoordinator.downloadVehicleIfNeeded(vehicleId)
 
-    suspend fun ensureCleanedReference(vehicle: Vehicle): String? {
-        val cleaned = vehicle.cleanedReferenceDashPhotoUrl
-        if (cleaned != null) {
-            val f = java.io.File(cleaned)
-            if (f.exists()) return cleaned
-        }
-        return null
-    }
 
     // Phase 18: soft-delete tombstone for sync
     fun deleteVehicle(vehicle: Vehicle) {

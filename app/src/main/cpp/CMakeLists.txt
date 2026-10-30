@@ -60,16 +60,12 @@ target_link_directories(buffer_set PRIVATE ${JNI_LIBS_DIR} ${PADDLE_JNI_DIR})
 target_link_libraries(buffer_set jnigraphics log opencv_java4)
 
 # 2. native_ocr library (OpenCV dependent, uses c++_shared)
-add_library(native_ocr SHARED NativeImageUtils.cpp ContentExpandNative.cpp ExpRotGmm.cpp QfRotGmm.cpp)
+add_library(native_ocr SHARED NativeImageUtils.cpp ExpRotGmm.cpp QfRotGmm.cpp VeJni.cpp DngDevelop.cpp)
 target_link_directories(native_ocr PRIVATE ${JNI_LIBS_DIR} ${PADDLE_JNI_DIR})
-target_link_options(native_ocr PRIVATE
-    -Wl,--wrap=malloc
-    -Wl,--wrap=calloc
-    -Wl,--wrap=realloc
-)
 target_link_libraries(native_ocr
     jnigraphics
     log
+    z
     opencv_java4
     paddle_lite_jni
     ${PADDLE_EXTRA_LIBS}
@@ -86,6 +82,22 @@ if(NOT DEFINED VE_EMBED_EXP_DET)
 endif()
 if(VE_EMBED_EXP_DET)
     target_compile_definitions(native_ocr PRIVATE VE_EMBED_EXP_DET=1)
+    add_library(native_ocr_qa SHARED ContentExpandNative.cpp NativeImageUtilsQa.cpp DngDevelop.cpp)
+    target_link_directories(native_ocr_qa PRIVATE ${JNI_LIBS_DIR} ${PADDLE_JNI_DIR})
+    target_link_options(native_ocr_qa PRIVATE
+        -Wl,--wrap=malloc
+        -Wl,--wrap=calloc
+        -Wl,--wrap=realloc
+    )
+    target_link_libraries(native_ocr_qa
+        jnigraphics
+        log
+        z
+        opencv_java4
+        paddle_lite_jni
+        ${PADDLE_EXTRA_LIBS}
+        libraw_static
+    )
 endif()
 if(ANDROID_ABI STREQUAL "arm64-v8a")
     set(_pm_flavor arm64)

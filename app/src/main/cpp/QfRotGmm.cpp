@@ -17,28 +17,23 @@
 
 #include "paddle/paddle_api.h"
 
+#include "CropPlan.h"
+#include "VeJni.h"
+
+#include <mutex>
+#include <stdexcept>
+
 extern "C" bool veEncodeYuvMatJpeg(const cv::Mat& y, const cv::Mat& uv, std::vector<uint8_t>* out);
 
 namespace {
 
-constexpr int kBorderPx = 4;
-constexpr int kRightBorderPx = 4;
 constexpr int kRecH = 48;
-constexpr int kRecMaxW = 4096;
 constexpr float kVert = 0.34f;
 constexpr float kLeftFrac = 0.54f;
 constexpr float kRightFrac = 0.55f;
 constexpr int kAllowedDecimal[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 93};
 constexpr int kDetScales[] = {224, 608};
 
-struct Plan40 {
-    float s;
-    int destW;
-    int destH;
-    int srcW;
-    int srcH;
-    float marginSrc;
-};
 
 struct BoxUv {
     float cx, cy, ux, uy, vx, vy;
@@ -46,10 +41,16 @@ struct BoxUv {
     bool ok;
 };
 
+struct RawBox {
+    int scale;
+    float corners[8];
+    float score;
+};
+
 struct RecRow {
-    std::string asis = "?";
+    std::string asis;
     std::string asisProbs;
-    std::string digits = "?";
+    std::string digits;
     std::string digitsProbs;
 };
 
@@ -58,78 +59,14 @@ struct EvenRect {
     bool ok;
 };
 
-int evenAtLeast2(int n) {
-    int v = n < 2 ? 2 : n;
-    return (v & 1) ? (v + 1) : v;
-}
 
-int evenDown(int n) {
-    int e = (n & 1) ? (n - 1) : n;
-    return e < 2 ? 2 : e;
-}
 
-int javaRoundFloat(float a) {
-    if (!(a == a)) return 0;
-    if (a >= 2147483647.f) return 2147483647;
-    if (a <= -2147483648.f) return static_cast<int>(-2147483647 - 1);
-    return static_cast<int>(std::floor(static_cast<double>(a) + 0.5));
-}
 
 float spanAtLeast(float a, float b) {
     const float s = b - a;
     return s < 0.f ? 0.f : s;
 }
 
-Plan40 planContent40(float cropW, float cropH, int maxDestW, int destHIn) {
-    const float h = cropH < 1.f ? 1.f : cropH;
-    const float w = cropW < 1.f ? 1.f : cropW;
-    const int canvasH = destHIn < 2 ? 2 : destHIn;
-    const int cap = maxDestW < 2 ? 2 : maxDestW;
-    const int maxEven = (cap % 2 == 0) ? cap : std::max(2, cap - 1);
-    auto destWidth = [&](float scale) {
-        return evenAtLeast2(kBorderPx + kRightBorderPx + javaRoundFloat(w * scale));
-    };
-    float s = 40.f / h;
-    int destW = destWidth(s);
-    if (destW > maxEven) {
-        const float s0 = s;
-        int cMax = maxEven - kBorderPx - kRightBorderPx;
-        if (cMax < 1) cMax = 1;
-        float chosen = 1.f / w;
-        for (int c = cMax; c >= 1; --c) {
-            float sTry = (static_cast<float>(c) + 0.5f) / w;
-            int guard = 0;
-            while (guard < 6 && javaRoundFloat(w * sTry) > c) {
-                sTry = static_cast<float>(std::nextafter(
-                    static_cast<double>(sTry), -std::numeric_limits<double>::infinity()));
-                ++guard;
-            }
-            if (sTry > 0.f && javaRoundFloat(w * sTry) <= c && destWidth(sTry) <= maxEven) {
-                chosen = sTry;
-                break;
-            }
-        }
-        s = std::min(s0, chosen);
-        destW = destWidth(s);
-        if (destW > maxEven) destW = maxEven;
-        if (destW % 2 != 0) destW = evenDown(destW);
-        __android_log_print(
-            ANDROID_LOG_INFO, "CropScale",
-            "width fit crop=%gx%g s0=%g s=%g dest=%dx%d cap=%d",
-            static_cast<double>(w), static_cast<double>(h), static_cast<double>(s0),
-            static_cast<double>(s), destW, canvasH, cap);
-    }
-    const int srcW = evenAtLeast2(static_cast<int>(std::ceil((destW + 1.0) / static_cast<double>(s))));
-    const int srcH = evenAtLeast2(static_cast<int>(std::ceil((canvasH + 1.0) / static_cast<double>(s))));
-    Plan40 plan;
-    plan.s = s;
-    plan.destW = destW;
-    plan.destH = canvasH;
-    plan.srcW = srcW;
-    plan.srcH = srcH;
-    plan.marginSrc = static_cast<float>(kBorderPx) / s;
-    return plan;
-}
 
 BoxUv boxFromQuad(const float* p) {
     BoxUv b{};
@@ -638,35 +575,11 @@ std::string decodeDecimal(const float* data, int seqLen, int dictSize, const std
 }
 
 bool checkExc(JNIEnv* env) {
-    if (!env->ExceptionCheck()) return false;
-    env->ExceptionClear();
-    return true;
+    return env->ExceptionCheck();
 }
 
 std::shared_ptr<paddle::lite_api::PaddlePredictor> loadRecognizer(JNIEnv* env) {
-    jclass eng = env->FindClass("com/davidlang/vehicleexpensesautomated/ui/util/NativePaddleEngine");
-    if (!eng || checkExc(env)) return {};
-    jfieldID fid = env->GetStaticFieldID(eng, "sharedRecognizerV3", "Lcom/baidu/paddle/lite/PaddlePredictor;");
-    if (!fid || checkExc(env)) {
-        env->DeleteLocalRef(eng);
-        return {};
-    }
-    jobject predObj = env->GetStaticObjectField(eng, fid);
-    env->DeleteLocalRef(eng);
-    if (checkExc(env) || !predObj) return {};
-    jclass predCls = env->GetObjectClass(predObj);
-    jfieldID ptrFid = env->GetFieldID(predCls, "cppPaddlePredictorPointer", "J");
-    env->DeleteLocalRef(predCls);
-    if (!ptrFid || checkExc(env)) {
-        env->DeleteLocalRef(predObj);
-        return {};
-    }
-    const jlong raw = env->GetLongField(predObj, ptrFid);
-    env->DeleteLocalRef(predObj);
-    if (raw == 0) return {};
-    auto* sp = reinterpret_cast<std::shared_ptr<paddle::lite_api::PaddlePredictor>*>(raw);
-    if (!sp || !*sp) return {};
-    return *sp;
+    return veLoadSharedRecognizerV3(env);
 }
 
 std::vector<std::string> loadDictionary(JNIEnv* env) {
@@ -674,7 +587,8 @@ std::vector<std::string> loadDictionary(JNIEnv* env) {
     jclass eng = env->FindClass("com/davidlang/vehicleexpensesautomated/ui/util/NativePaddleEngine");
     if (!eng || checkExc(env)) return dict;
     jfieldID fid = env->GetStaticFieldID(eng, "dictionaryV3", "Ljava/util/List;");
-    if (!fid || checkExc(env)) {
+    if (checkExc(env)) return dict;
+    if (!fid) {
         env->DeleteLocalRef(eng);
         return dict;
     }
@@ -685,19 +599,18 @@ std::vector<std::string> loadDictionary(JNIEnv* env) {
     jmethodID sizeM = env->GetMethodID(listCls, "size", "()I");
     jmethodID getM = env->GetMethodID(listCls, "get", "(I)Ljava/lang/Object;");
     env->DeleteLocalRef(listCls);
-    if (!sizeM || !getM || checkExc(env)) {
+    if (checkExc(env)) return dict;
+    if (!sizeM || !getM) {
         env->DeleteLocalRef(list);
         return dict;
     }
     const jint n = env->CallIntMethod(list, sizeM);
-    if (checkExc(env)) {
-        env->DeleteLocalRef(list);
-        return dict;
-    }
+    if (checkExc(env)) return dict;
     dict.reserve(n > 0 ? static_cast<size_t>(n) : 0);
     for (jint i = 0; i < n; ++i) {
         jobject item = env->CallObjectMethod(list, getM, i);
-        if (checkExc(env) || !item) {
+        if (checkExc(env)) return dict;
+        if (!item) {
             dict.emplace_back();
             continue;
         }
@@ -711,25 +624,15 @@ std::vector<std::string> loadDictionary(JNIEnv* env) {
 }
 
 void bothDecodes(paddle::lite_api::PaddlePredictor& pred, const cv::Mat& mat, const std::vector<std::string>& dict, RecRow* row) {
-    if (mat.cols < 1 || mat.cols > kRecMaxW || mat.rows != kRecH || mat.type() != CV_8UC1) {
-        row->asis = "(Size Error)";
-        row->digits = "(Size Error)";
-        return;
+    if (mat.cols < 1 || mat.rows != kRecH || mat.type() != CV_8UC1) {
+        throw std::runtime_error("bothDecodes: bad crop");
     }
     try {
         std::unique_ptr<paddle::lite_api::Tensor> input = pred.GetInput(0);
-        if (!input) {
-            row->asis = "(Engine Error)";
-            row->digits = "(Engine Error)";
-            return;
-        }
+        if (!input) throw std::runtime_error("bothDecodes: no input tensor");
         input->Resize({1, 1, static_cast<int64_t>(mat.rows), static_cast<int64_t>(mat.cols)});
         int8_t* dst = input->mutable_data<int8_t>();
-        if (!dst) {
-            row->asis = "(Engine Error)";
-            row->digits = "(Engine Error)";
-            return;
-        }
+        if (!dst) throw std::runtime_error("bothDecodes: no input data");
         for (int y = 0; y < mat.rows; ++y) {
             std::memcpy(
                 dst + static_cast<size_t>(y) * static_cast<size_t>(mat.cols),
@@ -738,28 +641,20 @@ void bothDecodes(paddle::lite_api::PaddlePredictor& pred, const cv::Mat& mat, co
         }
         pred.Run();
         std::unique_ptr<const paddle::lite_api::Tensor> output = pred.GetOutput(0);
-        if (!output) {
-            row->asis = "(Inference Error)";
-            row->digits = "(Inference Error)";
-            return;
-        }
+        if (!output) throw std::runtime_error("bothDecodes: no output tensor");
         const float* data = output->data<float>();
         const paddle::lite_api::shape_t shape = output->shape();
         if (!data || shape.size() < 3 || shape[1] < 1 || shape[2] < 1) {
-            row->asis = "(Inference Error)";
-            row->digits = "(Inference Error)";
-            return;
+            throw std::runtime_error("bothDecodes: bad output");
         }
         const int seqLen = static_cast<int>(shape[1]);
         const int dictSize = static_cast<int>(shape[2]);
         row->asis = decodeFull(data, seqLen, dictSize, dict, &row->asisProbs);
         row->digits = decodeDecimal(data, seqLen, dictSize, dict, &row->digitsProbs);
+    } catch (const std::runtime_error&) {
+        throw;
     } catch (const std::exception& ex) {
-        __android_log_print(ANDROID_LOG_ERROR, "QfRotGmm", "rec failed: %s", ex.what());
-        row->asis = "(Inference Error)";
-        row->asisProbs.clear();
-        row->digits = "(Inference Error)";
-        row->digitsProbs.clear();
+        throw std::runtime_error(std::string("bothDecodes: ") + ex.what());
     }
 }
 
@@ -772,36 +667,16 @@ void recognizeOne(
     const std::vector<std::string>& dict,
     RecRow* row
 ) {
+    (void)scratchW;
+    (void)scratchH;
     const BoxUv box = boxFromQuad(quad);
-    if (!box.ok) return;
+    if (!box.ok) throw std::runtime_error("recognizeOne: bad quad");
     const float bw = std::max(1.f, spanAtLeast(box.u0, box.u1));
     const float bh = std::max(1.f, spanAtLeast(box.v0, box.v1));
-    if (bw < 2.f || bh < 2.f) return;
-    const Plan40 plan = planContent40(bw, bh, kRecMaxW, kRecH);
-    int srcW = plan.srcW;
-    int srcH = plan.srcH;
-    bool cut = false;
-    if (srcW > scratchW) {
-        srcW = (scratchW % 2 == 0) ? scratchW : scratchW - 1;
-        cut = true;
-    }
-    if (srcH > scratchH) {
-        srcH = (scratchH % 2 == 0) ? scratchH : scratchH - 1;
-        cut = true;
-    }
-    if (srcW < 2 || srcH < 2) {
-        __android_log_print(
-            ANDROID_LOG_INFO, "CropScale",
-            "quad clamp cut empty want=%dx%d scratch=%dx%d",
-            plan.srcW, plan.srcH, scratchW, scratchH);
-        return;
-    }
-    if (cut) {
-        __android_log_print(
-            ANDROID_LOG_INFO, "CropScale",
-            "quad clamp cut want=%dx%d got=%dx%d scratch=%dx%d",
-            plan.srcW, plan.srcH, srcW, srcH, scratchW, scratchH);
-    }
+    if (bw < 2.f || bh < 2.f) throw std::runtime_error("recognizeOne: crop too small");
+    const Plan40 plan = planContent40(bw, bh, kRecH);
+    const int srcW = plan.srcW;
+    const int srcH = plan.srcH;
     float expanded[8];
     const float plusU = static_cast<float>(srcW) - plan.marginSrc - bw;
     const float plusV = static_cast<float>(srcH) - plan.marginSrc - bh;
@@ -813,45 +688,126 @@ void recognizeOne(
         warped = warpToStrip(gray, expanded, strip);
     } catch (const cv::Exception& ex) {
         __android_log_print(ANDROID_LOG_ERROR, "QfRotGmm", "warp failed: %s", ex.what());
-        warped = false;
+        throw std::runtime_error(std::string("recognizeOne: warp failed: ") + ex.what());
     }
-    if (!warped) return;
+    if (!warped) throw std::runtime_error("recognizeOne: warp failed");
     scaleArea(strip, dest, plan.s);
-    if (!pred) {
-        row->asis = "(Engine Error)";
-        row->digits = "(Engine Error)";
-        return;
-    }
+    if (!pred) throw std::runtime_error("recognizeOne: no predictor");
     bothDecodes(*pred, dest, dict, row);
 }
 
-bool primaryYuv(JNIEnv* env, jobject buffer, cv::Mat* y, cv::Mat* uv, int* w, int* h) {
-    jclass bufCls = env->GetObjectClass(buffer);
-    jmethodID getP = env->GetMethodID(bufCls, "getP", "()Lcom/davidlang/vehicleexpensesautomated/ui/util/BufferSet$Slice;");
-    jmethodID getW = env->GetMethodID(bufCls, "getWidth", "()I");
-    jmethodID getH = env->GetMethodID(bufCls, "getHeight", "()I");
-    env->DeleteLocalRef(bufCls);
-    if (!getP || !getW || !getH || checkExc(env)) return false;
+struct QfJniIds {
+    jclass bufCls = nullptr;
+    jmethodID getP = nullptr;
+    jmethodID getS = nullptr;
+    jmethodID getWidth = nullptr;
+    jmethodID getHeight = nullptr;
+    jclass sliceCls = nullptr;
+    jmethodID getMat = nullptr;
+    jmethodID getUv = nullptr;
+    jclass matCls = nullptr;
+    jclass integerCls = nullptr;
+    jmethodID intValue = nullptr;
+    jmethodID valueOf = nullptr;
+    jclass utilsCls = nullptr;
+    jclass engCls = nullptr;
+    jmethodID prepare = nullptr;
+    jclass compCls = nullptr;
+    jmethodID deskew = nullptr;
+    jclass pairCls = nullptr;
+    jmethodID getFirst = nullptr;
+    jmethodID getSecond = nullptr;
+    jmethodID ctor = nullptr;
+    jmethodID detect = nullptr;
+    jclass resCls = nullptr;
+    jmethodID getBoxes = nullptr;
+    jclass listCls = nullptr;
+    jmethodID sizeM = nullptr;
+    jmethodID getM = nullptr;
+    jclass boxCls = nullptr;
+    jmethodID getPts = nullptr;
+    jmethodID getConf = nullptr;
+};
+
+QfJniIds qfJni;
+
+jclass holdClass(JNIEnv* env, jclass* slot, jclass local) {
+    if (checkExc(env)) return nullptr;
+    if (*slot) {
+        if (local) env->DeleteLocalRef(local);
+        return *slot;
+    }
+    if (!local) return nullptr;
+    jobject global = env->NewGlobalRef(local);
+    if (!global || checkExc(env)) return nullptr;
+    env->DeleteLocalRef(local);
+    *slot = static_cast<jclass>(global);
+    return *slot;
+}
+
+jclass findHeld(JNIEnv* env, jclass* slot, const char* name) {
+    if (*slot) return *slot;
+    if (checkExc(env)) return nullptr;
+    return holdClass(env, slot, env->FindClass(name));
+}
+
+jclass classOfHeld(JNIEnv* env, jclass* slot, jobject obj) {
+    if (*slot) return *slot;
+    if (!obj || checkExc(env)) return nullptr;
+    return holdClass(env, slot, env->GetObjectClass(obj));
+}
+
+jmethodID holdMethod(JNIEnv* env, jmethodID* slot, jclass cls, const char* name, const char* sig) {
+    if (*slot) return *slot;
+    if (!cls || checkExc(env)) return nullptr;
+    jmethodID mid = env->GetMethodID(cls, name, sig);
+    if (!mid || checkExc(env)) return nullptr;
+    *slot = mid;
+    return mid;
+}
+
+jmethodID holdStaticMethod(JNIEnv* env, jmethodID* slot, jclass cls, const char* name, const char* sig) {
+    if (*slot) return *slot;
+    if (!cls || checkExc(env)) return nullptr;
+    jmethodID mid = env->GetStaticMethodID(cls, name, sig);
+    if (!mid || checkExc(env)) return nullptr;
+    *slot = mid;
+    return mid;
+}
+
+bool sliceYuv(JNIEnv* env, jobject buffer, const char* getterName, jmethodID* getterSlot, cv::Mat* y, cv::Mat* uv, int* w, int* h) {
+    jclass bufCls = classOfHeld(env, &qfJni.bufCls, buffer);
+    jmethodID getSlice = holdMethod(
+        env, getterSlot, bufCls, getterName,
+        "()Lcom/davidlang/vehicleexpensesautomated/ui/util/BufferSet$Slice;");
+    jmethodID getW = holdMethod(env, &qfJni.getWidth, bufCls, "getWidth", "()I");
+    jmethodID getH = holdMethod(env, &qfJni.getHeight, bufCls, "getHeight", "()I");
+    if (checkExc(env)) return false;
+    if (!getSlice || !getW || !getH) return false;
     *w = env->CallIntMethod(buffer, getW);
     *h = env->CallIntMethod(buffer, getH);
-    jobject slice = env->CallObjectMethod(buffer, getP);
-    if (checkExc(env) || !slice) return false;
-    jclass sliceCls = env->GetObjectClass(slice);
-    jmethodID getMat = env->GetMethodID(sliceCls, "getMat", "()Lorg/opencv/core/Mat;");
-    jmethodID getUv = env->GetMethodID(sliceCls, "getUvMat", "()Lorg/opencv/core/Mat;");
-    env->DeleteLocalRef(sliceCls);
-    if (!getMat || !getUv || checkExc(env)) {
+    jobject slice = env->CallObjectMethod(buffer, getSlice);
+    if (checkExc(env)) return false;
+    if (!slice) return false;
+    jclass sliceCls = classOfHeld(env, &qfJni.sliceCls, slice);
+    jmethodID getMat = holdMethod(env, &qfJni.getMat, sliceCls, "getMat", "()Lorg/opencv/core/Mat;");
+    jmethodID getUv = holdMethod(env, &qfJni.getUv, sliceCls, "getUvMat", "()Lorg/opencv/core/Mat;");
+    if (checkExc(env)) return false;
+    if (!getMat || !getUv) {
         env->DeleteLocalRef(slice);
         return false;
     }
     jobject yObj = env->CallObjectMethod(slice, getMat);
     jobject uvObj = env->CallObjectMethod(slice, getUv);
     env->DeleteLocalRef(slice);
-    if (checkExc(env) || !yObj || !uvObj) return false;
-    jclass matCls = env->GetObjectClass(yObj);
+    if (checkExc(env)) return false;
+    if (!yObj || !uvObj) return false;
+    jclass matCls = classOfHeld(env, &qfJni.matCls, yObj);
+    if (checkExc(env)) return false;
+    if (!matCls) return false;
     jfieldID nativeObj = env->GetFieldID(matCls, "nativeObj", "J");
-    env->DeleteLocalRef(matCls);
-    if (!nativeObj || checkExc(env)) return false;
+    if (checkExc(env)) return false;
+    if (!nativeObj) return false;
     const jlong yPtr = env->GetLongField(yObj, nativeObj);
     const jlong uvPtr = env->GetLongField(uvObj, nativeObj);
     env->DeleteLocalRef(yObj);
@@ -860,6 +816,14 @@ bool primaryYuv(JNIEnv* env, jobject buffer, cv::Mat* y, cv::Mat* uv, int* w, in
     *y = *reinterpret_cast<cv::Mat*>(yPtr);
     *uv = *reinterpret_cast<cv::Mat*>(uvPtr);
     return !y->empty();
+}
+
+bool primaryYuv(JNIEnv* env, jobject buffer, cv::Mat* y, cv::Mat* uv, int* w, int* h) {
+    return sliceYuv(env, buffer, "getP", &qfJni.getP, y, uv, w, h);
+}
+
+bool scratchYuv(JNIEnv* env, jobject buffer, cv::Mat* y, cv::Mat* uv, int* w, int* h) {
+    return sliceYuv(env, buffer, "getS", &qfJni.getS, y, uv, w, h);
 }
 
 std::vector<uint8_t> encodeYuv(const cv::Mat& y, const cv::Mat& uv) {
@@ -885,17 +849,18 @@ void drawSeed(cv::Mat& y, cv::Mat& uv, const float* q) {
 
 int intValue(JNIEnv* env, jobject integerObj) {
     if (!integerObj) return 0;
-    jclass cls = env->GetObjectClass(integerObj);
-    jmethodID m = env->GetMethodID(cls, "intValue", "()I");
-    env->DeleteLocalRef(cls);
-    if (!m || checkExc(env)) return 0;
+    jclass cls = classOfHeld(env, &qfJni.integerCls, integerObj);
+    jmethodID m = holdMethod(env, &qfJni.intValue, cls, "intValue", "()I");
+    if (checkExc(env)) return 0;
+    if (!m) return 0;
     return env->CallIntMethod(integerObj, m);
 }
 
-void collectScaleBoxes(JNIEnv* env, jobject buffer, jobject context, int scale, std::vector<BoxUv>* boxes) {
-    jclass utilsCls = env->FindClass("com/davidlang/vehicleexpensesautomated/ui/util/PumpCostVolUtils");
-    jclass engCls = env->FindClass("com/davidlang/vehicleexpensesautomated/ui/util/NativePaddleEngine");
-    if (!utilsCls || !engCls || checkExc(env)) return;
+void collectScaleBoxes(JNIEnv* env, jobject buffer, jobject context, int scale, std::vector<BoxUv>* boxes, std::vector<RawBox>* raw) {
+    jclass utilsCls = findHeld(env, &qfJni.utilsCls, "com/davidlang/vehicleexpensesautomated/ui/util/PumpCostVolUtils");
+    if (!utilsCls || checkExc(env)) return;
+    jclass engCls = findHeld(env, &qfJni.engCls, "com/davidlang/vehicleexpensesautomated/ui/util/NativePaddleEngine");
+    if (!engCls || checkExc(env)) return;
     jfieldID utilsInst = env->GetStaticFieldID(utilsCls, "INSTANCE", "Lcom/davidlang/vehicleexpensesautomated/ui/util/PumpCostVolUtils;");
     jfieldID companionFid = env->GetStaticFieldID(
         engCls, "Companion", "Lcom/davidlang/vehicleexpensesautomated/ui/util/NativePaddleEngine$Companion;");
@@ -903,59 +868,60 @@ void collectScaleBoxes(JNIEnv* env, jobject buffer, jobject context, int scale, 
     jobject utils = env->GetStaticObjectField(utilsCls, utilsInst);
     jobject companion = env->GetStaticObjectField(engCls, companionFid);
     if (!utils || !companion || checkExc(env)) return;
-    jmethodID prepare = env->GetMethodID(
-        utilsCls, "prepareScale", "(Lcom/davidlang/vehicleexpensesautomated/ui/util/BufferSet;I)Lkotlin/Pair;");
-    jclass compCls = env->GetObjectClass(companion);
-    jmethodID deskew = env->GetMethodID(compCls, "deskewSetFor", "(I)Lcom/davidlang/vehicleexpensesautomated/ui/util/BufferSet;");
-    env->DeleteLocalRef(compCls);
+    jmethodID prepare = holdMethod(
+        env, &qfJni.prepare, utilsCls, "prepareScale",
+        "(Lcom/davidlang/vehicleexpensesautomated/ui/util/BufferSet;I)Lkotlin/Pair;");
+    jclass compCls = classOfHeld(env, &qfJni.compCls, companion);
+    jmethodID deskew = holdMethod(
+        env, &qfJni.deskew, compCls, "deskewSetFor",
+        "(I)Lcom/davidlang/vehicleexpensesautomated/ui/util/BufferSet;");
     if (!prepare || !deskew || checkExc(env)) return;
     jobject pair = env->CallObjectMethod(utils, prepare, buffer, scale);
     if (checkExc(env) || !pair) return;
-    jclass pairCls = env->GetObjectClass(pair);
-    jmethodID getFirst = env->GetMethodID(pairCls, "getFirst", "()Ljava/lang/Object;");
-    jmethodID getSecond = env->GetMethodID(pairCls, "getSecond", "()Ljava/lang/Object;");
-    env->DeleteLocalRef(pairCls);
+    jclass pairCls = classOfHeld(env, &qfJni.pairCls, pair);
+    jmethodID getFirst = holdMethod(env, &qfJni.getFirst, pairCls, "getFirst", "()Ljava/lang/Object;");
+    jmethodID getSecond = holdMethod(env, &qfJni.getSecond, pairCls, "getSecond", "()Ljava/lang/Object;");
     if (!getFirst || !getSecond || checkExc(env)) return;
     jobject first = env->CallObjectMethod(pair, getFirst);
     jobject second = env->CallObjectMethod(pair, getSecond);
     const int contentW = intValue(env, first);
+    if (checkExc(env)) return;
     const int contentH = intValue(env, second);
+    if (checkExc(env)) return;
     env->DeleteLocalRef(pair);
     if (first) env->DeleteLocalRef(first);
     if (second) env->DeleteLocalRef(second);
     if (contentW < 1 || contentH < 1) return;
     jobject dest = env->CallObjectMethod(companion, deskew, scale);
     if (checkExc(env) || !dest) return;
-    jclass destCls = env->GetObjectClass(dest);
-    jmethodID getW = env->GetMethodID(destCls, "getWidth", "()I");
-    jmethodID getH = env->GetMethodID(destCls, "getHeight", "()I");
-    env->DeleteLocalRef(destCls);
+    jclass destCls = classOfHeld(env, &qfJni.bufCls, dest);
+    jmethodID getW = holdMethod(env, &qfJni.getWidth, destCls, "getWidth", "()I");
+    jmethodID getH = holdMethod(env, &qfJni.getHeight, destCls, "getHeight", "()I");
     if (!getW || checkExc(env)) return;
     const int S = env->CallIntMethod(dest, getW);
-    jclass bufCls = env->GetObjectClass(buffer);
-    jmethodID bufW = env->GetMethodID(bufCls, "getWidth", "()I");
-    jmethodID bufH = env->GetMethodID(bufCls, "getHeight", "()I");
-    env->DeleteLocalRef(bufCls);
+    jclass bufCls = classOfHeld(env, &qfJni.bufCls, buffer);
+    jmethodID bufW = holdMethod(env, &qfJni.getWidth, bufCls, "getWidth", "()I");
+    jmethodID bufH = holdMethod(env, &qfJni.getHeight, bufCls, "getHeight", "()I");
     if (!bufW || !bufH || checkExc(env)) return;
     const int fullW = env->CallIntMethod(buffer, bufW);
     const int fullH = env->CallIntMethod(buffer, bufH);
     const int contentMax = std::max(contentW, contentH);
     const float heatToPhoto = static_cast<float>(std::max(fullW, fullH)) / static_cast<float>(std::max(1, contentMax));
-    jmethodID ctor = env->GetMethodID(engCls, "<init>", "(Landroid/content/Context;Ljava/lang/String;)V");
+    jmethodID ctor = holdMethod(env, &qfJni.ctor, engCls, "<init>", "(Landroid/content/Context;Ljava/lang/String;)V");
     if (!ctor || checkExc(env)) return;
     jstring variant = env->NewStringUTF("Numeric");
     jobject engine = env->NewObject(engCls, ctor, context, variant);
     env->DeleteLocalRef(variant);
     if (checkExc(env) || !engine) return;
-    jmethodID detect = env->GetMethodID(
-        engCls, "detect",
+    jmethodID detect = holdMethod(
+        env, &qfJni.detect, engCls, "detect",
         "(Ljava/lang/Object;Ljava/lang/Integer;Ljava/lang/Integer;ZILjava/io/File;FILjava/util/Map;Ljava/util/Map;ILorg/opencv/core/Mat;FII)Lcom/davidlang/vehicleexpensesautomated/ui/util/NativePaddleEngine$DetectionResult;");
     if (!detect || checkExc(env)) return;
-    jclass integerCls = env->FindClass("java/lang/Integer");
-    jmethodID valueOf = env->GetStaticMethodID(integerCls, "valueOf", "(I)Ljava/lang/Integer;");
+    jclass integerCls = findHeld(env, &qfJni.integerCls, "java/lang/Integer");
+    jmethodID valueOf = holdStaticMethod(env, &qfJni.valueOf, integerCls, "valueOf", "(I)Ljava/lang/Integer;");
+    if (!integerCls || !valueOf || checkExc(env)) return;
     jobject iw = env->CallStaticObjectMethod(integerCls, valueOf, S);
     jobject ih = env->CallStaticObjectMethod(integerCls, valueOf, S);
-    env->DeleteLocalRef(integerCls);
     jobject result = env->CallObjectMethod(
         engine, detect, dest, iw, ih, JNI_FALSE, 0, nullptr, 0.f, 0, nullptr, nullptr, 0, nullptr,
         heatToPhoto, fullW, fullH);
@@ -964,34 +930,56 @@ void collectScaleBoxes(JNIEnv* env, jobject buffer, jobject context, int scale, 
     env->DeleteLocalRef(engine);
     env->DeleteLocalRef(dest);
     if (checkExc(env) || !result) return;
-    jclass resCls = env->GetObjectClass(result);
-    jmethodID getBoxes = env->GetMethodID(resCls, "getNativeBoxes", "()Ljava/util/List;");
-    env->DeleteLocalRef(resCls);
+    jclass resCls = classOfHeld(env, &qfJni.resCls, result);
+    jmethodID getBoxes = holdMethod(env, &qfJni.getBoxes, resCls, "getNativeBoxes", "()Ljava/util/List;");
     if (!getBoxes || checkExc(env)) return;
     jobject list = env->CallObjectMethod(result, getBoxes);
     env->DeleteLocalRef(result);
     if (checkExc(env) || !list) return;
-    jclass listCls = env->GetObjectClass(list);
-    jmethodID sizeM = env->GetMethodID(listCls, "size", "()I");
-    jmethodID getM = env->GetMethodID(listCls, "get", "(I)Ljava/lang/Object;");
-    env->DeleteLocalRef(listCls);
+    jclass listCls = classOfHeld(env, &qfJni.listCls, list);
+    jmethodID sizeM = holdMethod(env, &qfJni.sizeM, listCls, "size", "()I");
+    jmethodID getM = holdMethod(env, &qfJni.getM, listCls, "get", "(I)Ljava/lang/Object;");
     if (!sizeM || !getM || checkExc(env)) return;
     const jint n = env->CallIntMethod(list, sizeM);
     if (checkExc(env)) return;
     (void)getH;
     for (jint i = 0; i < n; ++i) {
         jobject box = env->CallObjectMethod(list, getM, i);
-        if (checkExc(env) || !box) continue;
-        jclass boxCls = env->GetObjectClass(box);
-        jmethodID getPts = env->GetMethodID(boxCls, "getPoints", "()[F");
-        env->DeleteLocalRef(boxCls);
-        if (!getPts || checkExc(env)) {
-            env->DeleteLocalRef(box);
-            continue;
+        if (checkExc(env)) return;
+        if (!box) continue;
+        jmethodID getPts = qfJni.getPts;
+        jmethodID getConf = qfJni.getConf;
+        if (!getPts || !getConf) {
+            jclass local = env->GetObjectClass(box);
+            if (!local || checkExc(env)) return;
+            if (!getPts) {
+                getPts = env->GetMethodID(local, "getPoints", "()[F");
+                if (checkExc(env)) return;
+                if (!getPts) {
+                    env->DeleteLocalRef(local);
+                    env->DeleteLocalRef(box);
+                    continue;
+                }
+                qfJni.getPts = getPts;
+            }
+            if (!getConf) {
+                getConf = env->GetMethodID(local, "getConfidence", "()F");
+                if (checkExc(env)) return;
+                if (!getConf) {
+                    env->DeleteLocalRef(local);
+                    env->DeleteLocalRef(box);
+                    continue;
+                }
+                qfJni.getConf = getConf;
+            }
+            if (!holdClass(env, &qfJni.boxCls, local) || checkExc(env)) return;
         }
+        const jfloat score = env->CallFloatMethod(box, getConf);
+        if (checkExc(env)) return;
         jobject ptsObj = env->CallObjectMethod(box, getPts);
         env->DeleteLocalRef(box);
-        if (checkExc(env) || !ptsObj) continue;
+        if (checkExc(env)) return;
+        if (!ptsObj) continue;
         jfloatArray arr = static_cast<jfloatArray>(ptsObj);
         if (env->GetArrayLength(arr) < 8) {
             env->DeleteLocalRef(arr);
@@ -1000,6 +988,11 @@ void collectScaleBoxes(JNIEnv* env, jobject buffer, jobject context, int scale, 
         float p[8];
         env->GetFloatArrayRegion(arr, 0, 8, p);
         env->DeleteLocalRef(arr);
+        RawBox rb{};
+        rb.scale = scale;
+        std::memcpy(rb.corners, p, sizeof(rb.corners));
+        rb.score = score;
+        raw->push_back(rb);
         const BoxUv b = boxFromQuad(p);
         if (b.ok) boxes->push_back(b);
     }
@@ -1016,17 +1009,30 @@ jbyteArray toByteArray(JNIEnv* env, const std::vector<uint8_t>& bytes) {
 }
 
 jstring toJString(JNIEnv* env, const std::string& s) {
+    if (env->ExceptionCheck()) return nullptr;
     jstring js = env->NewStringUTF(s.c_str());
-    if (js && !env->ExceptionCheck()) return js;
-    env->ExceptionClear();
-    return env->NewStringUTF("");
+    if (!js || env->ExceptionCheck()) {
+        veThrowIllegalState(env, "toJString: NewStringUTF failed");
+        return nullptr;
+    }
+    return js;
 }
 
-jobject newDetectOut(JNIEnv* env, const std::vector<uint8_t>& original, const std::vector<uint8_t>& discovery, const std::vector<float>& pts, const std::vector<jint>& aabb) {
+jobject newDetectOut(
+    JNIEnv* env,
+    const std::vector<uint8_t>& original,
+    const std::vector<uint8_t>& discovery,
+    const std::vector<float>& pts,
+    const std::vector<jint>& aabb,
+    const std::vector<jint>& rawScale,
+    const std::vector<float>& rawCorners,
+    const std::vector<float>& rawScore
+) {
     jclass cls = env->FindClass("com/davidlang/vehicleexpensesautomated/ui/util/QfRotGmmDetectOut");
     if (!cls || checkExc(env)) return nullptr;
-    jmethodID ctor = env->GetMethodID(cls, "<init>", "([B[B[F[I)V");
-    if (!ctor || checkExc(env)) {
+    jmethodID ctor = env->GetMethodID(cls, "<init>", "([B[B[F[I[I[F[F)V");
+    if (checkExc(env)) return nullptr;
+    if (!ctor) {
         env->DeleteLocalRef(cls);
         return nullptr;
     }
@@ -1034,14 +1040,23 @@ jobject newDetectOut(JNIEnv* env, const std::vector<uint8_t>& original, const st
     jbyteArray disc = toByteArray(env, discovery);
     jfloatArray p = env->NewFloatArray(static_cast<jsize>(pts.size()));
     jintArray a = env->NewIntArray(static_cast<jsize>(aabb.size()));
+    jintArray scales = env->NewIntArray(static_cast<jsize>(rawScale.size()));
+    jfloatArray corners = env->NewFloatArray(static_cast<jsize>(rawCorners.size()));
+    jfloatArray scores = env->NewFloatArray(static_cast<jsize>(rawScore.size()));
     if (!pts.empty()) env->SetFloatArrayRegion(p, 0, static_cast<jsize>(pts.size()), pts.data());
     if (!aabb.empty()) env->SetIntArrayRegion(a, 0, static_cast<jsize>(aabb.size()), aabb.data());
-    jobject out = env->NewObject(cls, ctor, orig, disc, p, a);
+    if (!rawScale.empty()) env->SetIntArrayRegion(scales, 0, static_cast<jsize>(rawScale.size()), rawScale.data());
+    if (!rawCorners.empty()) env->SetFloatArrayRegion(corners, 0, static_cast<jsize>(rawCorners.size()), rawCorners.data());
+    if (!rawScore.empty()) env->SetFloatArrayRegion(scores, 0, static_cast<jsize>(rawScore.size()), rawScore.data());
+    jobject out = env->NewObject(cls, ctor, orig, disc, p, a, scales, corners, scores);
     env->DeleteLocalRef(cls);
     env->DeleteLocalRef(orig);
     env->DeleteLocalRef(disc);
     env->DeleteLocalRef(p);
     env->DeleteLocalRef(a);
+    env->DeleteLocalRef(scales);
+    env->DeleteLocalRef(corners);
+    env->DeleteLocalRef(scores);
     return out;
 }
 
@@ -1071,7 +1086,8 @@ jobject newRecOut(JNIEnv* env, const std::vector<RecRow>& rows) {
     if (!cls || checkExc(env)) return nullptr;
     jmethodID ctor = env->GetMethodID(
         cls, "<init>", "([Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;)V");
-    if (!ctor || checkExc(env)) {
+    if (checkExc(env)) return nullptr;
+    if (!ctor) {
         env->DeleteLocalRef(cls);
         return nullptr;
     }
@@ -1126,29 +1142,56 @@ extern "C" JNIEXPORT jobject JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_OcrHarness_qfRotGmmDetect(
     JNIEnv* env, jobject, jobject buffer, jint maxRedBoxes, jobject context
 ) {
+    VePredictorGuard guard;
+    try {
     __android_log_print(ANDROID_LOG_INFO, "QfRotGmm", "qfRotGmmDetect");
     std::vector<float> pts;
     std::vector<jint> aabb;
     std::vector<uint8_t> original;
     std::vector<uint8_t> discovery;
-    if (!buffer || !context) return newDetectOut(env, original, discovery, pts, aabb);
+    std::vector<jint> rawScale;
+    std::vector<float> rawCorners;
+    std::vector<float> rawScore;
+    if (!buffer || !context) return newDetectOut(env, original, discovery, pts, aabb, rawScale, rawCorners, rawScore);
     cv::Mat y, uv;
     int imgW = 0, imgH = 0;
-    if (!primaryYuv(env, buffer, &y, &uv, &imgW, &imgH)) return newDetectOut(env, original, discovery, pts, aabb);
-    original = encodeYuv(y, uv);
+    if (!primaryYuv(env, buffer, &y, &uv, &imgW, &imgH)) {
+        if (checkExc(env)) return nullptr;
+        return newDetectOut(env, original, discovery, pts, aabb, rawScale, rawCorners, rawScore);
+    }
     std::vector<BoxUv> seeds;
+    std::vector<RawBox> raw;
     for (int scale : kDetScales) {
-        if (env->PushLocalFrame(64) < 0) {
-            checkExc(env);
-            break;
-        }
-        collectScaleBoxes(env, buffer, context, scale, &seeds);
+        if (env->PushLocalFrame(64) < 0) return nullptr;
+        collectScaleBoxes(env, buffer, context, scale, &seeds, &raw);
+        if (checkExc(env)) return nullptr;
         env->PopLocalFrame(nullptr);
+    }
+    rawScale.reserve(raw.size());
+    rawCorners.reserve(raw.size() * 8);
+    rawScore.reserve(raw.size());
+    for (const RawBox& rb : raw) {
+        rawScale.push_back(rb.scale);
+        for (int k = 0; k < 8; ++k) rawCorners.push_back(rb.corners[k]);
+        rawScore.push_back(rb.score);
     }
     mergeSeeds(&seeds, 40.f);
     keepTopN(&seeds, maxRedBoxes);
-    cv::Mat yInk = y.clone();
-    cv::Mat uvInk = uv.clone();
+    cv::Mat yInk, uvInk;
+    int scratchW = 0, scratchH = 0;
+    const bool haveScratch = scratchYuv(env, buffer, &yInk, &uvInk, &scratchW, &scratchH);
+    if (checkExc(env)) return nullptr;
+    const bool scratchSame =
+        haveScratch &&
+        y.rows == yInk.rows && y.cols == yInk.cols && y.type() == yInk.type() &&
+        uv.rows == uvInk.rows && uv.cols == uvInk.cols && uv.type() == uvInk.type();
+    if (haveScratch && !scratchSame) {
+        throw std::runtime_error("qfRotGmmDetect: scratch size mismatch");
+    }
+    if (scratchSame) {
+        copyPlane(y, yInk, 0, 0, 0, 0, y.cols, y.rows);
+        copyPlane(uv, uvInk, 0, 0, 0, 0, uv.cols, uv.rows);
+    }
     pts.reserve(seeds.size() * 8);
     aabb.reserve(seeds.size() * 4);
     for (const BoxUv& seed : seeds) {
@@ -1157,7 +1200,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_OcrHarness_qfRotGmmDetect(
         boxToQuad(seed, seedQ);
         const BoxUv blue = calculatedUv(seed, kVert, kLeftFrac, kRightFrac);
         boxToQuad(blue, blueQ);
-        drawSeed(yInk, uvInk, seedQ);
+        if (scratchSame) drawSeed(yInk, uvInk, seedQ);
         for (int k = 0; k < 8; ++k) pts.push_back(blueQ[k]);
         int l, t, r, b;
         aabbOfQuad(blueQ, &l, &t, &r, &b);
@@ -1166,14 +1209,20 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_OcrHarness_qfRotGmmDetect(
         aabb.push_back(r);
         aabb.push_back(b);
     }
-    discovery = encodeYuv(yInk, uvInk);
-    return newDetectOut(env, original, discovery, pts, aabb);
+    if (scratchSame) discovery = encodeYuv(yInk, uvInk);
+    return newDetectOut(env, original, discovery, pts, aabb, rawScale, rawCorners, rawScore);
+    } catch (const std::exception& ex) {
+        veThrowIllegalState(env, ex.what());
+        return nullptr;
+    }
 }
 
 extern "C" JNIEXPORT jobject JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_OcrHarness_qfRotGmmRecognize(
     JNIEnv* env, jobject, jobject buffer, jfloatArray bluePts
 ) {
+    VePredictorGuard guard;
+    try {
     __android_log_print(ANDROID_LOG_INFO, "QfRotGmm", "qfRotGmmRecognize");
     const jsize len = bluePts ? env->GetArrayLength(bluePts) : 0;
     const int n = len >= 8 ? static_cast<int>(len / 8) : 0;
@@ -1181,16 +1230,25 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_OcrHarness_qfRotGmmRecognize
     if (n == 0 || !buffer) return newRecOut(env, rows);
     cv::Mat y, uv;
     int imgW = 0, imgH = 0;
-    if (!primaryYuv(env, buffer, &y, &uv, &imgW, &imgH)) return newRecOut(env, rows);
+    if (!primaryYuv(env, buffer, &y, &uv, &imgW, &imgH)) {
+        if (checkExc(env)) return nullptr;
+        throw std::runtime_error("qfRotGmmRecognize: primary yuv missing");
+    }
     std::vector<float> pts(static_cast<size_t>(n) * 8);
     env->GetFloatArrayRegion(bluePts, 0, n * 8, pts.data());
-    if (checkExc(env)) return newRecOut(env, rows);
+    if (checkExc(env)) return nullptr;
     std::shared_ptr<paddle::lite_api::PaddlePredictor> pred = loadRecognizer(env);
+    if (checkExc(env)) return nullptr;
     const std::vector<std::string> dict = loadDictionary(env);
+    if (checkExc(env)) return nullptr;
     for (int i = 0; i < n; ++i) {
         recognizeOne(y, pts.data() + static_cast<size_t>(i) * 8, imgW, imgH, pred.get(), dict, &rows[i]);
     }
     return newRecOut(env, rows);
+    } catch (const std::exception& ex) {
+        veThrowIllegalState(env, ex.what());
+        return nullptr;
+    }
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL
@@ -1202,7 +1260,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_OcrHarness_qfRotGmmStackJpeg
     __android_log_print(ANDROID_LOG_INFO, "QfRotGmm", "qfRotGmmStackJpeg");
     cv::Mat y, uv;
     int imgW = 0, imgH = 0;
-    if (!buffer || !primaryYuv(env, buffer, &y, &uv, &imgW, &imgH)) return env->NewByteArray(0);
+    if (!buffer) return env->NewByteArray(0);
+    if (!primaryYuv(env, buffer, &y, &uv, &imgW, &imgH)) {
+        if (checkExc(env)) return nullptr;
+        return env->NewByteArray(0);
+    }
     const EvenRect cost = evenRect(costL, costT, costR, costB, imgW, imgH);
     const EvenRect vol = evenRect(volL, volT, volR, volB, imgW, imgH);
     if (!cost.ok && !vol.ok) return env->NewByteArray(0);
@@ -1216,8 +1278,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_OcrHarness_qfRotGmmStackJpeg
     if (outH < 2) outH = 2;
     if (outW & 1) ++outW;
     if (outH & 1) ++outH;
-    cv::Mat yOut(outH, outW, CV_8UC1, cv::Scalar(0));
-    cv::Mat uvOut(outH / 2, outW / 2, CV_8UC2, cv::Scalar(128, 128));
+    static std::mutex stackMu;
+    static cv::Mat yOut;
+    static cv::Mat uvOut;
+    std::lock_guard<std::mutex> stackLock(stackMu);
+    yOut.create(outH, outW, CV_8UC1);
+    uvOut.create(outH / 2, outW / 2, CV_8UC2);
+    yOut.setTo(0);
+    uvOut.setTo(cv::Scalar(128, 128));
     int yCursor = 0;
     auto place = [&](const EvenRect& er) {
         if (!er.ok) return;

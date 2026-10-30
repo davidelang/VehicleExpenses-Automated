@@ -355,7 +355,7 @@ private fun continueFillCapture(
                     allVehicles = vehicles,
                     debug = debugMode,
                     cameraRotationDegrees = rotation,
-                    onStage = { stage, _ ->
+                    onStage = { stage ->
                         scope.launch(Dispatchers.Main) {
                             stageLabel = stage
                         }

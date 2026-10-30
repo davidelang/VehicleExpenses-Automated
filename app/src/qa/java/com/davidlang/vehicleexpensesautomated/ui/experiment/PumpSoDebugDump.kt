@@ -1,10 +1,21 @@
-package com.davidlang.vehicleexpensesautomated.ui.util
+package com.davidlang.vehicleexpensesautomated.ui.experiment
 
 import android.content.Context
 import android.graphics.Rect
 import android.os.Build
 import android.util.Log
 import com.davidlang.vehicleexpensesautomated.BuildConfig
+import com.davidlang.vehicleexpensesautomated.ui.util.BufferSet
+import com.davidlang.vehicleexpensesautomated.ui.util.ImageIngestionProvider
+import com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils
+import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
+import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
+import com.davidlang.vehicleexpensesautomated.ui.util.PumpCostVolUtils
+import com.davidlang.vehicleexpensesautomated.ui.util.PumpHunk
+import com.davidlang.vehicleexpensesautomated.ui.util.PumpOcrSettings
+import com.davidlang.vehicleexpensesautomated.ui.util.PumpRectOcrLists
+import com.davidlang.vehicleexpensesautomated.ui.util.RedBoxOcrCandidate
+import com.davidlang.vehicleexpensesautomated.ui.util.SET_G_MINUS_MINUS_VERT_FACTORS
 import java.io.DataOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -23,6 +34,15 @@ import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.imgproc.Imgproc
+import com.davidlang.vehicleexpensesautomated.ui.util.calculateDeskewAnglePaddleOnly
+import com.davidlang.vehicleexpensesautomated.ui.util.wrapPackedU8
+import com.davidlang.vehicleexpensesautomated.ui.util.createBlueAndOrangeHunksFromReds
+import com.davidlang.vehicleexpensesautomated.ui.util.doCrossScaleRedboxFilter
+import com.davidlang.vehicleexpensesautomated.ui.util.hunksToRects
+import com.davidlang.vehicleexpensesautomated.ui.util.ocrPumpRectsAsisAndDigits
+import com.davidlang.vehicleexpensesautomated.ui.util.pruneRectsToTopN
+import com.davidlang.vehicleexpensesautomated.ui.util.rectsToHunks
+import com.davidlang.vehicleexpensesautomated.ui.util.runDiscoveryPaddle
 
 /**
  * Single-photo SO / pipeline dump for First-10 L1 regression A/B.
@@ -116,7 +136,7 @@ object PumpSoDebugDump {
         onLog("Ingest $name ${imgW}x$imgH")
 
         val workspace = BufferSet(imgW, imgH)
-        val recBuffer = BufferSet(NativePaddleEngine.REC_CANVAS_W, NativePaddleEngine.REC_CANVAS_H)
+        val recBuffer = BufferSet(4096, NativePaddleEngine.REC_CANVAS_H)
         val meta = ImageIngestionProvider.ingestFromFile(context, photo.absolutePath, workspace.p)
         writeText(
             File(outDir, "01_ingest.json"),
@@ -308,7 +328,7 @@ object PumpSoDebugDump {
             // Re-run full Set G detailed for cost/vol (same code path as product)
             // Workspace is already deskewed; runSetG deskews again — use a fresh copy.
             // To avoid double-deskew, call OCR pieces here with current workspace.
-            // Match Set G-- experiment verts (not Quick Fill G4, not full Set G k=8).
+            // Match Set G-- experiment verts (not Fill G4, not full Set G k=8).
             val (blueH, orangeH) = PumpCostVolUtils.createBlueAndOrangeHunksFromReds(
                 PumpCostVolUtils.rectsToHunks(redPixelList),
                 imgW,

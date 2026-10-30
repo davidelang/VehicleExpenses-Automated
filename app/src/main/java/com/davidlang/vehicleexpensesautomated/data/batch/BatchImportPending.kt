@@ -51,7 +51,10 @@ data class BatchPendingItem(
     val suggestedVehicleId: Int? = null,
     val fuelEntryId: Long? = null,
     val extra: Map<String, String> = emptyMap(),
-)
+    val kindRaw: String? = null,
+) {
+    fun kindLabel(): String = if (kindRaw != null) "unknown type" else kind.name
+}
 
 object BatchImportPendingStore {
     private const val TAG = "BatchFuelImport"
@@ -68,11 +71,14 @@ object BatchImportPendingStore {
             val out = mutableListOf<BatchPendingItem>()
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
+                val kindName = o.optString("kind", BatchPendingKind.OTHER.name)
                 val kind = try {
-                    BatchPendingKind.valueOf(o.optString("kind", BatchPendingKind.OTHER.name))
-                } catch (_: Exception) {
+                    BatchPendingKind.valueOf(kindName)
+                } catch (e: Exception) {
+                    Log.e(TAG, "unknown type $kindName", e)
                     BatchPendingKind.OTHER
                 }
+                val kindRaw = kindName.takeIf { kind == BatchPendingKind.OTHER && it != BatchPendingKind.OTHER.name }
                 val extraObj = o.optJSONObject("extra")
                 val extra = mutableMapOf<String, String>()
                 if (extraObj != null) {
@@ -109,10 +115,12 @@ object BatchImportPendingStore {
                             o.optLong("fuelEntryId")
                         } else null,
                         extra = extra,
+                        kindRaw = kindRaw,
                     ),
                 )
             }
             out
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "load pending failed: ${e.message}")
             mutableListOf()
@@ -125,7 +133,7 @@ object BatchImportPendingStore {
             for (item in items) {
                 val o = JSONObject()
                 o.put("id", item.id)
-                o.put("kind", item.kind.name)
+                o.put("kind", item.kindRaw ?: item.kind.name)
                 o.put("message", item.message)
                 item.photoPath?.let { o.put("photoPath", it) }
                 item.durablePhotoPath?.let { o.put("durablePhotoPath", it) }
@@ -143,6 +151,7 @@ object BatchImportPendingStore {
                 arr.put(o)
             }
             file(context).writeText(arr.toString())
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.e(TAG, "save pending failed: ${e.message}")
         }
@@ -151,18 +160,13 @@ object BatchImportPendingStore {
     fun clear(context: Context) {
         try {
             file(context).delete()
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
         }
     }
 
     fun remove(context: Context, id: String) {
         val items = load(context).filter { it.id != id }
-        save(context, items)
-    }
-
-    fun removeAll(context: Context, ids: Collection<String>) {
-        val drop = ids.toSet()
-        val items = load(context).filter { it.id !in drop }
         save(context, items)
     }
 

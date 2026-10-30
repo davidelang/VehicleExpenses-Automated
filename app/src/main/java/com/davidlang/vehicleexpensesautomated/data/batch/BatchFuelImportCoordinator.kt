@@ -2,19 +2,23 @@ package com.davidlang.vehicleexpensesautomated.data.batch
 
 import android.content.Context
 import android.util.Log
+import androidx.room.withTransaction
+import com.davidlang.vehicleexpensesautomated.testOnlyBuild
+import com.davidlang.vehicleexpensesautomated.data.db.AppDatabase
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 // FuelLocationJson same package
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
-import com.davidlang.vehicleexpensesautomated.ui.experiment.PumpSetIRunner
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
+import com.davidlang.vehicleexpensesautomated.data.repository.forUserPicker
 import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
-import com.davidlang.vehicleexpensesautomated.ui.util.ImageIngestionProvider
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerTracking
+import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifMeta
 import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifMetaReader
+import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifWriter
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookup
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupKind
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupResult
@@ -32,26 +36,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.coroutineContext
-
-data class BatchImportProgress(
-    val phase: String,
-    val current: Int,
-    val total: Int,
-    val message: String,
-    val dashInserted: Int = 0,
-    val pumpInserted: Int = 0,
-    val pendingCount: Int = 0,
-    val errors: Int = 0,
-)
-
-data class BatchImportResult(
-    val dashInserted: Int,
-    val pumpInserted: Int,
-    val pending: List<BatchPendingItem>,
-    val errors: List<String>,
-    val cancelled: Boolean,
-)
 
 /** Result of applying [FuelRowMergeEngine.planMerge] to the live fuel table. */
 data class MergeApplyResult(
@@ -74,14 +60,15 @@ data class MergeApplyResult(
  */
 @Singleton
 class BatchFuelImportCoordinator @Inject constructor(
-    @param:ApplicationContext private val appContext: Context,
-    private val fuelEntryRepository: FuelEntryRepository,
-    private val vehicleRepository: VehicleRepository,
-    private val mergeAckStore: MergeAckStore,
+    @param:ApplicationContext internal val appContext: Context,
+    private val database: AppDatabase,
+    internal val fuelEntryRepository: FuelEntryRepository,
+    internal val vehicleRepository: VehicleRepository,
+    internal val mergeAckStore: MergeAckStore,
 ) {
     companion object {
-        private const val TAG = "BatchFuelImport"
-        private val IMAGE_EXTS = setOf("jpg", "jpeg", "png", "dng")
+        internal const val TAG = "BatchFuelImport"
+        internal val IMAGE_EXTS = setOf("jpg", "jpeg", "png", "dng")
 
         /** Limited import size (like experiment Golden/Problem subset buttons). */
         const val LIMITED_IMPORT_COUNT = 20
@@ -114,23 +101,6 @@ class BatchFuelImportCoordinator @Inject constructor(
             Regex("""^(dash|pump)_(\d+)_(.+)$""", RegexOption.IGNORE_CASE)
     }
 
-    private val cancelFlag = AtomicBoolean(false)
-
-    fun requestCancel() {
-        cancelFlag.set(true)
-    }
-
-    fun clearCancel() {
-        cancelFlag.set(false)
-    }
-
-    private fun listImages(dir: File): List<File> {
-        if (!dir.isDirectory) return emptyList()
-        return dir.listFiles { f ->
-            f.isFile && f.extension.lowercase() in IMAGE_EXTS
-        }?.sortedBy { it.name } ?: emptyList()
-    }
-
     /**
      * Raw OCR face digits from Set J → **tracking** odometer for the fill table.
      * Applies vehicle digit width + rollover encoding.
@@ -153,348 +123,6 @@ class BatchFuelImportCoordinator @Inject constructor(
             )
         }
         return resolved.trackingOdometer to resolved.newRolloverCount
-    }
-
-    private fun parseMoneyOrVol(raw: String?): Double? {
-        if (raw.isNullOrBlank()) return null
-        val cleaned = raw.replace(Regex("[^0-9.]"), "")
-        if (cleaned.isBlank() || cleaned == ".") return null
-        return cleaned.toDoubleOrNull()?.takeIf { it > 0.0 }
-    }
-
-    /**
-     * Stage A: ingest dash + pump archives into fuel_entries partials / pending.
-     * Does not merge.
-     *
-     * @param maxDash if non-null, only the first N dash images (sorted by name) are processed.
-     * @param maxPump if non-null, only the first N pump images (sorted by name) are processed.
-     * @param locationEnhanceWithImport when true, fire-and-forget POI lookup **before** OCR
-     *   for each photo with EXIF coords (U4); never awaits lookup for OCR/insert completion.
-     *   Default off (U3). Rate-limit paces next photo kickoff if gap &lt; ~1 s (U5).
-     */
-    suspend fun runIngest(
-        vehicles: List<Vehicle>,
-        onProgress: (BatchImportProgress) -> Unit = {},
-        maxDash: Int? = null,
-        maxPump: Int? = null,
-        locationEnhanceWithImport: Boolean = false,
-    ): BatchImportResult = withContext(Dispatchers.Default) {
-        clearCancel()
-        val pending = BatchImportPendingStore.load(appContext).toMutableList()
-        val errors = mutableListOf<String>()
-        var dashInserted = 0
-        var pumpInserted = 0
-        var errCount = 0
-        var locationLookupsStarted = 0
-
-        val allDash = listImages(dashPhotoDir(appContext))
-        val allPump = listImages(pumpPhotoDir(appContext))
-        val dashFiles = if (maxDash != null) allDash.take(maxDash.coerceAtLeast(0)) else allDash
-        val pumpFiles = if (maxPump != null) allPump.take(maxPump.coerceAtLeast(0)) else allPump
-        val total = dashFiles.size + pumpFiles.size
-        var done = 0
-
-        fun report(phase: String, msg: String) {
-            onProgress(
-                BatchImportProgress(
-                    phase = phase,
-                    current = done,
-                    total = total,
-                    message = msg,
-                    dashInserted = dashInserted,
-                    pumpInserted = pumpInserted,
-                    pendingCount = pending.size,
-                    errors = errCount,
-                ),
-            )
-        }
-
-        val limitNote = when {
-            maxDash != null || maxPump != null ->
-                " (limited: dash ${dashFiles.size}/${allDash.size}, pump ${pumpFiles.size}/${allPump.size})"
-            else -> ""
-        }
-        val enhanceNote = if (locationEnhanceWithImport) " · location enhance on" else ""
-        report("init", "Dash ${dashFiles.size} · pump ${pumpFiles.size}$limitNote$enhanceNote")
-
-        // One-shot-ish: rewrite old durable mirrors → source paths; free disk
-        try {
-            val mig = migrateDurablePhotoRefsToSource()
-            if (mig.rewroteRows > 0 || mig.deletedFiles > 0) {
-                Log.i(TAG, "durable migrate: $mig")
-                report("init", "Migrated ${mig.rewroteRows} photo refs, deleted ${mig.deletedFiles} mirrors")
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "durable migrate skipped: ${e.message}")
-        }
-
-        var cancelled = false
-        supervisorScope {
-            val lookupJobs = mutableMapOf<String, Deferred<LocationLookupResult?>>()
-            val lastKickoffMs = AtomicLong(0L)
-            val enhanceCtx = LocationEnhanceCtx(
-                enabled = locationEnhanceWithImport,
-                scope = this,
-                jobs = lookupJobs,
-                lastKickoffMs = lastKickoffMs,
-                onKickoff = { locationLookupsStarted++ },
-            )
-
-            // --- Dash (paddle seed via OcrHarness.runAutoFillPipeline) ---
-            for (file in dashFiles) {
-                coroutineContext.ensureActive()
-                if (cancelFlag.get()) {
-                    cancelled = true
-                    break
-                }
-                done++
-                report(
-                    "dash",
-                    "Dash OCR ${file.name} ($done/$total)" +
-                        if (locationEnhanceWithImport) " · loc race" else "",
-                )
-                try {
-                    if (processDash(file, vehicles, pending, enhanceCtx = enhanceCtx)) dashInserted++
-                } catch (e: Exception) {
-                    errCount++
-                    val m = "Dash ${file.name}: ${e.message}"
-                    Log.e(TAG, m, e)
-                    errors.add(m)
-                }
-            }
-
-            // --- Pump (Set I): always OCR + insert; vehicleId left unassigned (0) until merge ---
-            if (!cancelled) {
-                for (file in pumpFiles) {
-                    coroutineContext.ensureActive()
-                    if (cancelFlag.get()) {
-                        cancelled = true
-                        break
-                    }
-                    done++
-                    report(
-                        "pump",
-                        "Pump Set I ${file.name} ($done/$total)" +
-                            if (locationEnhanceWithImport) " · loc race" else "",
-                    )
-                    try {
-                        val inserted = processPump(file, pending, enhanceCtx = enhanceCtx)
-                        if (inserted) pumpInserted++
-                    } catch (e: Exception) {
-                        errCount++
-                        val m = "Pump ${file.name}: ${e.message}"
-                        Log.e(TAG, m, e)
-                        errors.add(m)
-                    }
-                }
-            }
-
-            // Cancel unfinished races; worker fills leftovers when enhance was on
-            for ((_, job) in lookupJobs) {
-                if (!job.isCompleted) job.cancel()
-            }
-            lookupJobs.clear()
-        }
-
-        BatchImportPendingStore.save(appContext, pending)
-        if (cancelled) {
-            return@withContext BatchImportResult(
-                dashInserted, pumpInserted, pending, errors, cancelled = true,
-            )
-        }
-        if (locationEnhanceWithImport && locationLookupsStarted > 0) {
-            LocationLookupScheduler.enqueueSoon(appContext)
-            report(
-                "done",
-                "Finished: dash=$dashInserted pump=$pumpInserted pending=${pending.size}" +
-                    " · location lookups started=$locationLookupsStarted (queued/in-flight)",
-            )
-        } else {
-            report("done", "Finished: dash=$dashInserted pump=$pumpInserted pending=${pending.size}")
-        }
-        BatchImportResult(dashInserted, pumpInserted, pending, errors, cancelled = false)
-    }
-
-    /**
-     * Enqueue background location enhance for fuel rows with coords and no place.
-     * Non-blocking — does not wait for Overpass/Nominatim.
-     */
-    suspend fun runLocationEnhance(onProgress: (String) -> Unit = {}): String =
-        withContext(Dispatchers.IO) {
-            onProgress("Scanning fuel for coords without place…")
-            val live = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
-            val need = live.count { FuelLocationJson.hasCoordsWithoutPlace(it.location) }
-            onProgress("Enqueue location worker ($need candidates)…")
-            LocationLookupScheduler.enqueueSoon(appContext)
-            val msg = if (need == 0) {
-                "No coords-without-place rows; worker still enqueued"
-            } else {
-                "Location enhance queued for ~$need rows (background, non-blocking)"
-            }
-            onProgress(msg)
-            msg
-        }
-
-    /** Per-ingest context for optional fire-and-forget location races. */
-    private data class LocationEnhanceCtx(
-        val enabled: Boolean,
-        val scope: CoroutineScope,
-        val jobs: MutableMap<String, Deferred<LocationLookupResult?>>,
-        val lastKickoffMs: AtomicLong,
-        val onKickoff: () -> Unit,
-    )
-
-    /**
-     * Field-merge all live partials + **phase-scoped** pending rebuild only.
-     * Pending store holds at most the current phase’s kinds (not full multi-phase backlog).
-     */
-    suspend fun applyMerge(
-        onProgress: (String) -> Unit = {},
-    ): MergeApplyResult = withContext(Dispatchers.IO) {
-        val phase = StageCPhaseStore.currentPhase(appContext)
-        runFieldMerge(onProgress) + rebuildPendingForPhase(phase, onProgress)
-    }
-
-    /**
-     * Advance Stage C to [newPhase] (or current+1), field-merge, generate **only**
-     * that phase’s questions from live Room.
-     */
-    suspend fun advancePhaseAndRebuild(
-        onProgress: (String) -> Unit = {},
-    ): MergeApplyResult = withContext(Dispatchers.IO) {
-        val next = StageCPhaseStore.advance(appContext)
-        onProgress("Next phase $next…")
-        val merge = runFieldMerge(onProgress)
-        val rebuild = rebuildPendingForPhase(next, onProgress)
-        val combined = merge + rebuild
-        val msg = "Phase $next: ${combined.totalPending} questions · ${combined.message}"
-        onProgress(msg)
-        combined.copy(message = msg)
-    }
-
-    /**
-     * Time-vs-odo disorder previews for live fuel (anchors = odo > 0).
-     * @see FuelOdoReorder
-     */
-    suspend fun analyzeOdoDisorder(): List<FuelOdoReorder.VehicleDisorder> =
-        withContext(Dispatchers.IO) {
-            val live = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
-            FuelOdoReorder.analyzeAll(live)
-        }
-
-    /**
-     * Apply reorder strategy A/B/C for one vehicle or all vehicles with work, then
-     * field-merge + rebuild current Stage C phase.
-     *
-     * **A** permutes existing timestamps onto odo order (no invented times).
-     * **B** marks [FuelEntry.economyIgnored] on later-by-time reverse offenders.
-     * **C** soft-deletes those offenders.
-     */
-    suspend fun applyOdoReorder(
-        vehicleId: Int?,
-        strategy: FuelOdoReorder.Strategy,
-        onProgress: (String) -> Unit = {},
-    ): MergeApplyResult = withContext(Dispatchers.IO) {
-        val live = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
-        val disorders = FuelOdoReorder.analyzeAll(live)
-            .filter { d -> vehicleId == null || d.vehicleId == vehicleId }
-            .filter { it.hasWork || it.anchorCount >= 2 }
-        if (disorders.isEmpty()) {
-            val n = BatchImportPendingStore.load(appContext).size
-            return@withContext MergeApplyResult(
-                updated = 0,
-                deleted = 0,
-                pendingAdded = 0,
-                totalPending = n,
-                message = "No vehicles with odometer anchors to reorder",
-            )
-        }
-        var touched = 0
-        var ignored = 0
-        var deleted = 0
-        var permuted = 0
-        for (d in disorders) {
-            val anchors = FuelOdoReorder.anchorsForVehicle(live, d.vehicleId)
-            when (strategy) {
-                FuelOdoReorder.Strategy.PERMUTE_TIMESTAMPS -> {
-                    val updates = FuelOdoReorder.permuteTimestampsByOdo(anchors)
-                    if (updates.isEmpty()) {
-                        onProgress("Vehicle ${d.vehicleId}: already in odo order")
-                        continue
-                    }
-                    onProgress("Vehicle ${d.vehicleId}: permuting ${updates.size} timestamps…")
-                    for (u in updates) {
-                        fuelEntryRepository.updateFuelEntry(u)
-                        permuted++
-                        touched++
-                    }
-                }
-                FuelOdoReorder.Strategy.ECONOMY_IGNORE -> {
-                    if (d.reverseSteps.isEmpty()) {
-                        onProgress("Vehicle ${d.vehicleId}: no reverse steps to ignore")
-                        continue
-                    }
-                    val ids = d.reverseSteps.map { it.later.id }.distinct()
-                    onProgress("Vehicle ${d.vehicleId}: economyIgnored on ${ids.size} rows…")
-                    for (id in ids) {
-                        val e = live.find { it.id == id } ?: continue
-                        if (e.economyIgnored) continue
-                        fuelEntryRepository.updateFuelEntry(e.copy(economyIgnored = true))
-                        ignored++
-                        touched++
-                    }
-                }
-                FuelOdoReorder.Strategy.DELETE_OFFENDERS -> {
-                    if (d.reverseSteps.isEmpty()) {
-                        onProgress("Vehicle ${d.vehicleId}: no reverse offenders to delete")
-                        continue
-                    }
-                    val ids = d.reverseSteps.map { it.later.id }.distinct()
-                    onProgress("Vehicle ${d.vehicleId}: soft-deleting ${ids.size} rows…")
-                    for (id in ids) {
-                        val e = live.find { it.id == id } ?: continue
-                        if (e.deleted) continue
-                        fuelEntryRepository.deleteFuelEntry(e)
-                        deleted++
-                        touched++
-                    }
-                }
-            }
-        }
-        if (touched == 0) {
-            val msg = when (strategy) {
-                FuelOdoReorder.Strategy.PERMUTE_TIMESTAMPS ->
-                    "No timestamp changes (already odo-ordered or empty)"
-                FuelOdoReorder.Strategy.ECONOMY_IGNORE ->
-                    "No reverse steps to mark ignored"
-                FuelOdoReorder.Strategy.DELETE_OFFENDERS ->
-                    "No reverse offenders to delete"
-            }
-            val n = BatchImportPendingStore.load(appContext).size
-            return@withContext MergeApplyResult(
-                updated = 0,
-                deleted = 0,
-                pendingAdded = 0,
-                totalPending = n,
-                message = msg,
-            )
-        }
-        onProgress("Rescanning Stage C after reorder…")
-        val merge = applyMerge(onProgress)
-        val summary = buildString {
-            append("Reorder ")
-            append(
-                when (strategy) {
-                    FuelOdoReorder.Strategy.PERMUTE_TIMESTAMPS -> "A(timestamps=$permuted)"
-                    FuelOdoReorder.Strategy.ECONOMY_IGNORE -> "B(ignored=$ignored)"
-                    FuelOdoReorder.Strategy.DELETE_OFFENDERS -> "C(deleted=$deleted)"
-                },
-            )
-            append(" · ")
-            append(merge.message)
-        }
-        Log.i(TAG, summary)
-        merge.copy(message = summary)
     }
 
     data class FieldMergeStats(
@@ -533,18 +161,20 @@ class BatchFuelImportCoordinator @Inject constructor(
                 liveCount = second.liveCount,
                 pendingFromMerge = second.pendingFromMerge,
                 secondPass = true,
+                failed = first.failed + second.failed,
             )
         }
         first
     }
 
-    private suspend fun runFieldMerge(onProgress: (String) -> Unit): FieldMergeStats {
+    internal suspend fun runFieldMerge(onProgress: (String) -> Unit): FieldMergeStats {
         onProgress("Photo path migrate (if needed)…")
         try {
             val mig = migrateDurablePhotoRefsToSource()
             if (mig.rewroteRows > 0 || mig.deletedFiles > 0) {
                 Log.i(TAG, "durable migrate before merge: $mig")
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "durable migrate before merge: ${e.message}")
         }
@@ -554,6 +184,7 @@ class BatchFuelImportCoordinator @Inject constructor(
         onProgress("Planning merge (${live.size} live / ${all.size} incl deleted)…")
         val exemptSets = try {
             mergeAckStore.liveMergeExemptSets()
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "load merge exempt sets failed: ${e.message}")
             emptyList()
@@ -567,24 +198,74 @@ class BatchFuelImportCoordinator @Inject constructor(
         )
         var soft = 0
         var hard = 0
+        var updated = 0
+        var deleted = 0
+        var failed = 0
         if (!plan.isEmpty()) {
             onProgress("Applying ${plan.updates.size} updates…")
-            for (u in plan.updates) {
-                fuelEntryRepository.updateFuelEntry(u)
+            val paired = plan.updates.zip(plan.hardDeletes)
+            for ((u, d) in paired) {
+                try {
+                    val softDeleted = database.withTransaction {
+                        fuelEntryRepository.updateFuelEntry(u)
+                        absorbMergedRow(d)
+                    }
+                    updated++
+                    if (softDeleted) soft++ else hard++
+                    deleted++
+                // kept: failure stays on this call so the screen or caller can continue
+                } catch (e: CancellationException) {
+                    throw e
+                // kept: failure stays on this call so the screen or caller can continue
+                } catch (e: Exception) {
+                    failed++
+                    Log.w(TAG, "field-merge pair failed id=${u.id}/${d.id}", e)
+                }
             }
-            onProgress("Absorbing ${plan.hardDeletes.size} rows…")
-            for (d in plan.hardDeletes) {
-                if (absorbMergedRow(d)) soft++ else hard++
+            for (u in plan.updates.drop(paired.size)) {
+                try {
+                    database.withTransaction {
+                        fuelEntryRepository.updateFuelEntry(u)
+                    }
+                    updated++
+                // kept: failure stays on this call so the screen or caller can continue
+                } catch (e: CancellationException) {
+                    throw e
+                // kept: failure stays on this call so the screen or caller can continue
+                } catch (e: Exception) {
+                    failed++
+                    Log.w(TAG, "field-merge update failed id=${u.id}", e)
+                }
             }
-            Log.i(TAG, "merge absorb soft=$soft hard=$hard")
+            plan.hardDeletes.drop(paired.size).forEach { d ->
+                try {
+                    val softDeleted = database.withTransaction {
+                        absorbMergedRow(d)
+                    }
+                    if (softDeleted) soft++ else hard++
+                    deleted++
+                // kept: failure stays on this call so the screen or caller can continue
+                } catch (e: CancellationException) {
+                    throw e
+                // kept: failure stays on this call so the screen or caller can continue
+                } catch (e: Exception) {
+                    failed++
+                    Log.w(TAG, "field-merge absorb failed id=${d.id}", e)
+                }
+            }
+            if (failed > 0) onProgress("$failed merges failed")
+            Log.i(TAG, "merge absorb soft=$soft hard=$hard failed=$failed")
         }
-        // Stash merge-side pending for phase filter in rebuild
+        // Stash merge-side pending for phase filter in rebuild.
+        // MergePlan has no pair key: a committed survivor update is not undone
+        // when a later absorb throws.
         lastMergePending = plan.newPending
         return FieldMergeStats(
-            updated = plan.updates.size,
-            deleted = plan.hardDeletes.size,
+            updated = updated,
+            deleted = deleted,
             liveCount = live.size,
             pendingFromMerge = plan.newPending.size,
+            failed = failed,
         )
     }
 
@@ -593,11 +274,24 @@ class BatchFuelImportCoordinator @Inject constructor(
 
     /**
      * Generate pending for **one** phase only; apply skip ledger; save store.
+     * A standard build (TEST_BUILD false) does not write [BatchImportPendingStore].
      */
-    private suspend fun rebuildPendingForPhase(
+    internal suspend fun rebuildPendingForPhase(
         phase: Int,
         onProgress: (String) -> Unit,
     ): MergeApplyResult {
+        if (!testOnlyBuild()) {
+            val msg = "phase $phase: pending review not saved"
+            Log.i(TAG, "rebuildPendingForPhase $msg")
+            onProgress("Done: $msg")
+            return MergeApplyResult(
+                updated = 0,
+                deleted = 0,
+                pendingAdded = 0,
+                totalPending = 0,
+                message = msg,
+            )
+        }
         onProgress("Rebuilding phase $phase questions…")
         val afterLive = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
         val candidates = mutableListOf<BatchPendingItem>()
@@ -690,6 +384,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 )
             }
             mergeAckStore.filterPending(enriched)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "mergeAck filterPending failed: ${e.message}")
             afterSkip
@@ -710,15 +405,6 @@ class BatchFuelImportCoordinator @Inject constructor(
             message = msg,
         )
     }
-
-    private operator fun FieldMergeStats.plus(r: MergeApplyResult): MergeApplyResult =
-        MergeApplyResult(
-            updated = updated + r.updated,
-            deleted = deleted + r.deleted,
-            pendingAdded = r.pendingAdded,
-            totalPending = r.totalPending,
-            message = "updated=$updated deleted=$deleted · ${r.message}",
-        )
 
     /**
      * ASSIGN_UNKNOWN with optional tank/time suggest (phase 4).
@@ -825,7 +511,8 @@ class BatchFuelImportCoordinator @Inject constructor(
     }
 
     /**
-     * After fuel sync: reset phase 1 + skip ledger when fuel changed; rebuild phase 1 only.
+     * After fuel sync: phase reset when fuel changed, then pending rebuild only.
+     * Does not call [runFieldMerge]. Field-merge for a sync session is separate.
      */
     suspend fun postSyncRescanResetPhase(
         fuelRowsChanged: Boolean,
@@ -836,13 +523,8 @@ class BatchFuelImportCoordinator @Inject constructor(
             onProgress("Sync updated fuel — review questions restarted (phase 1)")
             Log.i(TAG, "postSync: reset Stage C to phase 1 (remote=$fuelRowsChanged)")
         }
-        val result = applyMerge(onProgress)
-        if (!fuelRowsChanged && (result.updated > 0 || result.deleted > 0)) {
-            StageCPhaseStore.resetToPhase1(appContext)
-            onProgress("Sync field-merge changed rows — phase 1")
-            return applyMerge(onProgress)
-        }
-        return result
+        val phase = StageCPhaseStore.currentPhase(appContext)
+        return rebuildPendingForPhase(phase, onProgress)
     }
 
     /**
@@ -852,7 +534,7 @@ class BatchFuelImportCoordinator @Inject constructor(
      *
      * @return true if soft-deleted, false if hard-deleted
      */
-    private suspend fun absorbMergedRow(entry: FuelEntry): Boolean {
+    internal suspend fun absorbMergedRow(entry: FuelEntry): Boolean {
         return if (shouldSoftDeleteOnAbsorb(entry)) {
             fuelEntryRepository.markFuelDeleted(entry)
             Log.i(TAG, "merge softDelete id=${entry.id} vehicle=${entry.vehicleId} loc=${entry.location}")
@@ -866,7 +548,7 @@ class BatchFuelImportCoordinator @Inject constructor(
 
     /**
      * Soft-delete when: cloud photo manifest present, **or** not a pure local batch
-     * provenance tag (notes preferred; location for legacy). Quick Fill / sheet rows
+     * provenance tag (notes preferred; location for legacy). Fill / sheet rows
      * often have null or free text / station JSON → soft-delete.
      */
     internal fun shouldSoftDeleteOnAbsorb(e: FuelEntry): Boolean {
@@ -908,1261 +590,6 @@ class BatchFuelImportCoordinator @Inject constructor(
             ?: p.extra["photoPaths"]?.split('|')?.firstOrNull()
             ?: return ""
         return photoStem(path)
-    }
-
-    /** Drop every pending item that references [fuelEntryId] (all kinds). */
-    private fun removePendingForFuelEntry(fuelEntryId: Long?) {
-        if (fuelEntryId == null || fuelEntryId <= 0) return
-        val items = BatchImportPendingStore.load(appContext).filterNot { e ->
-            e.fuelEntryId == fuelEntryId ||
-                e.extra["suspectId"] == fuelEntryId.toString() ||
-                e.extra["endEntryId"] == fuelEntryId.toString() ||
-                e.extra["entryIds"]
-                    ?.split(',')
-                    ?.map { it.trim() }
-                    ?.contains(fuelEntryId.toString()) == true
-        }
-        BatchImportPendingStore.save(appContext, items)
-    }
-
-    /**
-     * Clear all pending and re-run [applyMerge] (human purge / rebuild button).
-     * Restarts Stage C at phase 1.
-     */
-    suspend fun clearPendingAndRescan(
-        onProgress: (String) -> Unit = {},
-    ): MergeApplyResult {
-        BatchImportPendingStore.clear(appContext)
-        StageCPhaseStore.resetToPhase1(appContext)
-        onProgress("Pending cleared; phase 1; running merge + re-scan…")
-        return applyMerge(onProgress)
-    }
-
-    /**
-     * Apply a pending answer from the Import questions UI.
-     * Caller should [applyMerge] when [PendingAnswerResult.remerge] is true.
-     */
-    suspend fun applyPendingAnswer(
-        item: BatchPendingItem,
-        vehicles: List<Vehicle>,
-        action: PendingAnswerAction,
-    ): PendingAnswerResult = withContext(Dispatchers.Default) {
-        val phase = StageCPhaseStore.currentPhase(appContext)
-        val entryBefore = item.fuelEntryId?.let { id ->
-            fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
-        } ?: item.extra["suspectId"]?.toLongOrNull()?.let { id ->
-            fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
-        }
-        val result = when (action) {
-            is PendingAnswerAction.Skip -> {
-                StageCSkipLedger.add(appContext, phase, item)
-                BatchImportPendingStore.remove(appContext, item.id)
-                PendingAnswerResult("Skipped pending item", remerge = false)
-            }
-            is PendingAnswerAction.AcknowledgeLooksCorrect -> {
-                val kind = action.kind?.takeIf { it.isNotBlank() }
-                    ?: when (item.kind) {
-                        BatchPendingKind.MPG_OUTLIER ->
-                            com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_MPG_OUTLIER
-                        BatchPendingKind.AMBIGUOUS_MULTI_PUMP ->
-                            com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_AMBIGUOUS_MULTI_PUMP
-                        BatchPendingKind.CONFLICT_ODO ->
-                            com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_CONFLICT_ODO
-                        BatchPendingKind.ODO_SUSPECT ->
-                            com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_ODO_SUSPECT
-                        else -> item.kind.name
-                    }
-                // ODO_SUSPECT / MPG: durable re-ask suppress only — not field-merge exempt.
-                val alsoExempt = kind ==
-                    com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_CONFLICT_ODO ||
-                    kind ==
-                    com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_AMBIGUOUS_MULTI_PUMP ||
-                    kind ==
-                    com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_MERGE_EXEMPT
-                durableAckLooksCorrect(item, kind, alsoMergeExempt = alsoExempt)
-            }
-            is PendingAnswerAction.AssignVehicle -> {
-                when (item.kind) {
-                    BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE,
-                    BatchPendingKind.SKIP_OR_ASSIGN_VEHICLE,
-                    -> {
-                        val path = item.photoPath ?: item.durablePhotoPath
-                            ?: return@withContext PendingAnswerResult(
-                                "No photo path on pending item",
-                                success = false,
-                            )
-                        val file = File(path)
-                        if (!file.isFile) {
-                            return@withContext PendingAnswerResult(
-                                "Photo missing: $path",
-                                success = false,
-                            )
-                        }
-                        NativePaddleEngine.initializeGlobalBuffers(appContext)
-                        val ok = processDash(
-                            file = file,
-                            vehicles = vehicles,
-                            pending = mutableListOf(),
-                            forcedVehicleId = action.vehicleId,
-                            enqueuePendingOnFail = false,
-                        )
-                        if (ok) {
-                            clearAnsweredPending(item, item.fuelEntryId)
-                            PendingAnswerResult(
-                                "Reprocessed dash with vehicle ${action.vehicleId}",
-                                remerge = true,
-                            )
-                        } else {
-                            PendingAnswerResult(
-                                "Dash reprocess failed for vehicle ${action.vehicleId}",
-                                success = false,
-                            )
-                        }
-                    }
-                    BatchPendingKind.ASSIGN_VEHICLE -> {
-                        val path = item.photoPath ?: item.durablePhotoPath
-                            ?: return@withContext PendingAnswerResult(
-                                "No photo path on pending item",
-                                success = false,
-                            )
-                        val file = File(path)
-                        if (!file.isFile) {
-                            return@withContext PendingAnswerResult(
-                                "Photo missing: $path",
-                                success = false,
-                            )
-                        }
-                        NativePaddleEngine.initializeGlobalBuffers(appContext)
-                        val ok = processPump(
-                            file = file,
-                            pending = mutableListOf(),
-                            forcedVehicleId = action.vehicleId,
-                            enqueuePendingOnFail = false,
-                        )
-                        if (ok) {
-                            clearAnsweredPending(item, item.fuelEntryId)
-                            PendingAnswerResult(
-                                "Pump processed for vehicle ${action.vehicleId}",
-                                remerge = true,
-                            )
-                        } else {
-                            PendingAnswerResult("Pump reprocess failed", success = false)
-                        }
-                    }
-                    else -> {
-                        clearAnsweredPending(item, item.fuelEntryId)
-                        PendingAnswerResult(
-                            "Removed pending (assign not applicable to ${item.kind})",
-                            remerge = false,
-                        )
-                    }
-                }
-            }
-            is PendingAnswerAction.RetryPump -> {
-                val path = item.photoPath ?: item.durablePhotoPath
-                    ?: return@withContext PendingAnswerResult("No photo path", success = false)
-                val file = File(path)
-                if (!file.isFile) {
-                    return@withContext PendingAnswerResult("Photo missing", success = false)
-                }
-                NativePaddleEngine.initializeGlobalBuffers(appContext)
-                val ok = processPump(
-                    file = file,
-                    pending = mutableListOf(),
-                    forcedVehicleId = null,
-                    enqueuePendingOnFail = false,
-                )
-                if (ok) {
-                    clearAnsweredPending(item, item.fuelEntryId)
-                    PendingAnswerResult(
-                        "Pump retry inserted (vehicleId=0 until merge)",
-                        remerge = true,
-                    )
-                } else {
-                    PendingAnswerResult("Pump retry still unreadable", success = false)
-                }
-            }
-            is PendingAnswerAction.ResolveConflictOdo -> {
-                resolveConflictOdo(item, action.chosenOdo)
-            }
-            is PendingAnswerAction.KeepBothNoMerge -> {
-                durableAckLooksCorrect(
-                    item = item,
-                    kind = when (item.kind) {
-                        BatchPendingKind.AMBIGUOUS_MULTI_PUMP ->
-                            com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_AMBIGUOUS_MULTI_PUMP
-                        BatchPendingKind.MPG_OUTLIER ->
-                            com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_MPG_OUTLIER
-                        else ->
-                            com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_CONFLICT_ODO
-                    },
-                    alsoMergeExempt = item.kind == BatchPendingKind.CONFLICT_ODO ||
-                        item.kind == BatchPendingKind.AMBIGUOUS_MULTI_PUMP,
-                )
-            }
-            is PendingAnswerAction.ManualPumpEntry -> {
-                manualPumpEntry(item, action.cost, action.volume)
-            }
-            is PendingAnswerAction.ManualDashEntry -> {
-                manualDashEntry(item, action.odometer, action.vehicleId)
-            }
-            is PendingAnswerAction.ManualEditFuelFields -> {
-                manualEditFuelFields(item, action)
-            }
-            is PendingAnswerAction.SetEconomyIgnored -> {
-                setEconomyIgnored(item, action.ignored, action.entryId)
-            }
-            is PendingAnswerAction.AssignUnknownVehicle -> {
-                assignUnknownVehicle(item, action.vehicleId)
-            }
-            is PendingAnswerAction.FlagPartial -> {
-                // Legacy one-way button → set true (UI now uses SetPartialFill checkbox)
-                setPartialFill(item, action.entryId, partial = true)
-            }
-            is PendingAnswerAction.SetPartialFill -> {
-                setPartialFill(item, action.entryId, partial = action.partial)
-            }
-            is PendingAnswerAction.MarkAsGap -> {
-                markAsGap(item, action.entryId)
-            }
-            is PendingAnswerAction.SaveOdoPeers -> {
-                saveOdoPeers(item, action)
-            }
-        }
-        StageCAnswerJournal.append(
-            context = appContext,
-            phase = phase,
-            item = item,
-            action = action,
-            result = result,
-            entryBefore = entryBefore,
-        )
-        result
-    }
-
-    /**
-     * Update odometer on each peer that changed (odo > 0). Clears economyIgnored on
-     * edited rows; removes pending for all touched ids; remerge.
-     */
-    private suspend fun saveOdoPeers(
-        item: BatchPendingItem,
-        action: PendingAnswerAction.SaveOdoPeers,
-    ): PendingAnswerResult {
-        val pairs = listOfNotNull(
-            action.prevId?.let { id -> action.prevOdo?.takeIf { it > 0 }?.let { id to it } },
-            action.curId?.let { id -> action.curOdo?.takeIf { it > 0 }?.let { id to it } },
-            action.nextId?.let { id -> action.nextOdo?.takeIf { it > 0 }?.let { id to it } },
-        )
-        if (pairs.isEmpty()) {
-            return PendingAnswerResult("No odometer changes to save", success = false)
-        }
-        val live = fuelEntryRepository.getAllIncludingDeleted()
-            .filter { !it.deleted }
-            .associateBy { it.id }
-        val written = mutableListOf<String>()
-        for ((id, newOdo) in pairs) {
-            val e = live[id] ?: continue
-            if (e.odometer == newOdo) continue
-            fuelEntryRepository.updateFuelEntry(
-                e.copy(odometer = newOdo, economyIgnored = false),
-            )
-            written += "id=$id odo $newOdo"
-            removePendingForFuelEntry(id)
-        }
-        if (written.isEmpty()) {
-            clearAnsweredPending(item, item.fuelEntryId)
-            return PendingAnswerResult("No odometer differed from DB", remerge = false)
-        }
-        clearAnsweredPending(item, item.fuelEntryId)
-        action.prevId?.let { removePendingForFuelEntry(it) }
-        action.curId?.let { removePendingForFuelEntry(it) }
-        action.nextId?.let { removePendingForFuelEntry(it) }
-        val msg = "Saved odometers: ${written.joinToString("; ")}"
-        Log.i(TAG, msg)
-        return PendingAnswerResult(msg, remerge = true)
-    }
-
-    /**
-     * Explicit partial override. Only legal when odo, cost, and volume are all present.
-     * [partial]=false clears the flag. Incomplete rows always store false.
-     */
-    private suspend fun setPartialFill(
-        item: BatchPendingItem,
-        entryId: Long?,
-        partial: Boolean,
-    ): PendingAnswerResult {
-        val id = entryId
-            ?: item.fuelEntryId
-            ?: item.extra["suspectId"]?.toLongOrNull()
-            ?: item.extra["endEntryId"]?.toLongOrNull()
-            ?: return PendingAnswerResult("No entry id for partial flag", success = false)
-        val live = fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
-            ?: return PendingAnswerResult("Fuel row $id not found", success = false)
-        val complete = live.odometer > 0 && live.cost > 0 && live.gallons > 0
-        if (partial && !complete) {
-            return PendingAnswerResult(
-                "Partial only when odo, cost, and volume are all present",
-                success = false,
-            )
-        }
-        val value = partial && complete
-        fuelEntryRepository.updateFuelEntry(live.copy(isPartialFill = value))
-        clearAnsweredPending(item, id)
-        Log.i(TAG, "setPartialFill id=$id partial=$value")
-        return PendingAnswerResult(
-            if (value) "id=$id treat as partial (not full-fill anchor)"
-            else "id=$id partial cleared",
-            remerge = true,
-        )
-    }
-
-    /**
-     * One-shot repair: clear illegal or auto-set partial flags.
-     * Incomplete rows → false; optionally clear all complete flags too ([allComplete]).
-     */
-    suspend fun clearAutoPartialFlags(allComplete: Boolean = true): Int =
-        withContext(Dispatchers.IO) {
-            val live = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
-            var n = 0
-            for (e in live) {
-                val complete = e.odometer > 0 && e.cost > 0 && e.gallons > 0
-                val shouldClear = e.isPartialFill && (!complete || allComplete)
-                if (shouldClear) {
-                    fuelEntryRepository.updateFuelEntry(e.copy(isPartialFill = false))
-                    n++
-                }
-            }
-            Log.i(TAG, "clearAutoPartialFlags cleared=$n allComplete=$allComplete")
-            n
-        }
-
-    /**
-     * Blank chain-breaker (missed fill / gap): odo=cost=vol=0, isPartialFill=false.
-     *
-     * **MPG_OUTLIER:** insert a new mid-leg blank between last & this anchors
-     * (does **not** zero either full fill). If a breaker already exists in the
-     * window, just dismiss the pending and re-detect.
-     *
-     * **Other kinds:** blank existing row by id, or insert blank at item timestamp.
-     */
-    private suspend fun markAsGap(
-        item: BatchPendingItem,
-        entryId: Long?,
-    ): PendingAnswerResult {
-        if (item.kind == BatchPendingKind.MPG_OUTLIER) {
-            return markAsGapMpgOutlier(item)
-        }
-
-        val path = item.durablePhotoPath ?: item.photoPath
-        val ts = item.timestampMs ?: System.currentTimeMillis()
-        val id = entryId
-            ?: item.fuelEntryId
-            ?: item.extra["suspectId"]?.toLongOrNull()
-            ?: item.extra["endEntryId"]?.toLongOrNull()
-
-        if (id != null && id > 0) {
-            val live = fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
-            if (live != null) {
-                fuelEntryRepository.updateFuelEntry(
-                    live.copy(
-                        odometer = 0,
-                        cost = 0.0,
-                        gallons = 0.0,
-                        isPartialFill = false,
-                        economyIgnored = false,
-                        notes = live.notes?.takeIf { it.isNotBlank() }
-                            ?: "batch_gap_marker",
-                    ),
-                )
-                clearAnsweredPending(item, id)
-                Log.i(TAG, "markAsGap updated id=$id to blank breaker")
-                return PendingAnswerResult(
-                    "Marked id=$id as gap (blank odo/cost/vol chain-breaker)",
-                    remerge = true,
-                )
-            }
-        }
-
-        // No row yet (e.g. unreadable pump with no insert): insert blank gap marker
-        val photoJson = path?.let { FuelPhotoJson.single("pump", it, ts) }
-        val locJson = locationBlobFromPending(item)
-        fuelEntryRepository.insertFuelEntry(
-            FuelEntry(
-                vehicleId = item.suggestedVehicleId?.takeIf { it > 0 } ?: UNASSIGNED_VEHICLE_ID,
-                odometer = 0,
-                gallons = 0.0,
-                cost = 0.0,
-                currency = "USD",
-                timestamp = ts,
-                photoUrl = photoJson,
-                isPartialFill = false,
-                location = locJson,
-                notes = "batch_gap_marker",
-            ),
-        )
-        maybeEnqueueLocationLookup(locJson)
-        clearAnsweredPending(item, null)
-        Log.i(TAG, "markAsGap inserted blank gap marker")
-        return PendingAnswerResult("Inserted gap marker (blank chain-breaker)", remerge = true)
-    }
-
-    /**
-     * Insert mid-leg blank between prev and end full fills. Anchors unchanged.
-     */
-    private suspend fun markAsGapMpgOutlier(item: BatchPendingItem): PendingAnswerResult {
-        val prevId = item.extra["prevEntryId"]?.toLongOrNull()
-            ?: item.extra["lastEntryId"]?.toLongOrNull()
-        val endId = item.extra["endEntryId"]?.toLongOrNull()
-            ?: item.extra["thisEntryId"]?.toLongOrNull()
-            ?: item.fuelEntryId
-        val prevTs = item.extra["prevTs"]?.toLongOrNull()
-        val endTs = item.extra["endTs"]?.toLongOrNull()
-            ?: item.timestampMs
-        val liveAll = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
-        val prev = prevId?.let { id -> liveAll.find { it.id == id } }
-        val end = endId?.let { id -> liveAll.find { it.id == id } }
-        val vehicleId = item.suggestedVehicleId?.takeIf { it > 0 }
-            ?: end?.vehicleId?.takeIf { it > 0 }
-            ?: prev?.vehicleId?.takeIf { it > 0 }
-            ?: 0
-        val pTs = prevTs ?: prev?.timestamp
-        val eTs = endTs ?: end?.timestamp
-        if (vehicleId <= 0 || pTs == null || eTs == null) {
-            // Fall back to blanking focused/end row only if we lack leg metadata
-            val id = endId ?: item.fuelEntryId
-            if (id != null && id > 0) {
-                val live = liveAll.find { it.id == id }
-                if (live != null) {
-                    fuelEntryRepository.updateFuelEntry(
-                        live.copy(
-                            odometer = 0,
-                            cost = 0.0,
-                            gallons = 0.0,
-                            isPartialFill = false,
-                            economyIgnored = false,
-                            notes = live.notes?.takeIf { it.isNotBlank() }
-                                ?: "batch_gap_marker",
-                        ),
-                    )
-                    clearAnsweredPending(item, id)
-                    return PendingAnswerResult(
-                        "Marked id=$id as gap (missing leg bounds)",
-                        remerge = true,
-                    )
-                }
-            }
-            return PendingAnswerResult("Cannot place mid-leg gap (no vehicle/timestamps)", success = false)
-        }
-
-        val window = FuelEconomyChains.windowContributors(liveAll, pTs, eTs)
-        if (FuelEconomyChains.windowHasMpgBreaker(window)) {
-            // Already broken — dismiss question; re-detect will not re-enqueue
-            clearAnsweredPending(item, endId)
-            prevId?.let { removePendingForFuelEntry(it) }
-            endId?.let { removePendingForFuelEntry(it) }
-            Log.i(TAG, "markAsGap MPG: breaker already in window; dismissed pending")
-            return PendingAnswerResult(
-                "Gap already in leg window — question dismissed",
-                remerge = true,
-            )
-        }
-
-        val gapTs = pTs + maxOf(1L, (eTs - pTs) / 2L)
-        fuelEntryRepository.insertFuelEntry(
-            FuelEntry(
-                vehicleId = vehicleId,
-                odometer = 0,
-                gallons = 0.0,
-                cost = 0.0,
-                currency = end?.currency?.ifBlank { "USD" } ?: "USD",
-                timestamp = gapTs,
-                photoUrl = null,
-                isPartialFill = false,
-                economyIgnored = false,
-                notes = "batch_gap_marker",
-            ),
-        )
-        clearAnsweredPending(item, endId)
-        prevId?.let { removePendingForFuelEntry(it) }
-        endId?.let { removePendingForFuelEntry(it) }
-        Log.i(
-            TAG,
-            "markAsGap MPG: inserted mid-leg blank vehicle=$vehicleId ts=$gapTs " +
-                "between prev=$prevId end=$endId (anchors preserved)",
-        )
-        return PendingAnswerResult(
-            "Inserted gap between last & this (anchors kept)",
-            remerge = true,
-        )
-    }
-
-    private fun clearAnsweredPending(item: BatchPendingItem, fuelEntryId: Long?) {
-        removePendingForFuelEntry(fuelEntryId)
-        removePendingForFuelEntry(item.fuelEntryId)
-        removePendingForFuelEntry(item.extra["suspectId"]?.toLongOrNull())
-        removePendingForFuelEntry(item.extra["endEntryId"]?.toLongOrNull())
-        BatchImportPendingStore.remove(appContext, item.id)
-    }
-
-    private suspend fun manualPumpEntry(
-        item: BatchPendingItem,
-        cost: Double,
-        volume: Double,
-    ): PendingAnswerResult {
-        if (cost <= 0 && volume <= 0) {
-            return PendingAnswerResult(
-                "Enter cost and/or volume > 0 (or use Mark as gap)",
-                success = false,
-            )
-        }
-        val path = item.durablePhotoPath ?: item.photoPath
-        val ts = item.timestampMs ?: System.currentTimeMillis()
-        val existingId = item.fuelEntryId
-        if (existingId != null && existingId > 0) {
-            val live = fuelEntryRepository.getAllIncludingDeleted().find { it.id == existingId }
-            if (live != null && !live.deleted) {
-                val next = live.copy(
-                    cost = if (cost > 0) cost else live.cost,
-                    gallons = if (volume > 0) volume else live.gallons,
-                    economyIgnored = false,
-                )
-                // Preserve explicit partial only if still complete; else false
-                val complete = next.odometer > 0 && next.cost > 0 && next.gallons > 0
-                fuelEntryRepository.updateFuelEntry(
-                    next.copy(isPartialFill = complete && live.isPartialFill),
-                )
-                clearAnsweredPending(item, existingId)
-                return PendingAnswerResult("Updated pump fields on id=$existingId", remerge = true)
-            }
-        }
-        val photoJson = path?.let { FuelPhotoJson.single("pump", it, ts) }
-        val locJson = locationBlobFromPending(item)
-        fuelEntryRepository.insertFuelEntry(
-            FuelEntry(
-                vehicleId = UNASSIGNED_VEHICLE_ID,
-                odometer = 0,
-                gallons = volume.coerceAtLeast(0.0),
-                cost = cost.coerceAtLeast(0.0),
-                currency = "USD",
-                timestamp = ts,
-                photoUrl = photoJson,
-                isPartialFill = false,
-                location = locJson,
-                notes = "batch_manual_pump",
-            ),
-        )
-        maybeEnqueueLocationLookup(locJson)
-        clearAnsweredPending(item, null)
-        return PendingAnswerResult("Manual pump entry saved", remerge = true)
-    }
-
-    private suspend fun manualDashEntry(
-        item: BatchPendingItem,
-        odometer: Int,
-        vehicleId: Int?,
-    ): PendingAnswerResult {
-        if (odometer <= 0) {
-            return PendingAnswerResult("Odometer must be > 0", success = false)
-        }
-        val path = item.durablePhotoPath ?: item.photoPath
-        val ts = item.timestampMs ?: System.currentTimeMillis()
-        val vid = vehicleId
-            ?: item.suggestedVehicleId
-            ?: return PendingAnswerResult("Pick a vehicle for dash entry", success = false)
-        if (vid <= 0) {
-            return PendingAnswerResult("Pick a vehicle for dash entry", success = false)
-        }
-        val existingId = item.fuelEntryId
-        if (existingId != null && existingId > 0) {
-            val live = fuelEntryRepository.getAllIncludingDeleted().find { it.id == existingId }
-            if (live != null && !live.deleted) {
-                val next = live.copy(
-                    odometer = odometer,
-                    vehicleId = vid,
-                    economyIgnored = false,
-                )
-                val complete = next.odometer > 0 && next.cost > 0 && next.gallons > 0
-                fuelEntryRepository.updateFuelEntry(
-                    next.copy(isPartialFill = complete && live.isPartialFill),
-                )
-                clearAnsweredPending(item, existingId)
-                return PendingAnswerResult("Updated dash odo=$odometer vehicle=$vid", remerge = true)
-            }
-        }
-        val photoJson = path?.let { FuelPhotoJson.single("dash", it, ts) }
-        val locJson = locationBlobFromPending(item)
-        fuelEntryRepository.insertFuelEntry(
-            FuelEntry(
-                vehicleId = vid,
-                odometer = odometer,
-                gallons = 0.0,
-                cost = 0.0,
-                currency = "USD",
-                timestamp = ts,
-                photoUrl = photoJson,
-                isPartialFill = false,
-                location = locJson,
-                notes = "batch_manual_dash",
-            ),
-        )
-        maybeEnqueueLocationLookup(locJson)
-        clearAnsweredPending(item, null)
-        return PendingAnswerResult("Manual dash odo=$odometer vehicle=$vid", remerge = true)
-    }
-
-    private suspend fun manualEditFuelFields(
-        item: BatchPendingItem,
-        action: PendingAnswerAction.ManualEditFuelFields,
-    ): PendingAnswerResult {
-        val id = action.entryId
-            ?: item.fuelEntryId
-            ?: item.extra["suspectId"]?.toLongOrNull()
-            ?: item.extra["endEntryId"]?.toLongOrNull()
-            ?: return PendingAnswerResult("No fuelEntryId", success = false)
-        val live = fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
-            ?: return PendingAnswerResult("Fuel row $id not found", success = false)
-        val updated = live.copy(
-            odometer = action.odometer?.takeIf { it > 0 } ?: live.odometer,
-            cost = action.cost?.takeIf { it > 0 } ?: live.cost,
-            gallons = action.volume?.takeIf { it > 0 } ?: live.gallons,
-            economyIgnored = false,
-        ).let { e ->
-            val complete = e.odometer > 0 && e.cost > 0 && e.gallons > 0
-            // Preserve explicit partial only if still complete; never invent true
-            e.copy(isPartialFill = complete && live.isPartialFill)
-        }
-        fuelEntryRepository.updateFuelEntry(updated)
-        clearAnsweredPending(item, id)
-        return PendingAnswerResult("Edited fuel id=$id (ignore cleared)", remerge = true)
-    }
-
-    private suspend fun setEconomyIgnored(
-        item: BatchPendingItem,
-        ignored: Boolean,
-        entryId: Long? = null,
-    ): PendingAnswerResult {
-        val id = entryId
-            ?: item.fuelEntryId
-            ?: item.extra["endEntryId"]?.toLongOrNull()
-            ?: return PendingAnswerResult("No fuelEntryId", success = false)
-        val live = fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
-            ?: return PendingAnswerResult("Fuel row $id not found", success = false)
-        fuelEntryRepository.updateFuelEntry(live.copy(economyIgnored = ignored))
-        clearAnsweredPending(item, id)
-        return PendingAnswerResult(
-            if (ignored) "Marked economyIgnored on id=$id" else "Unignored id=$id",
-            remerge = true,
-        )
-    }
-
-    private suspend fun assignUnknownVehicle(
-        item: BatchPendingItem,
-        vehicleId: Int,
-    ): PendingAnswerResult {
-        if (vehicleId <= 0) {
-            return PendingAnswerResult("Invalid vehicle", success = false)
-        }
-        val id = item.fuelEntryId
-            ?: return PendingAnswerResult("No fuelEntryId", success = false)
-        val live = fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
-            ?: return PendingAnswerResult("Fuel row $id not found", success = false)
-        fuelEntryRepository.updateFuelEntry(live.copy(vehicleId = vehicleId))
-        clearAnsweredPending(item, id)
-        return PendingAnswerResult("Assigned unknown → vehicle $vehicleId", remerge = true)
-    }
-
-    /**
-     * Neighbor fills for same-vehicle chronological context (outliers, odo suspect).
-     */
-    suspend fun neighborContext(
-        fuelEntryId: Long?,
-        timestampMs: Long?,
-        vehicleIdHint: Int?,
-        expandExtra: Int = 0,
-        allVehicles: Boolean = false,
-    ): List<FuelEntry> = withContext(Dispatchers.IO) {
-        val live = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
-        val around = fuelEntryId?.let { id -> live.find { it.id == id } }
-        if (around != null && !allVehicles && around.vehicleId > 0) {
-            val pool = live.filter { it.vehicleId == around.vehicleId }
-            val sorted = pool.sortedWith(compareBy({ it.timestamp }, { it.id }))
-            val idx = sorted.indexOfFirst { it.id == around.id }
-            if (idx >= 0) {
-                val beforeN = 1 + expandExtra * 3
-                val afterN = 1 + expandExtra * 3
-                val from = (idx - beforeN).coerceAtLeast(0)
-                val to = (idx + afterN).coerceAtMost(sorted.lastIndex)
-                return@withContext sorted.subList(from, to + 1)
-            }
-        }
-        val ts = around?.timestamp ?: timestampMs ?: return@withContext emptyList()
-        val window = FuelRowMergeEngine.UNKNOWN_CONTEXT_WINDOW_MS * (1L + expandExtra)
-        val pool = when {
-            allVehicles || (vehicleIdHint ?: 0) == 0 || around?.vehicleId == 0 -> live
-            vehicleIdHint != null && vehicleIdHint > 0 -> live.filter { it.vehicleId == vehicleIdHint }
-            else -> live
-        }
-        pool.filter { kotlin.math.abs(it.timestamp - ts) <= window }
-            .sortedWith(compareBy({ it.timestamp }, { it.id }))
-    }
-
-    /**
-     * Unknown-vehicle context: for **each** active vehicle, nearest fill strictly
-     * before and after [timestampMs] (or the unknown row's timestamp).
-     * [expandExtra] adds 2nd/3rd nearest per side.
-     */
-    data class PerVehicleNeighbor(
-        val vehicleId: Int,
-        val vehicleName: String,
-        val before: List<FuelEntry>,
-        val after: List<FuelEntry>,
-    )
-
-    suspend fun nearestNeighborsPerVehicle(
-        timestampMs: Long,
-        vehicles: List<Vehicle>,
-        expandExtra: Int = 0,
-        excludeEntryId: Long? = null,
-    ): List<PerVehicleNeighbor> = withContext(Dispatchers.IO) {
-        val live = fuelEntryRepository.getAllIncludingDeleted().filter {
-            !it.deleted && it.vehicleId > 0 && it.id != excludeEntryId
-        }
-        val perSide = 1 + expandExtra
-        vehicles.filter { !it.deleted }.map { v ->
-            val rows = live.filter { it.vehicleId == v.id }
-                .sortedWith(compareBy({ it.timestamp }, { it.id }))
-            val before = rows.filter { it.timestamp < timestampMs }
-                .takeLast(perSide)
-                .asReversed() // nearest first
-            val after = rows.filter { it.timestamp > timestampMs }
-                .take(perSide)
-            PerVehicleNeighbor(
-                vehicleId = v.id,
-                vehicleName = v.name.ifBlank { "Vehicle ${v.id}" },
-                before = before,
-                after = after,
-            )
-        }
-    }
-
-    /** Load fuel row for pre-filling edit fields. */
-    suspend fun getFuelEntry(id: Long): FuelEntry? = withContext(Dispatchers.IO) {
-        fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
-    }
-
-    /**
-     * Resolve member fuel syncIds from pending extra (entrySyncIds / entryIds → Room)
-     * and write durable ack; dismiss pending. MERGE_EXEMPT when [alsoMergeExempt].
-     */
-    private suspend fun durableAckLooksCorrect(
-        item: BatchPendingItem,
-        kind: String,
-        alsoMergeExempt: Boolean,
-    ): PendingAnswerResult {
-        val syncIds = resolveMemberSyncIds(item)
-        if (syncIds.isEmpty()) {
-            BatchImportPendingStore.remove(appContext, item.id)
-            return PendingAnswerResult(
-                "Acknowledged (no syncIds resolved; pending removed only)",
-                remerge = false,
-            )
-        }
-        mergeAckStore.acknowledge(
-            kind = kind,
-            memberFuelSyncIds = syncIds,
-            alsoMergeExempt = alsoMergeExempt,
-        )
-        BatchImportPendingStore.remove(appContext, item.id)
-        Log.i(TAG, "durable ack kind=$kind members=${syncIds.sorted()} exempt=$alsoMergeExempt")
-        return PendingAnswerResult(
-            "Looks correct — won't ask again ($kind)",
-            remerge = true,
-        )
-    }
-
-    /** Member fuel syncIds from extra keys or entryIds → live fuel rows. */
-    private suspend fun resolveMemberSyncIds(item: BatchPendingItem): Set<String> {
-        val fromExtra = mergeAckStore.pendingMemberSyncIds(item)
-        if (fromExtra.isNotEmpty()) return fromExtra
-        val entryIds = buildList {
-            item.fuelEntryId?.let { add(it) }
-            item.extra["entryIds"]
-                ?.split(',')
-                ?.mapNotNull { it.trim().toLongOrNull() }
-                ?.let { addAll(it) }
-            // Complex ODO peers (prev/cur/next) + MPG/simple keys
-            item.extra["prevEntryId"]?.toLongOrNull()?.let { add(it) }
-            item.extra["curEntryId"]?.toLongOrNull()?.let { add(it) }
-            item.extra["nextEntryId"]?.toLongOrNull()?.let { add(it) }
-            item.extra["endEntryId"]?.toLongOrNull()?.let { add(it) }
-            item.extra["lastEntryId"]?.toLongOrNull()?.let { add(it) }
-            item.extra["thisEntryId"]?.toLongOrNull()?.let { add(it) }
-            item.extra["suspectId"]?.toLongOrNull()?.let { add(it) }
-        }.distinct()
-        if (entryIds.isEmpty()) return emptySet()
-        val live = fuelEntryRepository.getAllIncludingDeleted()
-            .filter { !it.deleted }
-            .associateBy { it.id }
-        return entryIds.mapNotNull { live[it]?.syncId?.takeIf { s -> s.isNotBlank() } }.toSet()
-    }
-
-    /**
-     * MPG_OUTLIER context lines: one fill immediately before [lastTs], one after [thisTs],
-     * same vehicle only. Does not walk generic ±N that can skip the true leg start.
-     */
-    suspend fun nearestFillBefore(
-        vehicleId: Int,
-        beforeTimestampMs: Long,
-        excludeIds: Set<Long> = emptySet(),
-    ): FuelEntry? = withContext(Dispatchers.IO) {
-        fuelEntryRepository.getAllIncludingDeleted()
-            .filter {
-                !it.deleted && it.vehicleId == vehicleId &&
-                    it.id !in excludeIds && it.timestamp < beforeTimestampMs
-            }
-            .maxWithOrNull(compareBy({ it.timestamp }, { it.id }))
-    }
-
-    suspend fun nearestFillAfter(
-        vehicleId: Int,
-        afterTimestampMs: Long,
-        excludeIds: Set<Long> = emptySet(),
-    ): FuelEntry? = withContext(Dispatchers.IO) {
-        fuelEntryRepository.getAllIncludingDeleted()
-            .filter {
-                !it.deleted && it.vehicleId == vehicleId &&
-                    it.id !in excludeIds && it.timestamp > afterTimestampMs
-            }
-            .minWithOrNull(compareBy({ it.timestamp }, { it.id }))
-    }
-
-    /**
-     * Keep [chosenOdo] as the only positive odometer among cluster entryIds.
-     * Pure odo-only rows with a different odo are hard-deleted; rows that still
-     * have cost/vol keep those fields with odo cleared for re-merge pairing.
-     */
-    private suspend fun resolveConflictOdo(
-        item: BatchPendingItem,
-        chosenOdo: Int,
-    ): PendingAnswerResult {
-        if (item.kind != BatchPendingKind.CONFLICT_ODO) {
-            return PendingAnswerResult("Not a CONFLICT_ODO item", success = false)
-        }
-        if (chosenOdo <= 0) {
-            return PendingAnswerResult("Invalid odometer $chosenOdo", success = false)
-        }
-        val entryIds = item.extra["entryIds"]
-            ?.split(',')
-            ?.mapNotNull { it.trim().toLongOrNull() }
-            ?.filter { it > 0 }
-            .orEmpty()
-        if (entryIds.isEmpty()) {
-            clearAnsweredPending(item, null)
-            return PendingAnswerResult("No entryIds on conflict; pending removed", remerge = false)
-        }
-        val live = fuelEntryRepository.getAllIncludingDeleted()
-            .filter { !it.deleted }
-            .associateBy { it.id }
-            .toMutableMap()
-        var deleted = 0
-        var updated = 0
-        var kept = 0
-        // Free-typed odo: if no row already has it, write onto first cluster entry
-        if (entryIds.none { live[it]?.odometer == chosenOdo }) {
-            val first = entryIds.firstOrNull { live[it] != null }?.let { live[it] }
-            if (first != null) {
-                val rewritten = first.copy(odometer = chosenOdo, economyIgnored = false)
-                fuelEntryRepository.updateFuelEntry(rewritten)
-                live[first.id] = rewritten
-                updated++
-                kept++
-            }
-        }
-        for (id in entryIds) {
-            val e = live[id] ?: continue
-            when {
-                e.odometer == chosenOdo -> {
-                    kept++
-                }
-                e.odometer > 0 && e.odometer != chosenOdo -> {
-                    val hasPump = e.cost > 0 || e.gallons > 0
-                    if (hasPump) {
-                        fuelEntryRepository.updateFuelEntry(
-                            e.copy(odometer = 0, isPartialFill = false),
-                        )
-                        updated++
-                    } else {
-                        if (absorbMergedRow(e)) {
-                            // soft
-                        }
-                        deleted++
-                        Log.i(TAG, "conflict resolve absorb id=${e.id} odo=${e.odometer}")
-                    }
-                }
-                else -> {
-                    // no odo or already zero — leave for re-merge
-                }
-            }
-        }
-        entryIds.forEach { removePendingForFuelEntry(it) }
-        clearAnsweredPending(item, entryIds.firstOrNull())
-        val msg = "Kept odo=$chosenOdo (keptRows≈$kept updated=$updated deleted=$deleted)"
-        Log.i(TAG, "resolveConflictOdo $msg")
-        return PendingAnswerResult(msg, remerge = true)
-    }
-
-    /** Paths for UI: item fields + photoUrl from related fuel rows when ids present. */
-    suspend fun resolvePendingPhotoUris(item: BatchPendingItem): List<String> =
-        withContext(Dispatchers.IO) {
-            val entryIds = buildList {
-                item.fuelEntryId?.let { add(it) }
-                item.extra["entryIds"]
-                    ?.split(',')
-                    ?.mapNotNull { it.trim().toLongOrNull() }
-                    ?.let { addAll(it) }
-            }.distinct()
-            val urls = if (entryIds.isEmpty()) {
-                emptyList()
-            } else {
-                val byId = fuelEntryRepository.getAllIncludingDeleted()
-                    .filter { it.id in entryIds }
-                    .associateBy { it.id }
-                entryIds.mapNotNull { byId[it]?.photoUrl }
-            }
-            pendingPhotoUris(item, urls)
-        }
-
-    /**
-     * Lat/lon/accuracy from pending item, re-reading EXIF from photo path when any field is missing.
-     * Prefer already-set item fields over re-read.
-     */
-    private fun resolvePendingGeo(item: BatchPendingItem): Triple<Double?, Double?, Double?> {
-        var lat = item.latitude
-        var lon = item.longitude
-        var acc = item.accuracyM
-        if (lat != null && lon != null && acc != null) {
-            return Triple(lat, lon, acc)
-        }
-        val path = item.durablePhotoPath ?: item.photoPath
-        if (!path.isNullOrBlank()) {
-            val f = File(path)
-            if (f.isFile) {
-                try {
-                    val meta = PhotoExifMetaReader.read(f.absolutePath)
-                    if (lat == null) lat = meta.latitude
-                    if (lon == null) lon = meta.longitude
-                    if (acc == null) acc = meta.accuracyM
-                } catch (e: Exception) {
-                    Log.w(TAG, "EXIF re-read for pending failed: ${e.message}")
-                }
-            }
-        }
-        return Triple(lat, lon, acc)
-    }
-
-    private fun locationBlobFromPending(item: BatchPendingItem): String? {
-        val (lat, lon, acc) = resolvePendingGeo(item)
-        return FuelLocationJson.encode(
-            FuelLocationJson.fromCoords(lat, lon, acc, source = "exif"),
-        )
-    }
-
-    /** One-shot deferred POI when insert left coords without place (non-blocking). */
-    private fun maybeEnqueueLocationLookup(locationJson: String?) {
-        if (FuelLocationJson.hasCoordsWithoutPlace(locationJson)) {
-            LocationLookupScheduler.enqueueSoon(appContext)
-        }
-    }
-
-    /**
-     * Kick off non-blocking POI lookup before OCR when enhance is on and EXIF has coords.
-     * Paces kickoffs to ≥ [MIN_LOCATION_LOOKUP_GAP_MS]. Never waits for the result.
-     */
-    private suspend fun kickoffLocationLookupBeforeOcr(
-        key: String,
-        lat: Double?,
-        lon: Double?,
-        accuracyM: Double?,
-        kind: LocationLookupKind,
-        enhanceCtx: LocationEnhanceCtx?,
-    ) {
-        if (enhanceCtx == null || !enhanceCtx.enabled) return
-        if (lat == null || lon == null) return
-        if (enhanceCtx.jobs.containsKey(key)) return
-        val last = enhanceCtx.lastKickoffMs.get()
-        if (last > 0L) {
-            val gap = System.currentTimeMillis() - last
-            if (gap < MIN_LOCATION_LOOKUP_GAP_MS) {
-                delay(MIN_LOCATION_LOOKUP_GAP_MS - gap)
-            }
-        }
-        enhanceCtx.lastKickoffMs.set(System.currentTimeMillis())
-        enhanceCtx.onKickoff()
-        enhanceCtx.jobs[key] = enhanceCtx.scope.async(Dispatchers.IO) {
-            LocationLookup.lookup(
-                lat = lat,
-                lon = lon,
-                kind = kind,
-                accuracyM = accuracyM,
-                uiTimeout = false,
-            )
-        }
-        Log.i(TAG, "location race started key=${key.substringAfterLast('/')}")
-    }
-
-    /**
-     * Build location blob from EXIF coords; if a pre-OCR race finished in time, merge place.
-     * Does **not** await an in-flight lookup. Enqueues worker only when enhance was on and
-     * place still missing.
-     */
-    private suspend fun locationBlobAfterRace(
-        lat: Double?,
-        lon: Double?,
-        accuracyM: Double?,
-        key: String,
-        enhanceCtx: LocationEnhanceCtx?,
-    ): String? {
-        var locJson = FuelLocationJson.encode(
-            FuelLocationJson.fromCoords(lat, lon, accuracyM, source = "exif"),
-        )
-        val job = enhanceCtx?.jobs?.remove(key)
-        if (job != null) {
-            if (job.isCompleted) {
-                // Completed race only — never await in-flight (OCR/insert not gated)
-                val result = runCatching { job.await() }.getOrNull()
-                if (result != null && result.hasPlace()) {
-                    locJson = LocationLookup.mergePlaceIntoBlob(locJson, result, confirmed = false)
-                        ?: locJson
-                }
-            } else {
-                job.cancel()
-            }
-        }
-        if (enhanceCtx?.enabled == true) {
-            maybeEnqueueLocationLookup(locJson)
-        }
-        return locJson
-    }
-
-    /**
-     * Dash: same paddle-seed pipeline as Quick Fill ([OcrHarness.runAutoFillPipeline]).
-     * EXIF upright is applied at ingest; no extra camera rotation.
-     *
-     * Photo path = **source file in place** (no copy into batch_import_photos).
-     */
-    private suspend fun processDash(
-        file: File,
-        vehicles: List<Vehicle>,
-        pending: MutableList<BatchPendingItem>,
-        forcedVehicleId: Int? = null,
-        enqueuePendingOnFail: Boolean = true,
-        enhanceCtx: LocationEnhanceCtx? = null,
-    ): Boolean {
-        val meta = PhotoExifMetaReader.read(file.absolutePath)
-        val ts = meta.timestampMs ?: System.currentTimeMillis().also {
-            Log.w(TAG, "No capture time for ${file.name} (source=${meta.source}); using now")
-        }
-        // Reference source path only — never copyToDurable
-        val sourcePath = file.absolutePath
-
-        // Location race before OCR when enhance on (never await for OCR)
-        kickoffLocationLookupBeforeOcr(
-            key = sourcePath,
-            lat = meta.latitude,
-            lon = meta.longitude,
-            accuracyM = meta.accuracyM,
-            kind = LocationLookupKind.FUEL_STATION,
-            enhanceCtx = enhanceCtx,
-        )
-
-        val activeVehicles = vehicles.filter { !it.deleted }
-        val (imgW, imgH) = ImageIngestionProvider.probeDimensions(appContext, sourcePath)
-        if (imgW <= 0 || imgH <= 0) {
-            if (enqueuePendingOnFail) {
-                pending.add(
-                    BatchPendingItem(
-                        kind = BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE,
-                        message = "Bad image dimensions for ${file.name}",
-                        photoPath = sourcePath,
-                        durablePhotoPath = sourcePath,
-                        timestampMs = ts,
-                        latitude = meta.latitude,
-                        longitude = meta.longitude,
-                        accuracyM = meta.accuracyM,
-                    ),
-                )
-            }
-            return false
-        }
-        val master = NativePaddleEngine.bufferSetA
-        master.resize(imgW, imgH)
-        ImageIngestionProvider.ingestFromFile(appContext, sourcePath, master.p)
-
-        val lastByVehicle = activeVehicles.associate { v ->
-            v.id to fuelEntryRepository.getLastOdometerForVehicle(v.id)
-        }
-        val result = OcrHarness.runAutoFillPipeline(
-            context = appContext,
-            masterBuffer = master,
-            allVehicles = activeVehicles,
-            debug = false,
-            cameraRotationDegrees = 0,
-            forcedVehicleId = forcedVehicleId,
-            lastTrackingByVehicleId = lastByVehicle,
-        )
-
-        if (result.vehicleId == null) {
-            if (enqueuePendingOnFail) {
-                pending.add(
-                    BatchPendingItem(
-                        kind = BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE,
-                        message = "Could not identify vehicle for ${file.name}" +
-                            (result.error?.let { ": $it" } ?: ""),
-                        photoPath = sourcePath,
-                        durablePhotoPath = sourcePath, // same as source (no mirror)
-                        timestampMs = ts,
-                        latitude = meta.latitude,
-                        longitude = meta.longitude,
-                        accuracyM = meta.accuracyM,
-                    ),
-                )
-            }
-            return false
-        }
-
-        result.newRolloverCount?.let { newCount ->
-            val vehicle = vehicles.find { it.id == result.vehicleId }
-                ?: vehicleRepository.getVehicleById(result.vehicleId)
-            if (vehicle != null && newCount > vehicle.odometerRolloverCount) {
-                vehicleRepository.updateVehicle(
-                    vehicle.copy(odometerRolloverCount = newCount),
-                )
-            }
-        }
-        val odo = result.odometer?.toIntOrNull()
-        val photoJson = FuelPhotoJson.single("dash", sourcePath, ts)
-
-        if (odo == null) {
-            val locJson = locationBlobAfterRace(
-                meta.latitude, meta.longitude, meta.accuracyM, sourcePath, enhanceCtx,
-            )
-            fuelEntryRepository.insertFuelEntry(
-                FuelEntry(
-                    vehicleId = result.vehicleId,
-                    odometer = 0,
-                    gallons = 0.0,
-                    cost = 0.0,
-                    currency = "USD",
-                    timestamp = ts,
-                    photoUrl = photoJson,
-                    isPartialFill = false,
-                    location = locJson,
-                    notes = "batch_import_dash_blank:${file.name}",
-                ),
-            )
-            Log.i(TAG, "Inserted blank dash marker vehicle=${result.vehicleId} ${file.name}")
-            return true
-        }
-
-        val locJson = locationBlobAfterRace(
-            meta.latitude, meta.longitude, meta.accuracyM, sourcePath, enhanceCtx,
-        )
-        fuelEntryRepository.insertFuelEntry(
-            FuelEntry(
-                vehicleId = result.vehicleId,
-                odometer = odo,
-                gallons = 0.0,
-                cost = 0.0,
-                currency = "USD",
-                timestamp = ts,
-                photoUrl = photoJson,
-                isPartialFill = false, // incomplete by fields only
-                location = locJson,
-                notes = "batch_import_dash:${file.name}",
-            ),
-        )
-        Log.i(TAG, "Inserted odo-only vehicle=${result.vehicleId} odo=$odo ${file.name}")
-        return true
-    }
-
-    /**
-     * Pump photos: always Set I cost/vol OCR and insert as partial.
-     * Default vehicleId is [UNASSIGNED_VEHICLE_ID] (0) until merge; optional
-     * [forcedVehicleId] for legacy ASSIGN_VEHICLE pending answers.
-     *
-     * Photo path = **source file in place** (no copy into batch_import_photos).
-     */
-    private suspend fun processPump(
-        file: File,
-        pending: MutableList<BatchPendingItem>,
-        forcedVehicleId: Int? = null,
-        enqueuePendingOnFail: Boolean = true,
-        enhanceCtx: LocationEnhanceCtx? = null,
-    ): Boolean {
-        val meta = PhotoExifMetaReader.read(file.absolutePath)
-        val ts = meta.timestampMs ?: System.currentTimeMillis().also {
-            Log.w(TAG, "No capture time for ${file.name} (source=${meta.source}); using now")
-        }
-        val sourcePath = file.absolutePath
-        val vehicleId = forcedVehicleId ?: UNASSIGNED_VEHICLE_ID
-
-        kickoffLocationLookupBeforeOcr(
-            key = sourcePath,
-            lat = meta.latitude,
-            lon = meta.longitude,
-            accuracyM = meta.accuracyM,
-            kind = LocationLookupKind.FUEL_STATION,
-            enhanceCtx = enhanceCtx,
-        )
-
-        // Experiment Set I path (not OcrHarness.runPumpCostVolPipelineSetI / Quick Fill G4)
-        val result = PumpSetIRunner.runOnePhoto(appContext, file)
-        val cost = parseMoneyOrVol(result.cost)
-        val vol = parseMoneyOrVol(result.volume)
-
-        if (cost == null && vol == null) {
-            if (enqueuePendingOnFail) {
-                pending.add(
-                    BatchPendingItem(
-                        kind = BatchPendingKind.UNREADABLE_PUMP,
-                        message = "Unreadable pump ${file.name}" +
-                            (result.error?.let { ": $it" } ?: ""),
-                        photoPath = sourcePath,
-                        durablePhotoPath = sourcePath,
-                        timestampMs = ts,
-                        latitude = meta.latitude,
-                        longitude = meta.longitude,
-                        accuracyM = meta.accuracyM,
-                    ),
-                )
-            }
-            return false
-        }
-
-        val photoJson = FuelPhotoJson.single("pump", sourcePath, ts)
-        val locJson = locationBlobAfterRace(
-            meta.latitude, meta.longitude, meta.accuracyM, sourcePath, enhanceCtx,
-        )
-        fuelEntryRepository.insertFuelEntry(
-            FuelEntry(
-                vehicleId = vehicleId,
-                odometer = 0,
-                gallons = vol ?: 0.0,
-                cost = cost ?: 0.0,
-                currency = "USD",
-                timestamp = ts,
-                photoUrl = photoJson,
-                isPartialFill = false, // incomplete by fields only
-                location = locJson,
-                notes = "batch_import_pump:${file.name}",
-            ),
-        )
-        Log.i(
-            TAG,
-            "Inserted pump cost/vol vehicleId=$vehicleId " +
-                "cost=$cost vol=$vol ${file.name}",
-        )
-        return true
     }
 
     data class DurableMigrateResult(
@@ -2301,94 +728,3 @@ class BatchFuelImportCoordinator @Inject constructor(
             DurableMigrateResult(rewroteRows, rewrotePending, deletedFiles)
         }
 }
-
-/** User answer on a pending batch question. */
-sealed class PendingAnswerAction {
-    data object Skip : PendingAnswerAction()
-    data class AssignVehicle(val vehicleId: Int) : PendingAnswerAction()
-    data object RetryPump : PendingAnswerAction()
-
-    /**
-     * [CONFLICT_ODO]: keep [chosenOdo] as authoritative for the cluster in
-     * [BatchPendingItem.extra] `entryIds`. Other rows with a different positive
-     * odo: pure odo-only → [FuelEntryRepository.hardDeleteFuelEntry]; rows with
-     * cost/vol keep data with odo zeroed so re-merge can pair. Then remove pending.
-     */
-    data class ResolveConflictOdo(val chosenOdo: Int) : PendingAnswerAction()
-
-    /**
-     * Durable keep-both / looks-correct for CONFLICT / AMBIGUOUS (acks + MERGE_EXEMPT).
-     * Toast should say it will not re-ask while the ack holds.
-     */
-    data object KeepBothNoMerge : PendingAnswerAction()
-
-    /**
-     * Durable "Looks correct — don't ask again" for Stage C cards.
-     * [kind] defaults from item; MPG_OUTLIER does not set MERGE_EXEMPT.
-     */
-    data class AcknowledgeLooksCorrect(val kind: String? = null) : PendingAnswerAction()
-
-    /** Manual cost/volume for unreadable pump (insert or update). */
-    data class ManualPumpEntry(val cost: Double, val volume: Double) : PendingAnswerAction()
-
-    /** Manual odometer (+ vehicle) for unreadable dash. */
-    data class ManualDashEntry(val odometer: Int, val vehicleId: Int?) : PendingAnswerAction()
-
-    /** Edit odo/cost/vol on an existing fuel row (clears economyIgnored). */
-    data class ManualEditFuelFields(
-        val odometer: Int? = null,
-        val cost: Double? = null,
-        val volume: Double? = null,
-        /** Explicit target row (e.g. MPG focus = leg end or leg start). */
-        val entryId: Long? = null,
-    ) : PendingAnswerAction()
-
-    data class SetEconomyIgnored(
-        val ignored: Boolean,
-        val entryId: Long? = null,
-    ) : PendingAnswerAction()
-
-    data class AssignUnknownVehicle(val vehicleId: Int) : PendingAnswerAction()
-
-    /**
-     * Legacy one-way flag → [SetPartialFill] with partial=true.
-     * Prefer [SetPartialFill] checkbox for check/uncheck.
-     */
-    data class FlagPartial(val entryId: Long? = null) : PendingAnswerAction()
-
-    /**
-     * Explicit partial override when odo+cost+vol all present.
-     * [partial]=false clears the flag.
-     */
-    data class SetPartialFill(
-        val partial: Boolean,
-        val entryId: Long? = null,
-    ) : PendingAnswerAction()
-
-    /**
-     * Blank chain-breaker: odo=cost=vol=0, isPartialFill=false.
-     * Explicit zeros allowed (unlike manual pump entry).
-     */
-    data class MarkAsGap(val entryId: Long? = null) : PendingAnswerAction()
-
-    /**
-     * Multi-peer odo save for [BatchPendingKind.ODO_SUSPECT] (prev / cur / next).
-     * Only values &gt; 0 that differ from DB are written.
-     */
-    data class SaveOdoPeers(
-        val prevId: Long? = null,
-        val prevOdo: Int? = null,
-        val curId: Long? = null,
-        val curOdo: Int? = null,
-        val nextId: Long? = null,
-        val nextOdo: Int? = null,
-    ) : PendingAnswerAction()
-}
-
-/** Result of [BatchFuelImportCoordinator.applyPendingAnswer]. */
-data class PendingAnswerResult(
-    val message: String,
-    /** True when fuel rows changed and Stage B re-merge should run. */
-    val remerge: Boolean = false,
-    val success: Boolean = true,
-)

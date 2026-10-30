@@ -19,7 +19,7 @@ import kotlin.math.min
  * Minimal production-path OCR exercise for library/smoke gates:
  * angle (Paddle heatmap) → deskew → det boxes → crop → rec (V3).
  *
- * Reuses the same helpers as Quick Fill / pump paths:
+ * Reuses the same helpers as Fill / pump paths:
  * [OdometerOcrUtils.calculatePaddleAngleOptimized], [OdometerOcrUtils.rotate],
  * [NativePaddleEngine.detect], [NativePaddleEngine.recognize].
  *
@@ -198,7 +198,7 @@ object OcrFunctionalPipeline {
             val angleMs = System.currentTimeMillis() - tAngle0
             Log.i(TAG, "angle=$angleDeg deg (reported ${angleMsReported}ms)")
 
-            // 3) Deskew — same sign as Quick Fill (cameraRotation=0): totalAngle = -optAngle
+            // 3) Deskew — same sign as Fill (cameraRotation=0): totalAngle = -optAngle
             val tDeskew0 = System.currentTimeMillis()
             val deskewAngle = -angleDeg
             OdometerOcrUtils.rotate(master, deskewAngle)
@@ -214,7 +214,6 @@ object OcrFunctionalPipeline {
             Log.i(TAG, "det boxes=${boxes.size} meta=${det?.metadata}")
 
             if (boxes.isEmpty()) {
-                restoreMasterBuffers()
                 return@withContext Result(
                     ok = false,
                     angleDeg = angleDeg,
@@ -243,7 +242,6 @@ object OcrFunctionalPipeline {
                 confidence = primary.confidence,
             )
             if (crop.width() < 2 || crop.height() < 2) {
-                restoreMasterBuffers()
                 return@withContext Result(
                     ok = false,
                     angleDeg = angleDeg,
@@ -271,8 +269,6 @@ object OcrFunctionalPipeline {
             val text = ocr.debugText.trim()
             val norm = normalizeOcr(text)
             Log.i(TAG, "ocr='$text' norm='$norm' conf=${ocr.textBlocks.firstOrNull()?.confidence}")
-
-            restoreMasterBuffers()
 
             Result(
                 ok = text.isNotBlank(),
@@ -354,18 +350,6 @@ object OcrFunctionalPipeline {
         }
         System.loadLibrary("native_ocr")
         System.loadLibrary("buffer_set")
-    }
-
-    /** Restore production buffer sizes after fixture resize of bufferSetA. */
-    private fun restoreMasterBuffers() {
-        try {
-            NativePaddleEngine.bufferSetA.resize(
-                NativePaddleEngine.DEFAULT_REF_DASH_W,
-                NativePaddleEngine.DEFAULT_REF_DASH_H,
-            )
-        } catch (t: Throwable) {
-            Log.w(TAG, "restoreMasterBuffers: ${t.message}")
-        }
     }
 
     private fun boxExtents(points: FloatArray): FloatArray {

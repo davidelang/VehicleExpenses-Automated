@@ -35,6 +35,10 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.BuildConfig
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
+import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentReportMeta
+import com.davidlang.vehicleexpensesautomated.ui.reports.ExperimentReportHtml
+import com.davidlang.vehicleexpensesautomated.ui.reports.ReportCellRef
+import com.davidlang.vehicleexpensesautomated.ui.reports.ReportCollapser
 import com.davidlang.vehicleexpensesautomated.ui.util.*
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -374,8 +378,8 @@ data class PipelineConfig(
     val displayName: String,
     val rawCrop: Boolean,
     val paddleDet: Boolean,
-    val getDeskewTime: (OdometerOcrUtils.DeskewResult) -> Long,
-    val getAngle: (OdometerOcrUtils.DeskewResult) -> Float,
+    val getDeskewTime: (DeskewResult) -> Long,
+    val getAngle: (DeskewResult) -> Float,
     val seedRec: Boolean = false,
     /** Null = unpadded union of bare seeds (ML Kit raw seed). Non-null = rot-G-- pad then clip to red quad. */
     val seedVert: Float? = null,
@@ -454,7 +458,6 @@ private fun meanProb(probs: List<Float>): Float =
 
 /**
  * Full alignment experiment. Returns the main JSON results file, or null if no photos.
- * Package-visible for [ExperimentPrecisionAbScreen].
  */
 suspend fun runAlignmentExperiment(
     experimentDir: File,
@@ -827,7 +830,7 @@ suspend fun runAlignmentExperiment(
 private fun serializePhotoResultToJson(
     lineNumber: Int, probedW: Int, probedH: Int, decodedW: Int, decodedH: Int, isDegraded: Boolean,
     nativeProbe: String, photoResult: ProcessedPhotoResult, vehicles: List<Vehicle>,
-    deskewResA: OdometerOcrUtils.DeskewResult? = null,
+    deskewResA: DeskewResult? = null,
     tSnapOrig: Long = 0, tSnapAlign: Long = 0
 ): JSONObject {
     val root = JSONObject()
@@ -1504,7 +1507,7 @@ internal suspend fun runBinTrialsPaddle(
             usesPExpand(pipelineKey) -> {
                 // Live data is odoBuffer.p after threshold+flip.
                 // Expand = P INTERIOR_ENERGY + jump (pump Set-P).
-                val expandOpts = ContentExpandUtils.ExpandOptions(
+                val expandOpts = ExpandOptions(
                     maxFrac = 1.0f,
                     enableJump = true,
                     jumpFrac = 0.40f,
@@ -1901,7 +1904,7 @@ private fun buildHtmlRowDynamic(
     photoResult: ProcessedPhotoResult,
     vehicleResults: Map<Int, SingleVehicleResult>,
     cachedRefs: List<ReferenceCache>,
-    deskewRes: OdometerOcrUtils.DeskewResult,
+    deskewRes: DeskewResult,
     columns: List<PipelineConfig>,
     angleMs: Long,
     diagnostic: String = "",
@@ -2068,12 +2071,16 @@ internal fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: I
 private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Context): Boolean = withContext(Dispatchers.IO) {
     try {
         targetDir.mkdirs() // additive extract: do not wipe prior contents
+        val mtimesBefore = targetDir.walkTopDown().filter { it.isFile }
+            .associate { it.absolutePath to it.lastModified() }
         val input = context.contentResolver.openInputStream(uri) ?: return@withContext false
-        input.use {
+        val ok = input.use {
             ZipInputStream(it).use { zis ->
                 ZipExtractUtils.extractZipStreamToDir(zis, targetDir, flattenToBasename = false)
             }
         }
+        if (ok) PhotoExifWriter.stampChangedImagesMissingCaptureTime(targetDir, mtimesBefore)
+        ok
     } catch (e: Exception) { Log.e(TAG, "Failed to extract zip", e); false }
 }
 
@@ -2119,7 +2126,7 @@ private fun getHistStats(mat: org.opencv.core.Mat): OdometerOcrUtils.HistStats {
     return OdometerOcrUtils.HistStats(intensityLow, intensityHigh, p80, bins)
 }
 
-private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<OdometerOcrUtils.HistMarker> = emptyList(), skipEnds: Boolean = false): String {
+private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<HistMarker> = emptyList(), skipEnds: Boolean = false): String {
     val hist = org.opencv.core.Mat()
     org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
     val bins = FloatArray(64); hist.get(0, 0, bins)
@@ -2150,7 +2157,7 @@ private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<Od
 
 internal suspend fun performLandmarkDiscovery(input: Any, context: Context): Pair<OcrResult, List<TextBlock>> {
     val slice = input as BufferSet.Slice
-    val blocks = MultiScaleDetRunner.productDetLandmarks2048(context, slice.mat, 0.40f)
+    val blocks = com.davidlang.vehicleexpensesautomated.ui.experiment.MultiScaleDetRunner.productDetLandmarks2048(context, slice.mat, 0.40f)
     val landmarks = OdometerOcrUtils.processRawLandmarks(
         blocks, null, slice.width, slice.height,
     )
@@ -2180,7 +2187,7 @@ private suspend fun discoverAlignLandmarks(
     imgH: Int,
     rotGVert: Float,
 ): AlignLandmarkDiscovery {
-    val blocks = MultiScaleDetRunner.productDetLandmarks2048(context, work.mat, rotGVert)
+    val blocks = com.davidlang.vehicleexpensesautomated.ui.experiment.MultiScaleDetRunner.productDetLandmarks2048(context, work.mat, rotGVert)
     val landmarks = OdometerOcrUtils.processRawLandmarks(blocks, null, imgW, imgH)
     val ocr = OcrResult(
         engineName = "product_det",
@@ -2231,7 +2238,7 @@ private fun alignPaddleRotGPadAnnotations(seeds: List<TextBlock>): List<Snapshot
 private suspend fun runAlignColumn(
     column: PipelineConfig,
     context: Context,
-    deskewRes: OdometerOcrUtils.DeskewResult,
+    deskewRes: DeskewResult,
     imgW: Int,
     imgH: Int,
     cachedRefs: List<ReferenceCache>,
@@ -2342,16 +2349,17 @@ private suspend fun runAlignColumn(
                     val read = PaddleSeedOdo.readSeedRec(
                         discovery.seeds,
                         PaddleSeedOdo.orientedRedQuad(quad),
-                        work.p.mat,
+                        work,
                         experimentRecSet320x48,
                         paddleEngine,
                         column.displayName,
                         column.seedVert,
                         OdometerTracking.digitCount(v),
                         allowLenPlusOne = true,
+                        collectHarness = true,
                     )
                     if (read != null) {
-                        hMap[column.displayName] = read.harness
+                        read.harness?.let { hMap[column.displayName] = it }
                         refinementTraces[column.displayName] = read.trace
                     }
                 }
@@ -2548,11 +2556,11 @@ internal suspend fun runPaddleValleyIterative(
             OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.40f)
         } else if (stage == "Hist") {
             val stats = getHistStats(odoBuffer.p.mat)
-            val h1 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(OdometerOcrUtils.HistMarker(stats.intensityLow, Color.YELLOW), OdometerOcrUtils.HistMarker(stats.intensityHigh, Color.YELLOW), OdometerOcrUtils.HistMarker(stats.p80, Color.MAGENTA)))
+            val h1 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(HistMarker(stats.intensityLow, Color.YELLOW), HistMarker(stats.intensityHigh, Color.YELLOW), HistMarker(stats.p80, Color.MAGENTA)))
             OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, stats.intensityLow, stats.intensityHigh)
             val alpha = if (stats.intensityHigh > stats.intensityLow) 255.0 / (stats.intensityHigh - stats.intensityLow) else 1.0
             val beta = -stats.intensityLow * alpha
-            val h2 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(OdometerOcrUtils.HistMarker(stats.p80 * alpha + beta, Color.CYAN)), skipEnds = true)
+            val h2 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(HistMarker(stats.p80 * alpha + beta, Color.CYAN)), skipEnds = true)
             stageMeta["before_hist"] = h1
             stageMeta["after_hist"] = h2
         } else if (stage == "Bin-Trials") {
@@ -2620,7 +2628,7 @@ internal suspend fun runPaddleValleyIterative(
 
         // Red → orange expand by column axis:
         //   char-aware (J/O) | P INTERIOR_ENERGY+jump (L/N) | valley (V/W)
-        val expandOptsP = ContentExpandUtils.ExpandOptions(
+        val expandOptsP = ExpandOptions(
             maxFrac = 1.0f,
             enableJump = true,
             jumpFrac = 0.40f,

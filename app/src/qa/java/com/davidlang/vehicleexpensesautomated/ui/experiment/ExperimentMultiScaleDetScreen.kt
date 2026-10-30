@@ -23,7 +23,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
-import com.davidlang.vehicleexpensesautomated.ui.util.MultiScaleDetRunner
 
 private const val TAG = "MultiScaleDetUI"
 

@@ -59,14 +59,6 @@ data class AnchorCandidate(
     val y2Ref: Float = 0.5f
 )
 
-data class AnchorResult(
-    val success: Boolean,
-    val confidence: Float = 0f,
-    val timeMs: Long = 0,
-    val metadata: Map<String, String> = emptyMap(),
-    val message: String = ""
-)
-
 /**
  * Similarity that maps query ICRS onto reference ICRS: scale, rotation degrees, tx, ty.
  * Does not warp. Deskew stays on [ImageAlignmentUtils.anchorAlign].
@@ -82,6 +74,16 @@ data class RawSimilarity(
     val metadata: Map<String, String> = emptyMap(),
 )
 
+
+data class IcrsLandmark(
+    val text: String,
+    val instanceId: Int,
+    val cx: Float,
+    val cy: Float,
+    val w: Float,
+    val h: Float,
+)
+
 object ImageAlignmentUtils {
     init {
         if (!OpenCVLoader.initLocal()) {
@@ -90,11 +92,11 @@ object ImageAlignmentUtils {
     }
 
     /** Landmark text match key: stored JSON keeps `/`; reads may omit it (e.g. km/h vs kmh). */
-    private fun landmarkMatchKey(text: String): String = text.replace("/", "")
+    internal fun landmarkMatchKey(text: String): String = text.replace("/", "")
 
     fun disambiguateLandmarks(
         dashLandmarks: List<TextBlock>,
-        refLandmarks: List<TextBlock>
+        refLandmarks: List<IcrsLandmark>
     ): List<TextBlock> {
         val dashValid = dashLandmarks.filter { it.boundingBox.width() > 0 }
 
@@ -106,7 +108,7 @@ object ImageAlignmentUtils {
          *  0: Globally Unique Anchor (Appears exactly once in vehicle manifest)
          * 1+: Duplicate Instance (One of several detected occurrences)
          */
-        val refValid = refLandmarks.filter { it.boundingBox.width() > 0 && it.instanceId != -2 }
+        val refValid = refLandmarks.filter { it.w > 0f && it.instanceId != -2 }
         if (dashValid.isEmpty() || refValid.isEmpty()) return dashLandmarks
 
         val refTexts = refValid.map { landmarkMatchKey(it.text) }.toSet()
@@ -162,7 +164,7 @@ object ImageAlignmentUtils {
 
                             if (triCount < 5) {
                                 for (r1 in r1s) for (r2 in r2s) for (r3 in r3s) {
-                                    val r12 = dist(r1, r2); val r23 = dist(r2, r3); val r31 = dist(r3, r1)
+                                    val r12 = distIcrs(r1, r2); val r23 = distIcrs(r2, r3); val r31 = distIcrs(r3, r1)
                                     val rPerim = r12 + r23 + r31
                                     if (rPerim == 0.0) continue
                                     Log.d("DISAMB_TRI", "    Trying Dash Triangle: matching ['${d1.text}'-${r1.instanceId}, '${d2.text}'-${r2.instanceId}, '${d3.text}'-${r3.instanceId}] | Prop: %.2f, %.2f, %.2f".format(d12/dPerim, d23/dPerim, d31/dPerim))
@@ -172,7 +174,7 @@ object ImageAlignmentUtils {
                             }
 
                             for (r1 in r1s) for (r2 in r2s) for (r3 in r3s) {
-                                val r12 = dist(r1, r2); val r23 = dist(r2, r3); val r31 = dist(r3, r1)
+                                val r12 = distIcrs(r1, r2); val r23 = distIcrs(r2, r3); val r31 = distIcrs(r3, r1)
                                 val rPerim = r12 + r23 + r31
                                 if (rPerim == 0.0) continue
 
@@ -218,7 +220,7 @@ object ImageAlignmentUtils {
                 val rP1 = refValid.find { landmarkMatchKey(it.text) == landmarkMatchKey(p1.text) && it.instanceId == p1.instanceId }!!
                 val rP2 = refValid.find { landmarkMatchKey(it.text) == landmarkMatchKey(p2.text) && it.instanceId == p2.instanceId }!!
                 val d12 = dist(p1, p2)
-                val r12 = dist(rP1, rP2)
+                val r12 = distIcrs(rP1, rP2)
 
                 Log.d("DISAMB_TRACE", "  Pass 3: Bootstrapping from baseline ['${p1.text}'-${p1.instanceId}, '${p2.text}'-${p2.instanceId}]")
 
@@ -231,7 +233,7 @@ object ImageAlignmentUtils {
 
                     val refCandidates = refValid.filter { landmarkMatchKey(it.text) == landmarkMatchKey(dashMark.text) }
                     for (cand in refCandidates) {
-                        val r1c = dist(rP1, cand); val r2c = dist(rP2, cand)
+                        val r1c = distIcrs(rP1, cand); val r2c = distIcrs(rP2, cand)
                         val rPerim = r12 + r1c + r2c
                         if (rPerim == 0.0) continue
 
@@ -256,168 +258,15 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Unified Anchor Alignment Flow.
-     * Geometrically equivalent to legacy anchorAlign but executes natively via OpenCV warpAffine.
-     * Supports both BufferSet (Native Path) and Bitmap (Standard Path).
-     */
-    suspend fun anchorAlign(
-        input: Any,
-        refLandmarks: List<TextBlock>,
-        queryLandmarks: List<TextBlock>,
-        vehicle: Vehicle,
-        refW: Int = 4000,
-        refH: Int = 3072,
-        queW: Int = 4000,
-        queH: Int = 3072,
-        scratchBmp: Bitmap? = null
-    ): AnchorResult {
-        val t0 = System.currentTimeMillis()
-        val allCandidates = mutableListOf<AnchorCandidate>()
-        val icrsTargetY = if (vehicle.odometerCropTop != null && vehicle.odometerCropBottom != null) {
-            (vehicle.odometerCropTop!! + vehicle.odometerCropBottom!!) / 2.0f
-        } else 0f
-
-        // 1. Filter and Match Confirmed Landmarks
-        val confirmedPairs = queryLandmarks.filter { it.instanceId >= 0 && it.boundingBox.width() > 0 }
-            .mapNotNull { queMark ->
-                val refMark = refLandmarks.find { it.text == queMark.text && it.instanceId == queMark.instanceId && it.boundingBox.width() > 0 }
-                if (refMark != null) refMark to queMark else null
-            }
-
-        // 2. Generate Alignment Candidates from Pairs of Confirmed Anchors
-        if (confirmedPairs.size >= 2) {
-            for (i in confirmedPairs.indices) {
-                for (j in i + 1 until confirmedPairs.size) {
-                    val r1 = confirmedPairs[i].first
-                    val r2 = confirmedPairs[j].first
-                    val q1 = confirmedPairs[i].second
-                    val q2 = confirmedPairs[j].second
-
-                    val r1Icrs = IcrsMath.pixelToIcrs(r1.boundingBox.centerX().toFloat(), r1.boundingBox.centerY().toFloat(), refW, refH)
-                    val r2Icrs = IcrsMath.pixelToIcrs(r2.boundingBox.centerX().toFloat(), r2.boundingBox.centerY().toFloat(), refW, refH)
-                    val q1Icrs = IcrsMath.pixelToIcrs(q1.boundingBox.centerX().toFloat(), q1.boundingBox.centerY().toFloat(), queW, queH)
-                    val q2Icrs = IcrsMath.pixelToIcrs(q2.boundingBox.centerX().toFloat(), q2.boundingBox.centerY().toFloat(), queW, queH)
-
-                    val refDist = Math.sqrt((r1Icrs.x - r2Icrs.x).toDouble().pow(2.0) + (r1Icrs.y - r2Icrs.y).toDouble().pow(2.0))
-                    val queDist = Math.sqrt((q1Icrs.x - q2Icrs.x).toDouble().pow(2.0) + (q1Icrs.y - q2Icrs.y).toDouble().pow(2.0))
-
-                    if (queDist > 0) {
-                        val s = (refDist / queDist).toFloat()
-                        val rAngle = Math.atan2((r2Icrs.y - r1Icrs.y).toDouble(), (r2Icrs.x - r1Icrs.x).toDouble())
-                        val qAngle = Math.atan2((q2Icrs.y - q1Icrs.y).toDouble(), (q2Icrs.x - q1Icrs.x).toDouble())
-                        val rot = Math.toDegrees(rAngle - qAngle).toFloat()
-
-                        if (kotlin.math.abs(rot) > 4.0f) continue
-                        val tx = r1Icrs.x - (s * q1Icrs.x)
-                        val ty = r1Icrs.y - (s * q1Icrs.y)
-
-                        val debugMsg = "S=%.3f, R=%.1f, tx_icrs=%.3f, ty_icrs=%.3f".format(s, rot, tx, ty)
-                        allCandidates.add(AnchorCandidate("Deterministic", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, debugMsg, (r1Icrs.y + r2Icrs.y)/2f, r1Icrs.y, r2Icrs.y))
-                    }
-                }
-            }
-        }
-
-        if (allCandidates.isEmpty()) return AnchorResult(false, message = "No valid anchors.", timeMs = System.currentTimeMillis() - t0)
-
-        // Consensus math
-        var bestGroup = mutableListOf<AnchorCandidate>()
-        var maxSupport = -1
-        val threshold = 0.05f
-        for (c1 in allCandidates) {
-            val supportGroup = mutableListOf<AnchorCandidate>()
-            for (c2 in allCandidates) {
-                val ds = kotlin.math.abs(c1.scale - c2.scale) / c1.scale
-                val dtx = kotlin.math.abs(c1.tx - c2.tx)
-                val dty = kotlin.math.abs(c1.ty - c2.ty)
-                if (ds < threshold && dtx < threshold && dty < threshold) supportGroup.add(c2)
-            }
-            if (supportGroup.size > maxSupport) { maxSupport = supportGroup.size; bestGroup = supportGroup }
-        }
-
-        val finalScale: Float; val finalTx: Float; val finalTy: Float; var bracketedCount = 0
-        if (bestGroup.isNotEmpty()) {
-            var sumScale = 0.0; var sumTx = 0.0; var sumTy = 0.0; var totalW = 0.0
-            for (c in bestGroup) {
-                val isBracketed = (c.y1Ref - icrsTargetY) * (c.y2Ref - icrsTargetY) < 0
-                val bracketBonus = if (isBracketed) { bracketedCount++; 5.0 } else 1.0
-                val vDist = kotlin.math.abs(c.cyRef - icrsTargetY)
-                val w = (c.distance * bracketBonus) / (vDist + 0.05)
-                sumScale += c.scale * w; sumTx += c.tx * w; sumTy += c.ty * w; totalW += w
-            }
-            finalScale = if (totalW > 0) (sumScale / totalW).toFloat() else allCandidates.map { it.scale }.median()
-            finalTx = if (totalW > 0) (sumTx / totalW).toFloat() else allCandidates.map { it.tx }.median()
-            finalTy = if (totalW > 0) (sumTy / totalW).toFloat() else allCandidates.map { it.ty }.median()
-        } else {
-            finalScale = allCandidates.map { it.scale }.median(); finalTx = allCandidates.map { it.tx }.median(); finalTy = allCandidates.map { it.ty }.median()
-        }
-
-        val sqS = minOf(queW, queH).toFloat()
-        val cxq = queW / 2f
-        val cyq = queH / 2f
-
-        val matrixTX = cxq * (1f - finalScale) + (finalTx * sqS)
-        val matrixTY = cyq * (1f - finalScale) + (finalTy * sqS)
-
-        val metadata = mapOf(
-            "Consensus" to "S=%.3f, tx_icrs=%.3f, ty_icrs=%.3f (Support: %d/%d)".format(finalScale, finalTx, finalTy, bestGroup.size, allCandidates.size),
-            "matrix_tx" to matrixTX.toString(),
-            "matrix_ty" to matrixTY.toString(),
-            "raw_scale" to finalScale.toString(),
-            "raw_tx" to matrixTX.toString(),
-            "raw_ty" to matrixTY.toString()
-        )
-
-        return try {
-            if (input !is BufferSet) {
-                return AnchorResult(
-                    false,
-                    message = "anchorAlign requires BufferSet",
-                    timeMs = System.currentTimeMillis() - t0,
-                    metadata = metadata,
-                )
-            }
-            val src = input.p.mat
-            val dst = input.s.mat
-
-            val matrixLocal = android.graphics.Matrix()
-            val values = floatArrayOf(
-                finalScale, 0f, matrixTX,
-                0f, finalScale, matrixTY,
-                0f, 0f, 1f
-            )
-            matrixLocal.setValues(values)
-            val matrixValues = FloatArray(9)
-            matrixLocal.getValues(matrixValues)
-
-            val warpMat = Mat(2, 3, CvType.CV_64F)
-            warpMat.put(0, 0, matrixValues[0].toDouble(), matrixValues[1].toDouble(), matrixValues[2].toDouble())
-            warpMat.put(1, 0, matrixValues[3].toDouble(), matrixValues[4].toDouble(), matrixValues[5].toDouble())
-
-            Imgproc.warpAffine(src, dst, warpMat, src.size(), Imgproc.INTER_CUBIC, Core.BORDER_CONSTANT, Scalar(0.0, 0.0, 0.0, 255.0))
-            warpMat.release()
-
-            input.flip()
-            scratchBmp?.let { NativeImageUtils.syncMatToArgb(input.p.mat, it) }
-
-            AnchorResult(true, 0.5f, System.currentTimeMillis() - t0, metadata, "Consensus (%d/%d)".format(bestGroup.size, allCandidates.size))
-        } catch (e: Exception) {
-            AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
-        }
-    }
-
-    /**
      * Pair similarity for a raw column. Drops pairs whose rotation is more than 4° from the
      * median pair rotation. Does not apply [anchorAlign]'s absolute 4° drop and does not warp.
      * Consensus averages scale, rotation, tx, and ty with the same distance and odometer-bracket weights.
      * tx/ty are ICRS, with the pair rotation included so the similarity maps the first anchor onto its reference.
      */
     fun rawSimilarity(
-        refLandmarks: List<TextBlock>,
+        refLandmarks: List<IcrsLandmark>,
         queryLandmarks: List<TextBlock>,
         vehicle: Vehicle,
-        refW: Int,
-        refH: Int,
         queW: Int,
         queH: Int,
     ): RawSimilarity {
@@ -428,7 +277,7 @@ object ImageAlignmentUtils {
         val confirmedPairs = queryLandmarks.filter { it.instanceId >= 0 && it.boundingBox.width() > 0 }
             .mapNotNull { queMark ->
                 val refMark = refLandmarks.find {
-                    it.text == queMark.text && it.instanceId == queMark.instanceId && it.boundingBox.width() > 0
+                    it.text == queMark.text && it.instanceId == queMark.instanceId && it.w > 0f
                 }
                 if (refMark != null) refMark to queMark else null
             }
@@ -440,8 +289,8 @@ object ImageAlignmentUtils {
                     val r2 = confirmedPairs[j].first
                     val q1 = confirmedPairs[i].second
                     val q2 = confirmedPairs[j].second
-                    val r1Icrs = IcrsMath.pixelToIcrs(r1.boundingBox.centerX().toFloat(), r1.boundingBox.centerY().toFloat(), refW, refH)
-                    val r2Icrs = IcrsMath.pixelToIcrs(r2.boundingBox.centerX().toFloat(), r2.boundingBox.centerY().toFloat(), refW, refH)
+                    val r1Icrs = android.graphics.PointF(r1.cx, r1.cy)
+                    val r2Icrs = android.graphics.PointF(r2.cx, r2.cy)
                     val q1Icrs = IcrsMath.pixelToIcrs(q1.boundingBox.centerX().toFloat(), q1.boundingBox.centerY().toFloat(), queW, queH)
                     val q2Icrs = IcrsMath.pixelToIcrs(q2.boundingBox.centerX().toFloat(), q2.boundingBox.centerY().toFloat(), queW, queH)
                     val refDist = Math.sqrt((r1Icrs.x - r2Icrs.x).toDouble().pow(2.0) + (r1Icrs.y - r2Icrs.y).toDouble().pow(2.0))
@@ -529,10 +378,8 @@ object ImageAlignmentUtils {
     ): Boolean {
         if (!sim.success || !sim.scale.isFinite() || sim.scale <= 1e-6f) return false
         if (!sim.rotationDeg.isFinite() || !sim.tx.isFinite() || !sim.ty.isFinite()) return false
-        val srcY = src.p.mat
-        val dstY = odo.p.mat
-        if (srcY.empty() || dstY.empty()) return false
-        if (srcY.cols() != queW || srcY.rows() != queH) return false
+        if (src.p.mat.empty() || odo.p.mat.empty()) return false
+        if (src.p.mat.cols() != queW || src.p.mat.rows() != queH) return false
         val quad = odometerQuadQueryPixels(sim, vehicle, queW, queH) ?: return false
         val pts = floatArrayOf(
             quad[0].first, quad[0].second,
@@ -541,9 +388,9 @@ object ImageAlignmentUtils {
             quad[3].first, quad[3].second,
         )
         val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
-            srcY,
+            src.p.mat,
             ContentExpandUtils.OrientedQuad(pts),
-            dstY,
+            odo.p.mat,
             targetH = 0,
         )
         if (!ok) return false
@@ -553,7 +400,7 @@ object ImageAlignmentUtils {
         Log.i(
             "RAW_CROP",
             "warp scale=%.4f rot=%.2f write=%dx%d buf=%dx%d".format(
-                sim.scale, sim.rotationDeg, dstY.cols(), dstY.rows(), dstY.cols(), dstY.rows(),
+                sim.scale, sim.rotationDeg, odo.p.mat.cols(), odo.p.mat.rows(), odo.p.mat.cols(), odo.p.mat.rows(),
             ),
         )
         return true
@@ -601,14 +448,14 @@ object ImageAlignmentUtils {
     }
 
     /** Circular median. A shared tilt stays one cluster, including past ±180. */
-    private fun medianAngle(angles: List<Float>): Float {
+    internal fun medianAngle(angles: List<Float>): Float {
         if (angles.isEmpty()) return 0f
         val origin = angles[0]
         val shifted = angles.map { normDeg(it - origin) }
         return normDeg(shifted.median() + origin)
     }
 
-    private fun normDeg(d: Float): Float {
+    internal fun normDeg(d: Float): Float {
         var x = d % 360f
         if (x < 0f) x += 360f
         if (x >= 360f) x -= 360f
@@ -616,10 +463,10 @@ object ImageAlignmentUtils {
         return x
     }
 
-    private fun angDiff(a: Float, b: Float): Float = abs(normDeg(a - b))
+    internal fun angDiff(a: Float, b: Float): Float = abs(normDeg(a - b))
 
     /** Largest set of pair rotations that lie in some ±4° window around their circular median. Tie: greater [pairClusterWeight]. */
-    private fun largestRotationCluster(candidates: List<AnchorCandidate>, icrsTargetY: Float): List<AnchorCandidate> {
+    internal fun largestRotationCluster(candidates: List<AnchorCandidate>, icrsTargetY: Float): List<AnchorCandidate> {
         if (candidates.isEmpty()) return emptyList()
         var bestCluster = emptyList<AnchorCandidate>()
         var bestSize = 0
@@ -705,13 +552,19 @@ object ImageAlignmentUtils {
         return results
     }
 
-    private fun dist(a: TextBlock, b: TextBlock): Double {
+    internal fun dist(a: TextBlock, b: TextBlock): Double {
         val dx = (a.boundingBox.centerX() - b.boundingBox.centerX()).toDouble()
         val dy = (a.boundingBox.centerY() - b.boundingBox.centerY()).toDouble()
         return sqrt(dx * dx + dy * dy)
     }
 
-    private fun List<Float>.median(): Float {
+    internal fun distIcrs(a: IcrsLandmark, b: IcrsLandmark): Double {
+        val dx = (a.cx - b.cx).toDouble()
+        val dy = (a.cy - b.cy).toDouble()
+        return sqrt(dx * dx + dy * dy)
+    }
+
+    internal fun List<Float>.median(): Float {
         if (isEmpty()) return 0f
         val sorted = sorted()
         return if (size % 2 == 0) (sorted[size / 2 - 1] + sorted[size / 2]) / 2f else sorted[size / 2]
@@ -735,6 +588,7 @@ object ImageAlignmentUtils {
                 val obj = array.getJSONObject(i)
                 result.add(obj.getString("text").trim())
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) { Log.e("ImageAlignment", "JSON parse failed", e) }
         return result
     }
