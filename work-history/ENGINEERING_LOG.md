@@ -12471,3 +12471,8 @@ feature-group: label=''
 ## 2026-10-29 - Server det probe outputs stay out of the branch
 
 - The thin JNI libraries under the server det probe out directory are local build output. The tip does not carry them.
+
+## 2026-10-29 - Project facts match the tip
+
+- The facts file is the tip copy, including the Fill camera path.
+- The worktree scripts the tip does not carry are removed.

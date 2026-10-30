@@ -11,14 +11,14 @@ Read in full early on startup/new cycle.
 - **Standard build:** debug
 - **Test build:** qa
 - Build: `./build_app --standard --test`. Never `--play`.
-- Commit: the same flags, then `"<message>"|@<msg_file> <paths...>` (builds, then commits exactly the named paths and tags builds)
+- Commit: the same flags, then `"<message>"|@<msg_file> <paths...>` (builds, then commits exactly the named paths and tags builds).
 
 ## App docs (master `docs/`)
 - `README.md` — GitHub front page
 - `docs/README.md` — index
 - `docs/OVERVIEW.md` — product story
 - `docs/QUICK_GUIDE.md` — short use
-- `docs/reference/QUICK_FILL_CAMERA.md` — dash, pump, location
+- `docs/reference/FILL_CAMERA.md` — dash, pump, location
 - Locked contracts: `docs/specs/` (code is wrong if it disagrees)
 - Coordinates: ICRS or raw pixel integers (`docs/specs/ISOTROPIC_COORDINATE_SPEC.md`)
 
@@ -66,13 +66,10 @@ Read in full early on startup/new cycle.
 - Host installers (`grok-install.sh`, `antigravity-install`) are **local only** (gitignored); `run-*` launchers sync to worktrees. `./update-rules.sh` skips worktree-ahead/dirty paths unless `--force`; supports `--dry-run`.
 
 ## Application ABI / Paddle assets
-- Production models: `third_party/paddle-models/artifact/app/{armv8,armv7,x86_64}/{det,rec_v3,rec_numeric}_<arch>.nb` (pin artifact), embedded into `libpaddle_models.so` via CMake `.incbin` (not assets; asset keys `paddle/prod_u8fp16/` arm64, `paddle/prod_u8fp32_u8/` armv7 + x86_64); no model copies or model-writing scripts under `app/`; shared dict `app/src/main/assets/paddle/en_dict.txt`; exp dets `app/src/<flavor>/paddle-models/exp_det_ab/product_det_<arch>.nb` (embedded only in the qa build type, `VE_EMBED_EXP_DET`); v4/v5 mobile and server nbs are unscheduled and not in the APK (`third_party/paddle/exp_det_ab_unscheduled/`)
-- Runtime: `third_party/paddle/artifact/jni/{arm64-v8a,armeabi-v7a,x86_64}/`, `third_party/paddle/artifact/PaddlePredictor.jar` (the app reads them there; no copies under `app/`). OpenCV stays in `app/src/main/jniLibs/` and `app/libs/`.
-- JNI builds: arm64-v8a tailored; armeabi-v7a fat; x86_64 slim thin jni (16 KB pages) + `libpaddle_light_api_shared.so`
-- Product ABIs: arm64-v8a + armeabi-v7a + x86_64 flavor APKs (`useLegacyPackaging = false`). Sizes are in `third_party/paddle/SOURCE.md`.
-
-## Google Sheets destination sign-in
-- Before changing spreadsheet Google sign-in: `GoogleSheetsAuth.spreadsheetDestinationSignInClient` requests spreadsheets plus `drive.file` and `drive.readonly` in one flow. Do not drop the Drive scopes. Photo backup stays `GoogleDriveAuth.getSignInClient` (`drive.file` only). Setup note: `docs/user-manual/manual.md` example "add Google Sheets".
+- Production models: `third_party/paddle-models/artifact/app/{armv8,armv7,x86_64}/{det,rec_v3,rec_numeric}_<arch>.nb` (pin artifact, `fetch-deps build paddle-models`), embedded into `libpaddle_models.so` via CMake `.incbin` (not assets; asset keys `paddle/prod_u8fp16/` arm64, `paddle/prod_u8fp32_u8/` armv7 + x86_64); no model copies or model-writing scripts under `app/`; shared dict `app/src/main/assets/paddle/en_dict.txt`; exp dets `app/src/<flavor>/paddle-models/exp_det_ab/product_det_<arch>.nb` (embedded only in the qa build type, `VE_EMBED_EXP_DET`); v4/v5 mobile and server nbs are unscheduled and not in the APK (`third_party/paddle/exp_det_ab_unscheduled/`)
+- Runtime: `third_party/paddle/artifact/jni/{arm64-v8a,armeabi-v7a,x86_64}/`, `third_party/paddle/artifact/PaddlePredictor.jar` (the app reads them there; no copies under `app/`)
+- JNI builds: arm64-v8a tailored + fp16; armeabi-v7a tailored + int8; x86_64 slim thin jni + `libpaddle_light_api_shared.so` (not tailored)
+- Product ABIs: arm64-v8a + armeabi-v7a + x86_64 flavor APKs (`useLegacyPackaging = false`). arm64/x86 jni ship stamp `so45e4733a`; sizes in `third_party/paddle/SOURCE.md` (Verified products).
 
 ## Worktree layout
 - App worktrees (`agent-N/`, `master/`): `app/` + root scripts + symlink `dev-ai-interaction -> ../@@SANDBOX_PATH@@`
@@ -105,7 +102,17 @@ Update only with orientation facts valid for future work. Effort/plan details �
 
 - Multi-user git (all hosts): `.git` group **@@SHARED_GROUP@@** (not @@CODE_GROUP@@), dirs **2770** setgid, `core.sharedRepository=group`. Doc: `docs/reference/MULTIUSER_GIT_VE_PARITY.md`. Repair: `./fix-multiuser-git-hosts.sh` (VE + libs + orchestration-example) or `./fix-ve-git-shared.sh` (VE only). Run as **@@PRIMARY_USER@@** with sudo. Partial chgrp of `.git` top only is insufficient — children re-infect via setgid. **Hooks must not** run `fix-perms --all` or chown/chmod common `.git` (see PERMISSIONS_MODEL).
 - Session Landlock: `agent-landlock` + wire in `.grok/lib/grok-launch-common.sh`; always grants `$HOME/.grok` (session/trust). Smoke: `./landlock-smoke-matrix`. Publish: `./deploy-landlock-fix.sh [--commit] [--also-ve]`.
+- Grok confinement: sandbox profile (`extends=read-only`, generated `.grok/sandbox.toml`). Cursor launchers still use `agent-landlock`. Planner writes `work-history/` (root `TODO.md` and `ENGINEERING_LOG.md` are symlinks).
 - Grok 1.0 free-form (primary/orch): optional `GROK_SANDBOX=workspace` and/or `GROK_WORKTREE=1|name` (or args after `--`). Does **not** enable native plan mode. Local pool dir `grok-worktrees/` (gitignored). Master: Grok worktrees for merge **dry-run** only; final merge on real `master/`.
 - Stance: avoid native plan mode for multi-agent; capability_mode not general policy; personas held; memory ⊂ project-facts; `/goal` `/deep-research` workflows opt-in. Completeness Stop hook opt-in: `VE_STOP_COMPLETENESS=1` (`.grok/hooks/stop-completeness-gate.*`).
 - The coding model is the one in that OS user’s Grok config. `grok -c` keeps the stored session model. Planner launchers set `GROK_SUBAGENTS=0` and `GROK_WORKFLOWS=0`. Coder launchers set `GROK_WORKFLOWS=0`. Process is `AGENT_MANDATES.md`.
 - **Permission blocks:** authoritative rule is **`AGENT_MANDATES.md` §1.1** (report; do not work around). Orientation only here.
+
+## Google Sheets destination sign-in
+- Before changing spreadsheet Google sign-in: `GoogleSheetsAuth.spreadsheetDestinationSignInClient` requests spreadsheets plus `drive.file` and `drive.readonly` in one flow. Do not drop the Drive scopes. Photo backup stays `GoogleDriveAuth.getSignInClient` (`drive.file` only). Setup note: `docs/user-manual/manual.md` example "add Google Sheets".
+
+## Review after implement
+- Record HEAD before the executor starts. Each phase: `git diff` that phase's paths against that phase's observable, then commit and build green before the next phase. Before handoff, re-read the plan once.
+- A plan line `Review: diff` starts one reviewer. Prompt is the plan path and `<recorded>..HEAD`. Diff that range only. Check the plan's Critical Files and Acceptance lines. Reply in chat. Do not diff `master..<branch>`.
+- A deletion, a doc edit, or a pin bump omits `Review: diff`.
+- A reviewer `STATUS: FAIL` names a bug: the executor fixes that bug, then the reviewer runs again on the new range.
