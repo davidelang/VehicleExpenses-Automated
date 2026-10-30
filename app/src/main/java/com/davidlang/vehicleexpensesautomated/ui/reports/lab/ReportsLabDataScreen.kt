@@ -158,10 +158,4 @@ data class LabReportData(
             LabVehicleMode.EACH -> fuel.groupBy { it.vehicleId }
             else -> mapOf(null to fuel)
         }
-
-    fun expensesByVehicleScope(): Map<Int?, List<ExpenseEntry>> =
-        when (filter.vehicleMode) {
-            LabVehicleMode.EACH -> expenses.groupBy { it.vehicleId }
-            else -> mapOf(null to expenses)
-        }
 }

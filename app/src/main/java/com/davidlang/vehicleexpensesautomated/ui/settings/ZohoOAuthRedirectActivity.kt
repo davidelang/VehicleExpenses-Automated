@@ -4,7 +4,6 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -37,7 +36,7 @@ class ZohoOAuthRedirectActivity : ComponentActivity() {
         setIntent(intent)
     }
 
-    @Composable
+    @androidx.compose.runtime.Composable
     private fun RedirectGate() {
         val health by dbState.state.collectAsState()
         val progress by dbState.progress.collectAsState()

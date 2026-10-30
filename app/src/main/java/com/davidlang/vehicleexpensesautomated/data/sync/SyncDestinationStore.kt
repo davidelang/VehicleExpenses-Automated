@@ -67,6 +67,7 @@ class SyncDestinationStore(private val appContext: Context) {
                 spreadsheet = parseSpreadsheetArray(root.optJSONArray(KEY_SPREADSHEET)),
                 photo = parsePhotoArray(root.optJSONArray(KEY_PHOTO)),
             )
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             SyncDestinations()
         }
@@ -267,6 +268,7 @@ class SyncDestinationStore(private val appContext: Context) {
             if (provider != SpreadsheetProvider.OTHER || configJson.isBlank()) return provider
             val backendType = try {
                 JSONObject(configJson).optString("backendType", "")
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (_: Exception) {
                 ""
             }

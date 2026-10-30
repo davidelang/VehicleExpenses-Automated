@@ -15,7 +15,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
-import coil.compose.rememberAsyncImagePainter
+import com.davidlang.vehicleexpensesautomated.ui.components.DecodedPhotoImage
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
@@ -179,15 +179,16 @@ private fun FuelHistoryRow(
                 when {
                     thumbUri != null -> {
                         var showZoom by remember { mutableStateOf(false) }
-                        Image(
-                            painter = rememberAsyncImagePainter(thumbUri),
+                        DecodedPhotoImage(
+                            uri = thumbUri,
                             contentDescription = "Fill photo",
                             modifier = Modifier
                                 .size(56.dp)
-                                .fillMaxSize()
                                 .clickable { showZoom = true },
                             contentScale = ContentScale.Crop,
                         )
+                        FuelPhotoMarkLine(display.photoUrl)
+                        FuelLocationMarkLine(display.location)
                         if (showZoom) {
                             ZoomablePhotoDialog(
                                 uris = listOf(thumbUri),
@@ -196,6 +197,7 @@ private fun FuelHistoryRow(
                         }
                     }
                     canFetch -> {
+                        FuelMarksWhenNoThumb(display.photoUrl, display.location)
                         TextButton(
                             onClick = {
                                 if (fetching) return@TextButton
@@ -231,6 +233,7 @@ private fun FuelHistoryRow(
                         }
                     }
                     else -> {
+                        FuelMarksWhenNoThumb(display.photoUrl, display.location)
                         Text("—", style = MaterialTheme.typography.bodySmall)
                     }
                 }

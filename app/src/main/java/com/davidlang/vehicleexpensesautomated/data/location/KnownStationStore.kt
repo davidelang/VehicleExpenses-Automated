@@ -83,10 +83,13 @@ class KnownStationStore @Inject constructor(
         return dao.getAllIncludingDeleted()
     }
 
-    /** Live stations within [radiusM], nearest first. */
+    /** Live stations within [radiusM], nearest first. Box query, not the full table. */
     suspend fun nearestWithin(lat: Double, lon: Double, radiusM: Double): List<Pair<KnownStation, Double>> {
         seedFromConfirmedFuelsIfEmpty()
-        return dao.getAllLive()
+        val dLat = radiusM / 111_320.0
+        val cosLat = kotlin.math.cos(Math.toRadians(lat)).coerceAtLeast(0.01)
+        val dLon = radiusM / (111_320.0 * cosLat)
+        return dao.liveInBox(lat - dLat, lat + dLat, lon - dLon, lon + dLon)
             .map { it to GeoMath.haversineM(lat, lon, it.lat, it.lon) }
             .filter { it.second <= radiusM }
             .sortedBy { it.second }
@@ -171,30 +174,39 @@ class KnownStationStore @Inject constructor(
     }
 
     private suspend fun collectSeedPoints(): List<SeedPoint> {
-        val fuels = fuelRepository.getAllIncludingDeleted()
         val out = ArrayList<SeedPoint>()
-        for (fuel in fuels) {
-            val blob = FuelLocationJson.parseBlob(fuel.location) ?: continue
-            if (!blob.hasCoords()) continue
-            val lat = blob.lat ?: continue
-            val lon = blob.lon ?: continue
-            val userPlace = blob.source == KnownStation.SOURCE_USER && blob.hasPlace()
-            if (!blob.confirmed && !userPlace) continue
-            if (!blob.hasPlace()) continue
-            out.add(
-                SeedPoint(
-                    lat = lat,
-                    lon = lon,
-                    name = blob.name.trim(),
-                    address = blob.address.trim(),
-                    accuracyM = blob.accuracyM,
-                    confirmed = blob.confirmed,
-                    lookedUpAt = blob.lookedUpAt,
-                    timestamp = fuel.timestamp,
-                ),
-            )
+        var offset = 0
+        val page = 80
+        while (true) {
+            val fuels = fuelRepository.pageAllNewest(page, offset)
+            if (fuels.isEmpty()) break
+            for (fuel in fuels) {
+                collectSeedPoint(fuel)?.let { out.add(it) }
+            }
+            offset += fuels.size
+            if (fuels.size < page) break
         }
         return out
+    }
+
+    private fun collectSeedPoint(fuel: com.davidlang.vehicleexpensesautomated.data.model.FuelEntry): SeedPoint? {
+        val blob = FuelLocationJson.parseBlob(fuel.location) ?: return null
+        if (!blob.hasCoords()) return null
+        val lat = blob.lat ?: return null
+        val lon = blob.lon ?: return null
+        val userPlace = blob.source == KnownStation.SOURCE_USER && blob.hasPlace()
+        if (!blob.confirmed && !userPlace) return null
+        if (!blob.hasPlace()) return null
+        return SeedPoint(
+            lat = lat,
+            lon = lon,
+            name = blob.name.trim(),
+            address = blob.address.trim(),
+            accuracyM = blob.accuracyM,
+            confirmed = blob.confirmed,
+            lookedUpAt = blob.lookedUpAt,
+            timestamp = fuel.timestamp,
+        )
     }
 
     private fun clusterSingleLinkage(points: List<SeedPoint>, radiusM: Double): List<List<SeedPoint>> {

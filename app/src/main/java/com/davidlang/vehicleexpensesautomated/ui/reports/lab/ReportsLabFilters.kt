@@ -46,20 +46,16 @@ object ReportsLabPrefs {
     fun load(context: Context): ReportsLabFilterState {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val vidRaw = p.getInt(KEY_VEHICLE, -1)
-        val period = try {
-            LabPeriod.valueOf(p.getString(KEY_PERIOD, LabPeriod.ALL_TIME.name) ?: LabPeriod.ALL_TIME.name)
-        } catch (_: Exception) {
-            LabPeriod.ALL_TIME
-        }
+        val period = LabPeriod.valueOf(
+            p.getString(KEY_PERIOD, LabPeriod.ALL_TIME.name) ?: LabPeriod.ALL_TIME.name,
+        )
         val modeStr = p.getString(KEY_VEHICLE_MODE, null)
-        val mode = try {
-            if (modeStr != null) LabVehicleMode.valueOf(modeStr)
-            else {
-                // Migration: previous prefs used vehicleId null = all, non-null = single.
-                if (vidRaw < 0) LabVehicleMode.ALL else LabVehicleMode.SINGLE
-            }
-        } catch (_: Exception) {
-            if (vidRaw < 0) LabVehicleMode.ALL else LabVehicleMode.SINGLE
+        val mode = if (modeStr != null) {
+            LabVehicleMode.valueOf(modeStr)
+        } else if (vidRaw < 0) {
+            LabVehicleMode.ALL
+        } else {
+            LabVehicleMode.SINGLE
         }
         val now = System.currentTimeMillis()
         val vehicleId = if (vidRaw < 0) null else vidRaw
@@ -125,9 +121,6 @@ fun periodBounds(state: ReportsLabFilterState, nowMs: Long = System.currentTimeM
     }
 }
 
-/** True when rows are not filtered to a single vehicle (ALL or EACH). */
-fun ReportsLabFilterState.isMultiVehicleScope(): Boolean =
-    vehicleMode == LabVehicleMode.ALL || vehicleMode == LabVehicleMode.EACH
 
 fun filterFuel(
     entries: List<FuelEntry>,

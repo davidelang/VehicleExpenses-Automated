@@ -12457,3 +12457,8 @@ feature-group: label=''
 
 - Production recognition is OcrRotGmm. Rec scale, the seg7 histogram, the wide-component mask, and heatmap packing are native. Deskew does not cap at ±20.
 - Experiment feeds, ingestion, reports, and the pump screen stay on qa. native_ocr_qa is the experiment library. DNG develop is linked. The import coordinator the qa screen calls is the qa type.
+
+## 2026-10-29 - Remaining screens and docs match the tip
+
+- Email fixtures, experiment dumps, and the photo picker follow the tip. Test-only helpers live on qa.
+- The Fill camera reference and the user-manual images use the Fill names.

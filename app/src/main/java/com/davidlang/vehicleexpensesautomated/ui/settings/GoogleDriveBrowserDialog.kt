@@ -131,6 +131,7 @@ fun GoogleDriveBrowserDialog(
             try {
                 items = listItems(searchQuery, catalog)
                 driveConsentInFlight = false
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 errorText = browseFailureMessage(e)
                 items = emptyList()
@@ -172,6 +173,7 @@ fun GoogleDriveBrowserDialog(
                                 val created = createItem(name)
                                 showCreatePrompt = false
                                 onSelect(created)
+                            // kept: failure stays on this call so the screen or caller can continue
                             } catch (e: Exception) {
                                 errorText = browseFailureMessage(e)
                                 maybeLaunchDriveConsent(e)

@@ -48,9 +48,6 @@ object PumpOcrSettings {
             .getFloat(KEY_RATIO_BAND_HI, DEFAULT_RATIO_BAND_HI)
             .coerceIn(MIN_RATIO_BAND, MAX_RATIO_BAND)
 
-    /** Smallest-area rect among [valueRects] defines the Y band for label center matching. */
-    fun smallestRect(rects: List<Rect>): Rect? =
-        rects.minByOrNull { (it.width().coerceAtLeast(1)) * (it.height().coerceAtLeast(1)) }
 
 
 }

@@ -57,14 +57,6 @@ object StageCPhaseStore {
         StageCSkipLedger.clear(context)
     }
 
-    /** Advance to next phase (capped at 6). Clears skip ledger for the new phase. */
-    fun advance(context: Context): Int {
-        val next = (currentPhase(context) + 1).coerceAtMost(StageCPhase.MAX)
-        setPhase(context, next)
-        StageCSkipLedger.clear(context)
-        return next
-    }
-
     fun phaseFor(item: BatchPendingItem): Int {
         return when (item.kind) {
             BatchPendingKind.ODO_SUSPECT -> {
@@ -91,34 +83,9 @@ object StageCPhaseStore {
     fun belongsToPhase(item: BatchPendingItem, phase: Int): Boolean =
         phaseFor(item) == phase
 
-    fun countForPhase(items: List<BatchPendingItem>, phase: Int): Int =
-        items.count { phaseFor(it) == phase }
 
     fun label(phase: Int): String {
         val p = StageCPhase.fromNumber(phase)
         return "Phase ${p.number} of ${StageCPhase.COUNT}: ${p.title}"
     }
-
-    /**
-     * Prefer dash-only photos for odo phases; pump-only for pump/assign phases.
-     */
-    fun photoRole(item: BatchPendingItem): PhotoRole {
-        return when (item.kind) {
-            BatchPendingKind.ODO_SUSPECT,
-            BatchPendingKind.CONFLICT_ODO,
-            -> PhotoRole.DASH
-            BatchPendingKind.BAD_PUMP_RATIO,
-            BatchPendingKind.UNREADABLE_PUMP,
-            BatchPendingKind.AMBIGUOUS_MULTI_PUMP,
-            BatchPendingKind.ASSIGN_UNKNOWN_VEHICLE,
-            BatchPendingKind.ASSIGN_VEHICLE,
-            BatchPendingKind.SKIP_OR_ASSIGN_VEHICLE,
-            -> PhotoRole.PUMP
-            BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE -> PhotoRole.DASH
-            BatchPendingKind.MPG_OUTLIER -> PhotoRole.BOTH
-            else -> PhotoRole.BOTH
-        }
-    }
-
-    enum class PhotoRole { DASH, PUMP, BOTH }
 }

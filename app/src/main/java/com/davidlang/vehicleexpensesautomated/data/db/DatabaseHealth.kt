@@ -40,6 +40,7 @@ object DatabaseHealth {
             ).appDatabase()
             database.openHelper.writableDatabase
             app.casLogged(Unchecked, Ok)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (t: Throwable) {
             app.casLogged(
                 Unchecked,

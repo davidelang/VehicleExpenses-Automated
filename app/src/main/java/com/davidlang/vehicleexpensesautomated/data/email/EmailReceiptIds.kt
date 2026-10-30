@@ -13,11 +13,7 @@ object EmailReceiptIds {
     const val ORIGIN_ANDROID_EMAIL_POLLER = "android-email-poller"
     private const val NS = "email|receipt|v1|"
 
-    fun syncIdForGmailMessage(messageId: String): String =
-        uuidFromName("email|gmail|${messageId.trim()}")
 
-    fun syncIdForImapMessage(messageId: String): String =
-        uuidFromName("email|imap|${messageId.trim()}")
 
     fun syncIdForProviderMessage(provider: String, messageId: String): String =
         uuidFromName("email|${provider.trim().ifBlank { "mail" }}|${messageId.trim()}")

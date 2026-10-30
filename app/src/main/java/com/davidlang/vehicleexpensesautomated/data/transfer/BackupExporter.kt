@@ -83,6 +83,7 @@ class BackupExporter(private val context: Context) {
         var staging: File? = null
         try {
             stopWorkers()
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (t: Throwable) {
             abortBeforeClose(end, gate, null, messageOf(t))
             return
@@ -96,6 +97,7 @@ class BackupExporter(private val context: Context) {
             collectRoots(planned, rawFiles = false)
             replaceSettings(planned)
             checkPathLengths(planned)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (t: Throwable) {
             abortBeforeClose(end, gate, staging, messageOf(t))
             return
@@ -134,12 +136,14 @@ class BackupExporter(private val context: Context) {
             )
             checkPathLengths(planned)
             schema = readSqliteUserVersion(stagedDb)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (t: Throwable) {
             failLive(end, gate, stageDir, raw, messageOf(t), roomReopened = false)
             return
         }
         try {
             database.openHelper.writableDatabase.query("SELECT 1").close()
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (t: Throwable) {
             reopenFailed(end, gate, stageDir, t)
             return
@@ -152,6 +156,7 @@ class BackupExporter(private val context: Context) {
                 exportJson("ok", restarted = false, message = null),
             )
             end.closeOk()
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (t: Throwable) {
             failLive(end, gate, stageDir, null, messageOf(t), roomReopened = true)
             return
@@ -192,6 +197,7 @@ class BackupExporter(private val context: Context) {
                 exportJson("ok", restarted = false, message = null),
             )
             end.closeOk()
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (t: Throwable) {
             val reason = messageOf(t)
             try {
@@ -200,6 +206,7 @@ class BackupExporter(private val context: Context) {
                     DataTransferProvider.LAST_EXPORT,
                     exportJson("error", restarted = false, message = reason),
                 )
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Throwable) {
                 Log.e(TAG, "raw export status write failed", e)
             }
@@ -224,6 +231,7 @@ class BackupExporter(private val context: Context) {
                 DataTransferProvider.LAST_EXPORT,
                 exportJson("error", restarted = false, message = reason),
             )
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Throwable) {
             Log.e(TAG, "reopen status write failed", e)
         }
@@ -243,6 +251,7 @@ class BackupExporter(private val context: Context) {
     ) {
         try {
             raw?.close()
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Throwable) {
         }
         deleteTreeQuiet(staging)
@@ -252,6 +261,7 @@ class BackupExporter(private val context: Context) {
                 DataTransferProvider.LAST_EXPORT,
                 exportJson("error", restarted = false, message = reason),
             )
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Throwable) {
             Log.e(TAG, "export status write failed", e)
         }
@@ -260,6 +270,7 @@ class BackupExporter(private val context: Context) {
             try {
                 val database = entryPoint().appDatabase()
                 database.openHelper.writableDatabase.query("SELECT 1").close()
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (t: Throwable) {
                 val fromVersion = readSqliteUserVersion(
                     File(context.dataDir, "databases/${BackupContents.DB_FILE_NAME}"),
@@ -289,6 +300,7 @@ class BackupExporter(private val context: Context) {
                 DataTransferProvider.LAST_EXPORT,
                 exportJson("error", restarted = false, message = reason),
             )
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Throwable) {
             Log.e(TAG, "export status write failed", e)
         }
@@ -440,6 +452,7 @@ class BackupExporter(private val context: Context) {
         if (!marker.isFile) return null
         val markerJson = try {
             JSONObject(marker.readText(Charsets.UTF_8))
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.e(TAG, "pending commit unreadable", e)
             JSONObject().put("raw", marker.readText(Charsets.UTF_8)).put("corrupt", true)
@@ -494,6 +507,7 @@ class BackupExporter(private val context: Context) {
         if (root == null) return
         try {
             deleteRecursively(root)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Throwable) {
             Log.e(TAG, "could not delete ${root.path}", e)
         }
@@ -525,12 +539,14 @@ internal fun deleteRecursively(path: File) {
         Files.walk(path.toPath()).use { stream ->
             stream.sorted(Comparator.reverseOrder()).toList()
         }
+    // kept: failure stays on this call so the screen or caller can continue
     } catch (e: NoSuchFileException) {
         return
     }
     for (entry in paths) {
         try {
             Files.deleteIfExists(entry)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: NoSuchFileException) {
         }
     }
@@ -548,6 +564,7 @@ internal fun readSqliteUserVersion(file: File): Int? {
                 ((b[2].toInt() and 0xff) shl 8) or
                 (b[3].toInt() and 0xff)
         }
+    // kept: failure stays on this call so the screen or caller can continue
     } catch (_: Exception) {
         null
     }

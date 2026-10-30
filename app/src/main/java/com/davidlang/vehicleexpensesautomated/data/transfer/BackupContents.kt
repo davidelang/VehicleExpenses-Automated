@@ -150,8 +150,10 @@ object BackupContents {
                 throw IllegalArgumentException("vehicle_settings.xml doesn't parse")
             }
             return writeSettings(entries)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: IllegalArgumentException) {
             throw e
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             throw IllegalArgumentException("vehicle_settings.xml doesn't parse: ${e.message}", e)
         }
@@ -180,6 +182,7 @@ object BackupContents {
         if (name != SyncDestinationStore.KEY_SYNC_DESTINATIONS_JSON) return value
         val root = try {
             JSONObject(value)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             throw IllegalArgumentException(
                 "vehicle_settings.xml sync destinations don't parse: ${e.message}",
@@ -200,6 +203,7 @@ object BackupContents {
             if (raw.isBlank()) continue
             val parsed = try {
                 JSONObject(raw)
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 throw IllegalArgumentException("configJson doesn't parse: ${e.message}", e)
             }

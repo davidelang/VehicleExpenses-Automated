@@ -27,7 +27,6 @@ class ExpenseEntryRepository @Inject constructor(
 
     suspend fun getById(id: Long): ExpenseEntry? = dao.getById(id)
 
-    suspend fun updateExpenseEntry(entry: ExpenseEntry) = dao.update(stampForWrite(entry))
 
     /**
      * Manifest / photoUrl bookkeeping must not bump [ExpenseEntry.updatedAt] or LWW can spuriously win.
@@ -35,12 +34,11 @@ class ExpenseEntryRepository @Inject constructor(
     suspend fun updateExpenseEntryPreservingTimestamp(entry: ExpenseEntry) =
         dao.update(ensureSyncId(entry))
 
-    suspend fun markExpenseDeleted(entry: ExpenseEntry) {
-        val now = System.currentTimeMillis()
-        dao.update(stampForWrite(entry).copy(deleted = true, deletedAt = now))
-    }
 
     suspend fun getAllIncludingDeleted(): List<ExpenseEntry> = dao.getAllIncludingDeleted()
+
+    suspend fun pageLiveNewest(limit: Int, offset: Int): List<ExpenseEntry> =
+        dao.pageLiveNewest(limit, offset)
 
     suspend fun findBySyncKey(originDeviceId: String, id: Long): ExpenseEntry? =
         dao.findBySyncKey(originDeviceId, id)

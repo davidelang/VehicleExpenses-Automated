@@ -80,6 +80,9 @@
             android:name=".ui.db.DatabaseErrorActivity"
             android:exported="false" />
         <activity
+            android:name=".ui.startup.StartupFailureActivity"
+            android:exported="false" />
+        <activity
             android:name=".ui.help.UserManualActivity"
             android:exported="false"
             android:label="User Manual"

@@ -93,30 +93,4 @@ object FuelEconomyChains {
         return "mixed"
     }
 
-    /**
-     * Time-ordered window inventory encoding for pending.extra["windowSummary"].
-     * Each token: `id:odo:gal:cost:shape`, `|`-separated. Cap [maxRows] then `+N more`.
-     */
-    fun encodeWindowSummary(
-        entries: List<FuelEntry>,
-        prevTs: Long,
-        endTs: Long,
-        maxRows: Int = 12,
-    ): String {
-        val window = windowContributors(entries, prevTs, endTs)
-            .sortedWith(compareBy({ it.timestamp }, { it.id }))
-        if (window.isEmpty()) return ""
-        val take = window.take(maxRows)
-        val parts = take.map { e ->
-            val gal = "%.2f".format(e.gallons)
-            val cost = "%.2f".format(e.cost)
-            "${e.id}:${e.odometer}:$gal:$cost:${rowShape(e)}"
-        }
-        val more = window.size - take.size
-        return if (more > 0) {
-            parts.joinToString("|") + "|+$more more"
-        } else {
-            parts.joinToString("|")
-        }
-    }
 }

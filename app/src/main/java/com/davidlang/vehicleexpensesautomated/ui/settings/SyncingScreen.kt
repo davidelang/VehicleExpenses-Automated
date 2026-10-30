@@ -102,6 +102,7 @@ fun SyncingScreen(navController: NavHostController) {
         Spacer(modifier = Modifier.height(16.dp))
 
         Text("Sync & backup", style = MaterialTheme.typography.titleMedium)
+        CorruptIncomingSection(spreadsheetSyncResult)
         SyncSummaryRow(
             title = "Spreadsheet sync",
             summary = SyncDestinationStore.spreadsheetSummaryLine(spreadsheetDests),

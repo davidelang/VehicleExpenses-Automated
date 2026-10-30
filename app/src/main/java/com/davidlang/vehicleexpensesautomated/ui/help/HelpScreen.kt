@@ -77,7 +77,7 @@ fun HelpScreen(navController: NavHostController? = null) {
         Bullet("?N (title bar) — open Import / Review questions when items need answers")
         Bullet("White circle — shutter (capture dash, pump, or receipt)")
         Bullet("Disk — save fill-up or expense")
-        Bullet("↕ on Quick Fill — switch odometer mode ↔ pump (cost/volume) mode")
+        Bullet("↕ on Fill — switch odometer mode ↔ pump (cost/volume) mode")
         Bullet("↔ between cost and volume — swap the two values if OCR swapped them")
         Bullet("🔍 on sync forms — browse Google Drive for a sheet or folder")
 
@@ -88,14 +88,14 @@ fun HelpScreen(navController: NavHostController? = null) {
         Bullet("Run Discovery, review landmarks (Edit OCR to fix misses), enter a Vehicle Name")
         Bullet("Create Vehicle")
         Text(
-            "Landmarks power auto vehicle match on Quick Fill. No camera? Type odo/volume/cost by hand.",
+            "Landmarks power auto vehicle match on Fill. No camera? Type odo/volume/cost by hand.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
         )
 
         SectionTitle("2. Log a fill-up")
-        Bullet("Open the app (Quick Fill-up is home) — no need to pick the vehicle first")
+        Bullet("Open the app (Fill is home) — no need to pick the vehicle first")
         Bullet("Aim at the odometer → shutter → confirm Odo (vehicle auto-detects from landmarks)")
         Bullet("Tap ↕ for pump mode → aim at pump totals → shutter")
         Bullet("Fix fields if needed (tap currency or G/L to change units)")

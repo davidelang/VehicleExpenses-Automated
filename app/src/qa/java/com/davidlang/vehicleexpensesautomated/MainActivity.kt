@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,12 +38,14 @@ import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -71,6 +74,15 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
+import com.davidlang.vehicleexpensesautomated.data.db.DatabaseHealthState
+import com.davidlang.vehicleexpensesautomated.data.db.DbState
+import com.davidlang.vehicleexpensesautomated.data.db.Exporting
+import com.davidlang.vehicleexpensesautomated.data.db.Failed
+import com.davidlang.vehicleexpensesautomated.data.db.Importing
+import com.davidlang.vehicleexpensesautomated.data.db.Ok
+import com.davidlang.vehicleexpensesautomated.data.db.Unchecked
+import com.davidlang.vehicleexpensesautomated.ui.db.DatabaseErrorActivity
+import com.davidlang.vehicleexpensesautomated.ui.startup.StartupFailureActivity
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.data.repository.forUserPicker
@@ -84,13 +96,14 @@ import com.davidlang.vehicleexpensesautomated.ui.about.AboutScreen
 import com.davidlang.vehicleexpensesautomated.ui.components.LocalPageHelpController
 import com.davidlang.vehicleexpensesautomated.ui.components.PageHelpTopBarAction
 import com.davidlang.vehicleexpensesautomated.ui.components.rememberPageHelpController
-import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryMode
-import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryScreen
-import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseListScreen
 import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentAlignmentScreen
+import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentForegroundService
 import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentHeatmapStageScreen
 import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentMultiScaleDetScreen
 import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentPumpScreen
+import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryMode
+import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryScreen
+import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseListScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FillScreen
 import com.davidlang.vehicleexpensesautomated.ui.help.HelpScreen
 import com.davidlang.vehicleexpensesautomated.ui.import.ImportOldPicturesScreen
@@ -105,27 +118,23 @@ import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabTimeChart
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabTripMilesScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabVehicleSummaryScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.PhotoBackupScreen
+import com.davidlang.vehicleexpensesautomated.data.email.EmailReceiptFixtureEntryPoint
+import com.davidlang.vehicleexpensesautomated.ui.reports.ExperimentHtmlRowsSetting
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsScreen
+import dagger.hilt.android.EntryPointAccessors
 import com.davidlang.vehicleexpensesautomated.ui.settings.SpreadsheetSyncScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.SyncingScreen
 import com.davidlang.vehicleexpensesautomated.ui.theme.VehicleExpensesAutomatedTheme
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.ManageVehicles2Screen
-import androidx.compose.runtime.collectAsState
-import com.davidlang.vehicleexpensesautomated.data.db.DatabaseHealthState
-import com.davidlang.vehicleexpensesautomated.data.db.Exporting
-import com.davidlang.vehicleexpensesautomated.data.db.Failed
-import com.davidlang.vehicleexpensesautomated.data.db.Importing
-import com.davidlang.vehicleexpensesautomated.data.db.Ok
-import com.davidlang.vehicleexpensesautomated.data.db.Unchecked
-import com.davidlang.vehicleexpensesautomated.ui.db.DatabaseErrorActivity
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -134,6 +143,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var vehicleRepository: VehicleRepository
+
+    @Inject
+    lateinit var dbState: DatabaseHealthState
 
     @Inject
     lateinit var syncIdBackfill: SyncIdBackfill
@@ -147,17 +159,13 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var emailReceiptManager: com.davidlang.vehicleexpensesautomated.data.email.EmailReceiptManager
 
-    @Inject
-    lateinit var dbState: DatabaseHealthState
-
-
     private val mediaPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (!isGranted) {
             Toast.makeText(
                 this,
-                "Photos permission denied. Fuel photo saving to Camera roll may fail until Photos access is granted in system Settings.",
+                "Photos permission denied. Fuel photo saving to the gallery may fail until Photos access is granted in system Settings.",
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -211,6 +219,41 @@ class MainActivity : ComponentActivity() {
         mediaPermissionLauncher.launch(permission)
     }
 
+    /** [Failed] leaves this task. [Unchecked] is verified first. */
+    private fun leaveForDatabaseError(): Boolean {
+        var health = dbState.states.value
+        if (health is Unchecked) {
+            (application as VehicleExpensesApplication).verifyDatabase()
+            health = dbState.states.value
+        }
+        if (health is Failed) {
+            startDatabaseError()
+            return true
+        }
+        return false
+    }
+
+    private fun startDatabaseError() {
+        startActivity(
+            Intent(this, DatabaseErrorActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK,
+            ),
+        )
+        finish()
+    }
+
+    private fun leaveForStartupFailure(): Boolean {
+        val failure = (application as VehicleExpensesApplication).startupFailure
+        if (failure == null) return false
+        startActivity(
+            Intent(this, StartupFailureActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK,
+            ),
+        )
+        finish()
+        return true
+    }
+
     /** One-shot FINE+COARSE after camera/media chain; soft deny toast only. */
     private fun maybeRequestLocationPermission() {
         val fine = ContextCompat.checkSelfPermission(
@@ -236,32 +279,9 @@ class MainActivity : ComponentActivity() {
         // Re-composition reads intent via setContent; force recreate for deep-link re-entry
     }
 
-
-    /** [Failed] leaves this task. [Unchecked] is verified first. */
-    private fun leaveForDatabaseError(): Boolean {
-        var health = dbState.states.value
-        if (health is Unchecked) {
-            (application as VehicleExpensesApplication).verifyDatabase()
-            health = dbState.states.value
-        }
-        if (health is Failed) {
-            startDatabaseError()
-            return true
-        }
-        return false
-    }
-
-    private fun startDatabaseError() {
-        startActivity(
-            Intent(this, DatabaseErrorActivity::class.java).addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK,
-            ),
-        )
-        finish()
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (leaveForStartupFailure()) return
         if (leaveForDatabaseError()) return
 
         // Camera only here — media then location follow in callbacks (no stacked dialogs).
@@ -290,6 +310,24 @@ class MainActivity : ComponentActivity() {
                 var backfillComplete by remember { mutableStateOf(syncIdBackfill.isBackfillDone()) }
                 var syncFailureVisible by remember { mutableStateOf(false) }
                 var pendingReviewCount by remember { mutableStateOf(0) }
+                val experimentsAvailable = BuildConfig.TEST_BUILD
+                val experimentPrefs = remember {
+                    context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
+                }
+                var storedShowExperimentScreens by remember {
+                    mutableStateOf(experimentPrefs.getBoolean("show_experiment_screens", false))
+                }
+                DisposableEffect(experimentPrefs) {
+                    val listener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+                        if (key == "show_experiment_screens") {
+                            storedShowExperimentScreens =
+                                prefs.getBoolean("show_experiment_screens", false)
+                        }
+                    }
+                    experimentPrefs.registerOnSharedPreferenceChangeListener(listener)
+                    onDispose { experimentPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
+                }
+                val experimentsEnabled = experimentsAvailable && storedShowExperimentScreens
 
                 fun refreshChromeIndicators() {
                     syncFailureVisible = SyncFailureStore(context).hasAnyFailure()
@@ -300,14 +338,14 @@ class MainActivity : ComponentActivity() {
                     refreshChromeIndicators()
                 }
 
-                // Explicit deep-link routing for experiment automation:
+                // Explicit deep-link routing for experiment automation (qa APP_SCHEME only):
                 // adb shell am start -a android.intent.action.VIEW \
                 //   -d 'vehicleexpensestest://experiment/align?auto=first10'
                 val deepLinkKey = intent?.dataString
-                LaunchedEffect(backfillComplete, deepLinkKey) {
-                    if (!backfillComplete) return@LaunchedEffect
+                LaunchedEffect(backfillComplete, deepLinkKey, experimentsEnabled) {
+                    if (!backfillComplete || !experimentsEnabled) return@LaunchedEffect
                     val data = intent?.data ?: return@LaunchedEffect
-                    if (data.scheme != com.davidlang.vehicleexpensesautomated.BuildConfig.APP_SCHEME || data.host != "experiment") return@LaunchedEffect
+                    if (data.scheme != BuildConfig.APP_SCHEME || data.host != "experiment") return@LaunchedEffect
                     val path = data.path.orEmpty()
                     val auto = data.getQueryParameter("auto").orEmpty()
                     val q = if (auto.isNotEmpty()) "?auto=$auto" else ""
@@ -388,22 +426,6 @@ class MainActivity : ComponentActivity() {
                         backfillComplete = true
                     }
                     return@VehicleExpensesAutomatedTheme
-                }
-
-                val experimentPrefs = remember {
-                    context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
-                }
-                var showExperimentScreens by remember {
-                    mutableStateOf(experimentPrefs.getBoolean("show_experiment_screens", false))
-                }
-                DisposableEffect(experimentPrefs) {
-                    val listener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
-                        if (key == "show_experiment_screens") {
-                            showExperimentScreens = prefs.getBoolean("show_experiment_screens", false)
-                        }
-                    }
-                    experimentPrefs.registerOnSharedPreferenceChangeListener(listener)
-                    onDispose { experimentPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
                 }
 
                 val pageHelpController = rememberPageHelpController()
@@ -549,7 +571,7 @@ class MainActivity : ComponentActivity() {
                                     scope.launch { drawerState.close() }
                                 }
                             )
-                            if (showExperimentScreens) {
+                            if (experimentsEnabled) {
                                 NavigationDrawerItem(
                                     label = { Text("Alignment Experiment") },
                                     selected = false,
@@ -582,7 +604,7 @@ class MainActivity : ComponentActivity() {
                                         scope.launch { drawerState.close() }
                                     }
                                 )
-                                // Import is experiment-gated in drawer; top-bar ?N review still routes to import.
+                                // Import Old Pictures is an experiment route.
                                 NavigationDrawerItem(
                                     label = { Text("Import Old Pictures") },
                                     selected = false,
@@ -618,9 +640,10 @@ class MainActivity : ComponentActivity() {
                                 actions = {
                                     // Priority if tight: drawer/back + Info (leading) already placed;
                                     // trailing badges only: ?N then !
-                                    if (pendingReviewCount > 0) {
+                                    if (experimentsEnabled && pendingReviewCount > 0) {
                                         IconButton(
                                             onClick = {
+                                                if (!experimentsEnabled) return@IconButton
                                                 navController.navigate("import?review=1") {
                                                     launchSingleTop = true
                                                 }
@@ -765,7 +788,20 @@ class MainActivity : ComponentActivity() {
                                         FuelEditScreen(navController = navController, fuelId = id)
                                     }
                                 }
-                                composable("settings") { SettingsScreen(navController = navController) }
+                                composable("settings") {
+                                    val app = androidx.compose.ui.platform.LocalContext.current.applicationContext
+                                    SettingsScreen(
+                                        navController = navController,
+                                        experimentsAvailable = experimentsAvailable,
+                                        ingestOfflineFixtures = {
+                                            EntryPointAccessors.fromApplication(
+                                                app,
+                                                EmailReceiptFixtureEntryPoint::class.java,
+                                            ).emailReceiptFixtureIngest().ingestSampleShellReceipts().summary
+                                        },
+                                        experimentExtras = { ExperimentHtmlRowsSetting() },
+                                    )
+                                }
                                 composable("syncing") { SyncingScreen(navController = navController) }
                                 composable("settings/spreadsheet_sync") {
                                     SpreadsheetSyncScreen(navController = navController)
@@ -798,10 +834,10 @@ class MainActivity : ComponentActivity() {
                                     ),
                                     deepLinks = listOf(
                                         navDeepLink {
-                                            uriPattern = "vehicleexpensestest://experiment/align?auto={auto}"
+                                            uriPattern = "vehicleexpenses://experiment/align?auto={auto}"
                                         },
                                         navDeepLink {
-                                            uriPattern = "vehicleexpensestest://experiment/align"
+                                            uriPattern = "vehicleexpenses://experiment/align"
                                         },
                                     ),
                                 ) { entry ->
@@ -824,10 +860,10 @@ class MainActivity : ComponentActivity() {
                                     ),
                                     deepLinks = listOf(
                                         navDeepLink {
-                                            uriPattern = "vehicleexpensestest://experiment/pump?auto={auto}"
+                                            uriPattern = "vehicleexpenses://experiment/pump?auto={auto}"
                                         },
                                         navDeepLink {
-                                            uriPattern = "vehicleexpensestest://experiment/pump"
+                                            uriPattern = "vehicleexpenses://experiment/pump"
                                         },
                                     ),
                                 ) { entry ->
@@ -862,11 +898,11 @@ class MainActivity : ComponentActivity() {
                                     deepLinks = listOf(
                                         navDeepLink {
                                             uriPattern =
-                                                "vehicleexpensestest://experiment/multiscale_det?auto={auto}"
+                                                "vehicleexpenses://experiment/multiscale_det?auto={auto}"
                                         },
                                         navDeepLink {
                                             uriPattern =
-                                                "vehicleexpensestest://experiment/multiscale_det"
+                                                "vehicleexpenses://experiment/multiscale_det"
                                         },
                                     ),
                                 ) { entry ->
@@ -884,12 +920,40 @@ class MainActivity : ComponentActivity() {
                 }
                 } // CompositionLocalProvider (PageHelp)
             }
-                }
+            }
             }
         }
     }
 }
 
+@Composable
+internal fun TransferBlockingScreen(state: DbState, progress: String) {
+    val title = if (state is Importing) "Importing data…" else "Exporting data…"
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            Text(title)
+            if (progress.isNotBlank()) Text(progress)
+        }
+    }
+}
+
+@Composable
+private fun ExportFailedNotice(holder: DatabaseHealthState) {
+    var message by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(holder) {
+        holder.exportFailures.receiveAsFlow().collect { message = it }
+    }
+    val text = message ?: return
+    AlertDialog(
+        onDismissRequest = { message = null },
+        confirmButton = {
+            TextButton(onClick = { message = null }) { Text("OK") }
+        },
+        text = { Text("Export failed: $text") },
+    )
+}
+
 fun stopExperimentForegroundService(context: Context) {
-    com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentForegroundService.stop(context)
+    ExperimentForegroundService.stop(context)
 }

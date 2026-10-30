@@ -110,7 +110,7 @@ Environment overrides:
 | `PADDLE_JNI_ROOT` | `third_party/paddle/artifact/jni` | Per-ABI SO directories |
 | `PADDLE_SMOKE_ABIS` | `arm64-v8a armeabi-v7a x86_64` | ABIs to run |
 | `PADDLE_SMOKE_REBUILD` | `1` | Rebuild smoke binaries |
-| `PADDLE_SMOKE_REPORT` | `dev-ai-interaction/scratch/paddle-so-smoke-<ts>/` | Report dir |
+| `PADDLE_SMOKE_REPORT` | `third_party/paddle/tests/out/paddle-so-smoke-<ts>/` | Report dir |
 | `ANDROID_NDK_HOME` | auto-detect Sdk/ndk | NDK for compile |
 
 Exit **0** only if all selected ABIs PASS.

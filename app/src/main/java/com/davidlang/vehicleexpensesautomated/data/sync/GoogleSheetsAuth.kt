@@ -41,6 +41,7 @@ class GoogleSheetsAuth @Inject constructor(
 
     fun getPersistedAccountEmail(): String? = legacy.persistedEmail(PREFS_SHEETS_ACCOUNT)
 
+
     fun buildSheetsServiceForAccountName(accountName: String): Sheets {
         val resolved = legacy.accountFromEmail(accountName)
             ?: throw IllegalStateException("No Google account signed in for Sheets")

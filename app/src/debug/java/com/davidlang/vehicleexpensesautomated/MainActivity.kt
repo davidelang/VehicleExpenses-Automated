@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,18 +38,21 @@ import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
+import android.content.SharedPreferences
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -64,10 +68,20 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
+import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportPendingStore
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.davidlang.vehicleexpensesautomated.data.db.DatabaseHealthState
+import com.davidlang.vehicleexpensesautomated.data.db.DbState
+import com.davidlang.vehicleexpensesautomated.data.db.Exporting
+import com.davidlang.vehicleexpensesautomated.data.db.Failed
+import com.davidlang.vehicleexpensesautomated.data.db.Importing
+import com.davidlang.vehicleexpensesautomated.data.db.Ok
+import com.davidlang.vehicleexpensesautomated.data.db.Unchecked
+import com.davidlang.vehicleexpensesautomated.ui.db.DatabaseErrorActivity
+import com.davidlang.vehicleexpensesautomated.ui.startup.StartupFailureActivity
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.data.repository.forUserPicker
@@ -104,20 +118,13 @@ import com.davidlang.vehicleexpensesautomated.ui.theme.VehicleExpensesAutomatedT
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.ManageVehicles2Screen
-import androidx.compose.runtime.collectAsState
-import com.davidlang.vehicleexpensesautomated.data.db.DatabaseHealthState
-import com.davidlang.vehicleexpensesautomated.data.db.Exporting
-import com.davidlang.vehicleexpensesautomated.data.db.Failed
-import com.davidlang.vehicleexpensesautomated.data.db.Importing
-import com.davidlang.vehicleexpensesautomated.data.db.Ok
-import com.davidlang.vehicleexpensesautomated.data.db.Unchecked
-import com.davidlang.vehicleexpensesautomated.ui.db.DatabaseErrorActivity
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -126,6 +133,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var vehicleRepository: VehicleRepository
+
+    @Inject
+    lateinit var dbState: DatabaseHealthState
 
     @Inject
     lateinit var syncIdBackfill: SyncIdBackfill
@@ -139,17 +149,13 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var emailReceiptManager: com.davidlang.vehicleexpensesautomated.data.email.EmailReceiptManager
 
-    @Inject
-    lateinit var dbState: DatabaseHealthState
-
-
     private val mediaPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (!isGranted) {
             Toast.makeText(
                 this,
-                "Photos permission denied. Fuel photo saving to Camera roll may fail until Photos access is granted in system Settings.",
+                "Photos permission denied. Fuel photo saving to the gallery may fail until Photos access is granted in system Settings.",
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -203,6 +209,41 @@ class MainActivity : ComponentActivity() {
         mediaPermissionLauncher.launch(permission)
     }
 
+    /** [Failed] leaves this task. [Unchecked] is verified first. */
+    private fun leaveForDatabaseError(): Boolean {
+        var health = dbState.states.value
+        if (health is Unchecked) {
+            (application as VehicleExpensesApplication).verifyDatabase()
+            health = dbState.states.value
+        }
+        if (health is Failed) {
+            startDatabaseError()
+            return true
+        }
+        return false
+    }
+
+    private fun startDatabaseError() {
+        startActivity(
+            Intent(this, DatabaseErrorActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK,
+            ),
+        )
+        finish()
+    }
+
+    private fun leaveForStartupFailure(): Boolean {
+        val failure = (application as VehicleExpensesApplication).startupFailure
+        if (failure == null) return false
+        startActivity(
+            Intent(this, StartupFailureActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK,
+            ),
+        )
+        finish()
+        return true
+    }
+
     /** One-shot FINE+COARSE after camera/media chain; soft deny toast only. */
     private fun maybeRequestLocationPermission() {
         val fine = ContextCompat.checkSelfPermission(
@@ -228,32 +269,9 @@ class MainActivity : ComponentActivity() {
         // Re-composition reads intent via setContent; force recreate for deep-link re-entry
     }
 
-
-    /** [Failed] leaves this task. [Unchecked] is verified first. */
-    private fun leaveForDatabaseError(): Boolean {
-        var health = dbState.states.value
-        if (health is Unchecked) {
-            (application as VehicleExpensesApplication).verifyDatabase()
-            health = dbState.states.value
-        }
-        if (health is Failed) {
-            startDatabaseError()
-            return true
-        }
-        return false
-    }
-
-    private fun startDatabaseError() {
-        startActivity(
-            Intent(this, DatabaseErrorActivity::class.java).addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK,
-            ),
-        )
-        finish()
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (leaveForStartupFailure()) return
         if (leaveForDatabaseError()) return
 
         // Camera only here — media then location follow in callbacks (no stacked dialogs).
@@ -281,15 +299,69 @@ class MainActivity : ComponentActivity() {
                 val context = androidx.compose.ui.platform.LocalContext.current
                 var backfillComplete by remember { mutableStateOf(syncIdBackfill.isBackfillDone()) }
                 var syncFailureVisible by remember { mutableStateOf(false) }
+                var pendingReviewCount by remember { mutableStateOf(0) }
+                val experimentsAvailable = false
+                val experimentPrefs = remember {
+                    context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
+                }
+                var storedShowExperimentScreens by remember {
+                    mutableStateOf(experimentPrefs.getBoolean("show_experiment_screens", false))
+                }
+                DisposableEffect(experimentPrefs) {
+                    val listener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+                        if (key == "show_experiment_screens") {
+                            storedShowExperimentScreens =
+                                prefs.getBoolean("show_experiment_screens", false)
+                        }
+                    }
+                    experimentPrefs.registerOnSharedPreferenceChangeListener(listener)
+                    onDispose { experimentPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
+                }
+                val experimentsEnabled = experimentsAvailable && storedShowExperimentScreens
 
                 fun refreshChromeIndicators() {
                     syncFailureVisible = SyncFailureStore(context).hasAnyFailure()
+                    pendingReviewCount = BatchImportPendingStore.count(context)
                 }
 
                 LaunchedEffect(backfillComplete, navController.currentBackStackEntry) {
                     refreshChromeIndicators()
                 }
 
+                // Explicit deep-link routing for experiment automation (qa APP_SCHEME only):
+                // adb shell am start -a android.intent.action.VIEW \
+                //   -d 'vehicleexpensestest://experiment/align?auto=first10'
+                val deepLinkKey = intent?.dataString
+                LaunchedEffect(backfillComplete, deepLinkKey, experimentsEnabled) {
+                    if (!backfillComplete || !experimentsEnabled) return@LaunchedEffect
+                    val data = intent?.data ?: return@LaunchedEffect
+                    if (data.scheme != BuildConfig.APP_SCHEME || data.host != "experiment") return@LaunchedEffect
+                    val path = data.path.orEmpty()
+                    val auto = data.getQueryParameter("auto").orEmpty()
+                    val q = if (auto.isNotEmpty()) "?auto=$auto" else ""
+                    val route = when {
+                        path.contains("align") -> "experiment$q"
+                        path.contains("multiscale") || path.contains("multi_scale") ->
+                            "experiment_multiscale_det$q"
+                        path.contains("pump") -> "experiment_pump$q"
+                        path.contains("heatmap") || path.contains("preprocess") ||
+                            path.contains("odo-export") || path.contains("deskew") ->
+                            "experiment_heatmap_stage$q"
+                        else -> return@LaunchedEffect
+                    }
+                    // Let NavHost finish composing before navigating.
+                    delay(400)
+                    Log.i("MainActivity", "Deep link navigate → $route from $data")
+                    try {
+                        navController.navigate(route) {
+                            launchSingleTop = true
+                            // Drop any restored settings stack so experiment is visible.
+                            popUpTo("fill") { inclusive = false }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Deep link navigate failed for $route", e)
+                    }
+                }
 
                 // Refresh yellow ? when app returns to foreground (after merge/answer/sync)
                 val lifecycleOwner = LocalLifecycleOwner.current
@@ -346,7 +418,6 @@ class MainActivity : ComponentActivity() {
                     return@VehicleExpensesAutomatedTheme
                 }
 
-
                 val pageHelpController = rememberPageHelpController()
 
                 // First-run splash when no *user* vehicles (S1/S4/S5).
@@ -381,6 +452,8 @@ class MainActivity : ComponentActivity() {
                     currentRoute == "expense" -> "New expense"
                     currentRoute?.startsWith("expense/") == true -> "Edit expense"
                     currentRoute == "expenselist" -> "Expense list"
+                    currentRoute == "import" ||
+                        currentRoute?.startsWith("import") == true -> "Import Old Pictures"
                     currentRoute == "reports_lab" ||
                         currentRoute?.startsWith("reports_lab/") == true -> "Reports"
                     currentRoute == "fuelhistory" -> "Fuel History"
@@ -393,6 +466,14 @@ class MainActivity : ComponentActivity() {
                     currentRoute == "about" -> "About"
                     currentRoute == "onboarding" -> "Welcome"
                     currentRoute?.startsWith("tutorial/") == true -> "Setup tips"
+                    currentRoute == "experiment" ||
+                        currentRoute?.startsWith("experiment?") == true -> "Alignment Experiment"
+                    currentRoute == "experiment_pump" ||
+                        currentRoute?.startsWith("experiment_pump") == true -> "Gas Pump Extraction Experiment"
+                    currentRoute == "experiment_heatmap_stage" -> "Heatmap stage"
+                    currentRoute == "experiment_multiscale_det" ||
+                        currentRoute?.startsWith("experiment_multiscale_det") == true ->
+                        "Dash paddle long-edge det/rec"
                     else -> "Vehicle Expenses"
                 }
 
@@ -480,6 +561,49 @@ class MainActivity : ComponentActivity() {
                                     scope.launch { drawerState.close() }
                                 }
                             )
+                            if (experimentsEnabled) {
+                                NavigationDrawerItem(
+                                    label = { Text("Alignment Experiment") },
+                                    selected = false,
+                                    onClick = {
+                                        navController.navigate("experiment?auto=")
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
+                                NavigationDrawerItem(
+                                    label = { Text("Pump Experiment") },
+                                    selected = false,
+                                    onClick = {
+                                        navController.navigate("experiment_pump?auto=")
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
+                                NavigationDrawerItem(
+                                    label = { Text("Heatmap stage") },
+                                    selected = false,
+                                    onClick = {
+                                        navController.navigate("experiment_heatmap_stage")
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
+                                NavigationDrawerItem(
+                                    label = { Text("Dash paddle long-edge det/rec") },
+                                    selected = false,
+                                    onClick = {
+                                        navController.navigate("experiment_multiscale_det?auto=")
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
+                                // Import Old Pictures is an experiment route.
+                                NavigationDrawerItem(
+                                    label = { Text("Import Old Pictures") },
+                                    selected = false,
+                                    onClick = {
+                                        navController.navigate("import")
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
+                            }
                             } // scrollable Column
                         }
                     }
@@ -506,6 +630,29 @@ class MainActivity : ComponentActivity() {
                                 actions = {
                                     // Priority if tight: drawer/back + Info (leading) already placed;
                                     // trailing badges only: ?N then !
+                                    if (experimentsEnabled && pendingReviewCount > 0) {
+                                        IconButton(
+                                            onClick = {
+                                                if (!experimentsEnabled) return@IconButton
+                                                navController.navigate("import?review=1") {
+                                                    launchSingleTop = true
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                                .semantics {
+                                                    contentDescription = "Review questions"
+                                                },
+                                        ) {
+                                            Text(
+                                                if (pendingReviewCount > 99) "?99+"
+                                                else "?$pendingReviewCount",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = MaterialTheme.colorScheme.tertiary,
+                                                maxLines = 1,
+                                            )
+                                        }
+                                    }
                                     if (syncFailureVisible) {
                                         IconButton(
                                             onClick = { navController.navigate("syncing") },
@@ -643,10 +790,38 @@ class MainActivity : ComponentActivity() {
                 }
                 } // CompositionLocalProvider (PageHelp)
             }
-                }
+            }
             }
         }
     }
+}
+
+@Composable
+internal fun TransferBlockingScreen(state: DbState, progress: String) {
+    val title = if (state is Importing) "Importing data…" else "Exporting data…"
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            Text(title)
+            if (progress.isNotBlank()) Text(progress)
+        }
+    }
+}
+
+@Composable
+private fun ExportFailedNotice(holder: DatabaseHealthState) {
+    var message by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(holder) {
+        holder.exportFailures.receiveAsFlow().collect { message = it }
+    }
+    val text = message ?: return
+    AlertDialog(
+        onDismissRequest = { message = null },
+        confirmButton = {
+            TextButton(onClick = { message = null }) { Text("OK") }
+        },
+        text = { Text("Export failed: $text") },
+    )
 }
 
 fun stopExperimentForegroundService(context: Context) {

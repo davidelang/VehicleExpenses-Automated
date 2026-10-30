@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.onboarding
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -23,8 +24,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -33,7 +38,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.components.FeatureScreenHeader
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -82,14 +90,21 @@ fun TutorialPagerScreen(
                 Text(step.body, style = MaterialTheme.typography.bodyLarge, softWrap = true)
                 val asset = step.imageAsset
                 if (asset != null) {
-                    val bmp = remember(asset) {
-                        runCatching {
+                    var bmp by remember(asset) { mutableStateOf<Bitmap?>(null) }
+                    var decodeDone by remember(asset) { mutableStateOf(false) }
+                    LaunchedEffect(asset) {
+                        val decoded = withContext(Dispatchers.IO) {
                             context.assets.open(asset).use { BitmapFactory.decodeStream(it) }
-                        }.getOrNull()
+                        }
+                        if (isActive) {
+                            bmp = decoded
+                            decodeDone = true
+                        }
                     }
-                    if (bmp != null) {
+                    val shown = bmp
+                    if (shown != null) {
                         Image(
-                            bitmap = bmp.asImageBitmap(),
+                            bitmap = shown.asImageBitmap(),
                             contentDescription = step.title,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -103,11 +118,13 @@ fun TutorialPagerScreen(
                                 .height(120.dp),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text(
-                                "(Illustration unavailable offline asset)",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            if (decodeDone) {
+                                Text(
+                                    "(Illustration unavailable offline asset)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }

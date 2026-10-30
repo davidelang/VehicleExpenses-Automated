@@ -17,7 +17,6 @@ class SyncManager @Inject constructor(
     @param:ApplicationContext private val context: Context,
 ) {
 
-    fun schedulePeriodicSync() = scheduleFromDestination()
 
     /** Schedule one periodic worker: min frequency + strictest constraints across enabled spreadsheet dests. */
     fun scheduleFromDestination() {
@@ -54,15 +53,6 @@ class SyncManager @Inject constructor(
         )
     }
 
-    fun triggerImmediateSync() {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
-        val oneTimeRequest = OneTimeWorkRequestBuilder<SyncWorker>()
-            .setConstraints(constraints)
-            .build()
-        WorkManager.getInstance(context).enqueue(oneTimeRequest)
-    }
 
     companion object {
         const val UNIQUE_WORK_NAME = "vehicle_expenses_sync"

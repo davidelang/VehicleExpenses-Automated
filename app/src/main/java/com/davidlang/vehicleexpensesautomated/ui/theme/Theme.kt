@@ -80,6 +80,7 @@ fun VehicleExpensesAutomatedTheme(
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
                 }
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 // Safe fallback for very old Android
             }

@@ -52,14 +52,6 @@ class RcloneRuntime @Inject constructor(
         }
     }
 
-    fun smokeVersion(): String {
-        ensureInitialized()
-        val output = rpc("core/version", "{}")
-        val version = output.optString("version", output.toString())
-        Log.i(TAG, "rclone core/version: $version")
-        return version
-    }
-
     fun setConfigPath(confPath: String) {
         ensureInitialized()
         if (activeConfigPath == confPath) return
@@ -148,6 +140,7 @@ class RcloneRuntime @Inject constructor(
         return try {
             val output = rpc("config/get", JSONObject().put("name", name.trim()).toString())
             output.optString("type", "").ifBlank { null }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             null
         }
@@ -183,6 +176,7 @@ class RcloneRuntime @Inject constructor(
                     put("remote", "")
                 }.toString(),
             )
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.d(TAG, "operations/mkdir best-effort for $fs: ${e.message}")
         }

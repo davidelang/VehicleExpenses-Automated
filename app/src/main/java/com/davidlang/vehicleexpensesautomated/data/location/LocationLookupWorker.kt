@@ -39,10 +39,7 @@ class LocationLookupWorker @AssistedInject constructor(
         databaseGate(dbState, appContext)?.let { return@withContext it }
         try {
             var anyFail = false
-            val fuelPending = fuelRepository.getAllIncludingDeleted()
-                .filter { !it.deleted && FuelLocationJson.hasCoordsWithoutPlace(it.location) }
-                .sortedWith(compareByDescending<com.davidlang.vehicleexpensesautomated.data.model.FuelEntry> { it.timestamp }.thenByDescending { it.id })
-                .take(MAX_PER_RUN)
+            val fuelPending = pageFuelPending(MAX_PER_RUN)
             for (entry in fuelPending) {
                 val blob = FuelLocationJson.parseBlob(entry.location) ?: continue
                 val lat = blob.lat ?: continue
@@ -73,10 +70,7 @@ class LocationLookupWorker @AssistedInject constructor(
                 delay(POLITE_DELAY_MS)
             }
 
-            val expensePending = expenseRepository.getAllIncludingDeleted()
-                .filter { !it.deleted && FuelLocationJson.hasCoordsWithoutPlace(it.location) }
-                .sortedWith(compareByDescending<com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry> { it.date }.thenByDescending { it.id })
-                .take(MAX_PER_RUN)
+            val expensePending = pageExpensePending(MAX_PER_RUN)
             for (entry in expensePending) {
                 val blob = FuelLocationJson.parseBlob(entry.location) ?: continue
                 val lat = blob.lat ?: continue
@@ -105,12 +99,47 @@ class LocationLookupWorker @AssistedInject constructor(
             } else {
                 Result.success()
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.e(TAG, "LocationLookupWorker failed", e)
             Result.retry()
         }
     }
 
+    private suspend fun pageFuelPending(max: Int) = pagePending(max) { offset, limit ->
+        fuelRepository.pageLiveNewest(limit, offset)
+    }
+
+    private suspend fun pageExpensePending(max: Int) = pagePending(max) { offset, limit ->
+        expenseRepository.pageLiveNewest(limit, offset)
+    }
+
+    private suspend fun <T> pagePending(
+        max: Int,
+        load: suspend (offset: Int, limit: Int) -> List<T>,
+    ): List<T> where T : Any {
+        val out = ArrayList<T>(max)
+        var offset = 0
+        val page = 40
+        while (out.size < max) {
+            val rows = load(offset, page)
+            if (rows.isEmpty()) break
+            for (row in rows) {
+                val location = when (row) {
+                    is com.davidlang.vehicleexpensesautomated.data.model.FuelEntry -> row.location
+                    is com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry -> row.location
+                    else -> null
+                }
+                if (location != null && FuelLocationJson.hasCoordsWithoutPlace(location)) {
+                    out.add(row)
+                    if (out.size == max) break
+                }
+            }
+            offset += rows.size
+            if (rows.size < page) break
+        }
+        return out
+    }
 
     private fun databaseGate(dbState: DatabaseHealthState, appContext: Context): Result? {
         val app = appContext.applicationContext as VehicleExpensesApplication

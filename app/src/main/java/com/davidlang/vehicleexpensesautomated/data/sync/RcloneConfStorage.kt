@@ -37,6 +37,7 @@ object RcloneConfStorage {
         try {
             val backup = File(file.parentFile, "${confFileName}.bak")
             file.copyTo(backup, overwrite = true)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             // Non-fatal; proceed with RPC write.
         }
@@ -50,6 +51,7 @@ object RcloneConfStorage {
                 FileOutputStream(dest).use { output -> input.copyTo(output) }
             } ?: return false
             dest.exists() && dest.length() > 0
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             false
         }

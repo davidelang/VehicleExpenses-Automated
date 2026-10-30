@@ -1,7 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.data.batch
 
 import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
-import java.io.File
 
 /**
  * Stage C: resolve **deduped** display photo paths for a pending question.
@@ -37,17 +36,17 @@ fun pendingPhotoUris(
     val role = StageCPhaseStore.photoRole(item)
     // Strict role filters: never re-union unfiltered [candidates] (leaked wrong role into ODO/BAD_PUMP).
     val filtered = when (role) {
-        StageCPhaseStore.PhotoRole.DASH -> {
+        PhotoRole.DASH -> {
             val fromEntries = entryPhotoUrls.flatMap { dashPhotoPaths(it) }
             val dashish = candidates.filter { isDashPathHint(it) }
             (fromEntries + dashish).distinct()
         }
-        StageCPhaseStore.PhotoRole.PUMP -> {
+        PhotoRole.PUMP -> {
             val fromEntries = entryPhotoUrls.flatMap { pumpPhotoPaths(it) }
             val pumpish = candidates.filter { isPumpPathHint(it) }
             (fromEntries + pumpish).distinct()
         }
-        StageCPhaseStore.PhotoRole.BOTH -> candidates
+        PhotoRole.BOTH -> candidates
     }
     return dedupePhotoPaths(filtered)
 }

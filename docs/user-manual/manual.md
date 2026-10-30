@@ -21,7 +21,7 @@ This is the **full manual** (screenshots + every step). On the phone, **Menu →
 3. [Open the menu](#open-the-menu)
 4. [First-time setup: Manage Vehicles](#first-time-setup-manage-vehicles)
 5. [Backups and multi-device sync](#backups-and-multi-device-sync)
-6. [Fill (fuel)](#quick-fill-up-fuel)
+6. [Fill (fuel)](#fill-up-fuel)
 7. [Start trip](#start-trip)
 8. [Expenses](#expenses)
 9. [Reports](#reports)
@@ -80,7 +80,7 @@ Currency symbols on cost fields and **G/L** on volume fields are tappable: open 
 
 **Main drawer:** Fill · Start trip · Manage Vehicles · New expense · **Reports** · Settings · Syncing · Help · About.
 
-**Experiment drawer** (qa build only, Settings → Show experiment screens): Alignment Experiment · Pump Experiment · **Import Old Pictures**. Debug and release do not include these screens.
+**Experiment drawer** (Settings → Show experiment screens): Alignment Experiment · Pump Experiment · **Import Old Pictures**.
 
 **Via Reports hub (not main drawer):** Expenses list · Fill history.
 
@@ -235,13 +235,13 @@ You do **not** need to pick the vehicle first. When vehicles have **landmarks** 
 
 Stay in odometer mode and frame the cluster. Instruction: *Aim at odometer. Tap shutter to capture.*
 
-![Fill — live camera on odometer (example dash image in preview)](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r3-quickfill-odo-live.jpg)
+![Fill — live camera on odometer (example dash image in preview)](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r3-fill-odo-live.jpg)
 
 ### After the odometer shutter
 
 OCR fills **Odo** and tries to match the vehicle from landmarks (review both if needed). The main button becomes **Retry** to re-shoot. Instruction summarizes the reading.
 
-![Fill — odometer OCR result](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r4-quickfill-odo-result.jpg)
+![Fill — odometer OCR result](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r4-fill-odo-result.jpg)
 
 ### Pump mode (cost and volume)
 
@@ -249,7 +249,7 @@ OCR fills **Odo** and tries to match the vehicle from landmarks (review both if 
 2. Capture the pump totals. Cost and volume fields fill; use **↔** if they are swapped.
 3. Tap currency or **G/L** if needed, then **Save** (disk). Empty fields make a **partial fill** (still allowed).
 
-![Fill — pump preview / totals (example pump image in preview)](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r5-quickfill-pump-result.jpg)
+![Fill — pump preview / totals (example pump image in preview)](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r5-fill-pump-result.jpg)
 
 You stay on Fill for the next stop (fields clear after save). Work fully **offline**; sync runs later in the background when configured.
 

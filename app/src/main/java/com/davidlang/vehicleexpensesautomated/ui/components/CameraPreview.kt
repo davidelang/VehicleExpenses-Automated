@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.components
 
 import android.util.Log
+import java.util.concurrent.TimeUnit
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -10,6 +11,7 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
+import com.davidlang.vehicleexpensesautomated.ui.util.deviceHasCamera
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -48,15 +50,22 @@ fun CameraPreview(
     modifier: Modifier = Modifier,
     imageCapture: ImageCapture,
     captureProfile: CameraCaptureProfile = CameraCaptureProfile.OCR_MEDIUM,
-    /** YUV analysis consumer (Quick Fill / trip OCR). Null = Preview + ImageCapture only. */
+    /** YUV analysis consumer (Fill / trip OCR). Null = Preview + ImageCapture only. */
     onImageCaptured: ((ImageProxy) -> Unit)? = null,
     onZoomControlChanged: (CameraZoomControl?) -> Unit = {},
     /** Latest Surface.ROTATION_* from [OrientationEventListener] (for screens without analysis). */
     onListenerSurfaceRotation: (Int) -> Unit = {},
+    /** True after bindToLifecycle succeeds; false on bind failure and when the preview leaves. */
+    onBound: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val hasCamera = remember(context) { deviceHasCamera(context) }
+    if (!hasCamera) {
+        return
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     val onListenerSurfaceRotationState = rememberUpdatedState(onListenerSurfaceRotation)
+    val onBoundState = rememberUpdatedState(onBound)
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
     val cameraExecutor: ExecutorService = remember { Executors.newSingleThreadExecutor() }
     var imageAnalysisState by remember { mutableStateOf<ImageAnalysis?>(null) }
@@ -109,6 +118,7 @@ fun CameraPreview(
                 try {
                     imageAnalysisState?.targetRotation = rotation
                     imageCapture.targetRotation = rotation
+                // kept: failure stays on this call so the screen or caller can continue
                 } catch (e: Exception) {
                     Log.e("CameraPreview", "Failed to set target rotation dynamically", e)
                 }
@@ -127,17 +137,18 @@ fun CameraPreview(
 
     DisposableEffect(lifecycleOwner) {
         onDispose {
-            try {
-                activeCameraProvider?.unbindAll()
-            } catch (e: Exception) {
-                Log.e("CameraPreview", "Failed to unbind camera provider on dispose", e)
-            }
-            try {
-                cameraExecutor.shutdown()
-            } catch (e: Exception) {
-                Log.e("CameraPreview", "Failed to shutdown camera executor on dispose", e)
+            imageAnalysisState?.clearAnalyzer()
+            activeCameraProvider?.unbindAll()
+            cameraExecutor.shutdown()
+            val t0 = System.nanoTime()
+            val stopped = cameraExecutor.awaitTermination(250, TimeUnit.MILLISECONDS)
+            if (!stopped) {
+                val elapsedMs = (System.nanoTime() - t0) / 1_000_000
+                Log.e("CameraPreview", "camera executor still running elapsedMs=$elapsedMs")
+                cameraExecutor.shutdownNow()
             }
             boundCamera = null
+            onBoundState.value(false)
         }
     }
 
@@ -149,35 +160,38 @@ fun CameraPreview(
             }
             val executor = ContextCompat.getMainExecutor(ctx)
             cameraProviderFuture.addListener({
-                val cameraProvider = cameraProviderFuture.get()
-                activeCameraProvider = cameraProvider
-                val preview = Preview.Builder().build().also {
-                    it.setSurfaceProvider(previewView.surfaceProvider)
-                }
-
-                val resSelector = CameraResolutionPicker.resolutionSelector(captureProfile)
-
-                val cameraSelector = CameraSelector.Builder()
-                    .requireLensFacing(CameraSelector.LENS_FACING_BACK)
-                    .build()
-
-                val analysis = if (onImageCaptured != null) {
-                    ImageAnalysis.Builder()
-                        .setResolutionSelector(resSelector)
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-                        .build()
-                        .also { ia ->
-                            ia.setAnalyzer(cameraExecutor) { imageProxy ->
-                                onImageCaptured(imageProxy)
-                            }
-                        }
-                } else {
-                    null
-                }
-                imageAnalysisState = analysis
-
+                // kept: failure stays on this call so the screen or caller can continue.
+                // get() is inside the try: a throw before bindToLifecycle still reports onBound(false).
+                // The factory runs once, so that false is not followed by another bind.
                 try {
+                    val cameraProvider = cameraProviderFuture.get()
+                    activeCameraProvider = cameraProvider
+                    val preview = Preview.Builder().build().also {
+                        it.setSurfaceProvider(previewView.surfaceProvider)
+                    }
+
+                    val resSelector = CameraResolutionPicker.resolutionSelector(captureProfile)
+
+                    val cameraSelector = CameraSelector.Builder()
+                        .requireLensFacing(CameraSelector.LENS_FACING_BACK)
+                        .build()
+
+                    val analysis = if (onImageCaptured != null) {
+                        ImageAnalysis.Builder()
+                            .setResolutionSelector(resSelector)
+                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                            .build()
+                            .also { ia ->
+                                ia.setAnalyzer(cameraExecutor) { imageProxy ->
+                                    onImageCaptured(imageProxy)
+                                }
+                            }
+                    } else {
+                        null
+                    }
+                    imageAnalysisState = analysis
+
                     cameraProvider.unbindAll()
                     val camera = if (analysis != null) {
                         cameraProvider.bindToLifecycle(
@@ -196,8 +210,10 @@ fun CameraPreview(
                         )
                     }
                     boundCamera = camera
+                    onBoundState.value(true)
                 } catch (e: Exception) {
                     Log.e("CameraPreview", "Use case binding failed", e)
+                    onBoundState.value(false)
                 }
             }, executor)
             previewView

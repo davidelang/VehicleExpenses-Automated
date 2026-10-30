@@ -84,6 +84,7 @@ fun FuelEditScreen(
     val defaultCurrencySymbol = remember {
         try {
             Currency.getInstance(Locale.getDefault()).getSymbol(Locale.getDefault())
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             "$"
         }
@@ -183,9 +184,12 @@ fun FuelEditScreen(
             thumbUri != null -> {
                 val uris = photoUrisFromJsonOrPath(photoUrl).ifEmpty { listOf(thumbUri) }
                 ZoomablePhotoThumb(uris = uris, contentDescription = "Fill photo")
+                FuelPhotoMarkLine(photoUrl)
+                FuelLocationMarkLine(loaded?.location)
             }
             canFetch -> {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    FuelMarksWhenNoThumb(photoUrl, loaded?.location)
                     Text("Photo in archive only", style = MaterialTheme.typography.bodyMedium)
                     Button(
                         onClick = {
@@ -216,50 +220,58 @@ fun FuelEditScreen(
                     }
                 }
             }
-            else -> Text("No photo", style = MaterialTheme.typography.bodyMedium)
+            else -> {
+                FuelMarksWhenNoThumb(photoUrl, loaded?.location)
+                Text("No photo", style = MaterialTheme.typography.bodyMedium)
+            }
         }
 
-        // Vehicle | Odometer
-        if (multiColumn) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+        @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+        @Composable
+        fun FuelVehicleOdometer() {
+            // Vehicle | Odometer
+            if (multiColumn) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    VehiclePickerField(
+                        vehicles = vehicles,
+                        vehicleId = vehicleId,
+                        expanded = vehicleDropdown,
+                        onExpandedChange = { vehicleDropdown = it },
+                        onSelect = { vehicleId = it },
+                        modifier = Modifier.weight(1f),
+                    )
+                    CaretEnabledOutlinedTextField(
+                        value = odometer,
+                        onValueChange = { odometer = it.filter { ch -> ch.isDigit() } },
+                        label = { Text("Odometer (${UnitFormat.distanceUnitShortLabel()})") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        showCaretButtons = true,
+                    )
+                }
+            } else {
                 VehiclePickerField(
                     vehicles = vehicles,
                     vehicleId = vehicleId,
                     expanded = vehicleDropdown,
                     onExpandedChange = { vehicleDropdown = it },
                     onSelect = { vehicleId = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 CaretEnabledOutlinedTextField(
                     value = odometer,
                     onValueChange = { odometer = it.filter { ch -> ch.isDigit() } },
                     label = { Text("Odometer (${UnitFormat.distanceUnitShortLabel()})") },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     showCaretButtons = true,
                 )
             }
-        } else {
-            VehiclePickerField(
-                vehicles = vehicles,
-                vehicleId = vehicleId,
-                expanded = vehicleDropdown,
-                onExpandedChange = { vehicleDropdown = it },
-                onSelect = { vehicleId = it },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            CaretEnabledOutlinedTextField(
-                value = odometer,
-                onValueChange = { odometer = it.filter { ch -> ch.isDigit() } },
-                label = { Text("Odometer (${UnitFormat.distanceUnitShortLabel()})") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                showCaretButtons = true,
-            )
         }
+        FuelVehicleOdometer()
 
         // F2: trip type only when loaded row had a type (trip-start edit)
         if (showTripType) {
@@ -272,24 +284,56 @@ fun FuelEditScreen(
             )
         }
 
-        // Currency | Cost | Volume (currency before cost)
-        if (multiColumn) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+        @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+        @Composable
+        fun FuelCurrencyCostVolume() {
+            // Currency | Cost | Volume (currency before cost)
+            if (multiColumn) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CaretEnabledOutlinedTextField(
+                        value = currencySymbol,
+                        onValueChange = { currencySymbol = it },
+                        label = { Text("Currency") },
+                        modifier = Modifier.weight(0.9f),
+                        singleLine = true,
+                    )
+                    CaretEnabledOutlinedTextField(
+                        value = cost,
+                        onValueChange = { cost = it },
+                        label = { Text("Cost") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        showCaretButtons = true,
+                    )
+                    CaretEnabledOutlinedTextField(
+                        value = volume,
+                        onValueChange = { volume = it },
+                        label = {
+                            Text(
+                                "Vol (${VolumeUnits.shortLabel(VolumeUnits.resolvedPreferredVolumeUnit(context))})",
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        showCaretButtons = true,
+                    )
+                }
+            } else {
                 CaretEnabledOutlinedTextField(
                     value = currencySymbol,
                     onValueChange = { currencySymbol = it },
                     label = { Text("Currency") },
-                    modifier = Modifier.weight(0.9f),
+                    modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
                 CaretEnabledOutlinedTextField(
                     value = cost,
                     onValueChange = { cost = it },
                     label = { Text("Cost") },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     showCaretButtons = true,
                 )
@@ -298,43 +342,16 @@ fun FuelEditScreen(
                     onValueChange = { volume = it },
                     label = {
                         Text(
-                            "Vol (${VolumeUnits.shortLabel(VolumeUnits.resolvedPreferredVolumeUnit(context))})",
+                            "Volume (${VolumeUnits.shortLabel(VolumeUnits.resolvedPreferredVolumeUnit(context))})",
                         )
                     },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     showCaretButtons = true,
                 )
             }
-        } else {
-            CaretEnabledOutlinedTextField(
-                value = currencySymbol,
-                onValueChange = { currencySymbol = it },
-                label = { Text("Currency") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-            CaretEnabledOutlinedTextField(
-                value = cost,
-                onValueChange = { cost = it },
-                label = { Text("Cost") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                showCaretButtons = true,
-            )
-            CaretEnabledOutlinedTextField(
-                value = volume,
-                onValueChange = { volume = it },
-                label = {
-                    Text(
-                        "Volume (${VolumeUnits.shortLabel(VolumeUnits.resolvedPreferredVolumeUnit(context))})",
-                    )
-                },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                showCaretButtons = true,
-            )
         }
+        FuelCurrencyCostVolume()
 
         AppDateTimeField(
             label = "Date/time: ${dateFmt.format(Date(timestampMs))}",
@@ -349,85 +366,90 @@ fun FuelEditScreen(
             maxLines = 4,
         )
 
-        // Location: summary + expand to structured fields
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Location", style = MaterialTheme.typography.titleSmall)
-                Text(
-                    locationSummary,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    softWrap = true,
-                )
+        @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+        @Composable
+        fun FuelLocationFields() {
+            // Location: summary + expand to structured fields
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Location", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        locationSummary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        softWrap = true,
+                    )
+                }
+                TextButton(onClick = { locationExpanded = !locationExpanded }) {
+                    Text(if (locationExpanded) "Hide details" else "Location details")
+                }
             }
-            TextButton(onClick = { locationExpanded = !locationExpanded }) {
-                Text(if (locationExpanded) "Hide details" else "Location details")
-            }
-        }
-        if (locationExpanded) {
-            if (multiColumn) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+            if (locationExpanded) {
+                if (multiColumn) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        CaretEnabledOutlinedTextField(
+                            value = locLat,
+                            onValueChange = { locLat = it },
+                            label = { Text("Latitude") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        CaretEnabledOutlinedTextField(
+                            value = locLon,
+                            onValueChange = { locLon = it },
+                            label = { Text("Longitude") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                    }
+                } else {
                     CaretEnabledOutlinedTextField(
                         value = locLat,
                         onValueChange = { locLat = it },
                         label = { Text("Latitude") },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                     )
                     CaretEnabledOutlinedTextField(
                         value = locLon,
                         onValueChange = { locLon = it },
                         label = { Text("Longitude") },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                     )
                 }
-            } else {
                 CaretEnabledOutlinedTextField(
-                    value = locLat,
-                    onValueChange = { locLat = it },
-                    label = { Text("Latitude") },
+                    value = locAccuracy,
+                    onValueChange = { locAccuracy = it },
+                    label = { Text("Accuracy (m)") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
                 CaretEnabledOutlinedTextField(
-                    value = locLon,
-                    onValueChange = { locLon = it },
-                    label = { Text("Longitude") },
+                    value = locName,
+                    onValueChange = { locName = it },
+                    label = { Text("Place name") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                )
+                CaretEnabledOutlinedTextField(
+                    value = locAddress,
+                    onValueChange = { locAddress = it },
+                    label = { Text("Address") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                    maxLines = 3,
                 )
             }
-            CaretEnabledOutlinedTextField(
-                value = locAccuracy,
-                onValueChange = { locAccuracy = it },
-                label = { Text("Accuracy (m)") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-            CaretEnabledOutlinedTextField(
-                value = locName,
-                onValueChange = { locName = it },
-                label = { Text("Place name") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-            CaretEnabledOutlinedTextField(
-                value = locAddress,
-                onValueChange = { locAddress = it },
-                label = { Text("Address") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = false,
-                maxLines = 3,
-            )
         }
+        FuelLocationFields()
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = isPartialFill, onCheckedChange = { isPartialFill = it })
@@ -477,33 +499,38 @@ fun FuelEditScreen(
         AppOutlinedBack(onClick = { navController.popBackStack() })
     }
 
-    if (showDatePicker) {
-        val cal = Calendar.getInstance().apply { timeInMillis = timestampMs }
-        val state = rememberDatePickerState(initialSelectedDateMillis = timestampMs)
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    state.selectedDateMillis?.let { day ->
-                        val hour = cal.get(Calendar.HOUR_OF_DAY)
-                        val min = cal.get(Calendar.MINUTE)
-                        val merged = Calendar.getInstance().apply {
-                            timeInMillis = day
-                            set(Calendar.HOUR_OF_DAY, hour)
-                            set(Calendar.MINUTE, min)
+    @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+    @Composable
+    fun FuelDatePicker() {
+        if (showDatePicker) {
+            val cal = Calendar.getInstance().apply { timeInMillis = timestampMs }
+            val state = rememberDatePickerState(initialSelectedDateMillis = timestampMs)
+            DatePickerDialog(
+                onDismissRequest = { showDatePicker = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        state.selectedDateMillis?.let { day ->
+                            val hour = cal.get(Calendar.HOUR_OF_DAY)
+                            val min = cal.get(Calendar.MINUTE)
+                            val merged = Calendar.getInstance().apply {
+                                timeInMillis = day
+                                set(Calendar.HOUR_OF_DAY, hour)
+                                set(Calendar.MINUTE, min)
+                            }
+                            timestampMs = merged.timeInMillis
                         }
-                        timestampMs = merged.timeInMillis
-                    }
-                    showDatePicker = false
-                }) { Text("OK") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
-            },
-        ) {
-            DatePicker(state = state)
+                        showDatePicker = false
+                    }) { Text("OK") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+                },
+            ) {
+                DatePicker(state = state)
+            }
         }
     }
+    FuelDatePicker()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -30,7 +30,7 @@ object DriveAuthRecovery {
         else -> {
             val intent = extractRecoveryIntent(throwable)
             if (intent != null) NEED_REMOTE_CONSENT_MESSAGE
-            else throwable.message ?: "Drive operation failed"
+            else "${throwable.javaClass.simpleName}: ${throwable.message ?: "Drive operation failed"}"
         }
     }
 

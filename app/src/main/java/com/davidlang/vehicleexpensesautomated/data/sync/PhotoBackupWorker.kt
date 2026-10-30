@@ -44,12 +44,12 @@ class PhotoBackupWorker @AssistedInject constructor(
                 Log.w(TAG, result.message)
                 Result.retry()
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.e(TAG, "Photo backup worker failed", e)
             Result.retry()
         }
     }
-
 
     private fun databaseGate(dbState: DatabaseHealthState, appContext: Context): Result? {
         val app = appContext.applicationContext as VehicleExpensesApplication

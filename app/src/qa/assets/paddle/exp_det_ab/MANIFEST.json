@@ -1,6 +1,6 @@
 {
   "note": "Experiment det A/B: mono 1ch dets with the SAME product I/O recipe (uint8 analytic → fp16/fp32 mid → uint8 heat). They differ by architecture/weights, not by feed path.",
-  "apk_packaging": "Scheduled nbs live in ABI flavor trees (app/src/arm64|x86_64/assets/paddle/exp_det_ab/). Unscheduled: third_party/paddle/exp_det_ab_unscheduled/.",
+  "apk_packaging": "Scheduled nbs live in ABI flavor trees (app/src/arm64|x86_64/paddle-models/exp_det_ab/), embedded via CMake .incbin in the qa build type only (VE_EMBED_EXP_DET). Unscheduled: third_party/paddle/exp_det_ab_unscheduled/.",
   "pipeline": {
     "v5_pir_to_classic": "Paddle 3.x paddle2onnx (inference.json+pdiparams) → onnxsim (server BN fold) → Paddle 2.6 x2paddle dynamic [-1,3,-1,-1] → classic inference.pdmodel/pdiparams under research/models/det_ab_classic_from_pir/",
     "mono": "convert_mono mean first-conv RGB→1ch; feed shape [-1,1,-1,-1] → det_ab_mono_product/",

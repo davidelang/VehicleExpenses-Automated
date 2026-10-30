@@ -27,8 +27,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
-import com.davidlang.vehicleexpensesautomated.ui.util.HeatmapStageDump
-import com.davidlang.vehicleexpensesautomated.ui.util.PreprocessStageDump
+import com.davidlang.vehicleexpensesautomated.ui.experiment.HeatmapStageDump
+import com.davidlang.vehicleexpensesautomated.ui.experiment.PreprocessStageDump
 import java.io.File
 
 private const val TAG = "HeatmapStage"

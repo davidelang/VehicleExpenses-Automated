@@ -79,9 +79,11 @@ class PhotoBackupViewModel @Inject constructor(
                 _manualSyncStatus.value = result.message
                 _manualSyncIsError.value = !result.success
                 _manualSyncResult.value = result
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: CancellationException) {
                 // ViewModel cleared — not a dest failure
                 throw e
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 _manualSyncIsError.value = true
                 _manualSyncStatus.value = e.message ?: "Photo sync failed"

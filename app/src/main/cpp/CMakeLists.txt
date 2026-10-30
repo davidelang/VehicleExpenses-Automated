@@ -10,16 +10,99 @@ set(LIBRAW_PATH ${CMAKE_SOURCE_DIR}/libraw)
 add_definitions(-DLIBRAW_NOTHREADS -DLIBRAW_NODISPLAY)
 
 # Collect LibRaw sources
-file(GLOB_RECURSE LIBRAW_SOURCES "${LIBRAW_PATH}/src/*.cpp")
+set(LIBRAW_SOURCES
+    ${LIBRAW_PATH}/src/decoders/canon_600.cpp
+    ${LIBRAW_PATH}/src/decoders/crx.cpp
+    ${LIBRAW_PATH}/src/decoders/decoders_dcraw.cpp
+    ${LIBRAW_PATH}/src/decoders/decoders_libraw.cpp
+    ${LIBRAW_PATH}/src/decoders/decoders_libraw_dcrdefs.cpp
+    ${LIBRAW_PATH}/src/decoders/dng.cpp
+    ${LIBRAW_PATH}/src/decoders/fp_dng.cpp
+    ${LIBRAW_PATH}/src/decoders/fuji_compressed.cpp
+    ${LIBRAW_PATH}/src/decoders/generic.cpp
+    ${LIBRAW_PATH}/src/decoders/kodak_decoders.cpp
+    ${LIBRAW_PATH}/src/decoders/load_mfbacks.cpp
+    ${LIBRAW_PATH}/src/decoders/smal.cpp
+    ${LIBRAW_PATH}/src/decoders/unpack.cpp
+    ${LIBRAW_PATH}/src/decoders/unpack_thumb.cpp
+    ${LIBRAW_PATH}/src/demosaic/aahd_demosaic.cpp
+    ${LIBRAW_PATH}/src/demosaic/ahd_demosaic.cpp
+    ${LIBRAW_PATH}/src/demosaic/dcb_demosaic.cpp
+    ${LIBRAW_PATH}/src/demosaic/dht_demosaic.cpp
+    ${LIBRAW_PATH}/src/demosaic/misc_demosaic.cpp
+    ${LIBRAW_PATH}/src/demosaic/xtrans_demosaic.cpp
+    ${LIBRAW_PATH}/src/integration/dngsdk_glue.cpp
+    ${LIBRAW_PATH}/src/integration/rawspeed_glue.cpp
+    ${LIBRAW_PATH}/src/libraw_c_api.cpp
+    ${LIBRAW_PATH}/src/libraw_datastream.cpp
+    ${LIBRAW_PATH}/src/metadata/adobepano.cpp
+    ${LIBRAW_PATH}/src/metadata/canon.cpp
+    ${LIBRAW_PATH}/src/metadata/ciff.cpp
+    ${LIBRAW_PATH}/src/metadata/cr3_parser.cpp
+    ${LIBRAW_PATH}/src/metadata/epson.cpp
+    ${LIBRAW_PATH}/src/metadata/exif_gps.cpp
+    ${LIBRAW_PATH}/src/metadata/fuji.cpp
+    ${LIBRAW_PATH}/src/metadata/hasselblad_model.cpp
+    ${LIBRAW_PATH}/src/metadata/identify.cpp
+    ${LIBRAW_PATH}/src/metadata/identify_tools.cpp
+    ${LIBRAW_PATH}/src/metadata/kodak.cpp
+    ${LIBRAW_PATH}/src/metadata/leica.cpp
+    ${LIBRAW_PATH}/src/metadata/makernotes.cpp
+    ${LIBRAW_PATH}/src/metadata/mediumformat.cpp
+    ${LIBRAW_PATH}/src/metadata/minolta.cpp
+    ${LIBRAW_PATH}/src/metadata/misc_parsers.cpp
+    ${LIBRAW_PATH}/src/metadata/nikon.cpp
+    ${LIBRAW_PATH}/src/metadata/normalize_model.cpp
+    ${LIBRAW_PATH}/src/metadata/olympus.cpp
+    ${LIBRAW_PATH}/src/metadata/p1.cpp
+    ${LIBRAW_PATH}/src/metadata/pentax.cpp
+    ${LIBRAW_PATH}/src/metadata/samsung.cpp
+    ${LIBRAW_PATH}/src/metadata/sony.cpp
+    ${LIBRAW_PATH}/src/metadata/tiff.cpp
+    ${LIBRAW_PATH}/src/postprocessing/aspect_ratio.cpp
+    ${LIBRAW_PATH}/src/postprocessing/dcraw_process.cpp
+    ${LIBRAW_PATH}/src/postprocessing/mem_image.cpp
+    ${LIBRAW_PATH}/src/postprocessing/postprocessing_aux.cpp
+    ${LIBRAW_PATH}/src/postprocessing/postprocessing_ph.cpp
+    ${LIBRAW_PATH}/src/postprocessing/postprocessing_utils.cpp
+    ${LIBRAW_PATH}/src/postprocessing/postprocessing_utils_dcrdefs.cpp
+    ${LIBRAW_PATH}/src/preprocessing/ext_preprocess.cpp
+    ${LIBRAW_PATH}/src/preprocessing/preprocessing_ph.cpp
+    ${LIBRAW_PATH}/src/preprocessing/raw2image.cpp
+    ${LIBRAW_PATH}/src/preprocessing/subtract_black.cpp
+    ${LIBRAW_PATH}/src/tables/cameralist.cpp
+    ${LIBRAW_PATH}/src/tables/colorconst.cpp
+    ${LIBRAW_PATH}/src/tables/colordata.cpp
+    ${LIBRAW_PATH}/src/tables/wblists.cpp
+    ${LIBRAW_PATH}/src/utils/curves.cpp
+    ${LIBRAW_PATH}/src/utils/decoder_info.cpp
+    ${LIBRAW_PATH}/src/utils/init_close_utils.cpp
+    ${LIBRAW_PATH}/src/utils/open.cpp
+    ${LIBRAW_PATH}/src/utils/phaseone_processing.cpp
+    ${LIBRAW_PATH}/src/utils/read_utils.cpp
+    ${LIBRAW_PATH}/src/utils/thumb_utils.cpp
+    ${LIBRAW_PATH}/src/utils/utils_dcraw.cpp
+    ${LIBRAW_PATH}/src/utils/utils_libraw.cpp
+    ${LIBRAW_PATH}/src/write/apply_profile.cpp
+    ${LIBRAW_PATH}/src/write/file_write.cpp
+    ${LIBRAW_PATH}/src/write/tiff_writer.cpp
+    ${LIBRAW_PATH}/src/write/write_ph.cpp
+    ${LIBRAW_PATH}/src/x3f/x3f_parse_process.cpp
+    ${LIBRAW_PATH}/src/x3f/x3f_utils_patched.cpp
+)
 
 # Build LibRaw as a static library
 add_library(libraw_static STATIC ${LIBRAW_SOURCES})
 target_include_directories(libraw_static PUBLIC ${LIBRAW_PATH})
 
-# Prebuilts: opencv under jniLibs/, Paddle under third_party/paddle/artifact/jni/.
-# Always set IMPORTED_SONAME so consumers get a basename DT_NEEDED. Thin x86
-# libpaddle_lite_jni.so historically had no ELF SONAME; without this, lld embeds
-# the host absolute IMPORTED_LOCATION and the APK fails dlopen on device.
+# Prebuilts: opencv under jniLibs/, Paddle under third_party/paddle/artifact/jni/
+# (the pin artifact dir; Gradle packages it from there too). Always set IMPORTED_SONAME so consumers get a
+# basename DT_NEEDED. Thin x86 libpaddle_lite_jni.so historically had *no*
+# ELF SONAME; without this, lld embeds the host absolute IMPORTED_LOCATION
+# and the APK fails dlopen on device:
+#   UnsatisfiedLinkError: library "/home/.../libpaddle_lite_jni.so" not found
+# → NativeImageUtils class load fails → every multi-scale cell is ingest_fail
+# in ~1 minute (looks like an impossibly fast "done" run).
 set(JNI_LIBS_DIR ${CMAKE_SOURCE_DIR}/../jniLibs/${ANDROID_ABI})
 set(PADDLE_JNI_DIR ${CMAKE_SOURCE_DIR}/../../../../third_party/paddle/artifact/jni/${ANDROID_ABI})
 foreach(_pso libpaddle_lite_jni.so libpaddle_light_api_shared.so)
@@ -77,6 +160,7 @@ include_directories(include)
 include_directories(${LIBRAW_PATH})
 
 # Per-ABI OCR models (.nb via .incbin). Not packaged as assets.
+# VE_EMBED_EXP_DET is passed only by the qa build type.
 if(NOT DEFINED VE_EMBED_EXP_DET)
     set(VE_EMBED_EXP_DET OFF)
 endif()
@@ -114,6 +198,9 @@ elseif(ANDROID_ABI STREQUAL "x86_64")
 else()
     message(FATAL_ERROR "libpaddle_models: unsupported ABI ${ANDROID_ABI}")
 endif()
+# Product models come straight from the paddle-models pin artifact dir
+# (fetch-deps build paddle-models). Experiment dets (exp_det_ab) are not pin
+# products and stay under app/src/<flavor>/paddle-models/.
 set(_pm_root ${CMAKE_SOURCE_DIR}/../../${_pm_flavor}/paddle-models)
 set(_pm_app ${CMAKE_SOURCE_DIR}/../../../../third_party/paddle-models/artifact/app/${_pm_arch})
 set(_pm_entries
@@ -177,6 +264,7 @@ file(WRITE "${_pm_cpp}"
 "  env->SetByteArrayRegion(arr, 0, n, reinterpret_cast<const jbyte*>(hit->start));\n"
 "  return arr;\n"
 "}\n")
+# .incbin is invisible to the compiler's dependency scan: re-embed when a .nb changes.
 set_source_files_properties("${_pm_cpp}" PROPERTIES OBJECT_DEPENDS "${_pm_deps}")
 add_library(paddle_models SHARED "${_pm_cpp}")
 target_link_libraries(paddle_models log)

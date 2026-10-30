@@ -11,7 +11,7 @@ import java.util.Locale
  * despite the field name.
  *
  * Display must use [formatVolume] / [shortLabel] — do not invent conversion at display time
- * except at Quick Fill save and Settings convert-all.
+ * except at Fill save and Settings convert-all.
  */
 object VolumeUnits {
     const val GALLONS = "G"

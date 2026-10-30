@@ -44,11 +44,6 @@ object FuelStopMatch {
         return false
     }
 
-    /** True if entry has place text and/or lat/lon in the location blob. */
-    fun hasLocationData(e: FuelEntry): Boolean {
-        val b = FuelLocationJson.parseBlob(e.location) ?: return false
-        return b.hasPlace() || b.hasCoords()
-    }
 
     fun haversineMeters(
         lat1: Double,

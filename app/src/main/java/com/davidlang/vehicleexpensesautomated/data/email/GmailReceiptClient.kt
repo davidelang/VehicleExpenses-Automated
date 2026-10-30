@@ -39,9 +39,6 @@ class GmailReceiptClient @Inject constructor(
         legacy.resolveAccountFromHint(emailHint, EmailReceiptPrefs.KEY_ACCOUNT)
             ?: legacy.resolveAccount(legacy.lastAccount())
 
-    /** @deprecated Use [listLabeledReceipts]; kept as alias for call sites. */
-    fun listShellReceipts(account: Account, labelName: String, maxResults: Int = 25): List<GmailMessage> =
-        listLabeledReceipts(account, labelName, maxResults)
 
     /**
      * Label-only query (no Shell-only from:). Autodetect vendor after fetch.
@@ -51,8 +48,10 @@ class GmailReceiptClient @Inject constructor(
         val credential = legacy.oauthCredential(EmailReceiptPrefs.GMAIL_READONLY_SCOPE, account)
         val token = try {
             credential.token
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: UserRecoverableAuthIOException) {
             throw NeedsConsentException(e.intent)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "token failed", e)
             throw e
@@ -75,8 +74,10 @@ class GmailReceiptClient @Inject constructor(
             try {
                 val full = fetchMessage(token, id) ?: continue
                 out.add(full)
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: UserRecoverableAuthIOException) {
                 throw NeedsConsentException(e.intent)
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 Log.w(TAG, "fetch message $id failed: ${e.message}")
             }

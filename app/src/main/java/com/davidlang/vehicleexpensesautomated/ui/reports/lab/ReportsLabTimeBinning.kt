@@ -1,7 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
 import java.util.Calendar
-import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /** Smooth / bin filter for the unified time report (R3). */
@@ -118,18 +117,6 @@ fun overlappingBinKeys(
     }
     if (keys.isEmpty()) keys += last
     return keys.toList()
-}
-
-fun formatBinLabel(binStartMs: Long, mode: LabSmoothMode): String {
-    val fmt = when (mode) {
-        LabSmoothMode.NONE -> java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
-        LabSmoothMode.DAY, LabSmoothMode.CUSTOM_DAYS ->
-            java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US)
-        LabSmoothMode.WEEK -> java.text.SimpleDateFormat("'W'ww yyyy", Locale.US)
-        LabSmoothMode.MONTH -> java.text.SimpleDateFormat("yyyy-MM", Locale.US)
-        LabSmoothMode.YEAR -> java.text.SimpleDateFormat("yyyy", Locale.US)
-    }
-    return fmt.format(java.util.Date(binStartMs))
 }
 
 /** Aggregate time-series points into bin-mean points (one Y per bin key). */
@@ -305,21 +292,4 @@ fun tripMetricsFromOdo(
     }.filterValues { it.isNotEmpty() }
 
     return TripOdoMetrics(milesTotal = milesTotal, pctByType = pctByType)
-}
-
-/** @deprecated Prefer [tripMetricsFromOdo]; aggregate any-trip % kept for callers. */
-fun tripMilesAndPctFromOdo(
-    fuel: List<com.davidlang.vehicleexpensesautomated.data.model.FuelEntry>,
-    mode: LabSmoothMode,
-    customDays: Int,
-): Pair<List<LabTimeYPoint>, List<LabTimeYPoint>> {
-    val m = tripMetricsFromOdo(fuel, mode, customDays)
-    // Aggregate % = sum of type % ≈ 100 when all miles under a type
-    val aggPct = m.milesTotal.map { pt ->
-        val typesAt = m.pctByType.values.mapNotNull { series ->
-            series.firstOrNull { it.timestampMs == pt.timestampMs }?.y
-        }
-        LabTimeYPoint(pt.timestampMs, typesAt.sum().coerceIn(0f, 100f))
-    }
-    return m.milesTotal to aggPct
 }

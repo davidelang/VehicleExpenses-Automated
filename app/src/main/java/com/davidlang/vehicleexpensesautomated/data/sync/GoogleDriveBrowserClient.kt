@@ -69,7 +69,13 @@ class GoogleDriveBrowserClient @Inject constructor(
                     searchQuery = searchQuery,
                 )
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
+            GoogleRestApiFailureLog.log(
+                "drive.listSpreadsheets",
+                "catalog=$catalog hasSearch=${!searchQuery.isNullOrBlank()}",
+                e,
+            )
             throw DriveAuthRecovery.wrapIfRecoverable(e)
         }
     }
@@ -92,7 +98,13 @@ class GoogleDriveBrowserClient @Inject constructor(
                     searchQuery = searchQuery,
                 )
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
+            GoogleRestApiFailureLog.log(
+                "drive.listFolders",
+                "catalog=$catalog hasParent=${!parentId.isNullOrBlank()} hasSearch=${!searchQuery.isNullOrBlank()}",
+                e,
+            )
             throw DriveAuthRecovery.wrapIfRecoverable(e)
         }
     }
@@ -157,7 +169,13 @@ class GoogleDriveBrowserClient @Inject constructor(
             }
             val created = drive.files().create(folder).setFields("id,name").execute()
             DriveBrowserItem(id = created.id, name = created.name ?: name.trim())
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
+            GoogleRestApiFailureLog.log(
+                "drive.createFolder",
+                "hasParent=${!parentId.isNullOrBlank()}",
+                e,
+            )
             throw DriveAuthRecovery.wrapIfRecoverable(e)
         }
     }
@@ -170,7 +188,9 @@ class GoogleDriveBrowserClient @Inject constructor(
             val drive = buildDriveService(accountHint)
             val file = drive.files().get(fileId).setFields("id,name").execute()
             DriveBrowserItem(id = file.id, name = file.name ?: fileId)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
+            GoogleRestApiFailureLog.log("drive.getFile", "fileId=present", e)
             throw DriveAuthRecovery.wrapIfRecoverable(e)
         }
     }

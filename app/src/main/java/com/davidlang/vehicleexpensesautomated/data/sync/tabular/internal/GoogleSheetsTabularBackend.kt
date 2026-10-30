@@ -192,6 +192,7 @@ class GoogleSheetsTabularBackend @Inject constructor(
             }
             val ok = conn["ok"] == true
             TabularTestResult(ok, conn["message"]?.toString() ?: if (ok) "Connection test passed" else "Connection test failed")
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: SheetsRecoverableAuthException) {
             TabularTestResult(
                 success = false,
@@ -199,6 +200,7 @@ class GoogleSheetsTabularBackend @Inject constructor(
                 needsRemoteConsent = true,
                 recoveryIntent = e.recoveryIntent,
             )
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             TabularTestResult(false, SheetsAuthRecovery.userMessage(e))
         }

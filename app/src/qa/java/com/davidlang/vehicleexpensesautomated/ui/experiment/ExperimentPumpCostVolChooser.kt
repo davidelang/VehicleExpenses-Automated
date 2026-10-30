@@ -14,9 +14,9 @@ import kotlin.math.min
 
 /**
  * Experiment-only copy of the pump label chooser.
- * The Quick Fill copy is edited by hand.
- * Quick Fill has its own copy and this object does not call it.
- * This copy must not call the Quick Fill object.
+ * The Fill copy is edited by hand.
+ * Fill has its own copy and this object does not call it.
+ * This copy must not call the Fill object.
  */
 object ExperimentPumpCostVolChooser {
 

@@ -1,25 +1,25 @@
 # Pump Experiment N-Sets Architecture
 
-Current heatmap-expand attempts used by the pump experiment. Quick Fill’s generic camera stages (deskew, find ink, expand, OCR, classify) are in [QUICK_FILL_CAMERA.md](QUICK_FILL_CAMERA.md). This file is the detail those stages point at for **how expansion is tried today**. It is not the product overview.
+Current heatmap-expand attempts used by the pump experiment. Fill’s generic camera stages (deskew, find ink, expand, OCR, classify) are in [FILL_CAMERA.md](FILL_CAMERA.md). This file is the detail those stages point at for **how expansion is tried today**. It is not the product overview.
 
 ## Active flows (current)
 
 Each column = fresh master. H/L/M/N/O/Q parked — `docs/obsolete/EXPERIMENT_PUMP_SETS.md`.
 
-Only `Set rot-G--` is scheduled. Product det at 224 and 608, vertical factor 0.34, pad p54 (0.54 / 0.55). Quick Fill is a separate copy of that rot-G-- at 0.34 / p54, not G-- and not G4.
+Only `Set rot-G--` is scheduled. Product det at 224 and 608, vertical factor 0.34, pad p54 (0.54 / 0.55). Fill is a separate copy of that rot-G-- at 0.34 / p54, not G-- and not G4.
 
 | Flow display name | Det | Expand | Notes |
 |-------------------|-----|--------|-------|
-| `Set rot-G--` | product det **224 and 608** | vertical factor **0.34**; pad **p54** (0.54 / 0.55) | The only scheduled column. Quick Fill is a separate copy of this rot-G-- at 0.34 / p54, not G-- and not G4. |
+| `Set rot-G--` | product det **224 and 608** | vertical factor **0.34**; pad **p54** (0.54 / 0.55) | The only scheduled column. Fill is a separate copy of this rot-G-- at 0.34 / p54, not G-- and not G4. |
 
 ### Retired history: ten-column table
 
-The old ten-column table is retired history. It is not scheduled. Quick Fill is not G-- and not G4.
+The old ten-column table is retired history. It is not scheduled. Fill is not G-- and not G4.
 
 | Flow display name | Det | Expand | Notes |
 |-------------------|-----|--------|-------|
 | `Set G-- (4 pass, none, calculated)` | product | calculated verts; thr **u8≥1**; horiz **0.5** | Experiment product-det reference + heat dumps |
-| `Set G4 (v4 det, calculated 0.0-2.5)` | **PP-OCRv4_mobile_det** | G-style calculated verts **0.0 / 0.1 / 0.3**; horiz **0.5**; deskew | v4 det A/B vs G--; retired history, not live Quick Fill |
+| `Set G4 (v4 det, calculated 0.0-2.5)` | **PP-OCRv4_mobile_det** | G-style calculated verts **0.0 / 0.1 / 0.3**; horiz **0.5**; deskew | v4 det A/B vs G--; retired history, not live Fill |
 | `Set P4-jump (v4 + energy + jump, S OCR)` | **PP-OCRv4_mobile_det** | AABB energy **maxFrac=0.4**; if a red **hits the cap**, OCR G4 verts (0/0.1/0.3) on that red instead | Control. `final` = energy-or-G. Jump L/R only. **No extra vert pad** |
 | `Set P4-m65 (v4 + mean0.65 frozen + jump)` | **PP-OCRv4_mobile_det** | Frozen seed width; stop when strip **\|∇\| mean** &lt; **0.65** × seed; then **+0.08×seedH** each tip; L/R jump. If a red **hits the cap**, OCR G verts **0.00 / 0.05 / 0.15** | `final` = energy-or-G |
 | `Set P4-gx (v4 + gx0.55 frozen + jump)` | **PP-OCRv4_mobile_det** | Frozen width; energy = **\|∂I/∂x\|**; stop at **0.55** × seed `gx`; **+0.08×seedH** each tip; L/R jump. Cap → G **0.00 / 0.05 / 0.15** | `final` = energy-or-G |
@@ -114,7 +114,7 @@ Recorded in JSON `product_path` / `product_dir` and branch metadata. Run both de
 | **Detector** | `product_det` only. Threads 4. `HEATMAP_BOX_MIN_AREA_RECT`, heat u8 ≥ 1, grow 0, dilate 0, max boxes 200. `capped` when the count equals 200. Eight corners are the seed quad. No `pruneOrientedQuads`, `pruneRectsToTopN`, or `doCrossScaleRedboxFilter`. No union across long-edges. No interior-energy expand. |
 | **Recognition** | `ContentExpandUtils.calculatedOrientedUv` with Set rot-G-- vert 0.34, left 0.54, right 0.55. No seed merge. Raw gray: `recognizeRotGmmQuads` (`expRotGmmRecognize`) on that gray and the blue quads; store the as-is text. Deskew gray: for each blue quad, `ocrPumpFeedOriented40` then `anchoredEngineV3.recognize` on the rec crop; store `debugText`. Parked deskew Set G-- verts 0.1 / 0.2 / 0.4 are not this run. Each long-edge stores every seed and its recognition on both the raw gray and the deskewed gray. |
 | **Report cells** | Columns: photo, long-edge, ML Kit raw, ML Kit deskew, paddle raw, paddle deskew. Each paddle long-edge is its own raw cell and its own deskew cell. Each paddle cell is that side’s red-seed / blue-quad overlay, then one stored recognition string per blue box, in seed order, including an empty string (raw as-is, deskew `debugText`). No seed count, capped flag, feed size, content size, probabilities, u/v spans, AABBs, seed corners, or blue corners in the HTML. Sparse JSON under `multi_scale_det_reports/` still stores the ML Kit boxes and the paddle seed geometry, blue geometry, and probabilities, ML Kit once per photo. Flat files: `multi_scale_det_report_<ts>.html` (parts), `results_<ts>.sparse`, `status/manifest/cursor_<ts>.*`; tray only: `cells/`. |
-| **Unchanged** | Scheduled pump columns and Quick Fill stay on their current processors. |
+| **Unchanged** | Scheduled pump columns and Fill stay on their current processors. |
 
 A dash photo’s report has one ML Kit raw list, one ML Kit deskew list, and sixteen paddle lists (eight long-edges × raw and deskew).
 
@@ -125,7 +125,7 @@ A dash photo’s report has one ML Kit raw list, one ML Kit deskew list, and six
 
 Removed clusters include: sets A–H / D / E / G / G- columns, binPeak stack, ML discovery. **procI** remains in source but is not scheduled.
 
-**Quick Fill** is a separate copy of `Set rot-G--` at 0.34 / p54, not G-- and not G4. This multi-scale section does not change that copy.
+**Fill** is a separate copy of `Set rot-G--` at 0.34 / p54, not G-- and not G4. This multi-scale section does not change that copy.
 
 ## 1. The Tree Architecture (`PumpBranch`)
 
@@ -192,7 +192,7 @@ fp16/fp32 heat tensors still use the convert-once float path (`heatmap_post_path
 ## 4. Best Practices
 
 * **Colors:** RED = reds; BLUE = calculated blues; ORANGE = side-extended oranges.
-* **Production isolation:** do not change Quick Fill verts from experiment dense lists without an explicit production decision.
+* **Production isolation:** do not change Fill verts from experiment dense lists without an explicit production decision.
 * **GT `?`:** machine never decoded; pool scoring uses findable fields only; if a run matches a `?` value, strip `?` from GT.
 * **JSON still embeds** JPEG base64 for `before`, `hist1`, `PD`, `PD_red_only` (cost/vol crop b64 are HTML-only).
 

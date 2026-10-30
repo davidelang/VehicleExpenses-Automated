@@ -108,7 +108,7 @@ Part of the same frequent gate, before or inside smoke:
 | Local PR touching jniLibs / paddle pin | **Required** |
 | Unrelated app-only change | optional |
 
-Report under: `dev-ai-interaction/scratch/paddle-so-smoke-YYYYMMDD-HHMM/`.
+Report under: `third_party/paddle/tests/out/paddle-so-smoke-YYYYMMDD-HHMM/`.
 
 ---
 
@@ -176,8 +176,8 @@ Same idea as Layer B: full app + First 10 when free; required only for **release
 
 | Primary ABI | Models | Path id |
 |-------------|--------|---------|
-| arm64-v8a | `prod_u8fp16/*_armv8.nb` | `uint8_fp16_u8` |
-| x86_64 | `prod_u8fp16/*_x86_64.nb` | `uint8_fp16_u8` |
-| armeabi-v7a | `prod_u8fp32_u8/*_armv7.nb` | `uint8_fp32_u8` |
+| arm64-v8a | `third_party/paddle-models/artifact/app/armv8/*_armv8.nb` (key `prod_u8fp16/`) | `uint8_fp16_u8` |
+| x86_64 | `third_party/paddle-models/artifact/app/x86_64/*_x86_64.nb` (key `prod_u8fp32_u8/`) | `uint8_fp32_u8` |
+| armeabi-v7a | `third_party/paddle-models/artifact/app/armv7/*_armv7.nb` (key `prod_u8fp32_u8/`) | `uint8_fp32_u8` |
 
 App: `NativePaddleEngine.productArchAndDir()`.

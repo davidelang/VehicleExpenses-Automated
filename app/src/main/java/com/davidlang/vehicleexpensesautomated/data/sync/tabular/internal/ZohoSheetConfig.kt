@@ -73,6 +73,7 @@ data class ZohoSheetConfig(
                         .ifBlank { DEFAULT_ACCOUNTS_SERVER },
                     sheets = sheets,
                 )
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (_: Exception) {
                 null
             }

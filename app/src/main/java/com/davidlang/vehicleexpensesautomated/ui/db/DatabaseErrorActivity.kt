@@ -122,6 +122,7 @@ class DatabaseErrorActivity : ComponentActivity() {
         fun step(block: () -> Unit): String? {
             try {
                 block()
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (t: Throwable) {
                 if (first) {
                     app.casLogged(gate, gate.prior)
@@ -161,6 +162,7 @@ class DatabaseErrorActivity : ComponentActivity() {
         if (!file.exists()) return
         try {
             Files.delete(file.toPath())
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: NoSuchFileException) {
         }
     }
@@ -176,6 +178,7 @@ class DatabaseErrorActivity : ComponentActivity() {
         }
         try {
             startActivity(intent)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: ActivityNotFoundException) {
             setContent {
                 VehicleExpensesAutomatedTheme {

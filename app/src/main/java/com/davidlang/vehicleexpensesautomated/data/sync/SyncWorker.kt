@@ -25,13 +25,12 @@ class SyncWorker @AssistedInject constructor(
     private val dbState: DatabaseHealthState,
 ) : CoroutineWorker(appContext, workerParams) {
 
-    /** Sync when any spreadsheet destination in the store is enabled. */
+    /** Sync when enabledSpreadsheet() is non-empty: enabled and configured, same gate as scheduleFromDestination. */
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         databaseGate(dbState, appContext)?.let { return@withContext it }
         try {
             val store = SyncDestinationStore(appContext)
-            val hasEnabled = store.load().spreadsheet.any { it.enabled }
-            if (!hasEnabled) {
+            if (store.enabledSpreadsheet().isEmpty()) {
                 return@withContext Result.success()
             }
 
@@ -50,12 +49,12 @@ class SyncWorker @AssistedInject constructor(
                     Result.retry()
                 }
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.e(TAG, "Sync worker failed", e)
             Result.retry()
         }
     }
-
 
     private fun databaseGate(dbState: DatabaseHealthState, appContext: Context): Result? {
         val app = appContext.applicationContext as VehicleExpensesApplication

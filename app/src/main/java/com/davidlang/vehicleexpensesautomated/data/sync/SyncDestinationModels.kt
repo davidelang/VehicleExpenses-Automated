@@ -51,10 +51,6 @@ enum class SpreadsheetProvider(val jsonValue: String) {
         OTHER -> "Other"
     }
 
-    fun isRowDbBackend(): Boolean = when (this) {
-        BASEROW, NOCODB, POCKETBASE, SUPABASE, AIRTABLE -> true
-        else -> false
-    }
 }
 
 enum class PhotoProvider(val jsonValue: String) {

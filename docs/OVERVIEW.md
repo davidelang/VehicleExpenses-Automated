@@ -5,7 +5,7 @@ The app records vehicle costs from the phone. Fuel is the camera path. Everythin
 ## What a person does
 
 1. **Add a vehicle** from a dashboard photo. The app keeps that photo, an odometer crop, and the words that identify the dash.
-2. **Quick Fill** takes two pictures: the dash, then the pump. The vehicle is chosen from the dash. The odometer, cost, and volume land in the form for review. The phone’s location is taken once for that visit and used to name the station.
+2. **Fill** takes two pictures: the dash, then the pump. The vehicle is chosen from the dash. The odometer, cost, and volume land in the form for review. The phone’s location is taken once for that visit and used to name the station.
 3. **Save** writes a fuel row. Numbers can be typed when the camera misses.
 4. **Trips** mark business or personal use as their own fuel rows.
 5. **Expenses** are the non-fuel costs, with an optional receipt photo.
@@ -18,7 +18,7 @@ The illustrated steps are the [full manual](user-manual/index.html). The short f
 
 | Question | Document |
 |----------|----------|
-| What Quick Fill does with the dash, the pump, and the location | [reference/QUICK_FILL_CAMERA.md](reference/QUICK_FILL_CAMERA.md) |
+| What Fill does with the dash, the pump, and the location | [reference/FILL_CAMERA.md](reference/FILL_CAMERA.md) |
 | How a pump heatmap is expanded in current experiments | [reference/PUMP_EXPERIMENT_FLOWS.md](reference/PUMP_EXPERIMENT_FLOWS.md) |
 | Crop preprocessing before OCR | [reference/OCR_PREPROCESSING.md](reference/OCR_PREPROCESSING.md) |
 | How cost and volume are chosen from those OCR boxes | [reference/PUMP_CLASSIFICATION.md](reference/PUMP_CLASSIFICATION.md) |

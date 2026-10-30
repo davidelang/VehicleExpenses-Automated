@@ -2,8 +2,10 @@ package com.davidlang.vehicleexpensesautomated.data.sync
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
+import com.davidlang.vehicleexpensesautomated.data.model.StoredParse
 import com.davidlang.vehicleexpensesautomated.data.model.ExpensePhotoUrls
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
@@ -12,6 +14,7 @@ import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepositor
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
+import com.davidlang.vehicleexpensesautomated.data.storage.PickedImageReader
 import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
 import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoRef
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -40,6 +43,7 @@ data class PhotoBackupResult(
     val downloads: Int = 0,
     val needsRemoteConsent: Boolean = false,
     val recoveryIntent: Intent? = null,
+    val missing: List<String> = emptyList(),
 )
 
 @Singleton
@@ -75,16 +79,17 @@ class PhotoBackupCoordinator @Inject constructor(
             result
         }
 
-    /** Upload vehicle ref + cleaned ref for one vehicle; updates cloudManifest. */
-    suspend fun uploadVehicleAssets(vehicle: Vehicle, accountHint: String? = null): Int =
-        withContext(Dispatchers.IO) {
-            val ctx = resolveContext(accountHint) ?: return@withContext 0
-            prepareRcloneDestIfNeeded(ctx.dest, ctx.hint)
-            uploadVehicleAssetsInternal(ctx, vehicle)
-        }
 
     /** One photo sync pipeline at a time (hub / dest edit / worker). */
     private val photoSyncMutex = Mutex()
+
+    private val runMissing = mutableListOf<String>()
+    private val dngMime = "image/x-adobe-dng"
+
+    private fun reportMissing(line: String) {
+        runMissing.add(line)
+        Log.w(TAG, "photo missing: $line")
+    }
 
     /**
      * Phase 9–11: photo sync — [mode] FULL (manual) scans everything; PENDING_ONLY (worker) pending queue only.
@@ -209,12 +214,19 @@ class PhotoBackupCoordinator @Inject constructor(
             onProgress?.onStatus(finalMessage)
             return@withContext consentResult.copy(message = finalMessage)
         }
-        onProgress?.onStatus(message)
+        val absentLines = results.flatMap { it.second.missing }
+        val messageWithMissing = if (absentLines.isEmpty()) {
+            message
+        } else {
+            "$message\n${absentLines.size} photos missing"
+        }
+        onProgress?.onStatus(messageWithMissing)
         PhotoBackupResult(
             success = !anyFailure,
-            message = message,
+            message = messageWithMissing,
             uploads = totalUploads,
             downloads = totalDownloads,
+            missing = absentLines,
         )
         } // withContext
     } // photoSyncMutex
@@ -282,6 +294,7 @@ class PhotoBackupCoordinator @Inject constructor(
             var uploads = 0
             var downloads = 0
             var manifestChanged = false
+            runMissing.clear()
 
             val vehicles = vehicleRepository.getAllIncludingDeleted().filter { !it.deleted }
             for (vehicle in vehicles) {
@@ -327,17 +340,23 @@ class PhotoBackupCoordinator @Inject constructor(
             }
 
             val message = when {
-                mode == PhotoSyncMode.PENDING_ONLY && uploads == 0 && downloads == 0 && sharedRebinds > 0 ->
+                mode == PhotoSyncMode.PENDING_ONLY && uploads == 0 && downloads == 0 &&
+                    sharedRebinds > 0 && runMissing.isEmpty() ->
                     "Photo sync complete: $sharedRebinds vehicle path(s) rebound"
-                else ->
+                runMissing.isEmpty() ->
                     "Photo sync complete: $uploads uploaded, $downloads downloaded"
+                else ->
+                    "Photo sync complete: $uploads uploaded, $downloads downloaded, " +
+                        "${runMissing.size} photos missing"
             }
             PhotoBackupResult(
                 success = true,
                 message = message,
                 uploads = uploads,
                 downloads = downloads,
+                missing = runMissing.toList(),
             )
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             // Compose dispose / job cancel must not become a stored Drive "failure".
             if (e.isNonFailureCancel()) throw e
@@ -371,6 +390,11 @@ class PhotoBackupCoordinator @Inject constructor(
 
     private suspend fun uploadVehicleAssetsInternal(ctx: SyncContext, vehicle: Vehicle): Int {
         if (vehicle.syncId.isBlank()) return 0
+        if (CorruptIncoming.blocked(vehicle.syncId)) return 0
+        if (CloudManifest.read(vehicle.cloudManifest) is StoredParse.Corrupt) {
+            Log.e(TAG, "skip vehicle photo sync; cloud manifest unreadable ${vehicle.syncId}")
+            return 0
+        }
         var uploads = 0
         var manifest = CloudManifest.stripObsoleteRoles(vehicle.cloudManifest) ?: vehicle.cloudManifest
         var manifestStrippedOnly = manifest != vehicle.cloudManifest
@@ -378,6 +402,12 @@ class PhotoBackupCoordinator @Inject constructor(
         var dest = ctx.dest
 
         val refPath = vehicle.referenceDashPhotoUrl
+        if (!refPath.isNullOrBlank() && !photoStorage.isLocalReadable(refPath) &&
+            !CloudManifest.hasEntryForDest(manifest, dest.id, CloudManifest.ROLE_VEHICLE_REF)
+        ) {
+            reportMissing("${vehicle.name}: $refPath")
+        }
+        uploads += uploadVehicleOriginal(ctx, vehicle, manifest, entries)
         if (photoStorage.isLocalReadable(refPath) &&
             !CloudManifest.hasEntryForDest(manifest, dest.id, CloudManifest.ROLE_VEHICLE_REF)
         ) {
@@ -442,15 +472,25 @@ class PhotoBackupCoordinator @Inject constructor(
     /** Phase 10: fuel dash/pump uploads; clears local photoUrl when save_fuel_photos is off. */
     private suspend fun uploadFuelAssets(ctx: SyncContext, fuel: FuelEntry): Int {
         if (fuel.syncId.isBlank() || fuel.photoUrl.isNullOrBlank()) return 0
+        if (CorruptIncoming.blocked(fuel.syncId)) return 0
+        if (FuelPhotoJson.read(fuel.photoUrl) is StoredParse.Corrupt) {
+            Log.e(TAG, "skip fuel photo sync; photo reference unreadable ${fuel.syncId}")
+            return 0
+        }
         val saveLocal = context.getSharedPreferences(SyncDestinationStore.PREFS_NAME, Context.MODE_PRIVATE)
             .getBoolean("save_fuel_photos", true)
         var uploads = 0
         var manifest = CloudManifest.stripObsoleteRoles(fuel.cloudManifest) ?: fuel.cloudManifest
         val manifestStrippedOnly = manifest != fuel.cloudManifest
-        val photos = parseFuelPhotos(fuel.photoUrl) ?: return 0
+        val photos = fuelPhotoPairs(fuel.photoUrl) ?: return 0
 
         for ((tag, uri) in photos) {
-            if (!photoStorage.isLocalReadable(uri)) continue
+            if (!photoStorage.isLocalReadable(uri)) {
+                if (!CloudManifest.hasEntryForDest(manifest, ctx.dest.id, fuelRoleForTag(tag))) {
+                    reportMissing("fuel ${fuel.syncId}: $uri")
+                }
+                continue
+            }
             // dash→fuel_dash; pump→fuel_pump; pump_2→fuel_pump_2 (not dash)
             val role = fuelRoleForTag(tag)
             if (CloudManifest.hasEntryForDest(manifest, ctx.dest.id, role)) continue
@@ -492,6 +532,11 @@ class PhotoBackupCoordinator @Inject constructor(
 
     private suspend fun uploadExpenseAsset(ctx: SyncContext, expense: ExpenseEntry): Int {
         if (expense.syncId.isBlank()) return 0
+        if (CorruptIncoming.blocked(expense.syncId)) return 0
+        if (ExpensePhotoUrls.read(expense.photoUrl) is StoredParse.Corrupt) {
+            Log.e(TAG, "skip expense photo sync; photo reference unreadable ${expense.syncId}")
+            return 0
+        }
         val saveLocal = context.getSharedPreferences(SyncDestinationStore.PREFS_NAME, Context.MODE_PRIVATE)
             .getBoolean("save_expense_photos", true)
         val pages = ExpensePhotoUrls.parse(expense.photoUrl)
@@ -504,31 +549,15 @@ class PhotoBackupCoordinator @Inject constructor(
         }
 
         for (page in pages) {
-            if (!photoStorage.isLocalReadable(page.uri)) continue
             val role = ExpensePhotoUrls.roleForPage(page.index)
-            if (CloudManifest.hasEntryForDest(manifest, ctx.dest.id, role)) continue
-            val name = ExpensePhotoUrls.remoteFileName(expense.syncId, page.index)
-            val result = ctx.backend.uploadFile(
-                ctx.dest, ctx.hint, page.uri, name, "image/jpeg",
-                CloudManifest.fileIdForDest(manifest, ctx.dest.id, role),
-            )
-            manifest = CloudManifest.merge(
-                manifest,
-                listOf(
-                    CloudManifest.Entry(
-                        destId = ctx.dest.id,
-                        provider = ctx.backend.manifestProvider(),
-                        fileId = result.fileId,
-                        name = name,
-                        role = role,
-                        mimeType = "image/jpeg",
-                        updatedAt = System.currentTimeMillis(),
-                    ),
-                ),
-            )
-            uploads++
-            if (result.resolvedFolderId.isNotBlank()) {
-                persistFolderId(ctx.store, ctx.dest, result.resolvedFolderId)
+            if (!photoStorage.isLocalReadable(page.uri)) {
+                if (!CloudManifest.hasEntryForDest(manifest, ctx.dest.id, role)) {
+                    reportMissing("${expense.date} ${expense.vendor}: ${page.uri}")
+                }
+                continue
+            }
+            uploads += uploadExpensePage(ctx, expense, page, role, manifest) { updated ->
+                manifest = updated
             }
         }
 
@@ -544,6 +573,140 @@ class PhotoBackupCoordinator @Inject constructor(
         }
         return uploads
     }
+
+    private suspend fun uploadVehicleOriginal(
+        ctx: SyncContext,
+        vehicle: Vehicle,
+        manifest: String?,
+        entries: MutableList<CloudManifest.Entry>,
+    ): Int {
+        val local = CloudManifest.parse(manifest).firstOrNull {
+            it.role == CloudManifest.ROLE_VEHICLE_REF_ORIGINAL && it.localUri.isNotBlank()
+        } ?: return 0
+        val uploaded = CloudManifest.parse(manifest).any {
+            it.destId == ctx.dest.id &&
+                it.role == CloudManifest.ROLE_VEHICLE_REF_ORIGINAL &&
+                it.fileId.isNotBlank()
+        }
+        if (uploaded) return 0
+        if (!photoStorage.isLocalReadable(local.localUri)) {
+            reportMissing("${vehicle.name}: ${local.localUri}")
+            return 0
+        }
+        val name = "vehicle_${vehicle.syncId}_ref.dng"
+        val result = ctx.backend.uploadFile(
+            ctx.dest, ctx.hint, local.localUri, name, dngMime, null,
+        )
+        entries.add(
+            CloudManifest.Entry(
+                destId = ctx.dest.id,
+                provider = ctx.backend.manifestProvider(),
+                fileId = result.fileId,
+                name = name,
+                role = CloudManifest.ROLE_VEHICLE_REF_ORIGINAL,
+                mimeType = dngMime,
+                updatedAt = System.currentTimeMillis(),
+                localUri = local.localUri,
+            ),
+        )
+        return 1
+    }
+
+    private suspend fun uploadExpensePage(
+        ctx: SyncContext,
+        expense: ExpenseEntry,
+        page: ExpensePhotoUrls.Page,
+        role: String,
+        manifest: String?,
+        onManifest: (String) -> Unit,
+    ): Int {
+        val uri = Uri.parse(page.uri)
+        val dng = PickedImageReader.isDng(context, uri)
+        val originalRole = if (page.index <= 0) {
+            CloudManifest.ROLE_EXPENSE_ORIGINAL
+        } else {
+            "${CloudManifest.ROLE_EXPENSE_ORIGINAL}_${page.index}"
+        }
+        var count = 0
+        var current = manifest
+        if (!CloudManifest.hasEntryForDest(current, ctx.dest.id, role)) {
+            val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+            val baseName = ExpensePhotoUrls.remoteFileName(expense.syncId, page.index)
+            if (dng) {
+                val tmp = File(context.cacheDir, "sync-${expense.syncId}-${page.index}.jpg")
+                try {
+                    PickedImageReader.developToJpeg(context, uri, tmp)
+                    val result = ctx.backend.uploadFile(
+                        ctx.dest, ctx.hint, tmp.absolutePath, baseName, "image/jpeg",
+                        CloudManifest.fileIdForDest(current, ctx.dest.id, role),
+                    )
+                    current = CloudManifest.merge(
+                        current,
+                        listOf(expenseEntry(ctx, result.fileId, baseName, role, "image/jpeg")),
+                    )
+                    onManifest(current)
+                    count++
+                    if (result.resolvedFolderId.isNotBlank()) {
+                        persistFolderId(ctx.store, ctx.dest, result.resolvedFolderId)
+                    }
+                // kept: failure stays on this call so the screen or caller can continue
+                } catch (e: Exception) {
+                    reportMissing("${expense.date}: ${page.uri}: ${e.message}")
+                } finally {
+                    tmp.delete()
+                }
+            } else {
+                val name = if (mime == "image/png") baseName.replace(".jpg", ".png") else baseName
+                val result = ctx.backend.uploadFile(
+                    ctx.dest, ctx.hint, page.uri, name, mime,
+                    CloudManifest.fileIdForDest(current, ctx.dest.id, role),
+                )
+                current = CloudManifest.merge(
+                    current,
+                    listOf(expenseEntry(ctx, result.fileId, name, role, mime)),
+                )
+                onManifest(current)
+                count++
+                if (result.resolvedFolderId.isNotBlank()) {
+                    persistFolderId(ctx.store, ctx.dest, result.resolvedFolderId)
+                }
+            }
+        }
+        if (dng && !CloudManifest.hasEntryForDest(current, ctx.dest.id, originalRole)) {
+            val dngName = if (page.index <= 0) {
+                "expense_${expense.syncId}_original.dng"
+            } else {
+                "expense_${expense.syncId}_original_${page.index}.dng"
+            }
+            val result = ctx.backend.uploadFile(
+                ctx.dest, ctx.hint, page.uri, dngName, dngMime,
+                CloudManifest.fileIdForDest(current, ctx.dest.id, originalRole),
+            )
+            current = CloudManifest.merge(
+                current,
+                listOf(expenseEntry(ctx, result.fileId, dngName, originalRole, dngMime)),
+            )
+            onManifest(current)
+            count++
+        }
+        return count
+    }
+
+    private fun expenseEntry(
+        ctx: SyncContext,
+        fileId: String,
+        name: String,
+        role: String,
+        mime: String,
+    ) = CloudManifest.Entry(
+        destId = ctx.dest.id,
+        provider = ctx.backend.manifestProvider(),
+        fileId = fileId,
+        name = name,
+        role = role,
+        mimeType = mime,
+        updatedAt = System.currentTimeMillis(),
+    )
 
     /** Bind Room paths when deterministic ref files already exist under vehicle_refs/. */
     private suspend fun rebindOnDiskVehicleRefs(vehicle: Vehicle): Vehicle {
@@ -699,6 +862,7 @@ class PhotoBackupCoordinator @Inject constructor(
                 val fresh = rebindOnDiskVehicleRefs(vehicleRepository.findBySyncId(vehicle.syncId) ?: vehicle)
                 val (downloaded, _) = downloadVehicleAssetsIfNeeded(ctx, fresh)
                 total += downloaded
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 Log.w(TAG, "Post-sync vehicle download failed syncId=${vehicle.syncId}", e)
             }
@@ -716,6 +880,7 @@ class PhotoBackupCoordinator @Inject constructor(
                 prepareRcloneDestIfNeeded(ctx.dest, ctx.hint)
                 val (_, changed) = downloadVehicleAssetsIfNeeded(ctx, rebound)
                 if (changed) return@withContext true
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 Log.w(TAG, "Vehicle download failed destId=${ctx.dest.id}", e)
             }
@@ -729,12 +894,32 @@ class PhotoBackupCoordinator @Inject constructor(
      * @return updated entry (or original if unchanged)
      */
     suspend fun scrubUnreadableFuelPhotos(entry: FuelEntry): FuelEntry = withContext(Dispatchers.IO) {
-        val photos = FuelPhotoJson.parse(entry.photoUrl)
+        if (CorruptIncoming.blocked(entry.syncId)) return@withContext entry
+        val parsed = FuelPhotoJson.read(entry.photoUrl)
+        if (parsed is StoredParse.Corrupt) {
+            Log.e(TAG, "scrub skipped; photo reference unreadable ${entry.syncId}")
+            return@withContext entry
+        }
+        val photos = (parsed as? StoredParse.Valid)?.value.orEmpty()
         if (photos.isEmpty()) return@withContext entry
-        val kept = photos.filter { photoStorage.isLocalReadable(it.uri) }
-        if (kept.size == photos.size) return@withContext entry
-        val newUrl = FuelPhotoJson.serialize(kept)
-        val updated = entry.copy(photoUrl = newUrl)
+        var changed = false
+        val marked = photos.map { ref ->
+            when (photoStorage.localRead(ref.uri)) {
+                PhotoStorageManager.LocalRead.NOT_FOUND -> {
+                    if (!ref.missing) changed = true
+                    ref.copy(missing = true)
+                }
+                PhotoStorageManager.LocalRead.READABLE -> {
+                    if (ref.missing) changed = true
+                    ref.copy(missing = false)
+                }
+                PhotoStorageManager.LocalRead.NEEDS_ACCESS,
+                PhotoStorageManager.LocalRead.UNKNOWN,
+                -> ref
+            }
+        }
+        if (!changed) return@withContext entry
+        val updated = entry.copy(photoUrl = FuelPhotoJson.serialize(marked))
         fuelRepository.updateFuelEntryPreservingTimestamp(updated)
         updated
     }
@@ -744,20 +929,32 @@ class PhotoBackupCoordinator @Inject constructor(
      * Persists only when something changed, via preserving-timestamp update.
      */
     suspend fun scrubUnreadableExpensePhotos(entry: ExpenseEntry): ExpenseEntry = withContext(Dispatchers.IO) {
-        val pages = ExpensePhotoUrls.parse(entry.photoUrl)
-        if (pages.isEmpty()) {
-            // Legacy non-empty dead single path still needs scrub if parse returned empty? parse always returns page for non-blank.
-            if (!entry.photoUrl.isNullOrBlank() && !photoStorage.isLocalReadable(entry.photoUrl)) {
-                val updated = entry.copy(photoUrl = null)
-                expenseRepository.updateExpenseEntryPreservingTimestamp(updated)
-                return@withContext updated
-            }
+        if (CorruptIncoming.blocked(entry.syncId)) return@withContext entry
+        val parsed = ExpensePhotoUrls.read(entry.photoUrl)
+        if (parsed is StoredParse.Corrupt) {
+            Log.e(TAG, "scrub skipped; photo reference unreadable ${entry.syncId}")
             return@withContext entry
         }
-        val kept = pages.filter { photoStorage.isLocalReadable(it.uri) }
-        if (kept.size == pages.size) return@withContext entry
-        val newUrl = ExpensePhotoUrls.format(kept)
-        val updated = entry.copy(photoUrl = newUrl)
+        val pages = (parsed as? StoredParse.Valid)?.value.orEmpty()
+        if (pages.isEmpty()) return@withContext entry
+        var changed = false
+        val marked = pages.map { page ->
+            when (photoStorage.localRead(page.uri)) {
+                PhotoStorageManager.LocalRead.NOT_FOUND -> {
+                    if (!page.missing) changed = true
+                    page.copy(missing = true)
+                }
+                PhotoStorageManager.LocalRead.READABLE -> {
+                    if (page.missing) changed = true
+                    page.copy(missing = false)
+                }
+                PhotoStorageManager.LocalRead.NEEDS_ACCESS,
+                PhotoStorageManager.LocalRead.UNKNOWN,
+                -> page
+            }
+        }
+        if (!changed) return@withContext entry
+        val updated = entry.copy(photoUrl = ExpensePhotoUrls.format(marked))
         expenseRepository.updateExpenseEntryPreservingTimestamp(updated)
         updated
     }
@@ -773,6 +970,7 @@ class PhotoBackupCoordinator @Inject constructor(
                 val result = downloadExpensePhoto(expense, ctx)
                 if (result != null && hasReadableExpenseLocal(result)) return@withContext result
                 if (result != null) return@withContext result
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 Log.w(TAG, "Expense download failed destId=${ctx.dest.id}", e)
             }
@@ -792,6 +990,7 @@ class PhotoBackupCoordinator @Inject constructor(
                 val result = downloadFuelPhoto(fuel, ctx)
                 if (result != null && hasReadableFuelLocal(result)) return@withContext result
                 if (result != null) return@withContext result
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 Log.w(TAG, "Fuel download failed destId=${ctx.dest.id}", e)
             }
@@ -839,7 +1038,9 @@ class PhotoBackupCoordinator @Inject constructor(
             for (role in rolesToRestore) {
                 val tag = fuelTagFromRole(role)
                 val current = existing[tag]
-                if (current != null && photoStorage.isLocalReadable(current.uri)) continue
+                if (current != null && photoStorage.isLocalReadable(current.uri)) {
+                    continue
+                }
                 val fileId = CloudManifest.getFileId(
                     fuel.cloudManifest,
                     ctx.dest.id,
@@ -930,6 +1131,8 @@ class PhotoBackupCoordinator @Inject constructor(
         destId: String,
         provider: String,
     ): List<String> {
+        if (CorruptIncoming.blocked(fuel.syncId)) return emptyList()
+        if (CloudManifest.read(fuel.cloudManifest) is StoredParse.Corrupt) return emptyList()
         val fromManifest = CloudManifest.parse(fuel.cloudManifest)
             .filter { isFuelPhotoRole(it.role) }
             .filter { entry ->
@@ -941,7 +1144,11 @@ class PhotoBackupCoordinator @Inject constructor(
             .distinct()
         if (fromManifest.isNotEmpty()) return fromManifest
         // Prefer known roles if getFileId can resolve via fallback (legacy + any pump_N in local tags)
-        val fromTags = parseFuelPhotos(fuel.photoUrl)
+        val fromTags = if (FuelPhotoJson.read(fuel.photoUrl) is StoredParse.Corrupt) {
+            null
+        } else {
+            fuelPhotoPairs(fuel.photoUrl)
+        }
             ?.map { fuelRoleForTag(it.first) }
             ?.distinct()
             .orEmpty()
@@ -969,7 +1176,9 @@ class PhotoBackupCoordinator @Inject constructor(
         for (role in rolesToRestore) {
             val pageIndex = ExpensePhotoUrls.pageIndexFromRole(role)
             val current = existingPages[pageIndex]
-            if (current != null && photoStorage.isLocalReadable(current.uri)) continue
+            if (current != null && photoStorage.isLocalReadable(current.uri)) {
+                continue
+            }
             val fileId = CloudManifest.getFileId(
                 expense.cloudManifest,
                 ctx.dest.id,
@@ -996,6 +1205,38 @@ class PhotoBackupCoordinator @Inject constructor(
             downloads++
         }
 
+        if (saveLocal) {
+            val originals = CloudManifest.parse(expense.cloudManifest).filter { entry ->
+                (entry.role == CloudManifest.ROLE_EXPENSE_ORIGINAL ||
+                    entry.role.startsWith("${CloudManifest.ROLE_EXPENSE_ORIGINAL}_")) &&
+                    entry.fileId.isNotBlank() &&
+                    (entry.destId == ctx.dest.id || entry.provider == provider)
+            }
+            for (entry in originals) {
+                if (photoStorage.isLocalReadable(entry.localUri)) {
+                    continue
+                }
+                val displayName = entry.name.ifBlank { namelessOriginalName(entry) }
+                val local = ctx.backend.downloadFile(
+                    ctx.dest,
+                    ctx.hint,
+                    entry.fileId,
+                    displayName,
+                    useMediaStore = true,
+                    photoType = PhotoType.EXPENSE,
+                )
+                bindings.add(
+                    CloudManifest.DownloadBinding(
+                        role = entry.role,
+                        fileId = entry.fileId,
+                        name = entry.name,
+                        mimeType = entry.mimeType,
+                    ),
+                )
+                downloads++
+            }
+        }
+
         if (downloads == 0) return@withContext expense.photoUrl
 
         val newPhotoUrl = ExpensePhotoUrls.format(existingPages.values.toList())
@@ -1020,6 +1261,9 @@ class PhotoBackupCoordinator @Inject constructor(
         destId: String,
         provider: String,
     ): List<String> {
+        if (CorruptIncoming.blocked(expense.syncId)) return emptyList()
+        if (CloudManifest.read(expense.cloudManifest) is StoredParse.Corrupt) return emptyList()
+        if (ExpensePhotoUrls.read(expense.photoUrl) is StoredParse.Corrupt) return emptyList()
         val fromManifest = CloudManifest.parse(expense.cloudManifest)
             .filter { ExpensePhotoUrls.isExpenseReceiptRole(it.role) }
             .filter { entry ->
@@ -1127,9 +1371,14 @@ class PhotoBackupCoordinator @Inject constructor(
         }
 
         for (fuel in fuelRepository.getAllIncludingDeleted().filter { !it.deleted }) {
-            val photos = parseFuelPhotos(fuel.photoUrl) ?: continue
+            if (CorruptIncoming.blocked(fuel.syncId)) continue
+            if (FuelPhotoJson.read(fuel.photoUrl) is StoredParse.Corrupt) continue
+            if (CloudManifest.read(fuel.cloudManifest) is StoredParse.Corrupt) continue
+            val photos = fuelPhotoPairs(fuel.photoUrl) ?: continue
             for ((tag, uri) in photos) {
-                if (!photoStorage.isLocalReadable(uri)) continue
+                if (!photoStorage.isLocalReadable(uri)) {
+                    continue
+                }
                 val role = fuelRoleForTag(tag)
                 if (!CloudManifest.hasEntryForDest(fuel.cloudManifest, dest.id, role)) upload++
             }
@@ -1153,30 +1402,27 @@ class PhotoBackupCoordinator @Inject constructor(
     private suspend fun bestEffortSheetSync(accountHint: String?) {
         try {
             spreadsheetSyncCoordinator.syncNow(accountHint)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "Best-effort sheet sync after manifest change failed", e)
         }
     }
 
-    private fun parseFuelPhotos(photoUrl: String?): List<Pair<String, String>>? {
-        if (photoUrl.isNullOrBlank()) return null
-        return try {
-            if (photoUrl.trimStart().startsWith("[")) {
-                val arr = JSONArray(photoUrl)
-                buildList {
-                    for (i in 0 until arr.length()) {
-                        val obj = arr.optJSONObject(i) ?: continue
-                        val tag = obj.optString("tag", "dash")
-                        val uri = obj.optString("uri", "")
-                        if (uri.isNotBlank()) add(tag to uri)
-                    }
-                }
-            } else {
-                listOf("dash" to photoUrl)
-            }
-        } catch (_: Exception) {
-            listOf("dash" to photoUrl)
+    private fun fuelPhotoPairs(photoUrl: String?): List<Pair<String, String>>? {
+        val parsed = FuelPhotoJson.read(photoUrl)
+        if (parsed is StoredParse.Corrupt) {
+            Log.e(TAG, "photo reference unreadable")
+            return null
         }
+        val refs = (parsed as? StoredParse.Valid)?.value.orEmpty()
+        if (refs.isEmpty()) return null
+        return refs.map { it.tag to it.uri }
+    }
+
+    private fun namelessOriginalName(entry: CloudManifest.Entry): String {
+        val built = "${entry.fileId}_${entry.role}"
+        Log.w(TAG, "nameless original restored as $built")
+        return built
     }
 
     private fun recordPhotoResult(
@@ -1246,6 +1492,7 @@ class PhotoBackupCoordinator @Inject constructor(
         val config = RcloneDestConfig.parse(dest.configJson) ?: return
         try {
             oneDriveSetup.refreshTokenIfPossible(dest.id, config, accountHint)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "OneDrive token refresh failed destId=${dest.id}", e)
         }
@@ -1301,6 +1548,13 @@ class PhotoBackupCoordinator @Inject constructor(
 
     private fun vehicleNeedsUpload(vehicle: Vehicle, dest: PhotoDestination): Boolean {
         if (vehicle.syncId.isBlank()) return false
+        if (!vehicle.referenceDashPhotoUrl.isNullOrBlank() &&
+            !CloudManifest.hasEntryForDest(vehicle.cloudManifest, dest.id, CloudManifest.ROLE_VEHICLE_REF)
+        ) return true
+        if (CloudManifest.parse(vehicle.cloudManifest).any {
+                it.role == CloudManifest.ROLE_VEHICLE_REF_ORIGINAL && it.localUri.isNotBlank() && it.fileId.isBlank()
+            }
+        ) return true
         if (photoStorage.isLocalReadable(vehicle.referenceDashPhotoUrl) &&
             !CloudManifest.hasEntryForDest(vehicle.cloudManifest, dest.id, CloudManifest.ROLE_VEHICLE_REF)
         ) return true
@@ -1334,9 +1588,14 @@ class PhotoBackupCoordinator @Inject constructor(
     }
 
     private fun fuelHasPendingUpload(fuel: FuelEntry, dest: PhotoDestination): Boolean {
-        val photos = parseFuelPhotos(fuel.photoUrl) ?: return false
+        if (CorruptIncoming.blocked(fuel.syncId)) return false
+        if (FuelPhotoJson.read(fuel.photoUrl) is StoredParse.Corrupt) return false
+        if (CloudManifest.read(fuel.cloudManifest) is StoredParse.Corrupt) return false
+        val photos = fuelPhotoPairs(fuel.photoUrl) ?: return false
         for ((tag, uri) in photos) {
-            if (!photoStorage.isLocalReadable(uri)) continue
+            if (!photoStorage.isLocalReadable(uri)) {
+                continue
+            }
             val role = fuelRoleForTag(tag)
             if (!CloudManifest.hasEntryForDest(fuel.cloudManifest, dest.id, role)) return true
         }
@@ -1345,7 +1604,11 @@ class PhotoBackupCoordinator @Inject constructor(
 
     private fun expenseNeedsUpload(expense: ExpenseEntry, dest: PhotoDestination): Boolean {
         for (page in ExpensePhotoUrls.parse(expense.photoUrl)) {
-            if (!photoStorage.isLocalReadable(page.uri)) continue
+            if (!photoStorage.isLocalReadable(page.uri)) {
+                val role = ExpensePhotoUrls.roleForPage(page.index)
+                if (!CloudManifest.hasEntryForDest(expense.cloudManifest, dest.id, role)) return true
+                continue
+            }
             val role = ExpensePhotoUrls.roleForPage(page.index)
             if (!CloudManifest.hasEntryForDest(expense.cloudManifest, dest.id, role)) return true
         }

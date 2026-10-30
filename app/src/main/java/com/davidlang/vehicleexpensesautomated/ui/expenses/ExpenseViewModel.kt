@@ -38,9 +38,4 @@ class ExpenseViewModel @Inject constructor(
 
     suspend fun getExpenseById(id: Long): ExpenseEntry? = expenseEntryRepository.getById(id)
 
-    suspend fun deleteExpense(entry: ExpenseEntry) {
-        withContext(Dispatchers.IO) {
-            expenseEntryRepository.markExpenseDeleted(entry)
-        }
-    }
 }

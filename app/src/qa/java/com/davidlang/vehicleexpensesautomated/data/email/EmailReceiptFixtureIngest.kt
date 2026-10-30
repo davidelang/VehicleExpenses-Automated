@@ -3,10 +3,20 @@ package com.davidlang.vehicleexpensesautomated.data.email
 import android.content.Context
 import android.util.Log
 import com.davidelang.extractmail.Extractmail
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
 import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/** Qa Settings reaches offline ingest without a main constructor dependency. */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface EmailReceiptFixtureEntryPoint {
+    fun emailReceiptFixtureIngest(): EmailReceiptFixtureIngest
+}
 
 /**
  * Offline ingest of packaged **extractmail golden JSON** (no Gmail, no HTML re-parse).

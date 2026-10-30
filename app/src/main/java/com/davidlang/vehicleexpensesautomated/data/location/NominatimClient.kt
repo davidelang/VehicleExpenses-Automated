@@ -57,6 +57,7 @@ object NominatimClient {
                 } finally {
                     conn.disconnect()
                 }
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 Log.w(TAG, "search fuel failed: ${e.message}")
                 emptyList()
@@ -91,6 +92,7 @@ object NominatimClient {
                 } finally {
                     conn.disconnect()
                 }
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 Log.w(TAG, "reverse failed: ${e.message}")
                 null
@@ -136,6 +138,7 @@ object NominatimClient {
                 )
             }
             out.sortedBy { it.distanceM ?: Double.MAX_VALUE }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "parse search fuel: ${e.message}")
             emptyList()
@@ -155,6 +158,7 @@ object NominatimClient {
                 source = "nominatim",
                 kind = LocationLookupKind.ADDRESS_ONLY,
             )
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "parse reverse: ${e.message}")
             null

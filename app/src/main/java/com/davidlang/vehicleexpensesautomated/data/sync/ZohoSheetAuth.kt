@@ -147,7 +147,7 @@ class ZohoSheetAuth @Inject constructor(
         return null
     }
 
-    private fun postForm(url: String): JSONObject = try {
+    private fun postForm(url: String): JSONObject {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 15_000
@@ -157,12 +157,28 @@ class ZohoSheetAuth @Inject constructor(
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            JSONObject(body.ifBlank { "{}" })
+            if (code !in 200..299) {
+                throw IllegalStateException(zohoErrorMessage(body, code))
+            }
+            val json = JSONObject(body.ifBlank { "{}" })
+            if (json.has("error")) {
+                val message = json.optString("error").ifBlank { json.optString("message") }
+                throw IllegalStateException(message.ifBlank { "request failed" })
+            }
+            return json
         } finally {
             conn.disconnect()
         }
-    } catch (_: Exception) {
-        JSONObject()
+    }
+
+    private fun zohoErrorMessage(body: String, code: Int): String {
+        val parsed = try {
+            JSONObject(body)
+        } catch (_: Exception) {
+            null
+        }
+        val message = parsed?.optString("error").orEmpty().ifBlank { parsed?.optString("message").orEmpty() }
+        return message.ifBlank { body.ifBlank { "request failed ($code)" } }
     }
 
     private fun parseFragment(fragment: String): Map<String, String> {

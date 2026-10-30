@@ -45,15 +45,6 @@ object OverpassClient {
         return min(maxM, maxOf(baseM, scaled))
     }
 
-    suspend fun nearestFuelStation(
-        lat: Double,
-        lon: Double,
-        accuracyM: Double? = null,
-        timeoutMs: Long = UI_TIMEOUT_MS,
-    ): LocationLookupResult? {
-        val r = effectiveRadiusM(BASE_RADIUS_FUEL_M, MAX_RADIUS_FUEL_M, accuracyM)
-        return listFuelStations(lat, lon, r, timeoutMs).firstOrNull()
-    }
 
     suspend fun nearestAutoService(
         lat: Double,
@@ -139,6 +130,7 @@ object OverpassClient {
                 } finally {
                     conn.disconnect()
                 }
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 Log.w(TAG, "Overpass failed: ${e.message}")
                 emptyList()
@@ -187,6 +179,7 @@ object OverpassClient {
                 )
             }
             out.sortedBy { it.distanceM ?: Double.MAX_VALUE }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.w(TAG, "parse Overpass list: ${e.message}")
             emptyList()

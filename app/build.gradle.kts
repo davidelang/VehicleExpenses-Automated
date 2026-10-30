@@ -32,24 +32,25 @@ android {
         applicationId = "com.davidlang.vehicleexpensesautomated"
         minSdk = 26
         targetSdk = 36
-        // Must increase on every Play upload (raise app/versionCode.txt before each Play bundle).
+        // Must increase on every Play upload (raise app/versionCode.txt before each ./build_app --bundle).
         versionCode = file("versionCode.txt").readText().trim().toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // Use orNull so a broken git state (bad refs after permission issues or worktree problems)
-        // does not fail the entire configuration with "bash exit 128".
-        // We also set workingDir explicitly and use a more robust command.
+        // Same string build_app prints: BRANCH-start describe, else git describe --always --exclude '*+*'.
+        // A failed git command fails configuration.
         val rawVersion = providers.exec {
             workingDir = project.rootDir
             commandLine(
                 "bash",
                 "-c",
-                "BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'HEAD') && (git describe --tags --match \"${'$'}{BRANCH_NAME}-start\" 2>/dev/null || git describe --always 2>/dev/null || echo 'dev')"
+                "set -euo pipefail; branch=$(git rev-parse --abbrev-ref HEAD); if git rev-parse -q --verify \"refs/tags/${'$'}{branch}-start\" >/dev/null; then git describe --tags --match \"${'$'}{branch}-start\"; else git describe --always --exclude '*+*'; fi",
             )
-        }.standardOutput.asText.orNull?.trim() ?: "dev"
+        }.standardOutput.asText.get().trim()
+        if (rawVersion.isEmpty()) error("git describe returned an empty version name")
 
         // Fingerprint product paddle light SOs so experiment reports self-describe the
         // library under test (git describe alone does not encode jniLibs contents).
         // Format: <git>+so<8> where <8> is sha256 of "abi=sha|..." over all shipped ABIs.
+        // Paddle natives come straight from the pin artifact dir (single source of truth).
         val jniRoot = rootProject.file("third_party/paddle/artifact/jni")
         val soAbis = listOf("x86_64", "arm64-v8a", "armeabi-v7a")
         val soShaByAbi = soAbis.associateWith { abi ->
@@ -61,7 +62,7 @@ android {
             .joinToString("") { b -> "%02x".format(b) }
             .take(8)
         // versionName embeds SO stamp so any SO byte change is visible even before commit.
-        // Per-ABI shas are recorded in third_party/paddle/libpin.toml.
+        // Per-ABI shas are recorded in third_party/paddle/libpin.toml ([[artifact]] sha256).
         val versionWithSo = "$rawVersion+so$soStamp8"
         versionName = versionWithSo
         buildConfigField("String", "VERSION_NAME", "\"${versionWithSo}\"")
@@ -79,7 +80,7 @@ android {
             }
         }
     }
-    // One APK per device ABI: matching .so set + matching .nb assets (see src/<flavor>/assets).
+    // One APK per device ABI. That ABI's .nb files are inside libpaddle_models.so.
     flavorDimensions += "abi"
     productFlavors {
         create("arm64") {
@@ -94,19 +95,19 @@ android {
             dimension = "abi"
             ndk { abiFilters += "x86_64" }
         }
-        // Play bundle only. All three ABIs in one AAB. playDebug and playQa are disabled below.
+        // Play bundle only (./build_app --bundle runs bundlePlayRelease): all three ABIs in one AAB.
+        // Play splits lib/<abi>/, including libpaddle_models.so. Models are not assets.
         create("play") {
             dimension = "abi"
             ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
         }
     }
     // Default aapt ignore plus timestamped model leftovers (*.nb.bak.*).
-    // Unscheduled dets live in third_party/paddle/exp_det_ab_unscheduled/ (not assets).
     androidResources {
         ignoreAssetsPattern =
             "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:*.bak*"
     }
-    // debug: the real app. qa: side-by-side test app. release matches debug and is minified for Play.
+    // debug: the real app. qa: side-by-side test app. release matches debug.
     testBuildType = "qa"
     buildTypes {
         getByName("debug") {
@@ -133,6 +134,7 @@ android {
             manifestPlaceholders["msalSignatureHash"] = "PLACEHOLDER_SIGNATURE_HASH"
             externalNativeBuild {
                 cmake {
+                    // initWith(debug) copies OFF. qa embeds the experiment det; debug and release do not.
                     arguments.clear()
                     arguments += "-DVE_EMBED_EXP_DET=ON"
                 }
@@ -184,6 +186,8 @@ android {
     }
     sourceSets {
         getByName("main") {
+            // Paddle .so files: third_party/paddle/artifact/jni/<abi>/ (fetch-deps build paddle).
+            // src/main/jniLibs keeps only non-Paddle natives (opencv, libc++_shared).
             jniLibs.srcDir(rootProject.file("third_party/paddle/artifact/jni"))
         }
     }
@@ -229,8 +233,9 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 dependencies {
-    // opencv-java stays in app/libs. PaddlePredictor comes from the paddle pin.
+    // Local jars (opencv-java). AARs come from third_party pins.
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
+    // PaddlePredictor.jar straight from the paddle pin artifact dir.
     implementation(files(rootProject.file("third_party/paddle/artifact/PaddlePredictor.jar")))
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.browser:browser:1.8.0")

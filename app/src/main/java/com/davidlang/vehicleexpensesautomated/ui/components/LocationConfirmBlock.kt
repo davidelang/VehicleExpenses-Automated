@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupKind
 
 /**
- * Location preview + editable name/address for Quick Fill / Trip / Expense.
+ * Location preview + editable name/address for Fill / Trip / Expense.
  * Non-blank place is implicitly confirmed on save. **Wrong station** opens the picker
  * for FUEL_STATION / AUTO_SERVICE when coords are known.
  *

@@ -97,12 +97,14 @@ class DataTransferProvider : ContentProvider() {
             try {
                 BackupImporter(requireContext().applicationContext).import(input, end)
                 if (!end.closed) end.closeOk()
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (t: Throwable) {
                 if (!end.closed) {
                     val reason = t.message?.ifBlank { null } ?: t.javaClass.simpleName
                     val message = if (reason.startsWith("datatransfer:")) reason else "datatransfer: $reason"
                     try {
                         end.closeError(message)
+                    // kept: failure stays on this call so the screen or caller can continue
                     } catch (_: Throwable) {
                     }
                 }
@@ -138,12 +140,14 @@ class DataTransferProvider : ContentProvider() {
             try {
                 block(stream, end)
                 if (!end.closed) end.closeOk()
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (t: Throwable) {
                 if (!end.closed && writeErrorOnFailure) {
                     val reason = t.message?.ifBlank { null } ?: t.javaClass.simpleName
                     val message = if (reason.startsWith("datatransfer:")) reason else "datatransfer: $reason"
                     try {
                         end.closeError(message)
+                    // kept: failure stays on this call so the screen or caller can continue
                     } catch (_: Throwable) {
                     }
                 }
@@ -166,6 +170,7 @@ class DataTransferProvider : ContentProvider() {
         if (!file.isFile) return null
         return try {
             JSONObject(file.readText(Charsets.UTF_8))
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             android.util.Log.e("DataTransfer", "status unreadable", e)
             JSONObject().put("result", "status unreadable")
@@ -219,6 +224,7 @@ class DataTransferProvider : ContentProvider() {
             if (closed) return
             try {
                 stream?.flush()
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (failure: Throwable) {
                 closeError(failure.message?.ifBlank { null } ?: failure.toString())
                 return
@@ -226,6 +232,7 @@ class DataTransferProvider : ContentProvider() {
             closed = true
             try {
                 signalSide.close()
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (_: Throwable) {
             }
         }
@@ -235,6 +242,7 @@ class DataTransferProvider : ContentProvider() {
             closed = true
             try {
                 signalSide.closeWithError(message)
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (_: Throwable) {
             }
         }

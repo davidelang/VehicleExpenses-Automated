@@ -47,10 +47,16 @@ internal object SyncResultMessages {
                 for ((name, result) in results) {
                     if (result.success) {
                         val detail = when {
-                            result.uploads == 0 && result.downloads == 0 -> "up to date"
-                            else -> "${result.uploads} uploaded, ${result.downloads} downloaded"
+                            result.uploads == 0 && result.downloads == 0 && result.missing.isEmpty() ->
+                                "up to date"
+                            result.missing.isEmpty() ->
+                                "${result.uploads} uploaded, ${result.downloads} downloaded"
+                            else ->
+                                "${result.uploads} uploaded, ${result.downloads} downloaded, " +
+                                    "${result.missing.size} photos missing"
                         }
                         appendLine("• $name: $detail")
+                        result.missing.take(3).forEach { appendLine("• missing $it") }
                     }
                 }
             }.trimEnd()

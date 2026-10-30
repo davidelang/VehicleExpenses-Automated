@@ -2,6 +2,7 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.os.Debug
 import android.util.Log
+import com.davidlang.vehicleexpensesautomated.testOnlyBuild
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -77,6 +78,7 @@ object ProcessMemProbe {
                     out[k] = num
                 }
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Throwable) {
         }
         return out
@@ -131,6 +133,7 @@ object ProcessMemProbe {
         onLog: ((String) -> Unit)? = null,
         block: () -> T,
     ): T {
+        if (!testOnlyBuild()) return block()
         val id = sampleSeq.incrementAndGet()
         val label = "$tag#$id"
         val t0 = System.currentTimeMillis()
@@ -151,6 +154,7 @@ object ProcessMemProbe {
             while (!stop.get()) {
                 try {
                     Thread.sleep(intervalMs)
+                // kept: failure stays on this call so the screen or caller can continue
                 } catch (_: InterruptedException) {
                     break
                 }
@@ -189,6 +193,7 @@ object ProcessMemProbe {
             sampler.interrupt()
             try {
                 sampler.join(2_000L)
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (_: InterruptedException) {
             }
             val end = snapshot()

@@ -626,12 +626,8 @@ private fun monthlyKindSeries(
             val (fuel, exp) = pair
             val buckets = monthlyCostBuckets(fuel, exp, data.defaultStored)
             val contrib = buckets.map { b ->
-                val ts = try {
-                    java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US)
-                        .parse(b.key)?.time ?: 0L
-                } catch (_: Exception) {
-                    0L
-                }
+                val ts = java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US)
+                    .parse(b.key)!!.time
                 val amount = if (fuelKind) {
                     (b.fuelByCurrency[chartCurrency] ?: 0.0)
                 } else {

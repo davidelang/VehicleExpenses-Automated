@@ -1,6 +1,5 @@
 package com.davidlang.vehicleexpensesautomated.ui.components
 
-import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -21,6 +20,7 @@ import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -38,10 +38,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import coil.compose.rememberAsyncImagePainter
+import com.davidlang.vehicleexpensesautomated.data.storage.PickedImageReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -65,31 +66,34 @@ fun ZoomablePhotoDialog(
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     val path = uris[index]
+    val context = LocalContext.current
     var fileBitmap by remember(path) { mutableStateOf<android.graphics.Bitmap?>(null) }
-    val isFile = path.startsWith("/") || path.startsWith("file:")
+    var photoError by remember(path) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(path) {
         scale = 1f
         offset = Offset.Zero
-        fileBitmap = if (isFile) {
+        photoError = null
+        fileBitmap = try {
             withContext(Dispatchers.IO) {
-                val p = path.removePrefix("file://")
-                val f = File(p)
-                if (!f.isFile) null
-                else {
-                    val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeFile(f.absolutePath, opts)
-                    var sample = 1
-                    val maxSide = 2048
-                    while (opts.outWidth / sample > maxSide || opts.outHeight / sample > maxSide) {
-                        sample *= 2
-                    }
-                    BitmapFactory.Options().apply { inSampleSize = sample }
-                        .let { BitmapFactory.decodeFile(f.absolutePath, it) }
+                val uri = when {
+                    path.startsWith("content:") || path.startsWith("file:") || path.startsWith("http") ->
+                        Uri.parse(path)
+                    path.startsWith("/") -> Uri.fromFile(File(path))
+                    else -> Uri.parse(path)
                 }
+                PickedImageReader.decodeFullSize(context, uri)
             }
-        } else {
+        // kept: failure stays on this call so the screen or caller can continue
+        } catch (e: Exception) {
+            photoError = e.message ?: "Could not display photo"
             null
+        }
+    }
+    DisposableEffect(path) {
+        onDispose {
+            fileBitmap?.recycle()
+            fileBitmap = null
         }
     }
 
@@ -151,20 +155,7 @@ fun ZoomablePhotoDialog(
                                 contentScale = ContentScale.Fit,
                             )
                         }
-                        !isFile -> {
-                            Image(
-                                painter = rememberAsyncImagePainter(
-                                    if (path.startsWith("content:") || path.startsWith("http")) {
-                                        Uri.parse(path)
-                                    } else {
-                                        path
-                                    },
-                                ),
-                                contentDescription = "Photo",
-                                modifier = layerMod,
-                                contentScale = ContentScale.Fit,
-                            )
-                        }
+                        photoError != null -> Text(photoError!!, color = Color.White)
                         else -> Text("Photo unavailable", color = Color.White)
                     }
                     Column(
@@ -232,7 +223,31 @@ fun ZoomablePhotoThumb(
         val tall = maxWidth >= 600.dp
         val h = if (tall) 320.dp else 200.dp
         val uri = uris.first()
-        val isFile = uri.startsWith("/") || uri.startsWith("file:")
+        val context = LocalContext.current
+        var thumb by remember(uri) { mutableStateOf<android.graphics.Bitmap?>(null) }
+        var thumbError by remember(uri) { mutableStateOf<String?>(null) }
+        LaunchedEffect(uri) {
+            thumb = try {
+                withContext(Dispatchers.IO) {
+                    val parsed = when {
+                        uri.startsWith("/") -> Uri.fromFile(File(uri))
+                        uri.startsWith("content:") || uri.startsWith("file:") || uri.startsWith("http") ->
+                            Uri.parse(uri)
+                        else -> Uri.parse(uri)
+                    }
+                    PickedImageReader.decodeFullSize(context, parsed)
+                }
+            } catch (e: Exception) {
+                thumbError = e.message ?: "Could not display photo"
+                null
+            }
+        }
+        DisposableEffect(uri) {
+            onDispose {
+                thumb?.recycle()
+                thumb = null
+            }
+        }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -241,17 +256,15 @@ fun ZoomablePhotoThumb(
                 .clickable { show = true },
             contentAlignment = Alignment.Center,
         ) {
-            Image(
-                painter = rememberAsyncImagePainter(
-                    model = when {
-                        isFile -> File(uri.removePrefix("file://"))
-                        else -> uri
-                    },
-                ),
-                contentDescription = contentDescription,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = contentScale,
-            )
+            when {
+                thumb != null -> Image(
+                    bitmap = thumb!!.asImageBitmap(),
+                    contentDescription = contentDescription,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = contentScale,
+                )
+                thumbError != null -> Text(thumbError!!)
+            }
             if (uris.size > 1) {
                 Text(
                     "${uris.size} photos",
@@ -277,9 +290,10 @@ fun ZoomablePhotoThumb(
 /** All photo URIs from a fuel/expense photoUrl JSON or plain path. */
 fun photoUrisFromJsonOrPath(photoUrl: String?): List<String> {
     if (photoUrl.isNullOrBlank()) return emptyList()
-    val refs = com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson.parse(photoUrl)
-    if (refs.isNotEmpty()) {
-        return refs.map { it.uri }.filter { it.isNotBlank() }.distinct()
+    return when (val parsed = com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson.read(photoUrl)) {
+        is com.davidlang.vehicleexpensesautomated.data.model.StoredParse.Corrupt -> emptyList()
+        is com.davidlang.vehicleexpensesautomated.data.model.StoredParse.Blank -> emptyList()
+        is com.davidlang.vehicleexpensesautomated.data.model.StoredParse.Valid ->
+            parsed.value.map { it.uri }.filter { it.isNotBlank() }.distinct()
     }
-    return listOf(photoUrl)
 }

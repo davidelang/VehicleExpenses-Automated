@@ -96,6 +96,7 @@ class EmailReceiptWorker @AssistedInject constructor(
             }
             val messages = try {
                 gmailClient.listLabeledReceipts(account, label)
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: GmailReceiptClient.NeedsConsentException) {
                 Log.w(TAG, "gmail consent", e)
                 return PathResult("gmail needs consent", hardFail = true)
@@ -128,6 +129,7 @@ class EmailReceiptWorker @AssistedInject constructor(
             PathResult(
                 "gmail scanned=$scanned parsed=$parsed inserted=$inserted dup=$skippedDup parseSkip=$skippedParse",
             )
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.e(TAG, "gmail path failed", e)
             PathResult("gmail error: ${e.message?.take(80)}", retry = true)
@@ -187,10 +189,17 @@ class EmailReceiptWorker @AssistedInject constructor(
                 if (result.skippedDuplicate) skippedDup++
                 else if (result.inserted) inserted++
             }
+            val reasons = fetch.skipReasons.joinToString("; ")
+            val skipNote = if (reasons.isEmpty()) {
+                " skipped=${fetch.skippedCount}"
+            } else {
+                " skipped=${fetch.skippedCount} reasons=$reasons"
+            }
             val base =
-                "imap scanned=$scanned parsed=$parsed inserted=$inserted dup=$skippedDup parseSkip=$skippedParse"
+                "imap scanned=$scanned parsed=$parsed inserted=$inserted dup=$skippedDup parseSkip=$skippedParse$skipNote"
             if (fetch.errorSummary != null) PathResult("$base (${fetch.errorSummary})")
             else PathResult(base)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Log.e(TAG, "imap path failed", e)
             val brief = (e.message ?: e.javaClass.simpleName).take(80)
@@ -198,7 +207,6 @@ class EmailReceiptWorker @AssistedInject constructor(
             PathResult("imap error: $brief", retry = true)
         }
     }
-
 
     private fun databaseGate(dbState: DatabaseHealthState, appContext: Context): Result? {
         val app = appContext.applicationContext as VehicleExpensesApplication

@@ -23,6 +23,8 @@ class ImapReceiptClient @Inject constructor() {
     data class FetchResult(
         val messages: List<EmailReceiptMessage>,
         val errorSummary: String? = null,
+        val skippedCount: Int = 0,
+        val skipReasons: List<String> = emptyList(),
     )
 
     /**
@@ -77,14 +79,23 @@ class ImapReceiptClient @Inject constructor() {
             val msgs = mailFolder.getMessages(start, total)
             // Fetch envelope + content for range
             val out = mutableListOf<EmailReceiptMessage>()
+            val skipReasons = mutableListOf<String>()
             for (msg in msgs.reversed()) {
                 try {
                     out.add(toReceiptMessage(msg, folder))
+                // kept: failure stays on this call so the screen or caller can continue
                 } catch (e: Exception) {
+                    skipReasons.add(shortSkipReason(e))
                     Log.w(TAG, "imap message skip: ${e.javaClass.simpleName}")
                 }
             }
-            FetchResult(out, null)
+            FetchResult(
+                out,
+                null,
+                skippedCount = skipReasons.size,
+                skipReasons = skipReasons.toList(),
+            )
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             val kind = e.javaClass.simpleName
             val brief = (e.message ?: kind).take(100).replace(Regex("(?i)password|passwd|secret"), "[redacted]")
@@ -93,10 +104,12 @@ class ImapReceiptClient @Inject constructor() {
         } finally {
             try {
                 if (mailFolder != null && mailFolder.isOpen) mailFolder.close(false)
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (_: Exception) {
             }
             try {
                 store?.close()
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (_: Exception) {
             }
         }
@@ -109,7 +122,9 @@ class ImapReceiptClient @Inject constructor() {
             // UIDFolder when available
             val uf = msg.folder as? javax.mail.UIDFolder
             uf?.getUID(msg)?.takeIf { it > 0 }?.toString()
-        } catch (_: Exception) {
+        // kept: failure stays on this call so the screen or caller can continue
+        } catch (e: Exception) {
+            Log.e(TAG, "imap uid unreadable", e)
             null
         }
         val stableId = when {
@@ -117,24 +132,12 @@ class ImapReceiptClient @Inject constructor() {
             !uid.isNullOrBlank() -> "$folderName|$uid"
             else -> "$folderName|seq|${msg.messageNumber}"
         }
-        val from = try {
-            msg.from?.firstOrNull()?.let { addr ->
-                (addr as? InternetAddress)?.toUnicodeString() ?: addr.toString()
-            }.orEmpty()
-        } catch (_: Exception) {
-            ""
-        }
-        val subject = try {
-            msg.subject.orEmpty()
-        } catch (_: Exception) {
-            ""
-        }
-        val dateHeader = try {
-            mime?.getHeader("Date")?.firstOrNull().orEmpty().ifBlank {
-                msg.sentDate?.toString().orEmpty()
-            }
-        } catch (_: Exception) {
-            ""
+        val from = msg.from?.firstOrNull()?.let { addr ->
+            (addr as? InternetAddress)?.toUnicodeString() ?: addr.toString()
+        }.orEmpty()
+        val subject = msg.subject.orEmpty()
+        val dateHeader = mime?.getHeader("Date")?.firstOrNull().orEmpty().ifBlank {
+            msg.sentDate?.toString().orEmpty()
         }
         val body = extractHtmlOrText(msg)
         return EmailReceiptMessage(
@@ -147,44 +150,70 @@ class ImapReceiptClient @Inject constructor() {
         )
     }
 
-    private fun extractHtmlOrText(part: Part): String {
+    private fun extractHtmlOrText(part: Part, topLevel: Boolean = true): String {
         val content = try {
             part.content
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
+            if (topLevel) throw e
             Log.w(TAG, "content read failed: ${e.javaClass.simpleName}")
             return ""
         }
-        when {
-            part.isMimeType("text/html") -> return content?.toString().orEmpty()
-            part.isMimeType("text/plain") -> {
-                // Prefer HTML from multipart; keep plain as fallback
-                return content?.toString().orEmpty()
-            }
-            content is Multipart -> {
-                var html: String? = null
-                var plain: String? = null
-                val mp = content
-                for (i in 0 until mp.count) {
-                    val bp = mp.getBodyPart(i)
-                    when {
-                        bp.isMimeType("text/html") && html == null ->
-                            html = extractHtmlOrText(bp)
-                        bp.isMimeType("text/plain") && plain == null ->
-                            plain = extractHtmlOrText(bp)
-                        bp.isMimeType("multipart/*") -> {
-                            val nested = extractHtmlOrText(bp)
-                            if (nested.contains("<html", ignoreCase = true) || nested.contains("<body", ignoreCase = true)) {
-                                if (html == null) html = nested
-                            } else if (plain == null && nested.isNotBlank()) {
-                                plain = nested
+        try {
+            when {
+                part.isMimeType("text/html") -> return content?.toString().orEmpty()
+                part.isMimeType("text/plain") -> {
+                    // Prefer HTML from multipart; keep plain as fallback
+                    return content?.toString().orEmpty()
+                }
+                content is Multipart -> {
+                    var html: String? = null
+                    var plain: String? = null
+                    val mp = content
+                    for (i in 0 until mp.count) {
+                        try {
+                            val bp = mp.getBodyPart(i)
+                            when {
+                                bp.isMimeType("text/html") && html == null ->
+                                    html = extractHtmlOrText(bp, topLevel = false)
+                                bp.isMimeType("text/plain") && plain == null ->
+                                    plain = extractHtmlOrText(bp, topLevel = false)
+                                bp.isMimeType("multipart/*") -> {
+                                    val nested = extractHtmlOrText(bp, topLevel = false)
+                                    if (nested.contains("<html", ignoreCase = true) || nested.contains("<body", ignoreCase = true)) {
+                                        if (html == null) html = nested
+                                    } else if (plain == null && nested.isNotBlank()) {
+                                        plain = nested
+                                    }
+                                }
                             }
+                        // kept: failure stays on this call so the screen or caller can continue
+                        } catch (e: Exception) {
+                            Log.w(TAG, "nested part skip: ${e.javaClass.simpleName}")
                         }
                     }
+                    return html?.takeIf { it.isNotBlank() } ?: plain.orEmpty()
                 }
-                return html?.takeIf { it.isNotBlank() } ?: plain.orEmpty()
+                else -> return content?.toString().orEmpty()
             }
-            else -> return content?.toString().orEmpty()
+        // kept: failure stays on this call so the screen or caller can continue
+        } catch (e: Exception) {
+            if (topLevel) throw e
+            Log.w(TAG, "content read failed: ${e.javaClass.simpleName}")
+            return ""
         }
+    }
+
+    private fun shortSkipReason(e: Exception): String {
+        val message = (e.message ?: "")
+            .replace(Regex("(?i)password|passwd|secret"), "[redacted]")
+            .take(100)
+        val reason = if (message.isBlank()) {
+            e.javaClass.simpleName
+        } else {
+            "${e.javaClass.simpleName}: $message"
+        }
+        return reason.replace(Regex("(?i)password|passwd|secret"), "[redacted]")
     }
 
     companion object {

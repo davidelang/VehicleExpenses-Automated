@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.data.sync
 
 import android.content.Context
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -41,17 +42,11 @@ class SyncFailureStore(context: Context) {
 
     fun clearPhotoFailure(destId: String) = clear(destId, DestType.PHOTO)
 
-    fun hasAnyFailure(): Boolean = loadAll().isNotEmpty()
+    fun hasAnyFailure(): Boolean = loadAll().isNotEmpty() || CorruptIncoming.hasOpen()
 
-    fun hasSpreadsheetFailure(): Boolean = loadAll().any { it.destType == DestType.SPREADSHEET }
 
-    fun hasPhotoFailure(): Boolean = loadAll().any { it.destType == DestType.PHOTO }
 
-    fun firstSpreadsheetFailure(): Failure? =
-        loadAll().firstOrNull { it.destType == DestType.SPREADSHEET }
 
-    fun firstPhotoFailure(): Failure? =
-        loadAll().firstOrNull { it.destType == DestType.PHOTO }
 
     fun failureFor(destId: String, type: DestType): Failure? =
         loadAll().firstOrNull { it.destId == destId && it.destType == type }
@@ -257,7 +252,9 @@ class SyncFailureStore(context: Context) {
                     )
                 }
             }.filter { it.destId.isNotBlank() }
-        } catch (_: Exception) {
+        // kept: failure stays on this call so the screen or caller can continue
+        } catch (e: Exception) {
+            Log.e(TAG, "sync failure list unreadable", e)
             emptyList()
         }
     }
@@ -278,6 +275,7 @@ class SyncFailureStore(context: Context) {
     }
 
     companion object {
+        private const val TAG = "SyncFailureStore"
         const val PREFS_NAME = SyncDestinationStore.PREFS_NAME
         private const val KEY_FAILURES_JSON = "sync_failures_json"
     }

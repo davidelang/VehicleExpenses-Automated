@@ -5,7 +5,7 @@ import androidx.camera.core.resolutionselector.ResolutionSelector
 import kotlin.math.abs
 
 enum class CameraCaptureProfile {
-    /** Quick Fill / vehicle OCR: pick native size closest to ~2040px width. */
+    /** Fill / vehicle OCR: pick native size closest to ~2040px width. */
     OCR_MEDIUM,
     /** Expense receipts: largest native resolution available. */
     RECEIPT_MAX,

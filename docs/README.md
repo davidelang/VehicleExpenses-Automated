@@ -18,7 +18,7 @@ Updated when the code changes.
 
 | File | One line |
 |------|----------|
-| [QUICK_FILL_CAMERA.md](reference/QUICK_FILL_CAMERA.md) | Dash identity, odometer, pump stages, location |
+| [FILL_CAMERA.md](reference/FILL_CAMERA.md) | Dash identity, odometer, pump stages, location |
 | [OCR_PREPROCESSING.md](reference/OCR_PREPROCESSING.md) | Crop prep before odometer and pump OCR |
 | [PUMP_CLASSIFICATION.md](reference/PUMP_CLASSIFICATION.md) | How cost and volume are chosen |
 | [PUMP_EXPERIMENT_FLOWS.md](reference/PUMP_EXPERIMENT_FLOWS.md) | Current heatmap-expand attempts |

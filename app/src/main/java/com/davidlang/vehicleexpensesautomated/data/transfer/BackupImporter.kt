@@ -101,6 +101,7 @@ class BackupImporter(private val context: Context) {
                     val text = reader.readBodyBytes(entry).toString(Charsets.UTF_8)
                     manifest = try {
                         JSONObject(text)
+                    // kept: failure stays on this call so the screen or caller can continue
                     } catch (e: Exception) {
                         Log.e(TAG, "backup-manifest.json is not JSON: ${e.message}", e)
                         throw IllegalStateException("backup-manifest.json is not JSON: ${e.message}", e)
@@ -144,6 +145,7 @@ class BackupImporter(private val context: Context) {
                 ),
             )
             end.closeOk()
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (t: Throwable) {
             if (committed) {
                 Log.e(TAG, "import committed; restarting after ${t.message}", t)
@@ -171,11 +173,13 @@ class BackupImporter(private val context: Context) {
         val dir = DataTransferProvider.statusDir(context)
         try {
             Files.deleteIfExists(File(dir, "$MARKER.tmp").toPath())
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Throwable) {
             Log.e(TAG, "commit temp delete after a failed import", e)
         }
         try {
             deleteStagingDirs()
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Throwable) {
             Log.e(TAG, "staging delete after a failed import", e)
         }
@@ -190,6 +194,7 @@ class BackupImporter(private val context: Context) {
                     applied = null,
                 ),
             )
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Throwable) {
             Log.e(TAG, "import status write failed", e)
         }
@@ -204,6 +209,7 @@ class BackupImporter(private val context: Context) {
     private fun startupSwap(marker: File) {
         val parsed = try {
             JSONObject(marker.readText(Charsets.UTF_8))
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (t: Throwable) {
             failSwap(marker, commitId = null, reason = "commit marker doesn't parse: ${t.message}")
             return
@@ -241,6 +247,7 @@ class BackupImporter(private val context: Context) {
             deleteStagingDirs()
             markApplied(commitId)
             applied = true
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (t: Throwable) {
             if (!applied) {
                 Log.e(TAG, "startup swap failed: ${t.message}", t)
@@ -250,6 +257,7 @@ class BackupImporter(private val context: Context) {
         if (!applied) return
         try {
             deleteMarker(marker)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (t: Throwable) {
             Log.e(TAG, "commit marker delete failed after apply: ${t.message}", t)
         }
@@ -258,6 +266,7 @@ class BackupImporter(private val context: Context) {
     private fun failSwap(marker: File, commitId: String?, reason: String) {
         try {
             deleteMarker(marker)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (t: Throwable) {
             val message = "$reason; marker delete failed: ${t.message}"
             Log.e(TAG, message, t)
@@ -269,6 +278,7 @@ class BackupImporter(private val context: Context) {
         }
         try {
             deleteStagingDirs()
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (t: Throwable) {
             val path = (t as? StagingDeleteException)?.path ?: marker.path
             val message = "stale transfer staging couldn't be removed: $path: ${t.message}"
@@ -290,6 +300,7 @@ class BackupImporter(private val context: Context) {
                     applied = null,
                 ),
             )
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (t: Throwable) {
             Log.e(TAG, "could not write import error after swap failure", t)
         }
@@ -306,6 +317,7 @@ class BackupImporter(private val context: Context) {
             val parent = context.externalCacheDir?.parentFile ?: return
             val external = File(parent, STAGING)
             if (external.exists()) deleteRecursivelyOrThrow(external)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (t: Throwable) {
             val path = (t as? StagingDeleteException)?.path ?: t.message.orEmpty()
             val message = "stale transfer staging couldn't be removed: $path: ${t.message}"
@@ -402,6 +414,7 @@ class BackupImporter(private val context: Context) {
         val json = body.toString()
         try {
             DataTransferProvider.writeStatusAtomic(context, MARKER, json)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (t: Throwable) {
             // Rename is the commit. A later directory fsync must not abort.
             when (markerRenameLanded(commitId)) {
@@ -432,6 +445,7 @@ class BackupImporter(private val context: Context) {
         val existing = if (file.isFile) {
             try {
                 JSONObject(file.readText(Charsets.UTF_8))
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 Log.e(TAG, "import status unreadable; writing a fresh record", e)
                 null
@@ -507,6 +521,7 @@ class BackupImporter(private val context: Context) {
         try {
             val intent = Intent.makeRestartActivityTask(ComponentName(context, MainActivity::class.java))
             context.startActivity(intent)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (t: Throwable) {
             Log.e(TAG, "restart activity blocked; process will still exit", t)
         }
@@ -580,6 +595,7 @@ class BackupImporter(private val context: Context) {
             val dir = marker.parentFile
             try {
                 Files.deleteIfExists(marker.toPath())
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (_: NoSuchFileException) {
                 return
             }
@@ -594,6 +610,7 @@ class BackupImporter(private val context: Context) {
             }
             try {
                 Files.move(staged.toPath(), live.toPath(), StandardCopyOption.ATOMIC_MOVE)
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (_: AtomicMoveNotSupportedException) {
                 throw IllegalStateException("could not rename staged to live")
             }
@@ -606,6 +623,7 @@ private class StagingDeleteException(val path: String, cause: Throwable) : Excep
 internal fun deleteRecursivelyOrThrow(path: File) {
     try {
         deleteRecursively(path)
+    // kept: failure stays on this call so the screen or caller can continue
     } catch (t: Throwable) {
         throw StagingDeleteException(path.path, t)
     }

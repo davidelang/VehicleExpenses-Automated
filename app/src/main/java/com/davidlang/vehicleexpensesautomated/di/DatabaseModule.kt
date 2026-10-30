@@ -5,13 +5,13 @@ import android.content.Context
 import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.davidlang.vehicleexpensesautomated.VehicleExpensesApplication
 import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
 import com.davidlang.vehicleexpensesautomated.data.dao.ExpenseEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.FuelEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.KnownStationDao
 import com.davidlang.vehicleexpensesautomated.data.dao.MergeAckDao
 import com.davidlang.vehicleexpensesautomated.data.dao.VehicleDao
-import com.davidlang.vehicleexpensesautomated.VehicleExpensesApplication
 import com.davidlang.vehicleexpensesautomated.data.db.AppDatabase
 import com.davidlang.vehicleexpensesautomated.data.db.DatabaseHealthState
 import dagger.Module
@@ -549,6 +549,11 @@ object DatabaseModule {
 
     @Provides
     @Singleton
+    fun provideDatabaseHealthState(app: Application): DatabaseHealthState =
+        (app as VehicleExpensesApplication).dbState
+
+    @Provides
+    @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
         return Room.databaseBuilder(
             context,
@@ -576,11 +581,6 @@ object DatabaseModule {
         )
         .build()
     }
-
-    @Provides
-    @Singleton
-    fun provideDatabaseHealthState(app: Application): DatabaseHealthState =
-        (app as VehicleExpensesApplication).dbState
 
     @Provides
     fun provideVehicleDao(database: AppDatabase): VehicleDao = database.vehicleDao()

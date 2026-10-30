@@ -36,6 +36,7 @@ object CurrencyCodes {
                 if (c.getSymbol(locale) == trimmed) return c.currencyCode
                 if (c.currencyCode.equals(trimmed, ignoreCase = true)) return c.currencyCode
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
         }
         return trimmed
@@ -44,6 +45,7 @@ object CurrencyCodes {
     fun systemCurrencySymbol(locale: Locale = Locale.getDefault()): String {
         return try {
             Currency.getInstance(locale).getSymbol(locale)
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             "$"
         }
@@ -135,6 +137,7 @@ object CurrencyCodes {
         if (code.length == 3 && code.all { it.isLetter() }) {
             return try {
                 Currency.getInstance(code).getSymbol(locale)
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (_: Exception) {
                 code
             }

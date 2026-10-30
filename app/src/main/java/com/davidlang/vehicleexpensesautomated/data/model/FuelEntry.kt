@@ -10,7 +10,7 @@ data class FuelEntry(
     val odometer: Int,
     /**
      * Volume in the user's **preferred** unit (G or L from settings), not always US gallons.
-     * Quick Fill converts UI unit → preferred at save; reports display this value with the preferred label.
+     * Fill converts UI unit → preferred at save; reports display this value with the preferred label.
      */
     val gallons: Double,
     val cost: Double,

@@ -32,6 +32,7 @@ data class RcloneDestConfig(
                     pathPrefix = obj.optString("pathPrefix", "").trim(),
                     confFileName = obj.optString("confFileName", "rclone.conf").ifBlank { "rclone.conf" },
                 )
+            // kept: failure stays on this call so the screen or caller can continue
             } catch (_: Exception) {
                 null
             }

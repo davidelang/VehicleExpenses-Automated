@@ -66,27 +66,6 @@ fun rememberConsentRecoveryHandle(): ConsentRecoveryHandle {
     }
 }
 
-/**
- * Best-effort progress for long-running sync. Uses a process main [Handler] so
- * disposing the composition never throws into the sync job
- * (`ForgottenCoroutineScopeException`).
- */
-@Composable
-fun rememberMainThreadSyncProgress(onUpdate: (String) -> Unit): SyncProgressListener {
-    val latestUpdate by rememberUpdatedState(onUpdate)
-    val mainHandler = remember { Handler(Looper.getMainLooper()) }
-    return remember {
-        SyncProgressListener { message ->
-            mainHandler.post {
-                try {
-                    latestUpdate(message)
-                } catch (_: Throwable) {
-                    // Composition/state gone — progress is optional
-                }
-            }
-        }
-    }
-}
 
 @Composable
 fun SyncStatusDisplay(

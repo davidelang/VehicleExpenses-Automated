@@ -44,6 +44,7 @@ object NetworkStatus {
                 @Suppress("DEPRECATION")
                 info != null && info.isConnected
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
             false
         }

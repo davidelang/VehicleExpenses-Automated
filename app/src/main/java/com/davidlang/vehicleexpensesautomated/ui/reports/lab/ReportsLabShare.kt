@@ -72,6 +72,7 @@ object ReportsLabShare {
             } else {
                 Toast.makeText(context, "No app available to share CSV", Toast.LENGTH_LONG).show()
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Toast.makeText(context, e.message ?: "CSV share failed", Toast.LENGTH_LONG).show()
         }
@@ -106,6 +107,7 @@ object ReportsLabShare {
             } else {
                 Toast.makeText(context, "No app available to share PDF", Toast.LENGTH_LONG).show()
             }
+        // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
             Toast.makeText(context, e.message ?: "PDF share failed", Toast.LENGTH_LONG).show()
         }
@@ -144,6 +146,7 @@ fun ReportsLabShareIconButton(
                                     actions.subject,
                                     actions.textBody(),
                                 )
+                            // kept: failure stays on this call so the screen or caller can continue
                             } catch (e: Exception) {
                                 Toast.makeText(context, e.message ?: "Share failed", Toast.LENGTH_LONG)
                                     .show()
@@ -163,6 +166,7 @@ fun ReportsLabShareIconButton(
                                     actions.csvBody(),
                                     actions.subject,
                                 )
+                            // kept: failure stays on this call so the screen or caller can continue
                             } catch (e: Exception) {
                                 Toast.makeText(context, e.message ?: "CSV share failed", Toast.LENGTH_LONG)
                                     .show()
@@ -184,6 +188,7 @@ fun ReportsLabShareIconButton(
                                         body(),
                                         actions.subject,
                                     )
+                                // kept: failure stays on this call so the screen or caller can continue
                                 } catch (e: Exception) {
                                     Toast.makeText(
                                         context,
