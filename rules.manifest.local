@@ -22,3 +22,4 @@ local run-as-primary.c
 local install-ve-refresh-shell.sh
 local ve-resolve-orch
 local android-build-info
+local play-publish
