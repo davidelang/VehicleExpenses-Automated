@@ -1,10 +1,15 @@
 package com.davidlang.vehicleexpensesautomated.ui.components
 
+import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.contract.ActivityResultContract
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.compose.foundation.layout.Box
@@ -26,12 +31,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.storage.PickedImageReader
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
 import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.Executors
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 class ImagePickerHandle(
     val pickFromGallery: () -> Unit,
@@ -40,6 +49,77 @@ class ImagePickerHandle(
 )
 
 private val imageMimeTypes = arrayOf("image/*", PickedImageReader.DNG_MIME)
+
+/**
+ * Device gallery (ACTION_PICK on the images collection), not the document file picker.
+ * The photo picker allow-list drops image/x-adobe-dng, so this launch keeps both types.
+ * Do not put grant flags on this intent: they grant the collection URI (no id), and
+ * MediaProvider rejects that before the gallery opens.
+ */
+private class PickDeviceGallery : ActivityResultContract<Array<String>, Uri?>() {
+    override fun createIntent(context: Context, input: Array<String>): Intent {
+        return Intent(Intent.ACTION_PICK).apply {
+            setDataAndType(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*")
+            putExtra(Intent.EXTRA_MIME_TYPES, input)
+        }
+    }
+
+    override fun parseResult(resultCode: Int, intent: Intent?): Uri? {
+        if (resultCode != Activity.RESULT_OK) return null
+        return intent?.data
+    }
+}
+
+private fun durablePickedUri(context: Context, uri: Uri, persisted: Boolean): Uri {
+    if (persisted || mediaStoreImageStaysReadable(context, uri)) return uri
+    return copyPickedBytes(context, uri)
+}
+
+private fun mediaStoreImageStaysReadable(context: Context, uri: Uri): Boolean {
+    if (!isMediaStoreImageUri(uri)) return false
+    val perm = if (Build.VERSION.SDK_INT >= 33) {
+        android.Manifest.permission.READ_MEDIA_IMAGES
+    } else {
+        android.Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+    return ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
+}
+
+private fun isMediaStoreImageUri(uri: Uri): Boolean {
+    if (uri.scheme != "content" || uri.authority != "media") return false
+    val segments = uri.pathSegments
+    return segments.size >= 4 && segments[1] == "images" && segments[2] == "media"
+}
+
+private fun copyPickedBytes(context: Context, uri: Uri): Uri {
+    val dest = File(context.filesDir, pickedCopyName(context, uri))
+    try {
+        val input = context.contentResolver.openInputStream(uri)
+            ?: throw IllegalStateException("could not read picture")
+        input.use { src ->
+            FileOutputStream(dest).use { out -> src.copyTo(out) }
+        }
+        if (dest.length() <= 0L) throw IllegalStateException("could not read picture")
+        return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", dest)
+    } catch (e: Exception) {
+        dest.delete()
+        throw e
+    }
+}
+
+private fun pickedCopyName(context: Context, uri: Uri): String {
+    val ext = when {
+        PickedImageReader.isDng(context, uri) -> "dng"
+        else -> when (context.contentResolver.getType(uri)) {
+            "image/jpeg" -> "jpg"
+            "image/png" -> "png"
+            "image/webp" -> "webp"
+            "image/heic", "image/heif" -> "heic"
+            else -> "img"
+        }
+    }
+    return "picked_${System.nanoTime()}.$ext"
+}
 
 @Composable
 fun rememberImagePicker(
@@ -63,25 +143,31 @@ fun rememberImagePicker(
     }
     val capture = imageCapture ?: ownedCapture
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
-    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    val gallery = rememberLauncherForActivityResult(PickDeviceGallery()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         try {
-            context.contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
+            // A gallery often refuses a persistable grant. That refusal is not a failed pick.
+            val persisted = try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+                true
+            } catch (_: Exception) {
+                false
+            }
             val reason = PickedImageReader.galleryHeaderRejectReason(context, uri)
             if (reason != null) throw IllegalStateException(reason)
-            onPicked(uri)
+            onPicked(durablePickedUri(context, uri, persisted))
         } catch (e: Exception) {
-            Toast.makeText(context, "Could not use picture: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, AppStrings.get(R.string.ui_could_not_use_picture_1_s, e.message.orEmpty()), Toast.LENGTH_LONG).show()
         }
     }
     fun shoot() {
         if (!allowCamera) return
         val mgr = photoStorageManager
         if (mgr == null) {
-            Toast.makeText(context, "Could not use picture: camera file", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, AppStrings.get(R.string.ui_could_not_use_picture_camera_file), Toast.LENGTH_LONG).show()
             onCaptureFailed()
             return
         }
@@ -107,7 +193,7 @@ fun rememberImagePicker(
                             main.execute {
                                 Toast.makeText(
                                     context,
-                                    "Could not use picture: ${e.message}",
+                                    AppStrings.get(R.string.ui_could_not_use_picture_1_s, e.message.orEmpty()),
                                     Toast.LENGTH_LONG,
                                 ).show()
                                 onCaptureFailed()
@@ -122,7 +208,7 @@ fun rememberImagePicker(
                         main.execute {
                             Toast.makeText(
                                 context,
-                                "Could not use picture: ${exception.message}",
+                                AppStrings.get(R.string.ui_could_not_use_picture_1_s, exception.message.orEmpty()),
                                 Toast.LENGTH_LONG,
                             ).show()
                             onCaptureFailed()
@@ -132,7 +218,7 @@ fun rememberImagePicker(
             )
         } catch (e: Exception) {
             file.delete()
-            Toast.makeText(context, "Could not use picture: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, AppStrings.get(R.string.ui_could_not_use_picture_1_s, e.message.orEmpty()), Toast.LENGTH_LONG).show()
             onCaptureFailed()
         }
     }
@@ -151,8 +237,8 @@ fun rememberImagePicker(
                     modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    TextButton(onClick = { shoot() }) { Text("Shutter") }
-                    TextButton(onClick = { showCamera = false }) { Text("Close") }
+                    TextButton(onClick = { shoot() }) { Text(AppStrings.get(R.string.ui_shutter)) }
+                    TextButton(onClick = { showCamera = false }) { Text(AppStrings.get(R.string.settings_close)) }
                 }
             }
         }

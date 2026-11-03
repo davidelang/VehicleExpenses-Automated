@@ -41,6 +41,9 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 /**
  * Title line: optional page title + Share.
@@ -97,7 +100,7 @@ fun ReportsLabFilterBar(
     val dateFmt = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Filters", style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.reports_filters), style = MaterialTheme.typography.titleSmall)
         // Simple Row — never host ExposedDropdownMenuBox inside AdaptiveItemGrid
         // (double subcompose measure yields flaky / dead menu hits).
         Row(
@@ -112,15 +115,15 @@ fun ReportsLabFilterBar(
                     .widthIn(min = 140.dp, max = 280.dp),
             ) {
                 val label = when (state.vehicleMode) {
-                    LabVehicleMode.ALL -> "All vehicles"
-                    LabVehicleMode.EACH -> "Each vehicle"
+                    LabVehicleMode.ALL -> stringResource(R.string.reports_all_vehicles)
+                    LabVehicleMode.EACH -> stringResource(R.string.reports_each_vehicle)
                     LabVehicleMode.SINGLE -> {
                         val id = state.vehicleId
                         when (id) {
-                            null -> "All vehicles"
-                            0 -> "Unknown"
+                            null -> AppStrings.get(R.string.reports_all_vehicles)
+                            0 -> AppStrings.get(R.string.ui_unknown)
                             else -> vehicles.firstOrNull { it.id == id }?.name
-                                ?: "Vehicle $id"
+                                ?: AppStrings.get(R.string.expense_vehicle_1_s, id)
                         }
                     }
                 }
@@ -128,7 +131,7 @@ fun ReportsLabFilterBar(
                     value = label,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Vehicle") },
+                    label = { Text(stringResource(R.string.fuel_vehicle)) },
                     trailingIcon = {
                         ExposedDropdownMenuDefaults.TrailingIcon(expanded = vehicleExpanded)
                     },
@@ -141,7 +144,7 @@ fun ReportsLabFilterBar(
                     onDismissRequest = { vehicleExpanded = false },
                 ) {
                     DropdownMenuItem(
-                        text = { Text("All vehicles") },
+                        text = { Text(stringResource(R.string.reports_all_vehicles)) },
                         onClick = {
                             val next = state.copy(
                                 vehicleMode = LabVehicleMode.ALL,
@@ -191,17 +194,17 @@ fun ReportsLabFilterBar(
                     .widthIn(min = 140.dp, max = 280.dp),
             ) {
                 val periodLabelUi = when (state.period) {
-                    LabPeriod.ALL_TIME -> "All time"
-                    LabPeriod.YTD -> "YTD"
-                    LabPeriod.LAST_12_MONTHS -> "Last 12 months"
-                    LabPeriod.LAST_90_DAYS -> "Last 90 days"
-                    LabPeriod.CUSTOM -> "Custom range"
+                    LabPeriod.ALL_TIME -> stringResource(R.string.reports_period_all_time)
+                    LabPeriod.YTD -> stringResource(R.string.reports_period_ytd)
+                    LabPeriod.LAST_12_MONTHS -> stringResource(R.string.reports_period_last_12_months)
+                    LabPeriod.LAST_90_DAYS -> stringResource(R.string.reports_period_last_90_days)
+                    LabPeriod.CUSTOM -> stringResource(R.string.reports_period_custom_range)
                 }
                 OutlinedTextField(
                     value = periodLabelUi,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Period") },
+                    label = { Text(stringResource(R.string.reports_period)) },
                     trailingIcon = {
                         ExposedDropdownMenuDefaults.TrailingIcon(expanded = periodExpanded)
                     },
@@ -218,11 +221,11 @@ fun ReportsLabFilterBar(
                             text = {
                                 Text(
                                     when (p) {
-                                        LabPeriod.ALL_TIME -> "All time"
-                                        LabPeriod.YTD -> "YTD"
-                                        LabPeriod.LAST_12_MONTHS -> "Last 12 months"
-                                        LabPeriod.LAST_90_DAYS -> "Last 90 days"
-                                        LabPeriod.CUSTOM -> "Custom range"
+                                        LabPeriod.ALL_TIME -> AppStrings.get(R.string.reports_period_all_time)
+                                        LabPeriod.YTD -> AppStrings.get(R.string.reports_period_ytd)
+                                        LabPeriod.LAST_12_MONTHS -> AppStrings.get(R.string.reports_period_last_12_months)
+                                        LabPeriod.LAST_90_DAYS -> AppStrings.get(R.string.reports_period_last_90_days)
+                                        LabPeriod.CUSTOM -> AppStrings.get(R.string.reports_period_custom_range)
                                     },
                                 )
                             },
@@ -247,13 +250,13 @@ fun ReportsLabFilterBar(
                     onClick = { showStartPicker = true },
                     modifier = Modifier.wrapContentWidth(),
                 ) {
-                    Text("Start ${dateFmt.format(Date(state.customStartMs))}")
+                    Text(stringResource(R.string.reports_start_date, dateFmt.format(Date(state.customStartMs))))
                 }
                 OutlinedButton(
                     onClick = { showEndPicker = true },
                     modifier = Modifier.wrapContentWidth(),
                 ) {
-                    Text("End ${dateFmt.format(Date(state.customEndMs))}")
+                    Text(stringResource(R.string.reports_end_date, dateFmt.format(Date(state.customEndMs))))
                 }
             }
         }
@@ -276,10 +279,10 @@ fun ReportsLabFilterBar(
                         onChange(next)
                     }
                     showStartPicker = false
-                }) { Text("OK") }
+                }) { Text(stringResource(R.string.settings_ok)) }
             },
             dismissButton = {
-                TextButton(onClick = { showStartPicker = false }) { Text("Cancel") }
+                TextButton(onClick = { showStartPicker = false }) { Text(stringResource(R.string.settings_cancel)) }
             },
         ) { DatePicker(state = pickerState) }
     }
@@ -295,10 +298,10 @@ fun ReportsLabFilterBar(
                         onChange(next)
                     }
                     showEndPicker = false
-                }) { Text("OK") }
+                }) { Text(stringResource(R.string.settings_ok)) }
             },
             dismissButton = {
-                TextButton(onClick = { showEndPicker = false }) { Text("Cancel") }
+                TextButton(onClick = { showEndPicker = false }) { Text(stringResource(R.string.settings_cancel)) }
             },
         ) { DatePicker(state = pickerState) }
     }

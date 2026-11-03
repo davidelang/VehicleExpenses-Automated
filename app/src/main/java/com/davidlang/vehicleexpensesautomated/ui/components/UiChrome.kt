@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.max
 import kotlin.math.min
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 /**
  * Card chrome for **tappable** list/hub items only (navigates or activates).
@@ -206,7 +208,7 @@ fun AppDateTimeField(
 fun AppOutlinedBack(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    text: String = "Cancel",
+    text: String = AppStrings.get(R.string.settings_cancel),
 ) {
     OutlinedButton(
         onClick = onClick,

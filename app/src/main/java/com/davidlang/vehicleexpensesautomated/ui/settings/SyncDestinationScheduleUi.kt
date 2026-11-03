@@ -16,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetDestination
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncFrequencyUi
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
 
 data class SyncScheduleUiState(
     val enabled: Boolean,
@@ -53,8 +55,8 @@ fun SyncBackgroundScheduleSection(
         enabled = enableSwitchEnabled,
         onCheckedChange = onEnabledChange,
     )
-    SyncScheduleSwitchSetting("Wi-Fi only", state.wifiOnly, onCheckedChange = onWifiOnlyChange)
-    SyncScheduleSwitchSetting("Charging only", state.chargingOnly, onCheckedChange = onChargingOnlyChange)
+    SyncScheduleSwitchSetting(stringResource(R.string.settings_wi_fi_only), state.wifiOnly, onCheckedChange = onWifiOnlyChange)
+    SyncScheduleSwitchSetting(stringResource(R.string.settings_charging_only), state.chargingOnly, onCheckedChange = onChargingOnlyChange)
     SyncScheduleSliderSetting(
         label = intervalSliderLabel,
         value = state.frequencyHours,

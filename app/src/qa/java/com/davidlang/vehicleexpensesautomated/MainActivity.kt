@@ -125,6 +125,7 @@ import dagger.hilt.android.EntryPointAccessors
 import com.davidlang.vehicleexpensesautomated.ui.settings.SpreadsheetSyncScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.SyncingScreen
 import com.davidlang.vehicleexpensesautomated.ui.theme.VehicleExpensesAutomatedTheme
+import com.davidlang.vehicleexpensesautomated.ui.util.AppLanguage
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.ManageVehicles2Screen
@@ -137,6 +138,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.res.stringResource
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -165,7 +167,7 @@ class MainActivity : ComponentActivity() {
         if (!isGranted) {
             Toast.makeText(
                 this,
-                "Photos permission denied. Fuel photo saving to the gallery may fail until Photos access is granted in system Settings.",
+                getString(R.string.nav_photos_permission_denied_fuel_photo_saving),
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -180,7 +182,7 @@ class MainActivity : ComponentActivity() {
         if (!anyGranted) {
             Toast.makeText(
                 this,
-                "Location denied — fills save without GPS",
+                getString(R.string.nav_location_denied_fills_save_without_gps),
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -190,7 +192,7 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (!isGranted) {
-            Toast.makeText(this, "Camera permission denied. Photo features will be disabled.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.nav_camera_permission_denied_photo_features_wi), Toast.LENGTH_LONG).show()
         }
         // D6: request media only after camera dialog settles (granted or denied).
         maybeRequestMediaPermissionForFuelPhotos()
@@ -277,6 +279,11 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         // Re-composition reads intent via setContent; force recreate for deep-link re-entry
+    }
+
+    override fun attachBaseContext(newBase: Context) {
+        // setApplicationLocales does not reach a ComponentActivity before API 33.
+        super.attachBaseContext(AppLanguage.wrap(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -396,11 +403,11 @@ class MainActivity : ComponentActivity() {
                         ) {
                             CircularProgressIndicator()
                             Text(
-                                "Updating database after upgrade…",
+                                getString(R.string.nav_updating_database_after_upgrade),
                                 style = MaterialTheme.typography.titleMedium,
                             )
                             Text(
-                                "This usually takes a few seconds.",
+                                getString(R.string.nav_this_usually_takes_a_few_seconds),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -419,7 +426,7 @@ class MainActivity : ComponentActivity() {
                             Log.e("MainActivity", "sync-id backfill failed", e)
                             Toast.makeText(
                                 context,
-                                "Database upgrade failed — restart the app",
+                                getString(R.string.nav_database_upgrade_failed_restart_the_app),
                                 Toast.LENGTH_LONG,
                             ).show()
                         }
@@ -456,35 +463,35 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 val title = when {
-                    currentRoute == "fill" -> "Fill"
-                    currentRoute == "triptracking" -> "Start trip"
-                    currentRoute == "managevehicles" -> "Manage Vehicles"
-                    currentRoute == "expense" -> "New expense"
-                    currentRoute?.startsWith("expense/") == true -> "Edit expense"
-                    currentRoute == "expenselist" -> "Expense list"
+                    currentRoute == "fill" -> getString(R.string.nav_fill)
+                    currentRoute == "triptracking" -> getString(R.string.nav_start_trip)
+                    currentRoute == "managevehicles" -> getString(R.string.nav_manage_vehicles)
+                    currentRoute == "expense" -> getString(R.string.nav_new_expense)
+                    currentRoute?.startsWith("expense/") == true -> getString(R.string.nav_edit_expense)
+                    currentRoute == "expenselist" -> getString(R.string.nav_expense_list)
                     currentRoute == "import" ||
-                        currentRoute?.startsWith("import") == true -> "Import Old Pictures"
+                        currentRoute?.startsWith("import") == true -> getString(R.string.nav_import_old_pictures)
                     currentRoute == "reports_lab" ||
-                        currentRoute?.startsWith("reports_lab/") == true -> "Reports"
-                    currentRoute == "fuelhistory" -> "Fuel History"
-                    currentRoute?.startsWith("fuel/") == true -> "Edit Fill"
-                    currentRoute == "settings" -> "Settings"
-                    currentRoute == "syncing" -> "Syncing"
-                    currentRoute == "settings/spreadsheet_sync" -> "Spreadsheet Sync"
-                    currentRoute == "settings/photo_backup" -> "Photo Backup"
-                    currentRoute == "help" -> "Help"
-                    currentRoute == "about" -> "About"
-                    currentRoute == "onboarding" -> "Welcome"
-                    currentRoute?.startsWith("tutorial/") == true -> "Setup tips"
+                        currentRoute?.startsWith("reports_lab/") == true -> getString(R.string.nav_reports)
+                    currentRoute == "fuelhistory" -> getString(R.string.nav_fuel_history)
+                    currentRoute?.startsWith("fuel/") == true -> getString(R.string.nav_edit_fill)
+                    currentRoute == "settings" -> getString(R.string.nav_settings)
+                    currentRoute == "syncing" -> getString(R.string.nav_syncing)
+                    currentRoute == "settings/spreadsheet_sync" -> getString(R.string.nav_spreadsheet_sync)
+                    currentRoute == "settings/photo_backup" -> getString(R.string.nav_photo_backup)
+                    currentRoute == "help" -> getString(R.string.nav_help)
+                    currentRoute == "about" -> getString(R.string.nav_about)
+                    currentRoute == "onboarding" -> getString(R.string.nav_welcome)
+                    currentRoute?.startsWith("tutorial/") == true -> getString(R.string.nav_setup_tips)
                     currentRoute == "experiment" ||
-                        currentRoute?.startsWith("experiment?") == true -> "Alignment Experiment"
+                        currentRoute?.startsWith("experiment?") == true -> getString(R.string.nav_alignment_experiment)
                     currentRoute == "experiment_pump" ||
-                        currentRoute?.startsWith("experiment_pump") == true -> "Gas Pump Extraction Experiment"
-                    currentRoute == "experiment_heatmap_stage" -> "Heatmap stage"
+                        currentRoute?.startsWith("experiment_pump") == true -> getString(R.string.nav_pump_experiment_long)
+                    currentRoute == "experiment_heatmap_stage" -> getString(R.string.nav_heatmap_stage)
                     currentRoute == "experiment_multiscale_det" ||
                         currentRoute?.startsWith("experiment_multiscale_det") == true ->
-                        "Dash paddle long-edge det/rec"
-                    else -> "Vehicle Expenses"
+                        getString(R.string.nav_dash_paddle_long_edge_det_rec)
+                    else -> getString(R.string.app_name)
                 }
 
                 CompositionLocalProvider(LocalPageHelpController provides pageHelpController) {
@@ -498,9 +505,9 @@ class MainActivity : ComponentActivity() {
                                     .fillMaxWidth()
                                     .verticalScroll(rememberScrollState()),
                             ) {
-                            Text("Vehicle Expenses", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
+                            Text(getString(R.string.app_name), modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
                             NavigationDrawerItem(
-                                label = { Text("Fill") },
+                                label = { Text(getString(R.string.nav_fill)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("fill")
@@ -508,7 +515,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("Start trip") },
+                                label = { Text(getString(R.string.nav_start_trip)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("triptracking")
@@ -516,7 +523,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("Manage Vehicles") },
+                                label = { Text(getString(R.string.nav_manage_vehicles)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("managevehicles")
@@ -524,7 +531,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("New expense") },
+                                label = { Text(getString(R.string.nav_new_expense)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("expense")
@@ -532,7 +539,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("Reports") },
+                                label = { Text(getString(R.string.nav_reports)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("reports_lab")
@@ -540,7 +547,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("Settings") },
+                                label = { Text(getString(R.string.nav_settings)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("settings")
@@ -548,7 +555,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("Syncing") },
+                                label = { Text(getString(R.string.nav_syncing)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("syncing")
@@ -556,7 +563,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("Help") },
+                                label = { Text(getString(R.string.nav_help)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("help")
@@ -564,7 +571,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("About") },
+                                label = { Text(getString(R.string.nav_about)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("about")
@@ -573,7 +580,7 @@ class MainActivity : ComponentActivity() {
                             )
                             if (experimentsEnabled) {
                                 NavigationDrawerItem(
-                                    label = { Text("Alignment Experiment") },
+                                    label = { Text(getString(R.string.nav_alignment_experiment)) },
                                     selected = false,
                                     onClick = {
                                         navController.navigate("experiment?auto=")
@@ -581,7 +588,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                                 NavigationDrawerItem(
-                                    label = { Text("Pump Experiment") },
+                                    label = { Text(getString(R.string.nav_pump_experiment)) },
                                     selected = false,
                                     onClick = {
                                         navController.navigate("experiment_pump?auto=")
@@ -589,7 +596,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                                 NavigationDrawerItem(
-                                    label = { Text("Heatmap stage") },
+                                    label = { Text(getString(R.string.nav_heatmap_stage)) },
                                     selected = false,
                                     onClick = {
                                         navController.navigate("experiment_heatmap_stage")
@@ -597,7 +604,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                                 NavigationDrawerItem(
-                                    label = { Text("Dash paddle long-edge det/rec") },
+                                    label = { Text(getString(R.string.nav_dash_paddle_long_edge_det_rec)) },
                                     selected = false,
                                     onClick = {
                                         navController.navigate("experiment_multiscale_det?auto=")
@@ -606,7 +613,7 @@ class MainActivity : ComponentActivity() {
                                 )
                                 // Import Old Pictures is an experiment route.
                                 NavigationDrawerItem(
-                                    label = { Text("Import Old Pictures") },
+                                    label = { Text(getString(R.string.nav_import_old_pictures)) },
                                     selected = false,
                                     onClick = {
                                         navController.navigate("import")
@@ -624,9 +631,9 @@ class MainActivity : ComponentActivity() {
                             val screenWidthDp = LocalConfiguration.current.screenWidthDp
                             val narrowTitle = screenWidthDp < 600
                             val titleText = when {
-                                title == "Vehicle Expenses" -> title
+                                title == getString(R.string.app_name) -> title
                                 narrowTitle -> title
-                                else -> "Vehicle Expenses - $title"
+                                else -> getString(R.string.nav_title_app_page, title)
                             }
                             TopAppBar(
                                 title = {
@@ -651,7 +658,7 @@ class MainActivity : ComponentActivity() {
                                             modifier = Modifier
                                                 .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                                                 .semantics {
-                                                    contentDescription = "Review questions"
+                                                    contentDescription = getString(R.string.nav_review_questions)
                                                 },
                                         ) {
                                             Text(
@@ -694,7 +701,7 @@ class MainActivity : ComponentActivity() {
                                                 onClick = { scope.launch { drawerState.open() } },
                                                 modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                                             ) {
-                                                Icon(Icons.Default.Menu, contentDescription = "Menu")
+                                                Icon(Icons.Default.Menu, contentDescription = getString(R.string.nav_menu))
                                             }
                                         }
                                         if (showBack) {
@@ -928,7 +935,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 internal fun TransferBlockingScreen(state: DbState, progress: String) {
-    val title = if (state is Importing) "Importing data…" else "Exporting data…"
+    val title = if (state is Importing) stringResource(R.string.startup_importing_data) else stringResource(R.string.startup_exporting_data)
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator()
@@ -948,9 +955,9 @@ private fun ExportFailedNotice(holder: DatabaseHealthState) {
     AlertDialog(
         onDismissRequest = { message = null },
         confirmButton = {
-            TextButton(onClick = { message = null }) { Text("OK") }
+            TextButton(onClick = { message = null }) { Text(stringResource(R.string.settings_ok)) }
         },
-        text = { Text("Export failed: $text") },
+        text = { Text(stringResource(R.string.import_export_failed_1_s, text)) },
     )
 }
 

@@ -36,6 +36,9 @@ import com.davidlang.vehicleexpensesautomated.data.location.OverpassClient
 import com.davidlang.vehicleexpensesautomated.ui.util.NetworkStatus
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 /**
  * Nearby station/place picker for “Wrong station”. Capture GPS is not changed by selection.
@@ -74,9 +77,9 @@ fun StationPickerDialog(
             loading = false
             errorLine = if (list.isEmpty()) {
                 if (!online) {
-                    "Offline — no known stations in range. Enter place manually."
+                    AppStrings.get(R.string.ui_offline_no_known_stations_in_range_enter_p)
                 } else {
-                    "No stations found within ${r.roundToInt()} m"
+                    AppStrings.get(R.string.ui_no_stations_found_within_1_s_m, r.roundToInt())
                 }
             } else {
                 null
@@ -93,9 +96,9 @@ fun StationPickerDialog(
         title = {
             Text(
                 text = if (kind == LocationLookupKind.AUTO_SERVICE) {
-                    "Pick a place"
+                    stringResource(R.string.ui_pick_a_place)
                 } else {
-                    "Pick a station"
+                    stringResource(R.string.ui_pick_a_station)
                 },
                 style = MaterialTheme.typography.titleLarge,
             )
@@ -107,7 +110,7 @@ fun StationPickerDialog(
                     .heightIn(min = 120.dp, max = 420.dp),
             ) {
                 Text(
-                    text = "Within ${radiusM.roundToInt()} m · nearest first",
+                    text = stringResource(R.string.ui_within_1_s_m_nearest_first, radiusM.roundToInt()),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp),
@@ -155,7 +158,7 @@ fun StationPickerDialog(
                     if (next <= radiusM + 0.5) {
                         Toast.makeText(
                             context,
-                            "Already at max range (${OverpassClient.PICKER_MAX_RADIUS_M.roundToInt()} m)",
+                            AppStrings.get(R.string.ui_already_at_max_range_1_s_m, OverpassClient.PICKER_MAX_RADIUS_M.roundToInt()),
                             Toast.LENGTH_SHORT,
                         ).show()
                     } else {
@@ -165,16 +168,16 @@ fun StationPickerDialog(
                 },
                 enabled = !loading && (online || stationStore != null),
             ) {
-                Text("Extend range")
+                Text(stringResource(R.string.ui_extend_range))
             }
         },
         dismissButton = {
             Row {
                 TextButton(onClick = onManual) {
-                    Text("Enter manually")
+                    Text(stringResource(R.string.ui_enter_manually))
                 }
                 TextButton(onClick = onDismiss) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.settings_cancel))
                 }
             }
         },
@@ -186,7 +189,7 @@ private fun StationPickerRow(
     item: LocationLookupResult,
     onClick: () -> Unit,
 ) {
-    val dist = item.distanceM?.let { "${it.roundToInt()} m" } ?: ""
+    val dist = item.distanceM?.let { AppStrings.get(R.string.ui_s_1_s_m, it.roundToInt()) } ?: ""
     Column(
         modifier = Modifier
             .fillMaxWidth()

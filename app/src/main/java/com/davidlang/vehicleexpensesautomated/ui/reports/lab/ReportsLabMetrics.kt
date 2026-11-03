@@ -8,6 +8,8 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 /** Lab-local full-fill leg (copied patterns from production Reports; do not edit production). */
 data class LabFullFillLeg(
@@ -272,7 +274,7 @@ fun formatLabDateTime(timestamp: Long): String =
 /** Shared spacing/decimals with [com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits.formatVolume]. */
 fun formatVolume(gallons: Double, unitLabel: String): String {
     val unit = when (unitLabel.trim().uppercase()) {
-        "L", "LITERS" -> com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits.LITERS
+        "L", AppStrings.get(R.string.reports_liters) -> com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits.LITERS
         else -> com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits.GALLONS
     }
     return com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits.formatVolume(gallons, unit)
@@ -315,7 +317,7 @@ fun categoryTotals(
     expenses: List<ExpenseEntry>,
     defaultStored: String,
 ): Map<String, Map<String, Double>> =
-    expenses.groupBy { it.category.ifBlank { "Other" } }
+    expenses.groupBy { it.category.ifBlank { AppStrings.get(R.string.reports_other_category) } }
         .mapValues { (_, list) ->
             CurrencyCodes.sumByCurrency(list, defaultStored, { it.currency }, { it.amount })
         }
@@ -359,8 +361,8 @@ fun hubVehicleSummaries(
         HubVehicleSummary(
             vehicleId = vehicleId,
             name = when {
-                vehicleId == 0 -> "Unknown"
-                else -> nameById[vehicleId] ?: "Vehicle $vehicleId"
+                vehicleId == 0 -> AppStrings.get(R.string.ui_unknown)
+                else -> nameById[vehicleId] ?: AppStrings.get(R.string.expense_vehicle_1_s, vehicleId)
             },
             fuelCostByCurrency = CurrencyCodes.sumByCurrency(
                 vFuel, defaultStored, { it.currency }, { it.cost },
@@ -396,7 +398,7 @@ fun hubOverallSummaryLine(
     )
     val vol = formatVolume(fuel.sumOf { it.gallons }, volumeLabel)
     val partial = fills.count { it.isPartialFill }
-    return "Exp $exp · Fuel $fuelSum · $vol · fills ${fills.size} (${partial}p)"
+    return AppStrings.get(R.string.reports_exp_1_s_fuel_2_s_3_s_fills_4_s_5_sp, exp, fuelSum, vol, fills.size, partial)
 }
 
 fun hubVehicleStatsLine(
@@ -410,16 +412,16 @@ fun hubVehicleStatsLine(
         "%.3f".format(stats.dollarsPerMile)
     }
     val fuel = CurrencyCodes.formatAggregateSum(stats.fuelCostByCurrency, defaultSymbol)
-    return "Fuel $fuel · " +
+    return AppStrings.get(R.string.reports_fuel_1_s, fuel) +
         "${formatVolume(stats.gallons, volumeLabel)} · " +
-        "fills ${stats.fillCount}(${stats.partialCount}p) · " +
-        "last ${formatMpg(stats.lastMpg)} · avg ${formatMpg(stats.avgMpg)} · " +
+        AppStrings.get(R.string.reports_fills_1_s_2_sp, stats.fillCount, stats.partialCount) +
+        AppStrings.get(R.string.reports_last_1_s_avg_2_s, formatMpg(stats.lastMpg), formatMpg(stats.avgMpg)) +
         "${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.costPerDistanceLabel()} $dpm"
 }
 
 fun hubVehicleExpenseLine(stats: HubVehicleSummary, defaultSymbol: String): String {
     val total = CurrencyCodes.formatAggregateSum(stats.expenseTotalByCurrency, defaultSymbol)
-    return "Exp $total"
+    return AppStrings.get(R.string.reports_exp_1_s, total)
 }
 
 /**

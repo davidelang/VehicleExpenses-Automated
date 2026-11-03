@@ -12,6 +12,8 @@ import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 /** Which all-time series drives the child report vehicle dropdown (Part E). */
 enum class LabVehicleMembership {
@@ -50,18 +52,18 @@ fun dataBearingVehicles(
         if (v != null) {
             // Show system Unassigned as display name Unknown in reports only
             out += if (id == VehicleRepository.UNASSIGNED_VEHICLE_ID) {
-                v.copy(name = "Unknown")
+                v.copy(name = AppStrings.get(R.string.ui_unknown))
             } else {
                 v
             }
         } else if (id == VehicleRepository.UNASSIGNED_VEHICLE_ID) {
             out += Vehicle(
                 id = 0,
-                name = "Unknown",
+                name = AppStrings.get(R.string.ui_unknown),
                 syncId = VehicleRepository.UNASSIGNED_VEHICLE_SYNC_ID,
             )
         } else {
-            out += Vehicle(id = id, name = "Vehicle $id")
+            out += Vehicle(id = id, name = AppStrings.get(R.string.expense_vehicle_1_s, id))
         }
     }
     return out.sortedBy { it.name.lowercase() }
@@ -141,15 +143,15 @@ data class LabReportData(
 ) {
     fun vehicleName(id: Int): String {
         // Reports always label system bucket as Unknown (never "Unassigned")
-        if (id == 0 || id == VehicleRepository.UNASSIGNED_VEHICLE_ID) return "Unknown"
-        return allVehicles.firstOrNull { it.id == id }?.name ?: "Vehicle $id"
+        if (id == 0 || id == VehicleRepository.UNASSIGNED_VEHICLE_ID) return AppStrings.get(R.string.ui_unknown)
+        return allVehicles.firstOrNull { it.id == id }?.name ?: AppStrings.get(R.string.expense_vehicle_1_s, id)
     }
 
     fun filterVehicleLabel(): String =
         when (filter.vehicleMode) {
-            LabVehicleMode.ALL -> "All vehicles"
-            LabVehicleMode.EACH -> "Each vehicle"
-            LabVehicleMode.SINGLE -> filter.vehicleId?.let { vehicleName(it) } ?: "All vehicles"
+            LabVehicleMode.ALL -> AppStrings.get(R.string.reports_all_vehicles)
+            LabVehicleMode.EACH -> AppStrings.get(R.string.reports_each_vehicle)
+            LabVehicleMode.SINGLE -> filter.vehicleId?.let { vehicleName(it) } ?: AppStrings.get(R.string.reports_all_vehicles)
         }
 
     /** Group fuel by vehicle when EACH; otherwise single bucket null key = combined. */

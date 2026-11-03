@@ -14,13 +14,16 @@ import com.davidlang.vehicleexpensesautomated.BuildConfig
 import com.davidlang.vehicleexpensesautomated.ui.util.FillDebugStore
 import com.davidlang.vehicleexpensesautomated.ui.util.UserManualDocs
 import com.davidlang.vehicleexpensesautomated.ui.util.buildFeedbackSeedBody
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 @Composable
 fun AboutScreen() {
     val context = LocalContext.current
     val version = BuildConfig.VERSION_NAME
 
-    Scaffold(topBar = { TopAppBar(title = { Text("About") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.nav_about)) }) }) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -28,22 +31,22 @@ fun AboutScreen() {
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("Vehicle Expenses Automated", style = MaterialTheme.typography.headlineMedium)
-            Text("Version $version", style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.app_name_long), style = MaterialTheme.typography.headlineMedium)
+            Text(stringResource(R.string.about_version_fmt, version), style = MaterialTheme.typography.bodyLarge)
             Spacer(modifier = Modifier.height(32.dp))
-            Text("Open Source Libraries", style = MaterialTheme.typography.titleMedium)
-            Text("• Room\n• Hilt\n• Jetpack Compose\n• WorkManager\n• Google Sign-In\n• kotlinx-serialization")
+            Text(stringResource(R.string.about_open_source_libraries), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.about_room_hilt_jetpack_compose_workmanager_google_sig))
             Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/davidelang/VehicleExpenses-Automated"))) }) { Text("GitHub Repository") }
-            Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/davidelang/VehicleExpenses-Automated/blob/master/LICENSE"))) }) { Text("License (Apache 2.0)") }
-            Button(onClick = { UserManualDocs.openFullManual(context) }) { Text("User Manual") }
+            Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/davidelang/VehicleExpenses-Automated"))) }) { Text(stringResource(R.string.about_github_repository)) }
+            Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/davidelang/VehicleExpenses-Automated/blob/master/LICENSE"))) }) { Text(stringResource(R.string.about_license_apache_2_0)) }
+            Button(onClick = { UserManualDocs.openFullManual(context) }) { Text(stringResource(R.string.user_manual_title)) }
             Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = {
                     val intent = Intent(Intent.ACTION_SENDTO).apply {
                         data = Uri.parse("mailto:")
                         putExtra(Intent.EXTRA_EMAIL, arrayOf(FillDebugStore.REPORT_EMAIL))
-                        putExtra(Intent.EXTRA_SUBJECT, "Vehicle Expenses feedback")
+                        putExtra(Intent.EXTRA_SUBJECT, AppStrings.get(R.string.about_vehicle_expenses_feedback))
                         putExtra(Intent.EXTRA_TEXT, buildFeedbackSeedBody(context))
                     }
                     if (intent.resolveActivity(context.packageManager) != null) {
@@ -53,15 +56,15 @@ fun AboutScreen() {
                         val send = Intent(Intent.ACTION_SEND).apply {
                             type = "message/rfc822"
                             putExtra(Intent.EXTRA_EMAIL, arrayOf(FillDebugStore.REPORT_EMAIL))
-                            putExtra(Intent.EXTRA_SUBJECT, "Vehicle Expenses feedback")
+                            putExtra(Intent.EXTRA_SUBJECT, AppStrings.get(R.string.about_vehicle_expenses_feedback))
                             putExtra(Intent.EXTRA_TEXT, buildFeedbackSeedBody(context))
                         }
                         if (send.resolveActivity(context.packageManager) != null) {
-                            context.startActivity(Intent.createChooser(send, "Send feedback"))
+                            context.startActivity(Intent.createChooser(send, AppStrings.get(R.string.about_send_feedback)))
                         } else {
                             Toast.makeText(
                                 context,
-                                "No email app found to send feedback",
+                                AppStrings.get(R.string.about_no_email_app_found_to_send_feedback),
                                 Toast.LENGTH_LONG,
                             ).show()
                         }
@@ -69,7 +72,7 @@ fun AboutScreen() {
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Send bug report/feedback")
+                Text(stringResource(R.string.about_send_bug_report_feedback))
             }
         }
     }

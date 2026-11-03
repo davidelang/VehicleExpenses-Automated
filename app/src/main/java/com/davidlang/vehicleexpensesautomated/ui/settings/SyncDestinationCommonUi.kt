@@ -43,6 +43,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncProgressListener
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 class ConsentRecoveryHandle internal constructor(
     val launch: (Intent, () -> Unit) -> Unit,
@@ -195,7 +198,7 @@ fun SyncProviderChoiceScreen(
         }
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
-            Text("Cancel")
+            Text(stringResource(R.string.settings_cancel))
         }
     }
 }
@@ -213,7 +216,7 @@ fun SyncDestinationEditScaffold(
             .verticalScroll(rememberScrollState()),
     ) {
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-            Text("← Back to list")
+            Text(stringResource(R.string.settings_back_to_list))
         }
         Spacer(modifier = Modifier.height(8.dp))
         Text(title, style = MaterialTheme.typography.headlineMedium)
@@ -228,13 +231,13 @@ fun SyncDestinationDisplayNameField(
     onValueChange: (String) -> Unit,
     required: Boolean,
 ) {
-    Text("Destination", style = MaterialTheme.typography.titleMedium)
+    Text(stringResource(R.string.settings_destination), style = MaterialTheme.typography.titleMedium)
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = {
             Text(
-                if (required) "Display name (required)" else "Display name (optional)",
+                if (required) stringResource(R.string.settings_display_name_required) else stringResource(R.string.settings_display_name_optional),
             )
         },
         modifier = Modifier.fillMaxWidth(),
@@ -252,13 +255,13 @@ fun SyncDestinationEditFooter(
     showRemove: Boolean,
     onRemove: () -> Unit,
     statusText: String,
-    syncNowLabel: String = "Sync now (this destination)",
+    syncNowLabel: String = AppStrings.get(R.string.settings_sync_now_this_destination),
     onSyncNow: (() -> Unit)? = null,
     syncInProgress: Boolean = false,
     syncNowEnabled: Boolean = true,
     statusIsError: Boolean = false,
     failureDetailMessage: String? = null,
-    failureDialogTitle: String = "Sync failure",
+    failureDialogTitle: String = AppStrings.get(R.string.settings_sync_failure),
 ) {
     Button(
         onClick = onTest,
@@ -282,7 +285,7 @@ fun SyncDestinationEditFooter(
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
             enabled = !syncInProgress,
         ) {
-            Text("Remove destination")
+            Text(stringResource(R.string.settings_remove_destination))
         }
     }
     if (statusText.isNotBlank() || syncInProgress) {
@@ -306,8 +309,8 @@ fun SyncDestinationEditFooter(
 @Composable
 fun SyncFailureDetailsButton(
     detailMessage: String,
-    title: String = "Sync failure",
-    buttonLabel: String = "Details",
+    title: String = AppStrings.get(R.string.settings_sync_failure),
+    buttonLabel: String = AppStrings.get(R.string.settings_details),
 ) {
     var show by remember { mutableStateOf(false) }
     TextButton(onClick = { show = true }) {
@@ -343,17 +346,17 @@ fun SyncFailureDetailsDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("OK") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_ok)) }
         },
         dismissButton = {
             TextButton(
                 onClick = {
                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    cm.setPrimaryClip(ClipData.newPlainText("sync failure", detailMessage))
-                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                    cm.setPrimaryClip(ClipData.newPlainText(AppStrings.get(R.string.settings_sync_failure_2), detailMessage))
+                    Toast.makeText(context, AppStrings.get(R.string.settings_copied), Toast.LENGTH_SHORT).show()
                 },
             ) {
-                Text("Copy")
+                Text(stringResource(R.string.settings_copy))
             }
         },
     )

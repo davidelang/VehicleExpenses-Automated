@@ -17,6 +17,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.data.sync.CorruptIncoming
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 @Composable
 fun CorruptIncomingSection(syncGeneration: Any?) {
@@ -26,18 +29,18 @@ fun CorruptIncomingSection(syncGeneration: Any?) {
     LaunchedEffect(syncGeneration) {
         val unseen = CorruptIncoming.takeUnseen()
         if (unseen > 0) {
-            Toast.makeText(context, "Corrupt incoming data", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, AppStrings.get(R.string.settings_corrupt_incoming_data), Toast.LENGTH_LONG).show()
         }
         tick++
     }
     if (items.isEmpty()) return
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        Text("Corrupt incoming data", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.settings_corrupt_incoming_data), style = MaterialTheme.typography.titleMedium)
         items.forEach { item ->
             val choice = when (item.disposition) {
-                CorruptIncoming.LEAVE -> "Keep local and leave the sheet"
-                CorruptIncoming.WRITE_BACK -> "Keep local and write it back"
-                CorruptIncoming.ACCEPT -> "Accept remote (field cleared)"
+                CorruptIncoming.LEAVE -> AppStrings.get(R.string.settings_keep_local_and_leave_the_sheet)
+                CorruptIncoming.WRITE_BACK -> AppStrings.get(R.string.settings_keep_local_and_write_it_back)
+                CorruptIncoming.ACCEPT -> AppStrings.get(R.string.settings_accept_remote_field_cleared)
                 else -> item.disposition
             }
             Text(
@@ -52,15 +55,15 @@ fun CorruptIncomingSection(syncGeneration: Any?) {
             TextButton(onClick = {
                 CorruptIncoming.setDisposition(item.key, CorruptIncoming.WRITE_BACK)
                 tick++
-            }) { Text("Keep local and write it back") }
+            }) { Text(AppStrings.get(R.string.settings_keep_local_and_write_it_back)) }
             TextButton(onClick = {
                 CorruptIncoming.setDisposition(item.key, CorruptIncoming.LEAVE)
                 tick++
-            }) { Text("Keep local and leave the sheet") }
+            }) { Text(AppStrings.get(R.string.settings_keep_local_and_leave_the_sheet)) }
             TextButton(onClick = {
                 CorruptIncoming.setDisposition(item.key, CorruptIncoming.ACCEPT)
                 tick++
-            }) { Text("Accept remote (field cleared)") }
+            }) { Text(AppStrings.get(R.string.settings_accept_remote_field_cleared)) }
         }
     }
 }

@@ -22,6 +22,9 @@ import com.davidlang.vehicleexpensesautomated.ui.reports.lab.formatMpg
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.formatVolume
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 /**
  * Newest ≤5 full-fill legs with mpg bar (shared R&C / Lab vehicle summary style).
@@ -33,13 +36,13 @@ fun LastFullFillLegsBlock(
     volumeUnitLabel: String,
     defaultSymbol: String,
     modifier: Modifier = Modifier,
-    title: String = "Last 5 full fills",
+    title: String = AppStrings.get(R.string.reports_last_5_full_fills),
 ) {
     val displayNewestFirst = excludeMpgOutliers(legsChrono).asReversed().take(5)
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(title, style = MaterialTheme.typography.titleSmall)
         if (displayNewestFirst.isEmpty()) {
-            Text("No full fills", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.reports_no_full_fills), style = MaterialTheme.typography.bodySmall)
         } else {
             val maxMpg = displayNewestFirst.maxOfOrNull { it.mpg }?.takeIf { it > 0 } ?: 1.0
             displayNewestFirst.forEach { leg ->
@@ -69,7 +72,7 @@ fun FullFillLegRowUi(
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
-            "$dateLabel · odo $odo",
+            stringResource(R.string.fill_s_1_s_odo_2_s, dateLabel, odo),
             style = MaterialTheme.typography.labelMedium,
         )
         Row(
@@ -111,11 +114,11 @@ fun lastFullFillLegsShareLines(
     defaultSymbol: String,
 ): List<String> {
     val display = excludeMpgOutliers(legsChrono).asReversed().take(5)
-    if (display.isEmpty()) return listOf("  (none)")
+    if (display.isEmpty()) return listOf(AppStrings.get(R.string.reports_none))
     return display.map { leg ->
         val cost = CurrencyCodes.formatAggregateSum(leg.sumCostByCurrency, defaultSymbol)
         val vol = formatVolume(leg.sumVol, volumeUnitLabel)
-        "  ${formatLabDate(leg.endFill.timestamp)} odo ${leg.endFill.odometer} " +
+        AppStrings.get(R.string.fill_s_1_s_odo_2_s_2, formatLabDate(leg.endFill.timestamp), leg.endFill.odometer) +
             "$cost $vol ${UnitFormat.economyEfficiencyLabel()} ${formatMpg(leg.mpg)}"
     }
 }

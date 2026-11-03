@@ -707,16 +707,12 @@ struct QfJniIds {
     jmethodID getUv = nullptr;
     jclass matCls = nullptr;
     jclass integerCls = nullptr;
-    jmethodID intValue = nullptr;
     jmethodID valueOf = nullptr;
     jclass utilsCls = nullptr;
     jclass engCls = nullptr;
     jmethodID prepare = nullptr;
     jclass compCls = nullptr;
     jmethodID deskew = nullptr;
-    jclass pairCls = nullptr;
-    jmethodID getFirst = nullptr;
-    jmethodID getSecond = nullptr;
     jmethodID ctor = nullptr;
     jmethodID detect = nullptr;
     jclass resCls = nullptr;
@@ -847,15 +843,6 @@ void drawSeed(cv::Mat& y, cv::Mat& uv, const float* q) {
     }
 }
 
-int intValue(JNIEnv* env, jobject integerObj) {
-    if (!integerObj) return 0;
-    jclass cls = classOfHeld(env, &qfJni.integerCls, integerObj);
-    jmethodID m = holdMethod(env, &qfJni.intValue, cls, "intValue", "()I");
-    if (checkExc(env)) return 0;
-    if (!m) return 0;
-    return env->CallIntMethod(integerObj, m);
-}
-
 void collectScaleBoxes(JNIEnv* env, jobject buffer, jobject context, int scale, std::vector<BoxUv>* boxes, std::vector<RawBox>* raw) {
     jclass utilsCls = findHeld(env, &qfJni.utilsCls, "com/davidlang/vehicleexpensesautomated/ui/util/PumpCostVolUtils");
     if (!utilsCls || checkExc(env)) return;
@@ -870,27 +857,24 @@ void collectScaleBoxes(JNIEnv* env, jobject buffer, jobject context, int scale, 
     if (!utils || !companion || checkExc(env)) return;
     jmethodID prepare = holdMethod(
         env, &qfJni.prepare, utilsCls, "prepareScale",
-        "(Lcom/davidlang/vehicleexpensesautomated/ui/util/BufferSet;I)Lkotlin/Pair;");
+        "(Lcom/davidlang/vehicleexpensesautomated/ui/util/BufferSet;I)[I");
     jclass compCls = classOfHeld(env, &qfJni.compCls, companion);
     jmethodID deskew = holdMethod(
         env, &qfJni.deskew, compCls, "deskewSetFor",
         "(I)Lcom/davidlang/vehicleexpensesautomated/ui/util/BufferSet;");
     if (!prepare || !deskew || checkExc(env)) return;
-    jobject pair = env->CallObjectMethod(utils, prepare, buffer, scale);
-    if (checkExc(env) || !pair) return;
-    jclass pairCls = classOfHeld(env, &qfJni.pairCls, pair);
-    jmethodID getFirst = holdMethod(env, &qfJni.getFirst, pairCls, "getFirst", "()Ljava/lang/Object;");
-    jmethodID getSecond = holdMethod(env, &qfJni.getSecond, pairCls, "getSecond", "()Ljava/lang/Object;");
-    if (!getFirst || !getSecond || checkExc(env)) return;
-    jobject first = env->CallObjectMethod(pair, getFirst);
-    jobject second = env->CallObjectMethod(pair, getSecond);
-    const int contentW = intValue(env, first);
+    jintArray dims = static_cast<jintArray>(env->CallObjectMethod(utils, prepare, buffer, scale));
+    if (checkExc(env) || !dims) return;
+    if (env->GetArrayLength(dims) < 2) {
+        env->DeleteLocalRef(dims);
+        return;
+    }
+    jint wh[2];
+    env->GetIntArrayRegion(dims, 0, 2, wh);
+    env->DeleteLocalRef(dims);
     if (checkExc(env)) return;
-    const int contentH = intValue(env, second);
-    if (checkExc(env)) return;
-    env->DeleteLocalRef(pair);
-    if (first) env->DeleteLocalRef(first);
-    if (second) env->DeleteLocalRef(second);
+    const int contentW = wh[0];
+    const int contentH = wh[1];
     if (contentW < 1 || contentH < 1) return;
     jobject dest = env->CallObjectMethod(companion, deskew, scale);
     if (checkExc(env) || !dest) return;

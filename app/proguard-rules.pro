@@ -8,6 +8,8 @@
 # -keep, not -keepnames: R8 shrunk JNI-only members (deskewSetFor, prepareScale, rot-GMM ctors).
 -keep class com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine { *; }
 -keep class com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine$Companion { *; }
+-keep class com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine$DetectionResult { *; }
+-keep class com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine$DetectionBox { *; }
 -keep class com.davidlang.vehicleexpensesautomated.ui.util.BufferSet { *; }
 -keep class com.davidlang.vehicleexpensesautomated.ui.util.BufferSet$** { *; }
 -keep class com.davidlang.vehicleexpensesautomated.ui.util.PumpCostVolUtils { *; }

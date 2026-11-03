@@ -538,47 +538,42 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 val heatmapPostPath = NativeImageUtils.lastHeatmapPostPath()
 
                 val nativeBoxes = mutableListOf<DetectionBox>()
-                var hist: IntArray? = null
-                if (nativeRes != null) {
-                    val boxFloats = nativeRes.size - 100
-                    val nboxes = boxFloats / 9
-                    for (i in 0 until nboxes) {
-                        val offset = i * 9
-                        val matPixels = FloatArray(8)
-                        for (p in 0 until 4) {
-                            matPixels[p * 2] = nativeRes[offset + p * 2]
-                            matPixels[p * 2 + 1] = nativeRes[offset + p * 2 + 1]
-                        }
-                        val conf = nativeRes[offset + 8]
-                        nativeBoxes.add(DetectionBox(matPixels, conf))
+                val boxFloats = nativeRes.size - 100
+                val nboxes = boxFloats / 9
+                for (i in 0 until nboxes) {
+                    val offset = i * 9
+                    val matPixels = FloatArray(8)
+                    for (p in 0 until 4) {
+                        matPixels[p * 2] = nativeRes[offset + p * 2]
+                        matPixels[p * 2 + 1] = nativeRes[offset + p * 2 + 1]
                     }
-                    hist = IntArray(100)
-                    for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
+                    val conf = nativeRes[offset + 8]
+                    nativeBoxes.add(DetectionBox(matPixels, conf))
                 }
+                val hist = IntArray(100)
+                for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
 
                 // Optional raw u8 dump (before optional float copy). Prefer product u8 plane.
                 if (heatDumpU8z != null) {
                     val u8 = NativeImageUtils.heatmapToUInt8Array(outputTensor)
-                    if (u8 != null) {
-                        writeHeatDumpU8z(
-                            heatDumpU8z,
-                            u8,
-                            heatW,
-                            heatH,
-                            mapOf(
-                                "path" to activeProductPathId,
-                                "product_dir" to activeProductDir,
-                                "tier" to tierScale,
-                                "content_w" to w,
-                                "content_h" to h,
-                                "box_mode" to boxMode,
-                                "hm_thresh" to hmThresh,
-                                "mask_dilate_passes" to maskDilatePasses,
-                                "heatmap_post_path" to heatmapPostPath,
-                                "n_boxes" to nativeBoxes.size,
-                            ),
-                        )
-                    }
+                    writeHeatDumpU8z(
+                        heatDumpU8z,
+                        u8,
+                        heatW,
+                        heatH,
+                        mapOf(
+                            "path" to activeProductPathId,
+                            "product_dir" to activeProductDir,
+                            "tier" to tierScale,
+                            "content_w" to w,
+                            "content_h" to h,
+                            "box_mode" to boxMode,
+                            "hm_thresh" to hmThresh,
+                            "mask_dilate_passes" to maskDilatePasses,
+                            "heatmap_post_path" to heatmapPostPath,
+                            "n_boxes" to nativeBoxes.size,
+                        ),
+                    )
                 }
 
                 // Never Tensor.floatData on uint8 heatmaps (getFloatData SEGV).
@@ -740,22 +735,19 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 val heatmapPostPath = NativeImageUtils.lastHeatmapPostPath()
 
                 val nativeBoxes = mutableListOf<DetectionBox>()
-                var hist: IntArray? = null
-                if (nativeRes != null) {
-                    val boxFloats = nativeRes.size - 100
-                    val nboxes = boxFloats / 9
-                    for (i in 0 until nboxes) {
-                        val offset = i * 9
-                        val matPixels = FloatArray(8)
-                        for (p in 0 until 4) {
-                            matPixels[p * 2] = nativeRes[offset + p * 2]
-                            matPixels[p * 2 + 1] = nativeRes[offset + p * 2 + 1]
-                        }
-                        nativeBoxes.add(DetectionBox(matPixels, nativeRes[offset + 8]))
+                val boxFloats = nativeRes.size - 100
+                val nboxes = boxFloats / 9
+                for (i in 0 until nboxes) {
+                    val offset = i * 9
+                    val matPixels = FloatArray(8)
+                    for (p in 0 until 4) {
+                        matPixels[p * 2] = nativeRes[offset + p * 2]
+                        matPixels[p * 2 + 1] = nativeRes[offset + p * 2 + 1]
                     }
-                    hist = IntArray(100)
-                    for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
+                    nativeBoxes.add(DetectionBox(matPixels, nativeRes[offset + 8]))
                 }
+                val hist = IntArray(100)
+                for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
 
                 if (heatDumpU8z != null) {
                     writeHeatDumpU8z(

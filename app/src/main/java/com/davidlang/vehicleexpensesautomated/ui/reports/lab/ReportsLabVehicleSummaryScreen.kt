@@ -11,6 +11,9 @@ import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.ui.reports.LastFullFillLegsBlock
 import com.davidlang.vehicleexpensesautomated.ui.reports.lastFullFillLegsShareLines
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 @Composable
 fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
@@ -50,22 +53,22 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
             .take(5)
         val dpm = dollarsPerMile(fuelAll, exp, data.defaultStored)
         return buildString {
-            appendLine("Vehicle Expenses — Vehicle summary")
-            appendLine("Generated: ${formatLabDateTime(System.currentTimeMillis())}")
-            appendLine("Period: ${periodLabel(data.filter)}")
+            appendLine(AppStrings.get(R.string.vehicle_vehicle_expenses_vehicle_summary))
+            appendLine(AppStrings.get(R.string.reports_generated_at, formatLabDateTime(System.currentTimeMillis())))
+            appendLine(AppStrings.get(R.string.reports_period_label, periodLabel(data.filter)))
             val identity = buildList {
                 v?.name?.takeIf { it.isNotBlank() }?.let { add(it) }
                 listOfNotNull(v?.make, v?.model).joinToString(" ").trim().takeIf { it.isNotEmpty() }?.let { add(it) }
                 v?.year?.let { add(it.toString()) }
-                v?.licensePlate?.takeIf { it.isNotBlank() }?.let { add("plate $it") }
+                v?.licensePlate?.takeIf { it.isNotBlank() }?.let { add(AppStrings.get(R.string.reports_plate_label, it)) }
             }.joinToString(" · ").ifBlank { data.filterVehicleLabel() }
-            appendLine("Vehicle: $identity")
+            appendLine(AppStrings.get(R.string.reports_vehicle_label, identity))
             if (includeVinInShare && !v?.vin.isNullOrBlank()) {
-                appendLine("VIN: ${v?.vin}")
+                appendLine(AppStrings.get(R.string.reports_vin_label, v?.vin.orEmpty()))
             }
             appendLine()
             appendLine(
-                "Odometer: " + when {
+                AppStrings.get(R.string.vehicle_odometer) + when {
                     minO != null && maxO != null ->
                         "$minO → $maxO" +
                         (dist?.let {
@@ -75,29 +78,29 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
                 },
             )
             appendLine(
-                "Fills: ${fills.size} (${fills.count { it.isPartialFill }} marked partial) · " +
-                    "Volume: ${formatVolume(fuelAll.sumOf { it.gallons }, data.volumeLabel)}",
+                AppStrings.get(R.string.vehicle_fills_1_s_2_s_marked_partial, fills.size, fills.count { it.isPartialFill }) +
+                    AppStrings.get(R.string.vehicle_volume_1_s, formatVolume(fuelAll.sumOf { it.gallons }, data.volumeLabel)),
             )
-            appendLine("Fuel cost: ${CurrencyCodes.formatAggregateSum(fuelCost, data.defaultSymbol)}")
+            appendLine(AppStrings.get(R.string.vehicle_fuel_cost_1_s, CurrencyCodes.formatAggregateSum(fuelCost, data.defaultSymbol)))
             appendLine(
-                "Last ${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.economyEfficiencyLabel()}: " +
-                    "${formatMpg(lastMpg(legs))} · Avg " +
+                AppStrings.get(R.string.vehicle_last_1_s, com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.economyEfficiencyLabel()) +
+                    AppStrings.get(R.string.vehicle_s_1_s_avg, formatMpg(lastMpg(legs))) +
                     "${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.economyEfficiencyLabel()}: " +
                     "${formatMpg(avgMpg(legs))} · " +
                     "${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.costPerDistanceLabel()}: " +
                     if (dpm == null) "n/a" else "%.3f".format(dpm),
             )
-            appendLine("(Full-fill and economyIgnored rules apply; trip starts excluded from fill counts.)")
-            appendLine("Expenses: ${CurrencyCodes.formatAggregateSum(expCost, data.defaultSymbol)}")
+            appendLine(AppStrings.get(R.string.vehicle_full_fill_and_economyignored_rules_apply_t))
+            appendLine(AppStrings.get(R.string.reports_expenses_amount, CurrencyCodes.formatAggregateSum(expCost, data.defaultSymbol)))
             topCats.forEach { (cat, m) ->
                 appendLine("  $cat: ${CurrencyCodes.formatAggregateSum(m, data.defaultSymbol)}")
             }
             appendLine()
-            appendLine("Last 5 full fills:")
+            appendLine(AppStrings.get(R.string.vehicle_last_5_full_fills))
             lastFullFillLegsShareLines(legs, data.volumeLabel, data.defaultSymbol).forEach {
                 appendLine(it)
             }
-            appendLine("Recent expenses:")
+            appendLine(AppStrings.get(R.string.vehicle_recent_expenses))
             exp.sortedByDescending { it.date }.take(5).forEach { e ->
                 appendLine(
                     "  ${formatLabDate(e.date)} ${e.category} " +
@@ -174,29 +177,29 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
     }
 
     ReportsLabScreenScaffold(
-        title = "Vehicle summary",
-        infoText = "A shareable history pack for this vehicle and period. " +
-            "Toggle Include VIN below before sharing if needed (default off).",
+        title = stringResource(R.string.reports_vehicle_summary),
+        infoText = stringResource(R.string.vehicle_a_shareable_history_pack_for_this_vehicle) +
+            stringResource(R.string.reports_toggle_include_vin_below_before_sharing_if_neede),
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,
         shareActions = run {
             val buildText = { targets.joinToString("\n") { packForVehicle(it) } }
             ReportsLabShareActions(
-                subject = "Vehicle summary",
+                subject = AppStrings.get(R.string.reports_vehicle_summary),
                 textBody = buildText,
                 csvFileName = "lab_vehicle_summary.csv",
                 csvBody = { csvPack() },
-                pdfBody = { ReportsLabPdf.fromPlainText("Vehicle summary", buildText()) },
+                pdfBody = { ReportsLabPdf.fromPlainText(AppStrings.get(R.string.reports_vehicle_summary), buildText()) },
             )
         },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = includeVinInShare, onCheckedChange = { includeVinInShare = it })
-            Text("Include VIN in share (default off)", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.reports_include_vin_in_share_default_off), style = MaterialTheme.typography.bodySmall)
         }
         if (data.fuel.isEmpty() && data.expenses.isEmpty() && targets.all { it == null }) {
-            ReportsLabEmpty("No data for this filter.")
+            ReportsLabEmpty(stringResource(R.string.vehicle_no_data_for_this_filter))
             return@ReportsLabScreenScaffold
         }
         targets.forEach { v ->
@@ -228,24 +231,24 @@ private fun VehicleSummarySection(
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Vehicle summary", style = MaterialTheme.typography.titleMedium)
-            Text("Generated: ${formatLabDateTime(System.currentTimeMillis())}", style = MaterialTheme.typography.labelSmall)
-            Text("Period: ${periodLabel(data.filter)}")
+            Text(stringResource(R.string.reports_vehicle_summary), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.reports_generated_at, formatLabDateTime(System.currentTimeMillis())), style = MaterialTheme.typography.labelSmall)
+            Text(stringResource(R.string.reports_period_label, periodLabel(data.filter)))
             Text(
                 buildList {
                     vehicle?.name?.let { add(it) }
                     listOfNotNull(vehicle?.make, vehicle?.model).joinToString(" ").trim()
                         .takeIf { it.isNotEmpty() }?.let { add(it) }
                     vehicle?.year?.let { add(it.toString()) }
-                    vehicle?.licensePlate?.takeIf { it.isNotBlank() }?.let { add("plate $it") }
+                    vehicle?.licensePlate?.takeIf { it.isNotBlank() }?.let { add(AppStrings.get(R.string.reports_plate_label, it)) }
                 }.joinToString(" · ").ifBlank { data.filterVehicleLabel() },
                 style = MaterialTheme.typography.titleSmall,
             )
             if (includeVinOnScreen && !vehicle?.vin.isNullOrBlank()) {
-                Text("VIN: ${vehicle?.vin}", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.reports_vin_label, vehicle?.vin.orEmpty()), style = MaterialTheme.typography.bodySmall)
             }
             Text(
-                "Odometer: " + when {
+                stringResource(R.string.vehicle_odometer) + when {
                     minO != null && maxO != null ->
                         "$minO → $maxO" +
                         (dist?.let {
@@ -256,14 +259,14 @@ private fun VehicleSummarySection(
                 softWrap = true,
             )
             Text(
-                "Fills: ${fills.size} (${fills.count { it.isPartialFill }} partial) · " +
+                stringResource(R.string.vehicle_fills_1_s_2_s_partial, fills.size, fills.count { it.isPartialFill }) +
                     formatVolume(fuelAll.sumOf { it.gallons }, data.volumeLabel),
                 softWrap = true,
             )
-            Text("Fuel: ${CurrencyCodes.formatAggregateSum(fuelCost, data.defaultSymbol)}")
+            Text(stringResource(R.string.reports_fuel_amount, CurrencyCodes.formatAggregateSum(fuelCost, data.defaultSymbol)))
             Text(
-                "Last ${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.economyEfficiencyLabel()} " +
-                    "${formatMpg(lastMpg(legs))} · Avg " +
+                stringResource(R.string.vehicle_last_1_s_2, com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.economyEfficiencyLabel()) +
+                    stringResource(R.string.vehicle_s_1_s_avg, formatMpg(lastMpg(legs))) +
                     "${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.economyEfficiencyLabel()} " +
                     "${formatMpg(avgMpg(legs))} · " +
                     "${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.costPerDistanceLabel()} " +
@@ -271,12 +274,12 @@ private fun VehicleSummarySection(
                 softWrap = true,
             )
             Text(
-                "Full-fill and economyIgnored rules apply; trip starts excluded from fill counts.",
+                stringResource(R.string.reports_full_fill_and_economyignored_rules_apply_trip_st),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 softWrap = true,
             )
-            Text("Expenses: ${CurrencyCodes.formatAggregateSum(expCost, data.defaultSymbol)}")
+            Text(stringResource(R.string.reports_expenses_amount, CurrencyCodes.formatAggregateSum(expCost, data.defaultSymbol)))
             topCats.forEach { (cat, m) ->
                 Text("  $cat: ${CurrencyCodes.formatAggregateSum(m, data.defaultSymbol)}", style = MaterialTheme.typography.bodySmall)
             }
@@ -285,7 +288,7 @@ private fun VehicleSummarySection(
                 volumeUnitLabel = data.volumeLabel,
                 defaultSymbol = data.defaultSymbol,
             )
-            Text("Last 5 expenses", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.reports_last_5_expenses), style = MaterialTheme.typography.titleSmall)
             exp.sortedByDescending { it.date }.take(5).forEach { e ->
                 Text(
                     "${formatLabDate(e.date)} ${e.category} " +
@@ -293,7 +296,7 @@ private fun VehicleSummarySection(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            if (exp.isEmpty()) Text("  (none)", style = MaterialTheme.typography.bodySmall)
+            if (exp.isEmpty()) Text(stringResource(R.string.reports_none), style = MaterialTheme.typography.bodySmall)
         }
     }
 }

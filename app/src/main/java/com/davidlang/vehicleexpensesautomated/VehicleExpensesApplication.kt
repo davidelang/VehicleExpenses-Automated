@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated
 
 import android.app.Application
+import android.content.Context
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.davidlang.vehicleexpensesautomated.data.db.DatabaseHealth
@@ -18,6 +19,8 @@ import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupManager
 import com.davidlang.vehicleexpensesautomated.data.sync.RcloneLoader
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdBackfill
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncManager
+import com.davidlang.vehicleexpensesautomated.ui.util.AppLanguage
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.FillDebugStore
 import dagger.hilt.android.HiltAndroidApp
@@ -64,7 +67,14 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
         var anchoredEngineV3: NativePaddleEngine? = null; private set
     }
 
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(AppLanguage.wrap(base))
+    }
+
     override fun onCreate() {
+        // Unset pref stays English. System picks the first supported locale, else English.
+        AppLanguage.applyFromPrefs(this)
+        AppStrings.install(this)
         migrateFillDebugNames()
         com.davidlang.vehicleexpensesautomated.data.sync.CorruptIncoming.install(this)
         BackupImporter.applyStartup(this)

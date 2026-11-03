@@ -37,6 +37,9 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,9 +49,9 @@ fun FuelHistoryScreen(navController: NavHostController) {
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     RegisterPageHelp(
-        title = "Fuel History",
-        "Per-vehicle tabs list fuel fills only (trip starts are under Reports → Trip miles).",
-        "Tap a row to edit. Missing photos can be fetched from archive when cloud identity exists.",
+        title = stringResource(R.string.nav_fuel_history),
+        stringResource(R.string.fuel_per_vehicle_tabs_list_fuel_fills_only_trip_start),
+        stringResource(R.string.fuel_tap_a_row_to_edit_missing_photos_can_be_fetched_),
     )
     val photoStorage = settingsViewModel.photoStorageManager
     val fills by fuelViewModel.fuelEntries.collectAsState()
@@ -85,12 +88,12 @@ fun FuelHistoryScreen(navController: NavHostController) {
             .padding(16.dp),
     ) {
         FeatureScreenHeader(
-            title = "Fuel History",
-            subtitle = "Per-vehicle fills (no trip starts). Tap a card to edit. Thumbnails fetch from archive when missing locally.",
+            title = stringResource(R.string.nav_fuel_history),
+            subtitle = stringResource(R.string.fuel_per_vehicle_fills_no_trip_starts_tap_a_c),
         )
         Spacer(modifier = Modifier.height(8.dp))
         if (vehicleTabs.isEmpty()) {
-            EmptyStateText("No vehicles yet")
+            EmptyStateText(stringResource(R.string.fuel_no_vehicles_yet))
             return
         }
         ScrollableTabRow(selectedTabIndex = selectedTab.coerceIn(0, vehicleTabs.lastIndex)) {
@@ -104,7 +107,7 @@ fun FuelHistoryScreen(navController: NavHostController) {
         }
         Spacer(modifier = Modifier.height(8.dp))
         if (rows.isEmpty()) {
-            EmptyStateText("No fuel entries for this vehicle")
+            EmptyStateText(stringResource(R.string.fuel_no_fuel_entries_for_this_vehicle))
         } else {
             val displayRows = rows.map { base -> rowOverrides[base.id] ?: base }
             AdaptiveItemGrid(items = displayRows) { entry ->
@@ -181,7 +184,7 @@ private fun FuelHistoryRow(
                         var showZoom by remember { mutableStateOf(false) }
                         DecodedPhotoImage(
                             uri = thumbUri,
-                            contentDescription = "Fill photo",
+                            contentDescription = AppStrings.get(R.string.fuel_fill_photo),
                             modifier = Modifier
                                 .size(56.dp)
                                 .clickable { showZoom = true },
@@ -211,9 +214,9 @@ private fun FuelHistoryRow(
                                         display = refreshed
                                         onFetched(refreshed)
                                         if (local != null) {
-                                            Toast.makeText(context, "Image fetched", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, AppStrings.get(R.string.fuel_image_fetched), Toast.LENGTH_SHORT).show()
                                         } else {
-                                            Toast.makeText(context, "Could not fetch image", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, AppStrings.get(R.string.fuel_could_not_fetch_image), Toast.LENGTH_LONG).show()
                                         }
                                     } finally {
                                         fetching = false
@@ -225,7 +228,7 @@ private fun FuelHistoryRow(
                             modifier = Modifier.heightIn(min = 48.dp),
                         ) {
                             Text(
-                                if (fetching) "Fetching…" else "Fetch image from archive",
+                                if (fetching) AppStrings.get(R.string.fuel_fetching) else AppStrings.get(R.string.fuel_fetch_image_from_archive),
                                 style = MaterialTheme.typography.labelSmall,
                                 maxLines = 3,
                                 softWrap = true,
@@ -247,7 +250,7 @@ private fun FuelHistoryRow(
                 )
                 if (display.tripType.isNotBlank()) {
                     Text(
-                        "Trip: ${display.tripType}",
+                        stringResource(R.string.fill_trip_1_s, display.tripType),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
                         maxLines = 1,

@@ -36,6 +36,8 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
 
 /**
  * OutlinedTextField where hardware ←/→ (and DPAD) move the caret instead of focus,
@@ -208,7 +210,7 @@ fun CaretEnabledOutlinedTextField(
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                        contentDescription = "Move caret left",
+                        contentDescription = stringResource(R.string.ui_move_caret_left),
                         modifier = Modifier.size(22.dp),
                     )
                 }
@@ -218,7 +220,7 @@ fun CaretEnabledOutlinedTextField(
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = "Move caret right",
+                        contentDescription = stringResource(R.string.ui_move_caret_right),
                         modifier = Modifier.size(22.dp),
                     )
                 }

@@ -20,6 +20,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
 
 data class PageHelpSpec(
     val title: String,
@@ -94,7 +96,7 @@ fun PageHelpTopBarAction(
     ) {
         Icon(
             Icons.Filled.Info,
-            contentDescription = "Page help",
+            contentDescription = stringResource(R.string.ui_page_help),
             tint = MaterialTheme.colorScheme.primary,
         )
     }
@@ -110,7 +112,7 @@ fun PageHelpTopBarAction(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { show = false }) { Text("OK") }
+                TextButton(onClick = { show = false }) { Text(stringResource(R.string.settings_ok)) }
             },
         )
     }

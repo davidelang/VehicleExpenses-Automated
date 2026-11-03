@@ -8,6 +8,9 @@ import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.components.AdaptiveItemGrid
 import com.davidlang.vehicleexpensesautomated.ui.components.TappableCard
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 @Composable
 fun ReportsLabFillHistoryScreen(navController: NavHostController) {
@@ -17,20 +20,20 @@ fun ReportsLabFillHistoryScreen(navController: NavHostController) {
     }
 
     ReportsLabScreenScaffold(
-        title = "Fill history",
-        infoText = "Chronological fills for current filters (trip starts excluded). " +
-            "Each vehicle uses the same multi-vehicle list as All (vehicle name on each row). " +
-            "Tap a row to edit.",
+        title = stringResource(R.string.reports_fill_history),
+        infoText = stringResource(R.string.fill_chronological_fills_for_current_filters_tr) +
+            stringResource(R.string.fill_each_vehicle_uses_the_same_multi_vehicle_l) +
+            stringResource(R.string.reports_tap_a_row_to_edit),
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,
         shareActions = run {
             val buildText = {
                 buildString {
-                    appendLine("Vehicle Expenses — Fill history")
-                    appendLine("Period: ${periodLabel(data.filter)}")
-                    appendLine("Vehicle: ${data.filterVehicleLabel()}")
-                    appendLine("Count: ${rows.size}")
+                    appendLine(AppStrings.get(R.string.fill_vehicle_expenses_fill_history))
+                    appendLine(AppStrings.get(R.string.reports_period_label, periodLabel(data.filter)))
+                    appendLine(AppStrings.get(R.string.reports_vehicle_label, data.filterVehicleLabel()))
+                    appendLine(AppStrings.get(R.string.fill_count_1_s, rows.size))
                     rows.forEach { e ->
                         val flags = buildList {
                             if (e.isPartialFill) add("partial")
@@ -38,7 +41,7 @@ fun ReportsLabFillHistoryScreen(navController: NavHostController) {
                         }.joinToString(",")
                         appendLine(
                             "${formatLabDate(e.timestamp)} ${data.vehicleName(e.vehicleId)} " +
-                                "odo ${e.odometer} ${CurrencyCodes.formatAmount(e.cost, e.currency, data.defaultSymbol)} " +
+                                AppStrings.get(R.string.fill_odo_1_s_2_s, e.odometer, CurrencyCodes.formatAmount(e.cost, e.currency, data.defaultSymbol)) +
                                 "${formatVolume(e.gallons, data.volumeLabel)}" +
                                 if (flags.isNotEmpty()) " [$flags]" else "",
                         )
@@ -46,7 +49,7 @@ fun ReportsLabFillHistoryScreen(navController: NavHostController) {
                 }
             }
             ReportsLabShareActions(
-                subject = "Fill history",
+                subject = AppStrings.get(R.string.reports_fill_history),
                 textBody = buildText,
                 csvFileName = "lab_fills.csv",
                 csvBody = {
@@ -68,15 +71,15 @@ fun ReportsLabFillHistoryScreen(navController: NavHostController) {
                     }
                     sb.toString()
                 },
-                pdfBody = { ReportsLabPdf.fromPlainText("Fill history", buildText()) },
+                pdfBody = { ReportsLabPdf.fromPlainText(AppStrings.get(R.string.reports_fill_history), buildText()) },
             )
         },
     ) {
         if (rows.isEmpty()) {
-            ReportsLabEmpty("No fills in this filter.")
+            ReportsLabEmpty(stringResource(R.string.reports_no_fills_in_this_filter))
             return@ReportsLabScreenScaffold
         }
-        Text("${rows.size} fills", style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.fill_s_1_s_fills, rows.size), style = MaterialTheme.typography.titleSmall)
         AdaptiveItemGrid(items = rows) { e ->
             val flags = buildList {
                 if (e.isPartialFill) add("partial")
@@ -85,7 +88,7 @@ fun ReportsLabFillHistoryScreen(navController: NavHostController) {
             TappableCard(onClick = { navController.navigate("fuel/${e.id}") }) {
                 Text("${data.vehicleName(e.vehicleId)} · ${formatLabDate(e.timestamp)}$flags", softWrap = true, maxLines = 2)
                 Text(
-                    "odo ${e.odometer} · ${CurrencyCodes.formatAmount(e.cost, e.currency, data.defaultSymbol)} · " +
+                    stringResource(R.string.fill_odo_1_s_2_s_2, e.odometer, CurrencyCodes.formatAmount(e.cost, e.currency, data.defaultSymbol)) +
                         formatVolume(e.gallons, data.volumeLabel),
                     style = MaterialTheme.typography.bodySmall,
                     softWrap = true,

@@ -103,7 +103,21 @@ android {
         }
     }
     // Default aapt ignore plus timestamped model leftovers (*.nb.bak.*).
+    // localeFilters are resource qualifiers. "en" is values/. No hand-written locales_config.xml.
     androidResources {
+        generateLocaleConfig = true
+        localeFilters += listOf(
+            "en",
+            "af", "am", "as", "az", "b+ceb", "b+en+001", "b+es+419", "b+sr+Latn",
+            "be", "bg", "bn", "bs", "ca", "cs", "cy", "da", "de", "el",
+            "en-rAU", "en-rCA", "en-rGB", "en-rIN",
+            "es", "es-rUS", "et", "eu", "fi", "fo", "fr", "fr-rCA", "fy", "ga", "gd", "gl", "gu",
+            "ha", "hi", "hr", "hu", "hy", "ig", "in", "is", "it", "ja", "jv", "ka", "kk", "km", "kn",
+            "ko", "ku", "ky", "lb", "lo", "lt", "lv", "mg", "mi", "mk", "ml", "mn", "mr", "ms", "mt",
+            "my", "nb", "ne", "nl", "nn", "or", "pa", "pl", "pt", "pt-rPT", "qu", "ro", "rm", "ru",
+            "rw", "si", "sk", "sl", "so", "sq", "sr", "su", "sv", "sw", "ta", "te", "tg", "th", "tk",
+            "tl", "tr", "tt", "uk", "uz", "vi", "xh", "yo", "zh-rCN", "zh-rHK", "zh-rTW", "zu",
+        )
         ignoreAssetsPattern =
             "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:*.bak*"
     }
@@ -238,6 +252,8 @@ dependencies {
     // PaddlePredictor.jar straight from the paddle pin artifact dir.
     implementation(files(rootProject.file("third_party/paddle/artifact/PaddlePredictor.jar")))
     implementation("androidx.core:core-ktx:1.13.1")
+    // AppCompat locales (AppCompatDelegate.setApplicationLocales) for in-app language packs
+    implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.browser:browser:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.3")

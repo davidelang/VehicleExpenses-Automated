@@ -30,6 +30,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 @HiltViewModel
 class PhotoBackupViewModel @Inject constructor(
@@ -62,7 +64,7 @@ class PhotoBackupViewModel @Inject constructor(
             _manualSyncInProgress.value = true
             _manualSyncIsError.value = false
             _manualSyncResult.value = null
-            _manualSyncStatus.value = "Starting photo backup…"
+            _manualSyncStatus.value = AppStrings.get(R.string.settings_starting_photo_backup)
             try {
                 val result = withContext(Dispatchers.IO) {
                     coordinator.syncNow(
@@ -86,7 +88,7 @@ class PhotoBackupViewModel @Inject constructor(
             // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 _manualSyncIsError.value = true
-                _manualSyncStatus.value = e.message ?: "Photo sync failed"
+                _manualSyncStatus.value = e.message ?: AppStrings.get(R.string.settings_photo_sync_failed)
                 _manualSyncResult.value = PhotoBackupResult(false, _manualSyncStatus.value)
             } finally {
                 _manualSyncInProgress.value = false

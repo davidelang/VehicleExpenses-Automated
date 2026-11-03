@@ -30,6 +30,9 @@ import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.ui.experiment.HeatmapStageDump
 import com.davidlang.vehicleexpensesautomated.ui.experiment.PreprocessStageDump
 import java.io.File
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 private const val TAG = "HeatmapStage"
 
@@ -62,18 +65,18 @@ fun ExperimentHeatmapStageScreen(
     val status = when {
         running -> jobState.status
         ours && jobState.status == "done" ->
-            "Done → ${jobState.resultPath.ifEmpty { jobState.status }}"
+            stringResource(R.string.experiment_done_1_s, jobState.resultPath.ifEmpty { jobState.status })
         ours && jobState.status == "failed" ->
-            "FAILED: ${jobState.error}"
+            stringResource(R.string.experiment_failed_1_s, jobState.error)
         ExperimentJobRunner.isRunning() ->
-            "Busy: other experiment (${jobState.kind}) — wait or finish that first"
+            stringResource(R.string.experiment_busy_other_experiment_1_s_wait_or_finish_t, jobState.kind)
         else ->
-            "Ready — heatmap stage (FGS background-safe; writeBins on full runs)"
+            stringResource(R.string.experiment_ready_heatmap_stage_fgs_background_safe_wr)
     }
 
     fun startHeatmap(modes: List<String>, allowNames: List<String>? = null): Boolean {
         val ok = ExperimentJobRunner.start(context, kind = "heatmap_stage") { progress, log, statusLine ->
-            statusLine("running heatmap_stage")
+            statusLine(AppStrings.get(R.string.experiment_running_heatmap_stage))
             val outs = mutableListOf<String>()
             for (mode in modes) {
                 val dir = when (mode) {
@@ -92,7 +95,7 @@ fun ExperimentHeatmapStageScreen(
                     },
                 )
                 log(res.message)
-                log("OUT ${res.outDir.absolutePath}")
+                log(AppStrings.get(R.string.experiment_out_1_s, res.outDir.absolutePath))
                 outs.add(res.outDir.absolutePath)
             }
             statusLine("done")
@@ -104,8 +107,8 @@ fun ExperimentHeatmapStageScreen(
 
     fun startPreprocess(allowNames: List<String>? = null): Boolean {
         val ok = ExperimentJobRunner.start(context, kind = "preprocess_stage") { progress, log, statusLine ->
-            statusLine("running preprocess_stage")
-            log("PREPROCESS start allow=${allowNames?.size ?: "default_triage"}")
+            statusLine(AppStrings.get(R.string.experiment_running_preprocess_stage))
+            log(AppStrings.get(R.string.experiment_preprocess_start_allow_1_s, allowNames?.size ?: "default_triage"))
             val res = if (allowNames != null) {
                 PreprocessStageDump.run(
                     context = context,
@@ -121,7 +124,7 @@ fun ExperimentHeatmapStageScreen(
                 )
             }
             log(res.message)
-            log("OUT ${res.outDir.absolutePath}")
+            log(AppStrings.get(R.string.experiment_out_1_s, res.outDir.absolutePath))
             statusLine("done")
             res.outDir.absolutePath
         }
@@ -136,7 +139,7 @@ fun ExperimentHeatmapStageScreen(
         }
         val repo = vehicleRepository
         val ok = ExperimentJobRunner.start(context, kind = "deskew_odo") { progress, log, statusLine ->
-            statusLine("running deskew_odo")
+            statusLine(AppStrings.get(R.string.experiment_running_deskew_odo))
             log("DESKEW_ODO_CROP export start allow=${allowNames?.size ?: "all"}")
             val res = DeskewOdoCropExport.run(
                 context = context,
@@ -218,10 +221,10 @@ fun ExperimentHeatmapStageScreen(
     ) {
         Text(status, style = MaterialTheme.typography.bodyMedium)
         Text(
-            "Photos in pump_photos: $nPhotos (uses whatever is on device). " +
-                "Scales: 224, 608, 1024, 2048. This build: full-square 2048 " +
+            stringResource(R.string.experiment_photos_in_pump_photos_1_s_uses_whatever_is, nPhotos) +
+                stringResource(R.string.experiment_scales_224_608_1024_2048_this_build_full_s) +
                 "(useTiledLargeDet=false; det_mode=single) for A/B vs prior tiled gallery. " +
-                "Jobs use ExperimentJobRunner + FGS — leaving this screen does not cancel. " +
+                stringResource(R.string.experiment_jobs_use_experimentjobrunner_fgs_leaving_t) +
                 "No deskew rotate / no OCR. Gates: source_sha256 → feed_sha256 → heat_crc / hist_sha.",
             style = MaterialTheme.typography.labelSmall,
         )
@@ -249,7 +252,7 @@ fun ExperimentHeatmapStageScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                "Selected sample heatmap (${SelectedSamplePhotos.PUMP.size} pump, both packs)",
+                stringResource(R.string.experiment_selected_sample_heatmap_1_s_pump_both_pack, SelectedSamplePhotos.PUMP.size),
                 fontWeight = FontWeight.Bold,
             )
         }
@@ -257,17 +260,17 @@ fun ExperimentHeatmapStageScreen(
             onClick = { startHeatmap(listOf("fp32")) },
             enabled = idle && nPhotos > 0,
             modifier = Modifier.fillMaxWidth(),
-        ) { Text("Run fp32 heatmap stage (writeBins)") }
+        ) { Text(stringResource(R.string.experiment_run_fp32_heatmap_stage_writebins)) }
         Button(
             onClick = { startHeatmap(listOf("fp16")) },
             enabled = idle && nPhotos > 0,
             modifier = Modifier.fillMaxWidth(),
-        ) { Text("Run fp16 heatmap stage (writeBins)") }
+        ) { Text(stringResource(R.string.experiment_run_fp16_heatmap_stage_writebins)) }
         Button(
             onClick = { startHeatmap(listOf("fp16", "fp32")) },
             enabled = idle && nPhotos > 0,
             modifier = Modifier.fillMaxWidth(),
-        ) { Text("Run both packs fp16 then fp32 (writeBins)") }
+        ) { Text(stringResource(R.string.experiment_run_both_packs_fp16_then_fp32_writebins)) }
         Spacer(Modifier.height(12.dp))
         Button(
             onClick = { startPreprocess(SelectedSamplePhotos.PUMP) },
@@ -275,7 +278,7 @@ fun ExperimentHeatmapStageScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                "Selected sample preprocess (${SelectedSamplePhotos.PUMP.size} pump)",
+                stringResource(R.string.experiment_selected_sample_preprocess_1_s_pump, SelectedSamplePhotos.PUMP.size),
                 fontWeight = FontWeight.Bold,
             )
         }
@@ -283,7 +286,7 @@ fun ExperimentHeatmapStageScreen(
             onClick = { startPreprocess() },
             enabled = idle && nPhotos > 0,
             modifier = Modifier.fillMaxWidth(),
-        ) { Text("Preprocess triage dump (no paddle)") }
+        ) { Text(stringResource(R.string.experiment_preprocess_triage_dump_no_paddle)) }
         Spacer(Modifier.height(12.dp))
         Button(
             onClick = {
@@ -297,7 +300,7 @@ fun ExperimentHeatmapStageScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                "Selected sample odo export (${SelectedSamplePhotos.DASH.size} dash)",
+                stringResource(R.string.experiment_selected_sample_odo_export_1_s_dash, SelectedSamplePhotos.DASH.size),
                 fontWeight = FontWeight.Bold,
             )
         }
@@ -311,16 +314,16 @@ fun ExperimentHeatmapStageScreen(
             },
             enabled = idle && vehicleRepository != null,
             modifier = Modifier.fillMaxWidth(),
-        ) { Text("Deskew odo crop export (all dash bins)") }
+        ) { Text(stringResource(R.string.experiment_deskew_odo_crop_export_all_dash_bins)) }
         Spacer(Modifier.height(8.dp))
         Text(
-            "Selected sample = coverage subset (pump for heatmap/preprocess; dash for odo). " +
+            stringResource(R.string.experiment_selected_sample_coverage_subset_pump_for_h) +
                 "Deep link: …/heatmap?auto=selected · …/preprocess?auto=selected · " +
                 "…/odo-export?auto=selected\n" +
                 "Output: heatmap_stage/ preprocess_stage/ deskew_odo_export/\n" +
                 "Push dash_bins_for_device.json to files/deskew_odo_export/\n" +
-                "Push dash photos to files/dash_photos/\n" +
-                "logcat: HeatmapStage ExperimentJobRunner PreprocessStage DeskewOdoCrop",
+                stringResource(R.string.experiment_push_dash_photos_to_files_dash_photos) +
+                stringResource(R.string.experiment_logcat_heatmapstage_experimentjobrunner_pr),
             style = MaterialTheme.typography.labelSmall,
         )
     }

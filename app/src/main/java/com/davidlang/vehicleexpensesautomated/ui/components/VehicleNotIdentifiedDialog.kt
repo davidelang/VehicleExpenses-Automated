@@ -13,7 +13,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import java.util.concurrent.atomic.AtomicBoolean
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
 
 /**
  * Name-only list when a dash veto does not leave exactly one vehicle.
@@ -37,11 +38,6 @@ fun VehicleNotIdentifiedDialog(
     onDismiss: () -> Unit,
 ) {
     val settled = remember { AtomicBoolean(false) }
-    DisposableEffect(Unit) {
-        onDispose {
-            if (settled.compareAndSet(false, true)) onDismiss()
-        }
-    }
     fun dismiss() {
         if (settled.compareAndSet(false, true)) onDismiss()
     }
@@ -72,7 +68,7 @@ fun VehicleNotIdentifiedDialog(
                     .padding(24.dp),
             ) {
                 Text(
-                    text = "Vehicle not identified",
+                    text = stringResource(R.string.vehicle_vehicle_not_identified),
                     style = MaterialTheme.typography.headlineSmall,
                 )
                 LazyColumn(
@@ -94,7 +90,7 @@ fun VehicleNotIdentifiedDialog(
                 }
                 if (properSubset && !showAll) {
                     TextButton(onClick = { showAll = true }) {
-                        Text("Show all vehicles")
+                        Text(stringResource(R.string.vehicle_show_all_vehicles))
                     }
                 }
             }

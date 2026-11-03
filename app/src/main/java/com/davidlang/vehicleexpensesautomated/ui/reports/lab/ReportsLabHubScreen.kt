@@ -27,31 +27,34 @@ import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 private data class CatalogEntry(val title: String, val route: String, val blurb: String)
 
 private val CATALOG = listOf(
     CatalogEntry(
-        "Time based reports",
+        AppStrings.get(R.string.reports_time_based_reports),
         "reports_lab/time",
-        "mpg, G/mi, \$/G, \$/mi, monthly \$, trip miles/% · one chart · smooth bins",
+        AppStrings.get(R.string.reports_hub_time_blurb),
     ),
-    CatalogEntry("Expenses by category", "reports_lab/expenses", "Category totals and list"),
-    CatalogEntry("Expenses list", "expenselist", "All expenses — tap to edit"),
-    CatalogEntry("Fill history", "reports_lab/fills", "Chronological fills only (no trip starts)"),
-    CatalogEntry("Vehicle summary", "reports_lab/vehicle_summary", "Shareable history pack"),
+    CatalogEntry(AppStrings.get(R.string.reports_expenses_by_category), "reports_lab/expenses", AppStrings.get(R.string.reports_hub_expenses_blurb)),
+    CatalogEntry(AppStrings.get(R.string.reports_expenses_list), "expenselist", AppStrings.get(R.string.reports_hub_expense_list_blurb)),
+    CatalogEntry(AppStrings.get(R.string.reports_fill_history), "reports_lab/fills", AppStrings.get(R.string.reports_hub_fills_blurb)),
+    CatalogEntry(AppStrings.get(R.string.reports_vehicle_summary), "reports_lab/vehicle_summary", AppStrings.get(R.string.reports_hub_vehicle_summary_blurb)),
     CatalogEntry(
-        "Trip miles",
+        AppStrings.get(R.string.reports_trip_miles),
         "reports_lab/trips",
-        "Miles by type + trip start list (tap to edit)",
+        AppStrings.get(R.string.reports_miles_by_type_trip_start_list_tap_to_edit),
     ),
 )
 
-private const val HUB_INFO =
+private fun hubInfoText(): String =
     "All-time summary of fuel and expenses (no filters on this screen). " +
-        "Open a report set for vehicle and period filters, charts, and share. " +
-        "Share on each report is one icon → TEXT, CSV, or PDF. " +
-        "Not a tax-authority product — export miles and use elsewhere."
+        AppStrings.get(R.string.reports_open_a_report_set_for_vehicle_and_period_f) +
+        AppStrings.get(R.string.reports_share_on_each_report_is_one_icon_text_csv) +
+        AppStrings.get(R.string.reports_not_a_tax_authority_product_export_miles_a)
 
 @Composable
 fun ReportsLabHubScreen(navController: NavHostController) {
@@ -73,7 +76,7 @@ fun ReportsLabHubScreen(navController: NavHostController) {
     val allExp = remember(expenses) { expenses.filter { !it.deleted } }
     val nameById = remember(vehicles) {
         vehicles.filter { !it.deleted }.associate { it.id to it.name } +
-            (0 to "Unknown")
+            (0 to AppStrings.get(R.string.ui_unknown))
     }
     val overallLine = remember(allFuel, allExp, volumeLabel, defaultSymbol, defaultStored) {
         hubOverallSummaryLine(allFuel, allExp, volumeLabel, defaultSymbol, defaultStored)
@@ -91,18 +94,18 @@ fun ReportsLabHubScreen(navController: NavHostController) {
     ) {
         ReportsLabTitleRow(
             title = null,
-            infoTitle = "Reports",
-            infoText = HUB_INFO,
+            infoTitle = stringResource(R.string.nav_reports),
+            infoText = hubInfoText(),
             shareActions = null,
         )
 
         if (vehicles.none { !it.deleted } && allFuel.isEmpty() && allExp.isEmpty()) {
-            ReportsLabEmpty("No vehicles or rows yet. Add data, then revisit Reports.")
+            ReportsLabEmpty(stringResource(R.string.reports_no_vehicles_or_rows_yet_add_data_then_revi))
         }
 
-        Text("Summary (all time)", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.reports_summary_all_time), style = MaterialTheme.typography.titleMedium)
         if (allFuel.isEmpty() && allExp.isEmpty()) {
-            ReportsLabEmpty("No fuel or expenses yet.")
+            ReportsLabEmpty(stringResource(R.string.reports_no_fuel_or_expenses_yet))
         } else {
             Text(
                 overallLine,
@@ -134,7 +137,7 @@ fun ReportsLabHubScreen(navController: NavHostController) {
             }
         }
 
-        Text("Report sets", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.reports_report_sets), style = MaterialTheme.typography.titleMedium)
         AdaptiveItemGrid(items = CATALOG) { entry ->
             TappableCard(onClick = { navController.navigate(entry.route) }) {
                 Text(entry.title, style = MaterialTheme.typography.titleMedium, softWrap = true, maxLines = 2)

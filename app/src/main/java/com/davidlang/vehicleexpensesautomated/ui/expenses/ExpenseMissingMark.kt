@@ -10,11 +10,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import com.davidlang.vehicleexpensesautomated.data.model.ExpensePhotoUrls
 import com.davidlang.vehicleexpensesautomated.data.model.StoredParse
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
 
 @Composable
 fun ExpenseMissingMark(photoUrl: String, modifier: Modifier = Modifier) {
     val text = when (val parsed = ExpensePhotoUrls.read(photoUrl)) {
-        is StoredParse.Corrupt -> "photo reference unreadable"
+        is StoredParse.Corrupt -> stringResource(R.string.expense_photo_reference_unreadable)
         is StoredParse.Valid -> "missing"
         is StoredParse.Blank -> "missing"
     }
