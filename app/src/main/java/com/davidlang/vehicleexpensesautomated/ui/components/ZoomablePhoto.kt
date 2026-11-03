@@ -46,6 +46,9 @@ import com.davidlang.vehicleexpensesautomated.data.storage.PickedImageReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 /**
  * Fullscreen photo viewer: pinch zoom + pan, on-screen +/−, Close always on top.
@@ -86,7 +89,7 @@ fun ZoomablePhotoDialog(
             }
         // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
-            photoError = e.message ?: "Could not display photo"
+            photoError = e.message ?: AppStrings.get(R.string.ui_could_not_display_photo)
             null
         }
     }
@@ -122,7 +125,7 @@ fun ZoomablePhotoDialog(
                             .padding(end = 8.dp),
                     )
                     TextButton(onClick = onDismiss) {
-                        Text("Close", color = Color.White)
+                        Text(stringResource(R.string.settings_close), color = Color.White)
                     }
                 }
                 Box(
@@ -150,13 +153,13 @@ fun ZoomablePhotoDialog(
                         fileBitmap != null -> {
                             Image(
                                 bitmap = fileBitmap!!.asImageBitmap(),
-                                contentDescription = "Photo",
+                                contentDescription = AppStrings.get(R.string.ui_photo),
                                 modifier = layerMod,
                                 contentScale = ContentScale.Fit,
                             )
                         }
                         photoError != null -> Text(photoError!!, color = Color.White)
-                        else -> Text("Photo unavailable", color = Color.White)
+                        else -> Text(stringResource(R.string.ui_photo_unavailable), color = Color.White)
                     }
                     Column(
                         modifier = Modifier
@@ -187,7 +190,7 @@ fun ZoomablePhotoDialog(
                                 index = (index - 1).coerceAtLeast(0)
                             },
                             enabled = index > 0,
-                        ) { Text("Prev", color = Color.White) }
+                        ) { Text(stringResource(R.string.ui_prev), color = Color.White) }
                         Text(
                             "${index + 1} / ${uris.size}",
                             color = Color.White,
@@ -199,7 +202,7 @@ fun ZoomablePhotoDialog(
                                 index = (index + 1).coerceAtMost(uris.lastIndex)
                             },
                             enabled = index < uris.lastIndex,
-                        ) { Text("Next", color = Color.White) }
+                        ) { Text(stringResource(R.string.ui_next), color = Color.White) }
                     }
                 }
             }
@@ -214,7 +217,7 @@ fun ZoomablePhotoDialog(
 fun ZoomablePhotoThumb(
     uris: List<String>,
     modifier: Modifier = Modifier,
-    contentDescription: String = "Photo",
+    contentDescription: String = AppStrings.get(R.string.ui_photo),
     contentScale: ContentScale = ContentScale.Fit,
 ) {
     if (uris.isEmpty()) return
@@ -238,7 +241,7 @@ fun ZoomablePhotoThumb(
                     PickedImageReader.decodeFullSize(context, parsed)
                 }
             } catch (e: Exception) {
-                thumbError = e.message ?: "Could not display photo"
+                thumbError = e.message ?: AppStrings.get(R.string.ui_could_not_display_photo)
                 null
             }
         }
@@ -267,7 +270,7 @@ fun ZoomablePhotoThumb(
             }
             if (uris.size > 1) {
                 Text(
-                    "${uris.size} photos",
+                    stringResource(R.string.ui_s_1_s_photos, uris.size),
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(8.dp)

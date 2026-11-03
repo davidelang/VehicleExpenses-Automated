@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.util.UserManualDocs
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
 
 /**
  * First-run splash when no user vehicles exist (S1–S6).
@@ -31,9 +33,9 @@ import com.davidlang.vehicleexpensesautomated.ui.util.UserManualDocs
 fun OnboardingSplashScreen(navController: NavHostController) {
     val context = LocalContext.current
     RegisterPageHelp(
-        title = "Welcome",
-        "No vehicles yet. Choose stand-alone (add a vehicle on this phone) or connect to an existing multi-device setup (same sheet + photo folder).",
-        "You can skip and use Fill manually; this screen returns on the next start until a vehicle exists.",
+        title = stringResource(R.string.nav_welcome),
+        stringResource(R.string.onboarding_no_vehicles_yet_choose_stand_alone_add_a_vehicle),
+        stringResource(R.string.onboarding_you_can_skip_and_use_fill_manually_this_sc),
     )
     Column(
         modifier = Modifier
@@ -45,12 +47,12 @@ fun OnboardingSplashScreen(navController: NavHostController) {
     ) {
         Spacer(Modifier.height(24.dp))
         Text(
-            "Welcome to Vehicle Expenses",
+            stringResource(R.string.onboarding_welcome_to_vehicle_expenses),
             style = MaterialTheme.typography.headlineMedium,
             softWrap = true,
         )
         Text(
-            "You don’t have a vehicle yet. How do you want to start?",
+            stringResource(R.string.onboarding_you_don_t_have_a_vehicle_yet_how_do_you_want_to_),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             softWrap = true,
@@ -64,9 +66,9 @@ fun OnboardingSplashScreen(navController: NavHostController) {
             modifier = Modifier.fillMaxWidth().height(56.dp),
         ) {
             Column(horizontalAlignment = Alignment.Start, modifier = Modifier.fillMaxWidth()) {
-                Text("Add a vehicle", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.onboarding_add_a_vehicle), style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "This phone is stand-alone / first vehicle",
+                    stringResource(R.string.onboarding_this_phone_is_stand_alone_first_vehicle),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -79,9 +81,9 @@ fun OnboardingSplashScreen(navController: NavHostController) {
             modifier = Modifier.fillMaxWidth().height(56.dp),
         ) {
             Column(horizontalAlignment = Alignment.Start, modifier = Modifier.fillMaxWidth()) {
-                Text("Connect existing setup", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.tutorial_setup_sync_title), style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Another device already has the app — join that sheet + photo folder",
+                    stringResource(R.string.onboarding_another_device_already_has_the_app_join_that_she),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -96,10 +98,10 @@ fun OnboardingSplashScreen(navController: NavHostController) {
                 }
             },
         ) {
-            Text("Skip for now")
+            Text(stringResource(R.string.onboarding_skip_for_now))
         }
         Text(
-            "You can enter fills by hand. This welcome screen returns next launch until you add a vehicle.",
+            stringResource(R.string.onboarding_you_can_enter_fills_by_hand_this_welcome_screen_),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             softWrap = true,
@@ -108,7 +110,7 @@ fun OnboardingSplashScreen(navController: NavHostController) {
             onClick = { UserManualDocs.openFullManual(context) },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Open full user manual")
+            Text(stringResource(R.string.help_open_full_user_manual))
         }
     }
 }

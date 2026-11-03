@@ -19,16 +19,19 @@ import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.components.TappableCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 @Composable
 fun SyncingScreen(navController: NavHostController) {
     val context = LocalContext.current
     val viewModel: SettingsViewModel = hiltViewModel()
     RegisterPageHelp(
-        title = "Syncing",
-        "Spreadsheet sync and Photo backup open destination lists. Sync on each card runs all configured destinations.",
-        "Red ! in the title bar means a stored failure — open Details on the card for the full API message.",
-        "Leaving this screen during Sync now does not cancel the job (it continues in the background).",
+        title = stringResource(R.string.nav_syncing),
+        stringResource(R.string.settings_spreadsheet_sync_and_photo_backup_open_destinati),
+        stringResource(R.string.settings_red_in_the_title_bar_means_a_stored_failure_open),
+        stringResource(R.string.settings_leaving_this_screen_during_sync_now_does_not_can),
     )
     val syncStore = remember { SyncDestinationStore(context) }
     val failureStore = remember { SyncFailureStore(context) }
@@ -94,22 +97,22 @@ fun SyncingScreen(navController: NavHostController) {
             .verticalScroll(rememberScrollState()),
     ) {
         FeatureScreenHeader(
-            title = "Syncing",
-            subtitle = "Tap Spreadsheet sync or Photo backup to add destinations. " +
-                "Use Sync on each card after setup. A red ! in the title bar means a recent failure. " +
-                "Menu → Help for Google setup steps.",
+            title = stringResource(R.string.nav_syncing),
+            subtitle = stringResource(R.string.settings_tap_spreadsheet_sync_or_photo_backup_to_) +
+                stringResource(R.string.settings_use_sync_on_each_card_after_setup_a_red_in) +
+                stringResource(R.string.settings_menu_help_for_google_setup_steps),
         )
         Spacer(modifier = Modifier.height(16.dp))
 
-        Text("Sync & backup", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.settings_sync_backup), style = MaterialTheme.typography.titleMedium)
         CorruptIncomingSection(spreadsheetSyncResult)
         SyncSummaryRow(
-            title = "Spreadsheet sync",
+            title = stringResource(R.string.settings_spreadsheet_sync),
             summary = SyncDestinationStore.spreadsheetSummaryLine(spreadsheetDests),
             pendingBadge = pendingBadge,
             errorText = spreadsheetError,
             errorDetails = spreadsheetErrorDetails,
-            errorDetailsTitle = "Spreadsheet sync failure",
+            errorDetailsTitle = stringResource(R.string.settings_spreadsheet_sync_failure),
             syncStatusText = spreadsheetSyncStatus,
             syncInProgress = spreadsheetSyncInProgress,
             syncStatusIsError = spreadsheetSyncIsError,
@@ -117,19 +120,19 @@ fun SyncingScreen(navController: NavHostController) {
             onRowClick = { navController.navigate("settings/spreadsheet_sync") },
             onSyncNow = {
                 if (!spreadsheetConfigured) {
-                    Toast.makeText(context, "No configured spreadsheet destinations", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, AppStrings.get(R.string.settings_no_configured_spreadsheet_destinations), Toast.LENGTH_SHORT).show()
                     return@SyncSummaryRow
                 }
                 viewModel.startSpreadsheetSync()
             },
         )
         SyncSummaryRow(
-            title = "Photo backup",
+            title = stringResource(R.string.settings_photo_backup),
             summary = syncStore.photoSummaryLine(photoDests),
             pendingBadge = pendingBadge,
             errorText = photoError,
             errorDetails = photoErrorDetails,
-            errorDetailsTitle = "Photo backup failure",
+            errorDetailsTitle = stringResource(R.string.settings_photo_backup_failure),
             syncStatusText = photoSyncStatus,
             syncInProgress = photoSyncInProgress,
             syncStatusIsError = photoSyncIsError,
@@ -137,7 +140,7 @@ fun SyncingScreen(navController: NavHostController) {
             onRowClick = { navController.navigate("settings/photo_backup") },
             onSyncNow = {
                 if (!photoConfigured) {
-                    Toast.makeText(context, "No configured photo destinations", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, AppStrings.get(R.string.settings_no_configured_photo_destinations), Toast.LENGTH_SHORT).show()
                     return@SyncSummaryRow
                 }
                 viewModel.startPhotoSync()
@@ -153,7 +156,7 @@ internal fun SyncSummaryRow(
     pendingBadge: String,
     errorText: String? = null,
     errorDetails: String? = null,
-    errorDetailsTitle: String = "Sync failure",
+    errorDetailsTitle: String = AppStrings.get(R.string.settings_sync_failure),
     syncStatusText: String = "",
     syncInProgress: Boolean = false,
     syncStatusIsError: Boolean = false,
@@ -189,7 +192,7 @@ internal fun SyncSummaryRow(
                                 onClick = { showDetails = true },
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                             ) {
-                                Text("Details", style = MaterialTheme.typography.labelSmall)
+                                Text(stringResource(R.string.settings_details), style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }
@@ -208,7 +211,7 @@ internal fun SyncSummaryRow(
                     onClick = onSyncNow,
                     enabled = !syncInProgress,
                 ) {
-                    Text("Sync")
+                    Text(stringResource(R.string.settings_sync))
                 }
             }
             Text("›", style = MaterialTheme.typography.titleLarge)

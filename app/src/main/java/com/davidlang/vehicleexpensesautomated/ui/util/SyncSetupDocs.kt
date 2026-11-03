@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.browser.customtabs.CustomTabsIntent
+import com.davidlang.vehicleexpensesautomated.R
 
 object SyncSetupDocs {
     const val BASE = "https://github.com/davidelang/VehicleExpenses-Automated/blob/master/docs/reference/self-host"
@@ -43,7 +44,7 @@ object SyncSetupDocs {
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
             // kept: failure stays on this call so the screen or caller can continue
             } catch (_: Exception) {
-                Toast.makeText(context, "Could not open link", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, context.getString(R.string.settings_could_not_open_link), Toast.LENGTH_LONG).show()
             }
         }
     }

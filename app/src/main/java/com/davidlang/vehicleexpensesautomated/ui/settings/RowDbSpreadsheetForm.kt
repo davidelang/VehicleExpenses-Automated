@@ -20,6 +20,9 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetProvider
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.internal.RowDbTabularConfig
 import com.davidlang.vehicleexpensesautomated.ui.util.SyncSetupDocs
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 @Composable
 fun RowDbSpreadsheetForm(
@@ -51,10 +54,10 @@ fun RowDbSpreadsheetForm(
         else -> "tabular/README"
     }
     TextButton(onClick = { SyncSetupDocs.open(context, SyncSetupDocs.tabular(docsStem)) }) {
-        Text("Setup help — ${provider.displayLabel()}")
+        Text(stringResource(R.string.settings_setup_help_provider_fmt, provider.displayLabel()))
     }
     Text(
-        "Create tables/collections with fields matching app headers (Sync ID first). Map table ids below.",
+        stringResource(R.string.settings_create_tables_collections_with_fields_matching_a),
         style = MaterialTheme.typography.bodySmall,
     )
     Spacer(modifier = Modifier.height(8.dp))
@@ -64,17 +67,17 @@ fun RowDbSpreadsheetForm(
         label = {
             Text(
                 when (provider) {
-                    SpreadsheetProvider.AIRTABLE -> "API URL (optional)"
-                    else -> "Base URL"
+                    SpreadsheetProvider.AIRTABLE -> stringResource(R.string.settings_api_url_optional)
+                    else -> stringResource(R.string.settings_base_url)
                 },
             )
         },
         supportingText = {
             Text(
                 when (provider) {
-                    SpreadsheetProvider.AIRTABLE -> "Leave blank to use api.airtable.com"
-                    SpreadsheetProvider.SUPABASE -> "e.g. https://supabase.example.com"
-                    else -> "e.g. https://your-server.example.com"
+                    SpreadsheetProvider.AIRTABLE -> AppStrings.get(R.string.settings_leave_blank_to_use_api_airtable_com)
+                    SpreadsheetProvider.SUPABASE -> AppStrings.get(R.string.settings_e_g_https_supabase_example_com)
+                    else -> AppStrings.get(R.string.settings_e_g_https_your_server_example_com)
                 },
             )
         },
@@ -86,10 +89,10 @@ fun RowDbSpreadsheetForm(
         label = {
             Text(
                 when (provider) {
-                    SpreadsheetProvider.AIRTABLE -> "Personal access token"
-                    SpreadsheetProvider.SUPABASE -> "API key (anon or service)"
-                    SpreadsheetProvider.POCKETBASE -> "Admin auth token"
-                    else -> "API token"
+                    SpreadsheetProvider.AIRTABLE -> stringResource(R.string.settings_personal_access_token)
+                    SpreadsheetProvider.SUPABASE -> stringResource(R.string.settings_api_key_anon_or_service)
+                    SpreadsheetProvider.POCKETBASE -> stringResource(R.string.settings_admin_auth_token)
+                    else -> stringResource(R.string.settings_api_token)
                 },
             )
         },
@@ -100,7 +103,7 @@ fun RowDbSpreadsheetForm(
         OutlinedTextField(
             value = databaseId,
             onValueChange = onDatabaseIdChange,
-            label = { Text("Database id (optional)") },
+            label = { Text(stringResource(R.string.settings_database_id_optional)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         )
@@ -109,7 +112,7 @@ fun RowDbSpreadsheetForm(
         OutlinedTextField(
             value = projectId,
             onValueChange = onProjectIdChange,
-            label = { Text("Project / base id (optional)") },
+            label = { Text(stringResource(R.string.settings_project_base_id_optional)) },
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         )
     }
@@ -117,26 +120,26 @@ fun RowDbSpreadsheetForm(
         OutlinedTextField(
             value = baseId,
             onValueChange = onBaseIdChange,
-            label = { Text("Airtable base id") },
+            label = { Text(stringResource(R.string.settings_airtable_base_id)) },
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         )
     }
     OutlinedTextField(
         value = vehiclesTableId,
         onValueChange = onVehiclesTableIdChange,
-        label = { Text("${TabularSchema.TAB_VEHICLES} table id") },
+        label = { Text(stringResource(R.string.settings_table_id_fmt, TabularSchema.TAB_VEHICLES)) },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(
         value = expensesTableId,
         onValueChange = onExpensesTableIdChange,
-        label = { Text("${TabularSchema.TAB_EXPENSES} table id") },
+        label = { Text(stringResource(R.string.settings_table_id_fmt, TabularSchema.TAB_EXPENSES)) },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(
         value = fuelTableIds,
         onValueChange = onFuelTableIdsChange,
-        label = { Text("Fuel tab table ids (optional)") },
+        label = { Text(stringResource(R.string.settings_fuel_tab_table_ids_optional)) },
         supportingText = {
             Text("One per line: Fuel - VehicleName=tableId (e.g. ${TabularSchema.FUEL_TAB_PREFIX}Honda=12)")
         },

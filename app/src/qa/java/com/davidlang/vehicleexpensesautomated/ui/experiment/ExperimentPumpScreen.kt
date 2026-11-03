@@ -78,6 +78,9 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 private const val TAG = "ExperimentPump"
 
@@ -102,14 +105,14 @@ external fun expRotGmmRecognize(
 ): ExpRotGmmOut
 
 private val SEED_INK_PROBE_FLOWS = listOf(
-    "Set aabb-tight",
-    "Set aabb-large",
-    "Set rot-tight",
-    "Set rot-large",
-    "Set aabb-tight-color",
-    "Set aabb-large-color",
-    "Set rot-tight-color",
-    "Set rot-large-color",
+    AppStrings.get(R.string.experiment_set_aabb_tight),
+    AppStrings.get(R.string.experiment_set_aabb_large),
+    AppStrings.get(R.string.experiment_set_rot_tight),
+    AppStrings.get(R.string.experiment_set_rot_large),
+    AppStrings.get(R.string.experiment_set_aabb_tight_color),
+    AppStrings.get(R.string.experiment_set_aabb_large_color),
+    AppStrings.get(R.string.experiment_set_rot_tight_color),
+    AppStrings.get(R.string.experiment_set_rot_large_color),
 )
 
 /**
@@ -298,22 +301,22 @@ private fun writeExpandEnergyTrace(
         .put("file", fileName)
         .put("column", column)
         .put("maxFrac", maxFrac.toDouble())
-        .put("sample", "[dy, energy, energy/base, width, gxRunCount]")
+        .put("sample", AppStrings.get(R.string.experiment_dy_energy_energy_base_width_gxruncount))
         .put(
             "scan",
-            "inside/scanUp/scanDown/after*: every 1px at stop width, no 0.45 gate. " +
+            AppStrings.get(R.string.experiment_inside_scanup_scandown_after_every_1px_at) +
                 "up/down = grow-accepted only. scan* from seed edge through grow+lookAhead " +
-                "(min ${ContentExpandUtils.VERT_ENERGY_LOOKAHEAD_MIN_PX} or seedH). " +
+                AppStrings.get(R.string.experiment_min_1_s_or_seedh, ContentExpandUtils.VERT_ENERGY_LOOKAHEAD_MIN_PX) +
                 "after* = scan* past the stop. Fifth sample is smoothed gx-run-count.",
         )
         .put(
             "raw",
             "Lossless zlib only (not JPEG): raw.gray_u8_zlib_b64 + raw.sobel_u16le_zlib_b64 " +
-                "are deskewed gray and Sobel mag, row-major, seed ± " +
-                "${ContentExpandUtils.VERT_ENERGY_RAW_LOOK_FRAC}·seedH vert and ± " +
-                "${ContentExpandUtils.VERT_ENERGY_RAW_HPAD_FRAC}·seedW horiz. " +
+                AppStrings.get(R.string.experiment_are_deskewed_gray_and_sobel_mag_row_major) +
+                AppStrings.get(R.string.experiment_s_1_s_seedh_vert_and, ContentExpandUtils.VERT_ENERGY_RAW_LOOK_FRAC) +
+                AppStrings.get(R.string.experiment_s_1_s_seedw_horiz, ContentExpandUtils.VERT_ENERGY_RAW_HPAD_FRAC) +
                 "sobel_u16 = round(mag*${ContentExpandUtils.VERT_ENERGY_RAW_SCALE}). " +
-                "Replay stop rules and edge-count from gray; do not use only the strip mean.",
+                AppStrings.get(R.string.experiment_replay_stop_rules_and_edge_count_from_gray),
         )
         .put("boxes", boxes)
     out.parentFile?.mkdirs()
@@ -394,7 +397,7 @@ fun ExperimentPumpScreen(
     val scope = rememberCoroutineScope()
     val jobState by ExperimentJobRunner.state.collectAsState()
 
-    var status by remember { mutableStateOf("Ready to run experiment") }
+    var status by remember { mutableStateOf(AppStrings.get(R.string.experiment_ready_to_run_experiment)) }
     var detailLog by remember { mutableStateOf("") }
     var progress by remember { mutableStateOf(0f) }
     var currentPhotoName by remember { mutableStateOf("") }
@@ -435,7 +438,7 @@ fun ExperimentPumpScreen(
             out?.absolutePath
         }
         if (!ok) {
-            status = "Another experiment is already running (${ExperimentJobRunner.state.value.kind})"
+            status = AppStrings.get(R.string.experiment_another_experiment_is_already_running_1_s, ExperimentJobRunner.state.value.kind)
         } else {
             status = label
         }
@@ -466,7 +469,7 @@ fun ExperimentPumpScreen(
             out?.absolutePath
         }
         if (!ok) {
-            status = "Another experiment is already running (${ExperimentJobRunner.state.value.kind})"
+            status = AppStrings.get(R.string.experiment_another_experiment_is_already_running_1_s, ExperimentJobRunner.state.value.kind)
         } else {
             status = label
         }
@@ -492,13 +495,13 @@ fun ExperimentPumpScreen(
         )
         if (names.isEmpty()) {
             status =
-                "Selected sample: 0 pump photos present " +
-                    "(need up to ${SelectedSamplePhotos.PUMP.size} in pump_photos)"
+                AppStrings.get(R.string.experiment_selected_sample_0_pump_photos_present) +
+                    AppStrings.get(R.string.experiment_need_up_to_1_s_in_pump_photos, SelectedSamplePhotos.PUMP.size)
         } else {
             startPumpJob(
                 names,
-                "Selected sample (${names.size} pump)…" +
-                    if (missing > 0) " ($missing not on device)" else "",
+                AppStrings.get(R.string.experiment_selected_sample_1_s_pump, names.size) +
+                    if (missing > 0) AppStrings.get(R.string.experiment_s_1_s_not_on_device, missing) else "",
             )
         }
     }
@@ -517,12 +520,12 @@ fun ExperimentPumpScreen(
                 "matched=${names.size}/${want.size} missing=$missing",
         )
         if (names.isEmpty()) {
-            status = "Horiz-affected: 0 photos present (need ${want.size} in pump_photos)"
+            status = AppStrings.get(R.string.experiment_horiz_affected_0_photos_present_need_1_s_i, want.size)
         } else {
             startPumpJob(
                 names,
-                "Horiz-affected (${names.size})…" +
-                    if (missing > 0) " ($missing not on device)" else "",
+                AppStrings.get(R.string.experiment_horiz_affected_1_s, names.size) +
+                    if (missing > 0) AppStrings.get(R.string.experiment_s_1_s_not_on_device, missing) else "",
             )
         }
     }
@@ -541,12 +544,12 @@ fun ExperimentPumpScreen(
                 "matched=${names.size}/${want.size} missing=$missing",
         )
         if (names.isEmpty()) {
-            status = "Prod-ink fail: 0 photos present (need ${want.size} in pump_photos)"
+            status = AppStrings.get(R.string.experiment_prod_ink_fail_0_photos_present_need_1_s_in, want.size)
         } else {
             startPumpJob(
                 names,
-                "Prod-ink fail (${names.size})…" +
-                    if (missing > 0) " ($missing not on device)" else "",
+                AppStrings.get(R.string.experiment_prod_ink_fail_1_s, names.size) +
+                    if (missing > 0) AppStrings.get(R.string.experiment_s_1_s_not_on_device, missing) else "",
             )
         }
     }
@@ -565,12 +568,12 @@ fun ExperimentPumpScreen(
                 "matched=${names.size}/${want.size} missing=$missing",
         )
         if (names.isEmpty()) {
-            status = "Mixed fail: 0 photos present (need ${want.size} in pump_photos)"
+            status = AppStrings.get(R.string.experiment_mixed_fail_0_photos_present_need_1_s_in_pu, want.size)
         } else {
             startPumpJob(
                 names,
-                "Mixed fail (${names.size})…" +
-                    if (missing > 0) " ($missing not on device)" else "",
+                AppStrings.get(R.string.experiment_mixed_fail_1_s, names.size) +
+                    if (missing > 0) AppStrings.get(R.string.experiment_s_1_s_not_on_device, missing) else "",
             )
         }
     }
@@ -581,11 +584,11 @@ fun ExperimentPumpScreen(
         } ?: emptyArray()
         val n = allFiles.size
         if (n == 0) {
-            status = "Det dump: 0 photos in pump_photos"
+            status = AppStrings.get(R.string.experiment_det_dump_0_photos_in_pump_photos)
         } else {
             totalPhotos = n
             val ok = ExperimentJobRunner.start(context.applicationContext, kind = "pump") { progressCb, log, statusLine ->
-                statusLine("Det dump (prod × deskew/rot)…")
+                statusLine(AppStrings.get(R.string.experiment_det_dump_prod_deskew_rot))
                 val res = PumpDetDiscoverDump.run(
                     context = context.applicationContext,
                     photoDir = experimentDir,
@@ -596,16 +599,16 @@ fun ExperimentPumpScreen(
                 res.outDir.absolutePath
             }
             if (!ok) {
-                status = "Another experiment is already running (${ExperimentJobRunner.state.value.kind})"
+                status = AppStrings.get(R.string.experiment_another_experiment_is_already_running_1_s, ExperimentJobRunner.state.value.kind)
             } else {
-                status = "Det dump (prod × deskew/rot)…"
+                status = AppStrings.get(R.string.experiment_det_dump_prod_deskew_rot)
             }
         }
     }
 
     val runL1SoDebug: () -> Unit = {
         val ok = ExperimentJobRunner.start(context.applicationContext, kind = "pump") { _, log, statusLine ->
-            statusLine("L1 SO debug dump…")
+            statusLine(AppStrings.get(R.string.experiment_l1_so_debug_dump))
             val label = BuildConfig.VERSION_NAME
             val res = PumpSoDebugDump.run(
                 context = context.applicationContext,
@@ -616,11 +619,11 @@ fun ExperimentPumpScreen(
             res.message
         }
         if (!ok) {
-            status = "Another experiment is already running (${ExperimentJobRunner.state.value.kind})"
+            status = AppStrings.get(R.string.experiment_another_experiment_is_already_running_1_s, ExperimentJobRunner.state.value.kind)
         } else {
             totalPhotos = 1
             currentPhotoName = PumpSoDebugDump.DEFAULT_L1_NAME
-            status = "L1 SO debug dump…"
+            status = AppStrings.get(R.string.experiment_l1_so_debug_dump)
         }
     }
 
@@ -636,9 +639,9 @@ fun ExperimentPumpScreen(
             }
             "done" -> {
                 progress = 1f
-                status = "Complete! ${jobState.resultPath.ifEmpty { "Reports saved." }}"
+                status = AppStrings.get(R.string.experiment_complete_1_s, jobState.resultPath.ifEmpty { AppStrings.get(R.string.experiment_reports_saved) })
             }
-            "failed" -> status = "FAILED: ${jobState.error}"
+            "failed" -> status = AppStrings.get(R.string.experiment_failed_1_s, jobState.error)
         }
     }
 
@@ -691,14 +694,14 @@ fun ExperimentPumpScreen(
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to take persistable URI permission", e)
             }
-            scope.launch { status = "Extracting ZIP..."; val success = pExtractZipToPhotos(u, experimentDir, context); status = if (success) "ZIP extracted!" else "Failed to extract ZIP." }
+            scope.launch { status = AppStrings.get(R.string.experiment_extracting_zip); val success = pExtractZipToPhotos(u, experimentDir, context); status = if (success) AppStrings.get(R.string.experiment_zip_extracted) else AppStrings.get(R.string.experiment_failed_to_extract_zip) }
         }
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text(status, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         Text(
-            "Jobs use ExperimentJobRunner + FGS — screen lock / leaving this page does not cancel.",
+            stringResource(R.string.experiment_jobs_use_experimentjobrunner_fgs_screen_lo),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary,
             textAlign = TextAlign.Center,
@@ -709,7 +712,7 @@ fun ExperimentPumpScreen(
             Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     text = jobState.current.ifEmpty {
-                        "${minOf(resultsList.size + 1, totalPhotos)} of $totalPhotos"
+                        AppStrings.get(R.string.experiment_s_1_s_of_2_s, minOf(resultsList.size + 1, totalPhotos), totalPhotos)
                     },
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
@@ -723,19 +726,19 @@ fun ExperimentPumpScreen(
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
-        val zipLabel = "Extract Downloaded ZIP"
-        val runTestLabel = "Run Test"
-        val first10Label = "First 10"
-        val seedInkLabel = "Seed ink probe"
-        val seedInk10Label = "Seed ink first 10"
-        val selectedLabel = "Selected sample (${SelectedSamplePhotos.PUMP.size} pump)"
-        val horizLabel = "Horiz-affected (${HORIZ_REACH_AFFECTED_FILENAMES.size})"
-        val prodInkLabel = "Prod-ink fail (${PROD_INK_FAIL_FILENAMES.size})"
-        val mixedFailLabel = "Mixed fail (${MIXED_FAIL_READABLE_FILENAMES.size})"
-        val detDumpLabel = "Det dump (prod × deskew/rot)"
-        val l1Label = "L1 SO debug dump (buffers + heatmaps)"
-        val ocrGeomLabel = "OCR geom"
-        val ocrGeom10Label = "OCR geom first 10"
+        val zipLabel = stringResource(R.string.experiment_extract_downloaded_zip)
+        val runTestLabel = stringResource(R.string.experiment_run_test)
+        val first10Label = stringResource(R.string.experiment_first_10)
+        val seedInkLabel = stringResource(R.string.experiment_seed_ink_probe)
+        val seedInk10Label = stringResource(R.string.experiment_seed_ink_first_10)
+        val selectedLabel = stringResource(R.string.experiment_selected_sample_1_s_pump_2, SelectedSamplePhotos.PUMP.size)
+        val horizLabel = stringResource(R.string.experiment_horiz_affected_1_s_2, HORIZ_REACH_AFFECTED_FILENAMES.size)
+        val prodInkLabel = stringResource(R.string.experiment_prod_ink_fail_1_s_2, PROD_INK_FAIL_FILENAMES.size)
+        val mixedFailLabel = stringResource(R.string.experiment_mixed_fail_1_s_2, MIXED_FAIL_READABLE_FILENAMES.size)
+        val detDumpLabel = stringResource(R.string.experiment_det_dump_prod_deskew_rot_2)
+        val l1Label = stringResource(R.string.experiment_l1_so_debug_dump_buffers_heatmaps)
+        val ocrGeomLabel = stringResource(R.string.experiment_ocr_geom)
+        val ocrGeom10Label = stringResource(R.string.experiment_ocr_geom_first_10)
         val gridLabels = listOf(
             zipLabel, runTestLabel, first10Label, seedInkLabel, seedInk10Label, selectedLabel,
             horizLabel, prodInkLabel, mixedFailLabel, detDumpLabel, l1Label,
@@ -790,14 +793,14 @@ fun ExperimentPumpScreen(
                 val allFiles = experimentDir.listFiles { f ->
                     f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
                 } ?: emptyArray()
-                startOcrGeomJob(null, "OCR geom (${allFiles.size})…")
+                startOcrGeomJob(null, AppStrings.get(R.string.experiment_ocr_geom_1_s, allFiles.size))
             },
             GridBtn(ocrGeom10Label, jobsEnabled) {
                 val allFiles = experimentDir.listFiles { f ->
                     f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
                 } ?: emptyArray()
                 val first10Names = allFiles.sortedBy { it.name }.take(10).map { it.name }
-                startOcrGeomJob(first10Names, "OCR geom first 10 (${first10Names.size})…")
+                startOcrGeomJob(first10Names, AppStrings.get(R.string.experiment_ocr_geom_first_10_1_s, first10Names.size))
             },
         )
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -836,7 +839,7 @@ fun ExperimentPumpScreen(
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("${index + 1}.", style = MaterialTheme.typography.titleSmall); Spacer(modifier = Modifier.width(8.dp))
-                        Column { Text(res.photoName, style = MaterialTheme.typography.labelSmall); Text("Match: ${res.matchedVehicle}", color = MaterialTheme.colorScheme.primary); Text("Odo: ${res.odometer ?: "FAILED"}", style = MaterialTheme.typography.bodySmall) }
+                        Column { Text(res.photoName, style = MaterialTheme.typography.labelSmall); Text(AppStrings.get(R.string.experiment_match_1_s, res.matchedVehicle), color = MaterialTheme.colorScheme.primary); Text(AppStrings.get(R.string.experiment_odo_1_s, res.odometer ?: AppStrings.get(R.string.experiment_failed)), style = MaterialTheme.typography.bodySmall) }
                     }
                 }
             }
@@ -923,7 +926,7 @@ suspend fun runPumpExperiment(
     val masterBuffer = BufferSet(4096, 4096)
 
     val flows = flowList ?: listOf(
-        "Set rot-G--",
+        context.getString(R.string.experiment_set_rot_g),
     )
     val heatDumpRoot by lazy {
         File(reportDir, "pump_heats_$timestamp").also { it.mkdirs() }
@@ -981,7 +984,7 @@ suspend fun runPumpExperiment(
                     append("<td data-col=\"$colIdx\">")
                     fun emitSlot(slot: String, htmlId: String, cls: String = "") {
                         val sid = i * nSlots + slotNames.indexOf(slot) + 1
-                        val clsAttr = if (cls.isEmpty()) "" else " class=\"$cls\""
+                        val clsAttr = if (cls.isEmpty()) "" else context.getString(R.string.experiment_class_1_s, cls)
                         append("<div id=\"$htmlId\"$clsAttr>")
                         append(ReportCollapser.htmlBegin(sid))
                         append(ReportCollapser.htmlEnd(sid))
@@ -1034,7 +1037,7 @@ suspend fun runPumpExperiment(
     coroutineScope {
     val collapseJob = collapser.start(this)
     try {
-    journal.append("RUN_START") {
+    journal.append(context.getString(R.string.experiment_run_start)) {
         put("total", total)
         put("version", BuildConfig.VERSION_NAME)
     }
@@ -1042,12 +1045,12 @@ suspend fun runPumpExperiment(
         // Subset button keeps full-run row; do not renumber the subset from 1.
         val fullRow = allPhotos.indexOfFirst { it.name == file.name } + 1
         try {
-            journal.append("PHOTO_START") {
+            journal.append(context.getString(R.string.experiment_photo_start)) {
                 put("photo", index)
                 put("line", fullRow)
                 put("file", file.name)
             }
-            onLog("Processing ${index + 1}/$total: ${file.name} (line $fullRow)")
+            onLog(context.getString(R.string.experiment_processing_1_s_2_s_3_s_line_4_s, index + 1, total, file.name, fullRow))
 
             val (probedW, probedH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
             if (probedW <= 0 || probedH <= 0) {
@@ -1066,7 +1069,7 @@ suspend fun runPumpExperiment(
             NativePaddleEngine.bufferSetB.resize(imgW, imgH)
             val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, masterBuffer.p)
 
-            val root = PumpBranch("Root")
+            val root = PumpBranch(context.getString(R.string.experiment_root))
             val (beforeB64, tSnapOrig) = OcrUtils.takeSnapshot(masterBuffer.p, null, PUMP_SMALL_TARGET_W, 0, emptyList(), null, masterBuffer)
             root.images["before"] = beforeB64
             root.images["hist1"] = generateHistogramB64(masterBuffer.p.mat, 0.40f)
@@ -1186,10 +1189,10 @@ suspend fun runPumpExperiment(
                 }
 
                 val discoveryDetails = mutableMapOf<String, MutableMap<Int, List<PumpHunk>>>().apply {
-                    put("Paddle Raw", mutableMapOf())
-                    put("Paddle Expanded", mutableMapOf())
-                    put("Paddle Max Extent", mutableMapOf())
-                    put("Paddle Native", mutableMapOf())
+                    put(context.getString(R.string.experiment_paddle_raw), mutableMapOf())
+                    put(context.getString(R.string.experiment_paddle_expanded), mutableMapOf())
+                    put(context.getString(R.string.experiment_paddle_max_extent), mutableMapOf())
+                    put(context.getString(R.string.experiment_paddle_native), mutableMapOf())
                 }
                 branch.metadata["t_setup_ms"] = (System.currentTimeMillis() - tSetupStart).toString()
                 // t_setup_ms covers buffer copy + discoveryDetails map (common high-level phase for A/B/C gap analysis)
@@ -1348,7 +1351,7 @@ suspend fun runPumpExperiment(
                         val el = exp.rect.left.toInt(); val et = exp.rect.top.toInt(); val er = exp.rect.right.toInt(); val eb = exp.rect.bottom.toInt()
                         val rect = android.graphics.Rect(el, et, er, eb)
                         val anns = mutableListOf<SnapshotAnnotation>()
-                        if (engine == "Paddle") {
+                        if (engine == context.getString(R.string.experiment_paddle)) {
                             // RED: Raw detections only (blue/orange removed to focus on red boxes for debugging)
                             pdRawForAnns.forEach { h ->
                                 anns.add(SnapshotAnnotation(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt(), Shape.RECTANGLE, AnnYuv.RED, 2))
@@ -1744,10 +1747,10 @@ suspend fun runPumpExperiment(
                     pdHunksMaxTotal.addAll(maxExt)
                     pdHunksNativeTotal.addAll(native)
 
-                    discoveryDetails["Paddle Raw"]!![scale] = raw
-                    discoveryDetails["Paddle Expanded"]!![scale] = exp
-                    discoveryDetails["Paddle Max Extent"]!![scale] = maxExt
-                    discoveryDetails["Paddle Native"]!![scale] = native
+                    discoveryDetails[context.getString(R.string.experiment_paddle_raw)]!![scale] = raw
+                    discoveryDetails[context.getString(R.string.experiment_paddle_expanded)]!![scale] = exp
+                    discoveryDetails[context.getString(R.string.experiment_paddle_max_extent)]!![scale] = maxExt
+                    discoveryDetails[context.getString(R.string.experiment_paddle_native)]!![scale] = native
                 }
                 branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
 
@@ -2101,7 +2104,7 @@ suspend fun runPumpExperiment(
                     customBluePixelG, ocrG.asis, ocrG.digits, ocrG.asisProbs, ocrG.digitsProbs, ocrG.recB64,
                     recWList = ocrG.recW, recHList = ocrG.recH,
                 )
-                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet, paddleEngine, context, imgW, imgH, gCands)
+                branch.pathResults[context.getString(R.string.experiment_paddle)] = getFinal(pdHunksMerged, context.getString(R.string.experiment_paddle), tilt, pdHunksRawTotal, workspace, experimentRecSet, paddleEngine, context, imgW, imgH, gCands)
                 val redPixelG = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
@@ -2260,7 +2263,7 @@ suspend fun runPumpExperiment(
                     getAnns(pdHunksRawTotal, AnnYuv.RED, 2) + getAnns(customBlueG, AnnYuv.BLUE, 4) + getAnns(customOrangeG, AnnYuv.ORANGE, 2)
                 }
                 val baseB64G = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdG, null, workspace).first
-                branch.images["PD"] = baseB64G
+                branch.images[context.getString(R.string.experiment_pd)] = baseB64G
                     } finally {
                         if (expDetAsset != null) {
                             try {
@@ -2386,10 +2389,10 @@ suspend fun runPumpExperiment(
                         }
                         pdHunksRawTotal.addAll(scaleHunks)
                         pdHunksDetectedTotal.addAll(scaleHunks)
-                        discoveryDetails["Paddle Raw"]!![scale] = scaleHunks
-                        discoveryDetails["Paddle Expanded"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Max Extent"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Native"]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_raw)]!![scale] = scaleHunks
+                        discoveryDetails[context.getString(R.string.experiment_paddle_expanded)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_max_extent)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_native)]!![scale] = emptyList()
                     }
                     branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
@@ -2522,8 +2525,8 @@ suspend fun runPumpExperiment(
                             ),
                         )
                     }
-                    branch.pathResults["Paddle"] = getFinal(
-                        blueHunks, "Paddle", tilt, pdHunksRawTotal, workspace,
+                    branch.pathResults[context.getString(R.string.experiment_paddle)] = getFinal(
+                        blueHunks, context.getString(R.string.experiment_paddle), tilt, pdHunksRawTotal, workspace,
                         experimentRecSet, paddleEngine, context, imgW, imgH, energyCands,
                     )
                     branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
@@ -2546,7 +2549,7 @@ suspend fun runPumpExperiment(
                             "energyRatio" to 0.65f,
                             "countPull" to "gx-run-count valley + one-dir pad; scaleVariants kind=energy_count",
                             "maxRetractFrac" to 0.50f,
-                            "note" to "ink-energy-tight: AABB grow 0; V then H; rec-pad look-ink",
+                            "note" to context.getString(R.string.experiment_ink_energy_tight_aabb_grow_0_v_then_h_rec),
                             "inkTelemetry" to JSONArray(branch.metadata["seg7_tele"] ?: "[]"),
                         ),
                         oranges = emptyList(),
@@ -2568,7 +2571,7 @@ suspend fun runPumpExperiment(
                     val aPd = getAnns(pdHunksRawTotal, AnnYuv.RED, 2) +
                         getAnns(blueHunks, AnnYuv.BLUE, 4) +
                         getAnns(padBlueHunks, AnnYuv.BLUE, 4)
-                    branch.images["PD"] = OcrUtils.takeSnapshot(
+                    branch.images[context.getString(R.string.experiment_pd)] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
                     ).first
@@ -2657,10 +2660,10 @@ suspend fun runPumpExperiment(
                         }
                         pdHunksRawTotal.addAll(scaleHunks)
                         pdHunksDetectedTotal.addAll(scaleHunks)
-                        discoveryDetails["Paddle Raw"]!![scale] = scaleHunks
-                        discoveryDetails["Paddle Expanded"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Max Extent"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Native"]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_raw)]!![scale] = scaleHunks
+                        discoveryDetails[context.getString(R.string.experiment_paddle_expanded)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_max_extent)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_native)]!![scale] = emptyList()
                     }
                     branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
@@ -2793,8 +2796,8 @@ suspend fun runPumpExperiment(
                             ),
                         )
                     }
-                    branch.pathResults["Paddle"] = getFinal(
-                        blueHunks, "Paddle", tilt, pdHunksRawTotal, workspace,
+                    branch.pathResults[context.getString(R.string.experiment_paddle)] = getFinal(
+                        blueHunks, context.getString(R.string.experiment_paddle), tilt, pdHunksRawTotal, workspace,
                         experimentRecSet, paddleEngine, context, imgW, imgH, energyCands,
                     )
                     branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
@@ -2817,7 +2820,7 @@ suspend fun runPumpExperiment(
                             "energyRatio" to 0.65f,
                             "countPull" to "gx-run-count valley + one-dir pad; scaleVariants kind=energy_count",
                             "maxRetractFrac" to 0.50f,
-                            "note" to "ink-energy-retract: AABB grow 1; V retract-or-expand then H; rec-pad look-ink",
+                            "note" to context.getString(R.string.experiment_ink_energy_retract_aabb_grow_1_v_retract_o),
                             "inkTelemetry" to JSONArray(branch.metadata["seg7_tele"] ?: "[]"),
                         ),
                         oranges = emptyList(),
@@ -2839,7 +2842,7 @@ suspend fun runPumpExperiment(
                     val aPd = getAnns(pdHunksRawTotal, AnnYuv.RED, 2) +
                         getAnns(blueHunks, AnnYuv.BLUE, 4) +
                         getAnns(padBlueHunks, AnnYuv.BLUE, 4)
-                    branch.images["PD"] = OcrUtils.takeSnapshot(
+                    branch.images[context.getString(R.string.experiment_pd)] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
                     ).first
@@ -2927,10 +2930,10 @@ suspend fun runPumpExperiment(
                         }
                         pdHunksRawTotal.addAll(scaleHunks)
                         pdHunksDetectedTotal.addAll(scaleHunks)
-                        discoveryDetails["Paddle Raw"]!![scale] = scaleHunks
-                        discoveryDetails["Paddle Expanded"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Max Extent"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Native"]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_raw)]!![scale] = scaleHunks
+                        discoveryDetails[context.getString(R.string.experiment_paddle_expanded)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_max_extent)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_native)]!![scale] = emptyList()
                     }
                     branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
@@ -3118,8 +3121,8 @@ suspend fun runPumpExperiment(
                     branch.metadata["n_ocr"] = nOcr.toString()
                     val tOcrAll = (System.currentTimeMillis() - tOcr0).toString()
                     branch.metadata["t_ocr_ms"] = tOcrAll
-                    branch.pathResults["Paddle"] = getFinal(
-                        officialHunks, "Paddle", tilt, pdHunksRawTotal, workspace,
+                    branch.pathResults[context.getString(R.string.experiment_paddle)] = getFinal(
+                        officialHunks, context.getString(R.string.experiment_paddle), tilt, pdHunksRawTotal, workspace,
                         experimentRecSet, paddleEngine, context, imgW, imgH, cands0,
                     )
                     branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
@@ -3152,7 +3155,7 @@ suspend fun runPumpExperiment(
                     val aPd = getAnns(pdHunksRawTotal, AnnYuv.RED, 2) +
                         getAnns(officialHunks, AnnYuv.BLUE, 4) +
                         getAnns(padHunks, AnnYuv.BLUE, 4)
-                    branch.images["PD"] = OcrUtils.takeSnapshot(
+                    branch.images[context.getString(R.string.experiment_pd)] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
                     ).first
@@ -3239,10 +3242,10 @@ suspend fun runPumpExperiment(
                         }
                         pdHunksRawTotal.addAll(scaleHunks)
                         pdHunksDetectedTotal.addAll(scaleHunks)
-                        discoveryDetails["Paddle Raw"]!![scale] = scaleHunks
-                        discoveryDetails["Paddle Expanded"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Max Extent"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Native"]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_raw)]!![scale] = scaleHunks
+                        discoveryDetails[context.getString(R.string.experiment_paddle_expanded)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_max_extent)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_native)]!![scale] = emptyList()
                     }
                     branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
@@ -3429,8 +3432,8 @@ suspend fun runPumpExperiment(
                     branch.metadata["n_ocr"] = nOcr.toString()
                     val tOcrAll = (System.currentTimeMillis() - tOcr0).toString()
                     branch.metadata["t_ocr_ms"] = tOcrAll
-                    branch.pathResults["Paddle"] = getFinal(
-                        officialHunks, "Paddle", tilt, pdHunksRawTotal, workspace,
+                    branch.pathResults[context.getString(R.string.experiment_paddle)] = getFinal(
+                        officialHunks, context.getString(R.string.experiment_paddle), tilt, pdHunksRawTotal, workspace,
                         experimentRecSet, paddleEngine, context, imgW, imgH, cands0,
                     )
                     branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
@@ -3463,7 +3466,7 @@ suspend fun runPumpExperiment(
                     val aPd = getAnns(pdHunksRawTotal, AnnYuv.RED, 2) +
                         getAnns(officialHunks, AnnYuv.BLUE, 4) +
                         getAnns(padHunks, AnnYuv.BLUE, 4)
-                    branch.images["PD"] = OcrUtils.takeSnapshot(
+                    branch.images[context.getString(R.string.experiment_pd)] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
                     ).first
@@ -3563,10 +3566,10 @@ suspend fun runPumpExperiment(
                         }
                         pdHunksRawTotal.addAll(scaleHunks)
                         pdHunksDetectedTotal.addAll(scaleHunks)
-                        discoveryDetails["Paddle Raw"]!![scale] = scaleHunks
-                        discoveryDetails["Paddle Expanded"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Max Extent"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Native"]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_raw)]!![scale] = scaleHunks
+                        discoveryDetails[context.getString(R.string.experiment_paddle_expanded)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_max_extent)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_native)]!![scale] = emptyList()
                     }
                     branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
@@ -3753,8 +3756,8 @@ suspend fun runPumpExperiment(
                     branch.metadata["n_ocr"] = nOcr.toString()
                     val tOcrAll = (System.currentTimeMillis() - tOcr0).toString()
                     branch.metadata["t_ocr_ms"] = tOcrAll
-                    branch.pathResults["Paddle"] = getFinal(
-                        officialHunks, "Paddle", tilt, pdHunksRawTotal, workspace,
+                    branch.pathResults[context.getString(R.string.experiment_paddle)] = getFinal(
+                        officialHunks, context.getString(R.string.experiment_paddle), tilt, pdHunksRawTotal, workspace,
                         experimentRecSet, paddleEngine, context, imgW, imgH, cands0,
                     )
                     branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
@@ -3788,7 +3791,7 @@ suspend fun runPumpExperiment(
                     val aPd = getAnns(pdHunksRawTotal, AnnYuv.RED, 2) +
                         getAnns(officialHunks, AnnYuv.BLUE, 4) +
                         getAnns(padHunks, AnnYuv.BLUE, 4)
-                    branch.images["PD"] = OcrUtils.takeSnapshot(
+                    branch.images[context.getString(R.string.experiment_pd)] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
                     ).first
@@ -3931,10 +3934,10 @@ suspend fun runPumpExperiment(
                         }
                         pdHunksRawTotal.addAll(scaleHunks)
                         pdHunksDetectedTotal.addAll(scaleHunks)
-                        discoveryDetails["Paddle Raw"]!![scale] = scaleHunks
-                        discoveryDetails["Paddle Expanded"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Max Extent"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Native"]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_raw)]!![scale] = scaleHunks
+                        discoveryDetails[context.getString(R.string.experiment_paddle_expanded)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_max_extent)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_native)]!![scale] = emptyList()
                     }
                     branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
@@ -4028,10 +4031,10 @@ suspend fun runPumpExperiment(
                         }
                         pdHunksRawTotal.addAll(scaleHunks)
                         pdHunksDetectedTotal.addAll(scaleHunks)
-                        discoveryDetails["Paddle Raw"]!![scale] = scaleHunks
-                        discoveryDetails["Paddle Expanded"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Max Extent"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Native"]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_raw)]!![scale] = scaleHunks
+                        discoveryDetails[context.getString(R.string.experiment_paddle_expanded)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_max_extent)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_native)]!![scale] = emptyList()
                     }
                     branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
                     val maxN = PumpOcrSettings.maxRedBoxes(context)
@@ -4188,8 +4191,8 @@ suspend fun runPumpExperiment(
                             ),
                         )
                     }
-                    branch.pathResults["Paddle"] = getFinal(
-                        blueHunks, "Paddle", 0f, pdHunksRawTotal, workspace,
+                    branch.pathResults[context.getString(R.string.experiment_paddle)] = getFinal(
+                        blueHunks, context.getString(R.string.experiment_paddle), 0f, pdHunksRawTotal, workspace,
                         experimentRecSet, paddleEngine, context, imgW, imgH, energyCands,
                     )
                     branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
@@ -4212,7 +4215,7 @@ suspend fun runPumpExperiment(
                             "energyRatio" to 0.65f,
                             "countPull" to "gx-run-count valley + one-dir pad; scaleVariants kind=energy_count",
                             "maxRetractFrac" to 0.50f,
-                            "note" to "rot-energy-tight: master.p u/v; grow 0; V then H; flatten A.p",
+                            "note" to context.getString(R.string.experiment_rot_energy_tight_master_p_u_v_grow_0_v_the),
                         ),
                         oranges = emptyList(),
                         ocrQuads = expandedQuads,
@@ -4226,7 +4229,7 @@ suspend fun runPumpExperiment(
                     val aPd = seedQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.RED, 2) } +
                         expandedQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.BLUE, 4) } +
                         padQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.BLUE, 4) }
-                    branch.images["PD"] = OcrUtils.takeSnapshot(
+                    branch.images[context.getString(R.string.experiment_pd)] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
                     ).first
@@ -4372,8 +4375,8 @@ suspend fun runPumpExperiment(
                             ),
                         )
                     }
-                    branch.pathResults["Paddle"] = getFinal(
-                        blueHunks, "Paddle", 0f, pdHunksRawTotal, workspace,
+                    branch.pathResults[context.getString(R.string.experiment_paddle)] = getFinal(
+                        blueHunks, context.getString(R.string.experiment_paddle), 0f, pdHunksRawTotal, workspace,
                         experimentRecSet, paddleEngine, context, imgW, imgH, energyCands,
                     )
                     branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
@@ -4396,7 +4399,7 @@ suspend fun runPumpExperiment(
                             "energyRatio" to 0.65f,
                             "countPull" to "gx-run-count valley + one-dir pad; scaleVariants kind=energy_count",
                             "maxRetractFrac" to 0.50f,
-                            "note" to "rot-energy-retract: master.p u/v; grow 1; V then H; flatten A.p",
+                            "note" to context.getString(R.string.experiment_rot_energy_retract_master_p_u_v_grow_1_v_t),
                         ),
                         oranges = emptyList(),
                         ocrQuads = expandedQuads,
@@ -4410,7 +4413,7 @@ suspend fun runPumpExperiment(
                     val aPd = seedQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.RED, 2) } +
                         expandedQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.BLUE, 4) } +
                         padQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.BLUE, 4) }
-                    branch.images["PD"] = OcrUtils.takeSnapshot(
+                    branch.images[context.getString(R.string.experiment_pd)] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
                     ).first
@@ -4610,8 +4613,8 @@ suspend fun runPumpExperiment(
                     branch.metadata["n_ocr"] = nOcr.toString()
                     branch.metadata["t_ocr_ms"] =
                         (System.currentTimeMillis() - tOcr0).toString()
-                    branch.pathResults["Paddle"] = getFinal(
-                        officialHunks, "Paddle", 0f, pdHunksRawTotal, workspace,
+                    branch.pathResults[context.getString(R.string.experiment_paddle)] = getFinal(
+                        officialHunks, context.getString(R.string.experiment_paddle), 0f, pdHunksRawTotal, workspace,
                         experimentRecSet, paddleEngine, context, imgW, imgH, cands0,
                     )
                     branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
@@ -4647,7 +4650,7 @@ suspend fun runPumpExperiment(
                     val aPd = seedQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.RED, 2) } +
                         official.flatMap { pumpQuadEdgeAnns(it, AnnYuv.BLUE, 4) } +
                         pad0.flatMap { pumpQuadEdgeAnns(it, AnnYuv.BLUE, 4) }
-                    branch.images["PD"] = OcrUtils.takeSnapshot(
+                    branch.images[context.getString(R.string.experiment_pd)] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
                     ).first
@@ -4815,9 +4818,9 @@ suspend fun runPumpExperiment(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, NativePaddleEngine.bufferSetB,
                     ).first
-                    branch.images["PD"] = pd
+                    branch.images[context.getString(R.string.experiment_pd)] = pd
                     branch.images["overlay"] = pd
-                    branch.pathResults["Paddle"] = PathResult("N/A", "N/A", "", "")
+                    branch.pathResults[context.getString(R.string.experiment_paddle)] = PathResult("N/A", "N/A", "", "")
                 }
                 suspend fun runSeedInkRotColumn(
                     workspace: BufferSet,
@@ -4909,9 +4912,9 @@ suspend fun runPumpExperiment(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, NativePaddleEngine.bufferSetB,
                     ).first
-                    branch.images["PD"] = pd
+                    branch.images[context.getString(R.string.experiment_pd)] = pd
                     branch.images["overlay"] = pd
-                    branch.pathResults["Paddle"] = PathResult("N/A", "N/A", "", "")
+                    branch.pathResults[context.getString(R.string.experiment_paddle)] = PathResult("N/A", "N/A", "", "")
                 }
                 val procAabbTightSeedInk: suspend (
                     BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
@@ -4973,7 +4976,7 @@ suspend fun runPumpExperiment(
                 @Suppress("unused")
                 val procGDense = makeGProc(
                     SET_G_DENSE_VERT_FACTORS,
-                    "G-dense v fine 0…0.8 + coarse 1.0…2.5; minAreaRect; u8≥1; horiz=1.0",
+                    context.getString(R.string.experiment_g_dense_v_fine_0_0_8_coarse_1_0_2_5_minare),
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     horizFactor = SET_G_DENSE_HORIZ_FACTOR,
@@ -4982,7 +4985,7 @@ suspend fun runPumpExperiment(
                 @Suppress("unused")
                 val procK = makeGProc(
                     SET_G_DENSE_VERT_FACTORS,
-                    "K: same as G-dense but heat thr u8≥2 (minAreaRect, same verts/horiz)",
+                    context.getString(R.string.experiment_k_same_as_g_dense_but_heat_thr_u8_2_minare),
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     horizFactor = SET_G_DENSE_HORIZ_FACTOR,
@@ -4990,7 +4993,7 @@ suspend fun runPumpExperiment(
                 )
                 val procL = makeGProc(
                     SET_G_MINUS_MINUS_VERT_FACTORS,
-                    "L: heat mask dilate 2 passes then minAreaRect; no rect+1; G-- verts; horiz=0.5",
+                    context.getString(R.string.experiment_l_heat_mask_dilate_2_passes_then_minareare),
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     horizFactor = SET_G_HORIZ_FACTOR,
@@ -4999,7 +5002,7 @@ suspend fun runPumpExperiment(
                 )
                 val procM = makeGProc(
                     SET_G_MINUS_MINUS_VERT_FACTORS,
-                    "M: heat mask dilate 4 passes then minAreaRect; no rect+1; G-- verts; horiz=0.5 (was 5; 5 merged cost+vol too often)",
+                    context.getString(R.string.experiment_m_heat_mask_dilate_4_passes_then_minareare),
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     horizFactor = SET_G_HORIZ_FACTOR,
@@ -5164,10 +5167,10 @@ suspend fun runPumpExperiment(
                             collected.add(oq)
                             scaleHunks.add(hunkFromAabb(oq.toAabb()))
                         }
-                        discoveryDetails["Paddle Raw"]!![scale] = scaleHunks
-                        discoveryDetails["Paddle Expanded"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Max Extent"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Native"]!![scale] = scaleHunks
+                        discoveryDetails[context.getString(R.string.experiment_paddle_raw)]!![scale] = scaleHunks
+                        discoveryDetails[context.getString(R.string.experiment_paddle_expanded)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_max_extent)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_native)]!![scale] = scaleHunks
                     }
                     branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
 
@@ -5358,7 +5361,7 @@ suspend fun runPumpExperiment(
                                 writeExpandEnergyTrace(
                                     energyTraceOut, file.name, maxFrac,
                                     expDiag.mapNotNull { it.energyTrace },
-                                    column = "P4-rot",
+                                    column = context.getString(R.string.experiment_p4_rot),
                                 )
                                 branch.metadata["content_expand_energy_trace"] = energyTraceOut.name
                             } catch (t: Throwable) {
@@ -5575,8 +5578,8 @@ suspend fun runPumpExperiment(
                     val primaryCv = hybridCv
                     val scalesToOcr = ocrScales.ifEmpty { listOf(1.0f) }
                     val pdHunksMerged = mergeGeometryIntoHunks(pdHunksRawTotal)
-                    branch.pathResults["Paddle"] = getFinal(
-                        pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace,
+                    branch.pathResults[context.getString(R.string.experiment_paddle)] = getFinal(
+                        pdHunksMerged, context.getString(R.string.experiment_paddle), tilt, pdHunksRawTotal, workspace,
                         experimentRecSet, paddleEngine, context, imgW, imgH, primaryCands,
                     )
                     branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
@@ -5650,7 +5653,7 @@ suspend fun runPumpExperiment(
                     val aPd = redOnlyAnns +
                         primaryQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.BLUE, 4) } +
                         pdPadQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.BLUE, 4) }
-                    branch.images["PD"] = OcrUtils.takeSnapshot(
+                    branch.images[context.getString(R.string.experiment_pd)] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
                     ).first
@@ -5824,10 +5827,10 @@ suspend fun runPumpExperiment(
                                 pdHunksExpTotal.addAll(paddleResults[2])
                                 pdHunksMaxTotal.addAll(paddleResults[3])
                                 pdHunksNativeTotal.addAll(paddleResults[4])
-                                discoveryDetails["Paddle Raw"]!![scale] = paddleResults[1]
-                                discoveryDetails["Paddle Expanded"]!![scale] = paddleResults[2]
-                                discoveryDetails["Paddle Max Extent"]!![scale] = paddleResults[3]
-                                discoveryDetails["Paddle Native"]!![scale] = paddleResults[4]
+                                discoveryDetails[context.getString(R.string.experiment_paddle_raw)]!![scale] = paddleResults[1]
+                                discoveryDetails[context.getString(R.string.experiment_paddle_expanded)]!![scale] = paddleResults[2]
+                                discoveryDetails[context.getString(R.string.experiment_paddle_max_extent)]!![scale] = paddleResults[3]
+                                discoveryDetails[context.getString(R.string.experiment_paddle_native)]!![scale] = paddleResults[4]
                             }
                             branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
                             doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
@@ -5927,7 +5930,7 @@ suspend fun runPumpExperiment(
                                     writeExpandEnergyTrace(
                                         energyTraceOut, file.name, maxFrac,
                                         expDiag.mapNotNull { it.energyTrace },
-                                        column = "P4-jump",
+                                        column = context.getString(R.string.experiment_p4_jump),
                                     )
                                     branch.metadata["content_expand_energy_trace"] = energyTraceOut.name
                                 } catch (t: Throwable) {
@@ -6014,8 +6017,8 @@ suspend fun runPumpExperiment(
                             val finalKind = "energy"
                             val scalesToOcr = ocrScales.ifEmpty { listOf(1.0f) }
                             val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
-                            branch.pathResults["Paddle"] = getFinal(
-                                pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace,
+                            branch.pathResults[context.getString(R.string.experiment_paddle)] = getFinal(
+                                pdHunksMerged, context.getString(R.string.experiment_paddle), tilt, pdHunksRawTotal, workspace,
                                 experimentRecSet, paddleEngine, context, imgW, imgH, primaryCands,
                             )
                             branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
@@ -6082,7 +6085,7 @@ suspend fun runPumpExperiment(
                             val aPd = getAnns(pdHunksRawTotal, AnnYuv.RED, 2) +
                                 getAnns(blueHunks, AnnYuv.BLUE, 4) +
                                 getAnns(padBlueHunks, AnnYuv.BLUE, 4)
-                            branch.images["PD"] = OcrUtils.takeSnapshot(
+                            branch.images[context.getString(R.string.experiment_pd)] = OcrUtils.takeSnapshot(
                                 workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                                 aPd, null, workspace,
                             ).first
@@ -6108,7 +6111,7 @@ suspend fun runPumpExperiment(
                 )
                 val procPJump = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "P-jump: product det + interior-energy + height jump/retract",
+                    context.getString(R.string.experiment_p_jump_product_det_interior_energy_height),
                     expDetAsset = null,
                     enableJump = true,
                     doDeskew = true,
@@ -6116,7 +6119,7 @@ suspend fun runPumpExperiment(
                 )
                 val procPRot = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "P-rot: one minAreaRect detect, no deskew, expandOriented, warp rec",
+                    context.getString(R.string.experiment_p_rot_one_minarearect_detect_no_deskew_exp),
                     expDetAsset = null,
                     enableJump = false,
                     doDeskew = false,
@@ -6232,10 +6235,10 @@ suspend fun runPumpExperiment(
                         pdHunksExpTotal.addAll(paddleResults[2])
                         pdHunksMaxTotal.addAll(paddleResults[3])
                         pdHunksNativeTotal.addAll(paddleResults[4])
-                        discoveryDetails["Paddle Raw"]!![scale] = paddleResults[1]
-                        discoveryDetails["Paddle Expanded"]!![scale] = paddleResults[2]
-                        discoveryDetails["Paddle Max Extent"]!![scale] = paddleResults[3]
-                        discoveryDetails["Paddle Native"]!![scale] = paddleResults[4]
+                        discoveryDetails[context.getString(R.string.experiment_paddle_raw)]!![scale] = paddleResults[1]
+                        discoveryDetails[context.getString(R.string.experiment_paddle_expanded)]!![scale] = paddleResults[2]
+                        discoveryDetails[context.getString(R.string.experiment_paddle_max_extent)]!![scale] = paddleResults[3]
+                        discoveryDetails[context.getString(R.string.experiment_paddle_native)]!![scale] = paddleResults[4]
                     }
                     branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
@@ -6354,7 +6357,7 @@ suspend fun runPumpExperiment(
                     branch.metadata["t_hybrid_e_ms"] = (System.currentTimeMillis() - tEStart).toString()
                     val allCands = buildRedBoxCandidates(combinedBluePixel, combinedAsis, combinedDigits, combinedAsisProbs, combinedDigitsProbs)
                     val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
-                    branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, lastReds, workspace, experimentRecSet, paddleEngine, context, imgW, imgH, allCands)
+                    branch.pathResults[context.getString(R.string.experiment_paddle)] = getFinal(pdHunksMerged, context.getString(R.string.experiment_paddle), tilt, lastReds, workspace, experimentRecSet, paddleEngine, context, imgW, imgH, allCands)
                     val redPixelI = lastReds.map { h ->
                         android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                     }
@@ -6372,20 +6375,20 @@ suspend fun runPumpExperiment(
                         finalVol = cvI.vol,
                         assembly = mapOf(
                             "method" to "calculated-hybrid",
-                            "hybrid" to "D+E+G k=10",
+                            "hybrid" to context.getString(R.string.experiment_d_e_g_k_10),
                             "vertFactors" to allVertFactors,
                             "gVert" to iGVert,
                             "dVert" to iDVert,
                             "eVert" to iEVert,
                             "horizFactor" to 0.5f,
                             "orangeSideExt" to 0.1,
-                            "note" to "G raw, clip+adjust p/v, D, valley push, E; one combined classify"
+                            "note" to context.getString(R.string.experiment_g_raw_clip_adjust_p_v_d_valley_push_e_one)
                         ),
                         oranges = orangePixelI
                     )
                     doBOrDRedOnlyImage()
                     val aPdI = getAnns(lastReds, AnnYuv.RED, 2) + getAnns(lastBlueHunks, AnnYuv.BLUE, 4) + getAnns(lastOrangeHunks, AnnYuv.ORANGE, 2)
-                    branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdI, null, workspace).first
+                    branch.images[context.getString(R.string.experiment_pd)] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdI, null, workspace).first
                 }
                 fun inkEnergyAabb(
                     name: String,
@@ -6393,7 +6396,7 @@ suspend fun runPumpExperiment(
                     boundNote: String?,
                 ) = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "$name: product det + interior-energy AABB; jump; maxFrac=0.4",
+                    context.getString(R.string.experiment_s_1_s_product_det_interior_energy_aabb_jump, name),
                     expDetAsset = null,
                     enableJump = true,
                     doDeskew = true,
@@ -6410,7 +6413,7 @@ suspend fun runPumpExperiment(
                     boundNote: String?,
                 ) = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "$name: product oriented det + interior-energy; jump ±u",
+                    context.getString(R.string.experiment_s_1_s_product_oriented_det_interior_energy_j, name),
                     expDetAsset = null,
                     enableJump = true,
                     doDeskew = false,
@@ -6472,13 +6475,13 @@ suspend fun runPumpExperiment(
                     null,
                 )
                 val procRotGrayBase = rotInkOrient(
-                    "rot-gray-base: product oriented det + greyscale Otsu 7seg",
+                    context.getString(R.string.experiment_rot_gray_base_product_oriented_det_greysca),
                     ContentExpandUtils::expandGrayOrientExpand,
                     null,
                     null,
                 )
                 val procRotColorBase = rotInkOrient(
-                    "rot-color-base: product oriented det + color_adaptive 7seg",
+                    context.getString(R.string.experiment_rot_color_base_product_oriented_det_color),
                     ContentExpandUtils::expandColorOrientExpand,
                     "color_adaptive",
                     null,
@@ -6593,10 +6596,10 @@ suspend fun runPumpExperiment(
                         }
                         pdHunksRawTotal.addAll(scaleHunks)
                         pdHunksDetectedTotal.addAll(scaleHunks)
-                        discoveryDetails["Paddle Raw"]!![scale] = scaleHunks
-                        discoveryDetails["Paddle Expanded"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Max Extent"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Native"]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_raw)]!![scale] = scaleHunks
+                        discoveryDetails[context.getString(R.string.experiment_paddle_expanded)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_max_extent)]!![scale] = emptyList()
+                        discoveryDetails[context.getString(R.string.experiment_paddle_native)]!![scale] = emptyList()
                     }
                     branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
                     val maxN = PumpOcrSettings.maxRedBoxes(context)
@@ -6732,7 +6735,7 @@ suspend fun runPumpExperiment(
                             groups.getOrPut(key) { ArrayList() }.add(c)
                         }
                         if (groups.size <= 1) return cands
-                        val firstKey = "${padList.first().id}_g${"%.2f".format(verts.first())}"
+                        val firstKey = context.getString(R.string.experiment_s_1_s_g_2_s, padList.first().id, "%.2f".format(verts.first()))
                         return groups[firstKey] ?: emptyList()
                     }
                     val chooserCands = gmmChooserGroup(gCands, pads, vertFactors)
@@ -6752,8 +6755,8 @@ suspend fun runPumpExperiment(
                     )
                     val linear = ExperimentPumpCostVolChooser.classify(chooserCands)
                     if (chooserCands.isEmpty()) {
-                        branch.pathResults["Paddle"] = getFinal(
-                            customBlueG, "Paddle", tilt, pdHunksRawTotal, workspace,
+                        branch.pathResults[context.getString(R.string.experiment_paddle)] = getFinal(
+                            customBlueG, context.getString(R.string.experiment_paddle), tilt, pdHunksRawTotal, workspace,
                             experimentRecSet, paddleEngine, context, imgW, imgH, chooserCands,
                         )
                     } else {
@@ -6769,7 +6772,7 @@ suspend fun runPumpExperiment(
                                 emptyList(), null, workspace,
                             ).first
                         } ?: ""
-                        branch.pathResults["Paddle"] = PathResult(
+                        branch.pathResults[context.getString(R.string.experiment_paddle)] = PathResult(
                             weighted.cost, weighted.vol, costCrop, volCrop,
                         )
                     }
@@ -6822,7 +6825,7 @@ suspend fun runPumpExperiment(
                     val aPdG = seedQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.RED, 2) } +
                         blueQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.BLUE, 4) } +
                         orangeQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.ORANGE, 2) }
-                    branch.images["PD"] = OcrUtils.takeSnapshot(
+                    branch.images[context.getString(R.string.experiment_pd)] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPdG, null, workspace,
                     ).first
@@ -6830,7 +6833,7 @@ suspend fun runPumpExperiment(
                 // After ocrPumpOrientedQuads (local) is in scope.
                 val procGMinusMinus = makeGmmAabbProc(
                     SET_G_MINUS_MINUS_VERT_FACTORS,
-                    "G-- UV det+pads (seed-height L/R); no 7-seg",
+                    context.getString(R.string.experiment_g_uv_det_pads_seed_height_l_r_no_7_seg),
                     usePhotoTilt = true,
                 )
                 val procRotGMinusMinus = makeGmmAabbProc(
@@ -6840,15 +6843,15 @@ suspend fun runPumpExperiment(
                     padVariants = SET_G_ROT_UV_PAD_VARIANTS,
                 )
                 val flowProcessors = buildList {
-                    add("Set rot-G--" to procRotGMinusMinus)
-                    add("Set aabb-tight" to procAabbTightSeedInk)
-                    add("Set aabb-large" to procAabbLargeSeedInk)
-                    add("Set rot-tight" to procRotTightSeedInk)
-                    add("Set rot-large" to procRotLargeSeedInk)
-                    add("Set aabb-tight-color" to procAabbTightSeedInkColor)
-                    add("Set aabb-large-color" to procAabbLargeSeedInkColor)
-                    add("Set rot-tight-color" to procRotTightSeedInkColor)
-                    add("Set rot-large-color" to procRotLargeSeedInkColor)
+                    add(context.getString(R.string.experiment_set_rot_g) to procRotGMinusMinus)
+                    add(context.getString(R.string.experiment_set_aabb_tight) to procAabbTightSeedInk)
+                    add(context.getString(R.string.experiment_set_aabb_large) to procAabbLargeSeedInk)
+                    add(context.getString(R.string.experiment_set_rot_tight) to procRotTightSeedInk)
+                    add(context.getString(R.string.experiment_set_rot_large) to procRotLargeSeedInk)
+                    add(context.getString(R.string.experiment_set_aabb_tight_color) to procAabbTightSeedInkColor)
+                    add(context.getString(R.string.experiment_set_aabb_large_color) to procAabbLargeSeedInkColor)
+                    add(context.getString(R.string.experiment_set_rot_tight_color) to procRotTightSeedInkColor)
+                    add(context.getString(R.string.experiment_set_rot_large_color) to procRotLargeSeedInkColor)
                 }
                 // Parked (compiled, not scheduled): ink/rot-color-tight-vsp, deskew G--, gray 7seg,
                 // fill color, energy, retract-vsp, prior ink-prod/color/walk2/jump, P*, L/M, G-dense/K, *-base.
@@ -6869,10 +6872,10 @@ suspend fun runPumpExperiment(
                 ) +
                     procHorizByFactor.values + listOf(procL, procM)
                 val processor = flowProcessors.firstOrNull { it.first == flowName }?.second
-                    ?: error("No processor registered for flow: $flowName")
+                    ?: error(context.getString(R.string.experiment_no_processor_registered_for_flow_1_s, flowName))
 
                 tDiscoveryWrapperStart = System.currentTimeMillis()
-                journal.append("COLUMN_START") {
+                journal.append(context.getString(R.string.experiment_column_start)) {
                     put("col", col)
                     put("flow", flowName)
                     put("photo", index)
@@ -6881,7 +6884,7 @@ suspend fun runPumpExperiment(
                 }
                 val tCol0 = System.currentTimeMillis()
                 processor(workspace, branch, discoveryDetails, imgW, imgH)
-                journal.append("COLUMN_END") {
+                journal.append(context.getString(R.string.experiment_column_end)) {
                     put("col", col)
                     put("flow", flowName)
                     put("elapsed_ms", System.currentTimeMillis() - tCol0)
@@ -6922,7 +6925,7 @@ suspend fun runPumpExperiment(
                 masterBuffer.p,
                 longEdgeTarget = 256,
             )
-            val deskewHtml = deskewResA.engines.map { (k, v) -> "$k: ${v.angle}&deg; (${v.timesMs.sum()}ms)" }.joinToString("<br>")
+            val deskewHtml = deskewResA.engines.map { (k, v) -> context.getString(R.string.experiment_s_1_s_2_s_deg_3_sms, k, v.angle, v.timesMs.sum()) }.joinToString("<br>")
 
             pPublishOrigDetails(
                 rowIndex = fullRow,
@@ -6966,7 +6969,7 @@ suspend fun runPumpExperiment(
             if (!firstPhoto) photoSb.append(",\n") else firstPhoto = false
             appendJsonObject(photoSb, photoJson, 2, 0)
             jsonSyncStr(photoSb.toString())
-            journal.append("PHOTO_END") {
+            journal.append(context.getString(R.string.experiment_photo_end)) {
                 put("photo", index)
                 put("line", fullRow)
                 put("file", file.name)
@@ -6979,10 +6982,10 @@ suspend fun runPumpExperiment(
             val summaryText = buildString {
                 append(flows.joinToString(" | ") { f ->
                     val br = root.getBranch(f)
-                    if (br.pathResults.containsKey("ML")) {
+                    if (br.pathResults.containsKey(context.getString(R.string.experiment_ml))) {
                         "$f: ${br.pathResults["ML"]?.cost ?: "F"}"
                     } else {
-                        "$f Paddle: ${br.pathResults["Paddle"]?.cost ?: "F"}"
+                        context.getString(R.string.experiment_s_1_s_paddle_2_s, f, br.pathResults[context.getString(R.string.experiment_paddle)]?.cost ?: context.getString(R.string.experiment_f))
                     }
                 })
             }
@@ -6999,7 +7002,7 @@ suspend fun runPumpExperiment(
     }
         journal.append("RUN_END")
     } finally {
-        collapser.requestFinal("pump final collapse")
+        collapser.requestFinal(context.getString(R.string.experiment_pump_final_collapse))
         try {
             collapseJob.join()
         } catch (_: CancellationException) {
@@ -7031,9 +7034,9 @@ private data class OcrGeomCol(
 )
 
 private val OCR_GEOM_COLUMNS = listOf(
-    OcrGeomCol("Set G-- mild", "Set G--", rot = false, mild = true),
-    OcrGeomCol("Set AABB mild", "Set AABB", rot = false, mild = true),
-    OcrGeomCol("Set Rot mild", "Set Rot", rot = true, mild = true),
+    OcrGeomCol(AppStrings.get(R.string.experiment_set_g_mild), AppStrings.get(R.string.experiment_set_g), rot = false, mild = true),
+    OcrGeomCol(AppStrings.get(R.string.experiment_set_aabb_mild), AppStrings.get(R.string.experiment_set_aabb), rot = false, mild = true),
+    OcrGeomCol(AppStrings.get(R.string.experiment_set_rot_mild), AppStrings.get(R.string.experiment_set_rot), rot = true, mild = true),
 )
 
 private fun ocrGeomEvenAtLeast2(n: Int): Int {
@@ -7438,7 +7441,7 @@ suspend fun runPumpOcrGeomExperiment(
     val photosJson = boxesRoot.optJSONObject("photos") ?: JSONObject()
 
     val experimentProdDir = experimentPumpProductDir()
-    onLog("OCR geom loadProductionModels forceProdDir=$experimentProdDir")
+    onLog(context.getString(R.string.experiment_ocr_geom_loadproductionmodels_forceproddir, experimentProdDir))
     NativePaddleEngine.loadProductionModels(context, forceProdDir = experimentProdDir)
     val paddleEngine = NativePaddleEngine(context)
 
@@ -7464,7 +7467,7 @@ suspend fun runPumpOcrGeomExperiment(
     }
 
     val jsonHeader = "{\n  \"timestamp\": \"$timestamp\",\n${ExperimentReportMeta.jsonFields()},\n" +
-        "  \"device\": \"$deviceModel\",\n  \"kind\": \"ocr-geom\",\n  \"total_photos\": $total,\n  \"results\": [\n"
+        context.getString(R.string.experiment_device_1_s_kind_ocr_geom_total_photos_2_s, deviceModel, total)
     var firstPhoto = true
     val jsonFos = FileOutputStream(jsonFile)
     fun jsonSyncStr(s: String) {
@@ -7489,7 +7492,7 @@ suspend fun runPumpOcrGeomExperiment(
         try {
             val (probedW, probedH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
             if (probedW <= 0 || probedH <= 0) {
-                onLog("OCR geom skip invalid probe ${file.name}")
+                onLog(context.getString(R.string.experiment_ocr_geom_skip_invalid_probe_1_s, file.name))
                 val skipObj = JSONObject()
                     .put("file", file.name)
                     .put("line", allPhotos.indexOfFirst { it.name == file.name } + 1)
@@ -7682,7 +7685,7 @@ suspend fun runPumpOcrGeomExperiment(
             firstPhoto = false
             jsonSyncStr(photoObj.toString())
             html.append(rowHtml).append("</tr>\n")
-            onLog("OCR geom ${index + 1}/$total ${file.name}")
+            onLog(context.getString(R.string.experiment_ocr_geom_1_s_2_s_3_s, index + 1, total, file.name))
             onProgress(
                 PumpPhotoResultSummary(file.name, "ocr-geom", 0f, null),
                 (index + 1).toFloat() / total,
@@ -7714,7 +7717,7 @@ suspend fun runPumpOcrGeomExperiment(
     html.append("</table></body></html>")
     htmlFile.writeText(html.toString())
     masterBuffer.release()
-    onLog("OCR geom done json=${jsonFile.absolutePath}")
+    onLog(context.getString(R.string.experiment_ocr_geom_done_json_1_s, jsonFile.absolutePath))
     jsonFile
 }
 
@@ -7748,7 +7751,7 @@ private fun pSerializePhotoResultToJson(
 
         val d = JSONObject()
         d.pPutSafe("angle_a", (deskewResA?.angle ?: 0f).toDouble())
-        deskewResA?.engines?.get("Paddle V3")?.metadata?.forEach { (k, v) ->
+        deskewResA?.engines?.get(AppStrings.get(R.string.experiment_paddle_v3))?.metadata?.forEach { (k, v) ->
             if (k.contains("chk") || k.contains("count")) d.put(k, v)
         }
         put("deskew", d)
@@ -7758,7 +7761,7 @@ private fun pSerializePhotoResultToJson(
 
 private fun appendJsonValue(out: Appendable, value: Any?, indent: Int, indentLevel: Int) {
     if (out is StringBuilder && out.length > PER_PHOTO_FRAGMENT_BUFFER_BYTES) {
-        throw IllegalStateException("JSON fragment exceeded ${PER_PHOTO_FRAGMENT_BUFFER_BYTES / (1024 * 1024)}MB ceiling")
+        throw IllegalStateException(AppStrings.get(R.string.experiment_json_fragment_exceeded_1_smb_ceiling, PER_PHOTO_FRAGMENT_BUFFER_BYTES / (1024 * 1024)))
     }
     when (value) {
         null -> out.jsonAppend("null")
@@ -8121,7 +8124,7 @@ private fun snapshotSeedInkProbe(
             .put("probeMode", thr.kind)
             .put("seedW", thr.seedW)
             .put("seedH", thr.seedH)
-            .put("seed", "${thr.seedW}x${thr.seedH}")
+            .put("seed", AppStrings.get(R.string.experiment_s_1_sx_2_s, thr.seedW, thr.seedH))
             .put("skipTint", thr.skipTint)
             .put("nBand", thr.nBand)
             .put("score", thr.score),
@@ -9023,7 +9026,7 @@ private fun lookInkCountCap(c: org.json.JSONObject): String {
         val kind = c.optString("kind", c.optString("probeMode", "gt"))
         val sPx = c.optInt("sPx", 0)
         val seed = "seed=${c.optInt("seedW", 0)}x${c.optInt("seedH", 0)}"
-        val skip = if (c.optBoolean("skipTint", false)) " skipTint" else ""
+        val skip = if (c.optBoolean("skipTint", false)) AppStrings.get(R.string.experiment_skiptint) else ""
         val body = when (kind) {
             "gt" -> "gt t=${c.optInt("t", 0)} sPx=$sPx $seed$skip"
             "band" -> "band ${c.optInt("tLo", 0)}-${c.optInt("tHi", 0)} sPx=$sPx $seed$skip"
@@ -9067,7 +9070,7 @@ private fun lookInkCountCap(c: org.json.JSONObject): String {
             "tflood" -> "tflood sPx=$sPx nBand=${c.optInt("nBand", 0)} $seed"
             else -> "$kind t=${c.optInt("t", 0)} sPx=$sPx $seed"
         }
-        return "$body sc=${c.optInt("score", 0)}"
+        return AppStrings.get(R.string.experiment_s_1_s_sc_2_s, body, c.optInt("score", 0))
     }
     val base = "inkSeed=${c.optInt("inkSeed", 0)} inkBlue=${c.optInt("inkBlue", 0)} inkYellow=${c.optInt("inkYellow", 0)}"
     val att = c.optJSONArray("attempts") ?: return base
@@ -9089,7 +9092,7 @@ private fun lookInkCountCap(c: org.json.JSONObject): String {
 
 private fun histRawBarsHtml(att: org.json.JSONArray?): String {
     if (att == null || att.length() < 1) return ""
-    val cell = "padding:1px 3px;border:1px solid #ddd;"
+    val cell = AppStrings.get(R.string.experiment_padding_1px_3px_border_1px_solid_ddd)
     val sb = StringBuilder()
     for (i in 0 until att.length()) {
         val a = att.optJSONObject(i) ?: continue
@@ -9300,7 +9303,7 @@ private fun pLookInkHtml(br: PumpBranch): String {
         val meta = if (seedProbe) {
             lookInkCountCap(c)
         } else if (energy) {
-            "${lookInkCountCap(c)} energy U8"
+            AppStrings.get(R.string.experiment_s_1_s_energy_u8, lookInkCountCap(c))
         } else {
             val bandTop = c.optBoolean("bandTop", false)
             val bandBot = c.optBoolean("bandBot", false)
@@ -9316,8 +9319,8 @@ private fun pLookInkHtml(br: PumpBranch): String {
             val gjt = c.optBoolean("gapJumpTop", false)
             val gjb = c.optBoolean("gapJumpBot", false)
             val gapCap = buildString {
-                if (gjt) append(" gapJumpTop")
-                if (gjb) append(" gapJumpBot")
+                if (gjt) append(AppStrings.get(R.string.experiment_gapjumptop))
+                if (gjb) append(AppStrings.get(R.string.experiment_gapjumpbot))
             }
             val minRun = c.optInt("minRun", 0)
             val sPx = c.optInt("sPx", 0)
@@ -9393,7 +9396,7 @@ private fun pRecBuffersHtml(br: PumpBranch): String {
 }
 
 private fun pColumnTitle(name: String, br: PumpBranch): String {
-    val pr = br.pathResults["Paddle"] ?: br.pathResults.values.firstOrNull()
+    val pr = br.pathResults[AppStrings.get(R.string.experiment_paddle)] ?: br.pathResults.values.firstOrNull()
     val cv = if (pr != null) " ${pr.cost} / ${pr.vol}" else ""
     return "<b>$name Paddle:</b>$cv"
 }
@@ -9404,12 +9407,12 @@ private fun recVariantHeading(kind: String, v: JSONObject): String {
         "energy" -> "energy"
         "energy_count" -> "energy_count"
         "horiz_pad" -> if (!s.isNaN() && s > 0.0 && s < 1.0) {
-            "horiz_pad ${"%.1f".format(s)}×H"
+            AppStrings.get(R.string.experiment_horiz_pad_1_s_h, "%.1f".format(s))
         } else {
             "horiz_pad k=${if (s.isNaN()) "?" else s.toInt()}"
         }
         "ink" -> "ink k=${if (s.isNaN()) "?" else s.toInt()}"
-        else -> if (s.isNaN()) kind.ifBlank { "S=?" } else "S=${"%.2f".format(s)}"
+        else -> if (s.isNaN()) kind.ifBlank { AppStrings.get(R.string.experiment_s) } else AppStrings.get(R.string.experiment_s_1_s, "%.2f".format(s))
     }
 }
 
@@ -9489,11 +9492,11 @@ private fun pumpReportColumns(flows: List<String>): List<String> {
 }
 
 private fun pumpColumnLabels(columns: List<String>): List<String> {
-    val labels = mutableListOf("# &amp; Original")
+    val labels = mutableListOf(AppStrings.get(R.string.experiment_amp_original))
     columns.forEach { flow ->
-        labels.add("$flow Paddle")
+        labels.add(AppStrings.get(R.string.experiment_s_1_s_paddle, flow))
     }
-    labels.add("Results")
+    labels.add(AppStrings.get(R.string.experiment_results))
     return labels
 }
 
@@ -9695,7 +9698,7 @@ private fun pSeg7TeleHtml(br: PumpBranch, imgW: Int): String {
     if (arr.length() == 0 && sweepHtml.isEmpty()) return ""
     fun f1(o: JSONObject, k: String) = "%.1f".format(o.optDouble(k))
     fun f0(o: JSONObject, k: String) = "%.0f".format(o.optDouble(k))
-    val cell = "padding:1px 3px;border:1px solid #ddd;"
+    val cell = AppStrings.get(R.string.experiment_padding_1px_3px_border_1px_solid_ddd)
     val th = "text-align:left;$cell"
     val sb = StringBuilder()
     sb.append("<div class='dump-details' style='font-size:9px;text-align:left;margin-top:4px;'>")
@@ -9711,19 +9714,19 @@ private fun pSeg7TeleHtml(br: PumpBranch, imgW: Int): String {
         row2("d_ink", f1(o, "d_ink"), "mean_chroma", f1(o, "mean_chroma"))
         row2("u_ink_x", f1(o, "u_ink_x"), "u_ink_y", f1(o, "u_ink_y"))
         row2("s_px", f0(o, "s_px"), "otsu", f0(o, "otsu_thresh"))
-        row2("Δt1", f0(o, "delta_top_1"), "Δb1", f0(o, "delta_bot_1"))
-        row2("Δt", f0(o, "delta_top"), "Δb", f0(o, "delta_bot"))
-        row2("Δl", f0(o, "delta_left"), "Δr", f0(o, "delta_right"))
+        row2(AppStrings.get(R.string.experiment_t1), f0(o, "delta_top_1"), AppStrings.get(R.string.experiment_b1), f0(o, "delta_bot_1"))
+        row2(AppStrings.get(R.string.experiment_t), f0(o, "delta_top"), AppStrings.get(R.string.experiment_b), f0(o, "delta_bot"))
+        row2(AppStrings.get(R.string.experiment_l), f0(o, "delta_left"), AppStrings.get(R.string.experiment_r), f0(o, "delta_right"))
         row2(
-            "flag T/B 1",
+            AppStrings.get(R.string.experiment_flag_t_b_1),
             "${o.optString("flag_top_1")}/${o.optString("flag_bot_1")}",
             "gap_bot_1",
             o.optInt("gap_jump_bot_1").toString(),
         )
         row2(
-            "flag T/B",
+            AppStrings.get(R.string.experiment_flag_t_b),
             "${o.optString("flag_top")}/${o.optString("flag_bot")}",
-            "flag L/R",
+            AppStrings.get(R.string.experiment_flag_l_r),
             "${o.optString("flag_left")}/${o.optString("flag_right")}",
         )
         row2("n_drop_tall", f0(o, "n_drop_tall"), "max_cc_h", f0(o, "max_cc_h"))
@@ -9777,7 +9780,7 @@ private fun pBuildHtmlHeader(
     nParts: Int,
     reportStem: String,
 ): String = buildString {
-    append(ExperimentReportHtml.documentHead("Pump Experiment - $time", ExperimentReportHtml.Kind.PUMP))
+    append(ExperimentReportHtml.documentHead(AppStrings.get(R.string.experiment_pump_experiment_1_s, time), ExperimentReportHtml.Kind.PUMP))
     appendLine("<h1>Pump Extraction Experiment</h1>")
     appendLine("<p>$metaHtml</p>")
     append(
@@ -9823,14 +9826,14 @@ private fun pPublishOrigDetails(
     val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.filter { (k, v) ->
         k in htmlMetaWhitelist && v.length <= 100
     }.joinToString("<br>") { (k, v) -> "<small>$k: $v</small>" }
-    val rowHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
+    val rowHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else AppStrings.get(R.string.experiment_res_1_sx_2_s, imgW, imgH)
     val diagHtml = if (diagnostic.isNotEmpty() || metaHtml.isNotEmpty()) "<br><small>Native: $diagnostic</small><br>$metaHtml" else ""
     val img = root.images
     val perSetTilts = root.subBranches.toSortedMap().entries
         .joinToString(" | ") { (name, br) ->
             val t = br.metadata["tilt"] ?: "?"
             val q = br.metadata["quad_angle_med"]
-            if (q != null) "$name: $t° (quad $q°)" else "$name: $t°"
+            if (q != null) AppStrings.get(R.string.experiment_s_1_s_2_s_quad_3_s, name, t, q) else "$name: $t°"
         }
     val origSb = StringBuilder()
     origSb.append("<br><small>$rowHtml</small>$diagHtml")
@@ -9863,7 +9866,7 @@ private fun pPublishFlowColumn(
     imgW: Int,
 ) {
     val nKeep = maxRedBoxes.coerceIn(PumpOcrSettings.MIN_MAX_RED_BOXES, PumpOcrSettings.MAX_MAX_RED_BOXES)
-    val skipLook = name.contains("G--")
+    val skipLook = name.contains(AppStrings.get(R.string.experiment_g))
     val abortHtml = br.metadata["object_abort_html"].orEmpty()
     val sPerRed = br.metadata["s_per_red"]
     val sHtml = if (!sPerRed.isNullOrBlank() && sPerRed.length <= 100) {
@@ -9877,7 +9880,7 @@ private fun pPublishFlowColumn(
         imgDir, "r${rowIndex}_c${colIdx}_pd_red.jpg", br.images["PD_red_only"] ?: "",
     )
     val full = pumpPersistJpeg(
-        imgDir, "r${rowIndex}_c${colIdx}_pd_full.jpg", br.images["PD"] ?: "",
+        imgDir, "r${rowIndex}_c${colIdx}_pd_full.jpg", br.images[AppStrings.get(R.string.experiment_pd)] ?: "",
     )
     val overlay = pumpPersistJpeg(
         imgDir, "r${rowIndex}_c${colIdx}_overlay.jpg", br.images["overlay"] ?: "",
@@ -9915,7 +9918,7 @@ private fun pPublishFlowColumn(
     val dumpBits = StringBuilder()
     dumpBits.append(sHtml).append(teleHtml)
     if (dumpFinal.isNotEmpty() && !skipLook) {
-        dumpBits.append(pumpImgTag("$imgRel/$dumpFinal", "max-width:100%;", "U8 final"))
+        dumpBits.append(pumpImgTag("$imgRel/$dumpFinal", "max-width:100%;", AppStrings.get(R.string.experiment_u8_final)))
     }
     if (abortHtml.isNotEmpty()) dumpBits.append(abortHtml)
     pPublishSlot(slotNames, photoIndex0, nSlots, cellsDir, "c$colIdx-dump", dumpBits.toString())
@@ -10052,7 +10055,7 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
         val res = paddleEngine.recognizeQa(recBuffer.c[fed.recCropId])
 
         recBuffer.c[fed.recCropId].release()
-        PumpHunk(res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else "", hunk.rect)
+        PumpHunk(res.debugText + if (res.perCharProbs.isNotEmpty()) context.getString(R.string.experiment_probs_1_s, res.perCharProbs) else "", hunk.rect)
     }
 }
 
@@ -10160,7 +10163,7 @@ private fun findBestLanePair(topLanes: List<PumpHunk>, bottomLanes: List<PumpHun
 
     if (pairs.isEmpty()) return null
 
-    val goldenWords = listOf("Sale", "Total", "Gallon", "$", "Price")
+    val goldenWords = listOf(AppStrings.get(R.string.experiment_sale), AppStrings.get(R.string.experiment_total), AppStrings.get(R.string.experiment_gallon), "$", AppStrings.get(R.string.experiment_price))
     return pairs.maxByOrNull { (t, b) ->
         var score = 0
         if (goldenWords.any { t.text.contains(it, ignoreCase = true) }) score += 10

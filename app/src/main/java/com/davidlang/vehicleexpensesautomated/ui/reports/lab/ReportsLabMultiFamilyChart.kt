@@ -21,6 +21,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.max
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 /** Which side of the plot an independent Y scale sits on (stable; no jumping). */
 enum class LabAxisSide {
@@ -56,7 +59,7 @@ data class LabAxisFamily(
 fun LabMultiFamilyTimeSeriesChart(
     families: List<LabAxisFamily>,
     caption: String,
-    emptyMessage: String = "Not enough points for a chart.",
+    emptyMessage: String = AppStrings.get(R.string.reports_not_enough_points_for_a_chart),
     heightDp: Int = 280,
 ) {
     val active = families.mapNotNull { it.nonempty() }
@@ -72,11 +75,11 @@ fun LabMultiFamilyTimeSeriesChart(
     val left = active.filter { it.side == LabAxisSide.Left }
     val right = active.filter { it.side == LabAxisSide.Right }
     val axisLegend = (left + right).joinToString(" · ") { f ->
-        val side = if (f.side == LabAxisSide.Left) "L" else "R"
+        val side = if (f.side == LabAxisSide.Left) "L" else AppStrings.get(R.string.reports_r)
         "$side:${f.unitLabel}"
     }
     Text(
-        "Axes: $axisLegend",
+        stringResource(R.string.reports_axes_1_s, axisLegend),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         softWrap = true,
@@ -245,7 +248,7 @@ fun renderMultiFamilyChartBitmap(
             color = 0xFF666666.toInt()
             textSize = 28f
         }
-        canvas.drawText("No chart data", 40f, heightPx / 2f, p)
+        canvas.drawText(AppStrings.get(R.string.reports_no_chart_data), 40f, heightPx / 2f, p)
         return bmp
     }
     val left = active.filter { it.side == LabAxisSide.Left }

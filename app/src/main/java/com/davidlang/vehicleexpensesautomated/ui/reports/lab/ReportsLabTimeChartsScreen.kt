@@ -34,6 +34,9 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.components.AdaptiveItemGrid
 import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 private data class TimeMetricToggles(
     val mpg: Boolean = true,
@@ -198,7 +201,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                     mode,
                     customDays,
                 )
-                if (pts.isNotEmpty()) put(prefix(vid) + "$dpmLabel fuel", pts)
+                if (pts.isNotEmpty()) put(prefix(vid) + AppStrings.get(R.string.reports_s_1_s_fuel, dpmLabel), pts)
             }
         }
     }
@@ -213,7 +216,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                     mode,
                     customDays,
                 )
-                if (pts.isNotEmpty()) put(prefix(vid) + "$dpmLabel +exp", pts)
+                if (pts.isNotEmpty()) put(prefix(vid) + AppStrings.get(R.string.reports_s_1_s_exp, dpmLabel), pts)
             }
         }
     }
@@ -222,13 +225,13 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
         fillFuel, data.expenses, toggles.monthlyFuel, mode, customDays, data.filter.vehicleMode, chartCurrency,
     ) {
         if (!toggles.monthlyFuel) emptyMap()
-        else monthlyKindSeries(fillFuel, data.expenses, data, true, chartCurrency, mode, customDays, "Fuel $")
+        else monthlyKindSeries(fillFuel, data.expenses, data, true, chartCurrency, mode, customDays, AppStrings.get(R.string.reports_fuel_4))
     }
     val monthlyOtherSeries = remember(
         fillFuel, data.expenses, toggles.monthlyOther, mode, customDays, data.filter.vehicleMode, chartCurrency,
     ) {
         if (!toggles.monthlyOther) emptyMap()
-        else monthlyKindSeries(fillFuel, data.expenses, data, false, chartCurrency, mode, customDays, "Other $")
+        else monthlyKindSeries(fillFuel, data.expenses, data, false, chartCurrency, mode, customDays, AppStrings.get(R.string.reports_other_2))
     }
 
     // Trip miles (total) + trip % per type (P1–P7) — same Smooth grid
@@ -239,7 +242,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
         if (!toggles.tripMiles) emptyMap()
         else buildMap {
             for ((vid, m) in tripMetricsByScope) {
-                if (m.milesTotal.isNotEmpty()) put(prefix(vid) + "Trip miles", m.milesTotal)
+                if (m.milesTotal.isNotEmpty()) put(prefix(vid) + AppStrings.get(R.string.reports_trip_miles), m.milesTotal)
             }
         }
     }
@@ -352,7 +355,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
         }
     }
     val caption =
-        "Time based reports · multi-scale Y · economy left · \$/trip right · smooth ${mode.displayLabel(customDays)}"
+        stringResource(R.string.reports_time_based_reports_multi_scale_y_economy_l, mode.displayLabel(customDays))
 
     val metricDefs = listOf(
         MetricDef("mpg", mpgLabel, LabChartColors.Mpg, toggles.mpg) { setToggles(toggles.copy(mpg = it)) },
@@ -360,45 +363,45 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
         MetricDef("up", unitPriceLabel, Color(0xFF0277BD), toggles.unitPrice) {
             setToggles(toggles.copy(unitPrice = it))
         },
-        MetricDef("dpmf", "$dpmLabel fuel", LabChartColors.DpmFuel, toggles.dpmFuel) {
+        MetricDef("dpmf", stringResource(R.string.reports_s_1_s_fuel, dpmLabel), LabChartColors.DpmFuel, toggles.dpmFuel) {
             setToggles(toggles.copy(dpmFuel = it))
         },
-        MetricDef("dpmi", "$dpmLabel +exp", LabChartColors.DpmIncl, toggles.dpmIncl) {
+        MetricDef("dpmi", stringResource(R.string.reports_s_1_s_exp, dpmLabel), LabChartColors.DpmIncl, toggles.dpmIncl) {
             setToggles(toggles.copy(dpmIncl = it))
         },
-        MetricDef("mf", "Fuel $", LabChartColors.DpmFuel, toggles.monthlyFuel) {
+        MetricDef("mf", stringResource(R.string.reports_fuel_4), LabChartColors.DpmFuel, toggles.monthlyFuel) {
             setToggles(toggles.copy(monthlyFuel = it))
         },
-        MetricDef("mo", "Other $", Color(0xFF5D4037), toggles.monthlyOther) {
+        MetricDef("mo", stringResource(R.string.reports_other_2), Color(0xFF5D4037), toggles.monthlyOther) {
             setToggles(toggles.copy(monthlyOther = it))
         },
-        MetricDef("tm", "Trip miles", Color(0xFFEF6C00), toggles.tripMiles) {
+        MetricDef("tm", stringResource(R.string.reports_trip_miles), Color(0xFFEF6C00), toggles.tripMiles) {
             setToggles(toggles.copy(tripMiles = it))
         },
-        MetricDef("tp", "Trip %", LabChartColors.DpmIncl, toggles.tripPct) {
+        MetricDef("tp", stringResource(R.string.reports_trip_2), LabChartColors.DpmIncl, toggles.tripPct) {
             setToggles(toggles.copy(tripPct = it))
         },
     )
 
     ReportsLabScreenScaffold(
-        title = "Time based reports",
-        infoText = TIME_CHARTS_INFO,
+        title = stringResource(R.string.reports_time_based_reports),
+        infoText = timeChartsInfoText(),
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,
         shareActions = run {
             val buildText = {
                 buildString {
-                    appendLine("Vehicle Expenses — Time based reports")
-                    appendLine("Period: ${periodLabel(data.filter)}")
-                    appendLine("Vehicle: ${data.filterVehicleLabel()}")
-                    appendLine("Smooth: ${mode.displayLabel(customDays)}")
+                    appendLine(AppStrings.get(R.string.reports_vehicle_expenses_time_based_reports))
+                    appendLine(AppStrings.get(R.string.reports_period_label, periodLabel(data.filter)))
+                    appendLine(AppStrings.get(R.string.reports_vehicle_label, data.filterVehicleLabel()))
+                    appendLine(AppStrings.get(R.string.reports_smooth_1_s, mode.displayLabel(customDays)))
                     appendLine(
-                        "Metrics: " + metricDefs.filter { it.checked }.joinToString(", ") { it.label }
+                        AppStrings.get(R.string.reports_metrics_2) + metricDefs.filter { it.checked }.joinToString(", ") { it.label }
                             .ifBlank { "(none)" },
                     )
                     allSeriesForPdf.forEach { (name, pts) ->
-                        appendLine("--- $name (${pts.size} pts) ---")
+                        appendLine(AppStrings.get(R.string.reports_s_1_s_2_s_pts, name, pts.size))
                         pts.sortedBy { it.timestampMs }.forEach { p ->
                             appendLine("${formatLabDate(p.timestampMs)} ${"%.4f".format(p.y)}")
                         }
@@ -406,7 +409,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                 }
             }
             ReportsLabShareActions(
-                subject = "Time based reports",
+                subject = AppStrings.get(R.string.reports_time_based_reports),
                 textBody = buildText,
                 csvFileName = "lab_time_charts.csv",
                 csvBody = {
@@ -423,11 +426,11 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                 pdfBody = {
                     val sections = mutableListOf<ReportsLabPdf.PdfSection>()
                     sections += ReportsLabPdf.PdfSection(
-                        heading = "Metrics",
+                        heading = AppStrings.get(R.string.reports_metrics),
                         lines = metricDefs.filter { it.checked }.map { it.label }.ifEmpty { listOf("(none)") },
                     )
                     sections += ReportsLabPdf.PdfSection(
-                        heading = "Y-axis families",
+                        heading = AppStrings.get(R.string.reports_y_axis_families),
                         lines = chartFamilies.map {
                             val side = if (it.side == LabAxisSide.Left) "left" else "right"
                             "$side ${it.unitLabel}: ${it.series.keys.joinToString(", ")}"
@@ -436,15 +439,15 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                     if (chartFamilies.isNotEmpty()) {
                         val combinedBmp = renderMultiFamilyChartBitmap(
                             families = chartFamilies,
-                            title = "Combined multi-scale",
+                            title = AppStrings.get(R.string.reports_combined_multi_scale),
                         )
                         sections += ReportsLabPdf.PdfSection(
-                            heading = "Combined chart",
+                            heading = AppStrings.get(R.string.reports_combined_chart),
                             chartBitmap = combinedBmp,
                         )
                         sections += ReportsLabPdf.PdfSection(
-                            heading = "Combined series list",
-                            lines = allSeriesForPdf.map { (n, pts) -> "$n (${pts.size} points)" },
+                            heading = AppStrings.get(R.string.reports_combined_series_list),
+                            lines = allSeriesForPdf.map { (n, pts) -> AppStrings.get(R.string.reports_s_1_s_2_s_points, n, pts.size) },
                         )
                         if (allSeriesForPdf.size > 1 || data.filter.vehicleMode == LabVehicleMode.EACH) {
                             allSeriesForPdf.forEach { (name, pts) ->
@@ -485,11 +488,11 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                         }
                     }
                     ReportsLabPdf.buildTextReportPdf(
-                        title = "Time based reports",
+                        title = AppStrings.get(R.string.reports_time_based_reports),
                         metaLines = listOf(
-                            "Period: ${periodLabel(data.filter)}",
-                            "Vehicle: ${data.filterVehicleLabel()}",
-                            "Smooth: ${mode.displayLabel(customDays)}",
+                            AppStrings.get(R.string.reports_period_label, periodLabel(data.filter)),
+                            AppStrings.get(R.string.reports_vehicle_label, data.filterVehicleLabel()),
+                            AppStrings.get(R.string.reports_smooth_1_s, mode.displayLabel(customDays)),
                         ),
                         sections = sections,
                     )
@@ -497,18 +500,18 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
             )
         },
     ) {
-        Text("Metrics", style = MaterialTheme.typography.titleSmall)
+        Text(AppStrings.get(R.string.reports_metrics), style = MaterialTheme.typography.titleSmall)
         AdaptiveItemGrid(items = metricDefs) { def ->
             MetricChipRow(def)
         }
 
-        Text("Smooth / bin", style = MaterialTheme.typography.titleSmall)
+        Text(AppStrings.get(R.string.reports_smooth_bin), style = MaterialTheme.typography.titleSmall)
         ExposedDropdownMenuBox(expanded = smoothMenu, onExpandedChange = { smoothMenu = !smoothMenu }) {
             OutlinedTextField(
                 value = mode.displayLabel(customDays),
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Smooth") },
+                label = { Text(AppStrings.get(R.string.reports_smooth)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = smoothMenu) },
                 modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth(),
             )
@@ -517,7 +520,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                     DropdownMenuItem(
                         text = {
                             Text(
-                                if (m == LabSmoothMode.CUSTOM_DAYS) "Manage… (N days)"
+                                if (m == LabSmoothMode.CUSTOM_DAYS) AppStrings.get(R.string.reports_manage_n_days)
                                 else m.displayLabel(customDays),
                             )
                         },
@@ -537,7 +540,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                     val n = customDaysText.toIntOrNull()?.coerceAtLeast(1)
                     if (n != null) setSmooth(smooth.copy(customDays = n))
                 },
-                label = { Text("Custom bin width (days)") },
+                label = { Text(AppStrings.get(R.string.reports_custom_bin_width_days)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -546,7 +549,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
         Spacer(Modifier.height(8.dp))
         // Color legend tags (match series)
         if (allSeriesForPdf.isNotEmpty()) {
-            Text("Series", style = MaterialTheme.typography.titleSmall)
+            Text(AppStrings.get(R.string.reports_series), style = MaterialTheme.typography.titleSmall)
             AdaptiveItemGrid(items = allSeriesForPdf.keys.toList()) { name ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -569,13 +572,13 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
         }
 
         when {
-            !toggles.anyOn -> ReportsLabEmpty("No metrics selected")
-            !hasAnySeries -> ReportsLabEmpty("Not enough points for a chart.")
+            !toggles.anyOn -> ReportsLabEmpty(AppStrings.get(R.string.reports_no_metrics_selected))
+            !hasAnySeries -> ReportsLabEmpty(AppStrings.get(R.string.reports_not_enough_points_for_a_chart))
             else -> {
                 LabMultiFamilyTimeSeriesChart(
                     families = chartFamilies,
                     caption = caption,
-                    emptyMessage = "Not enough points for a chart.",
+                    emptyMessage = AppStrings.get(R.string.reports_not_enough_points_for_a_chart),
                 )
             }
         }
@@ -648,11 +651,11 @@ private fun monthlyKindSeries(
     }
 }
 
-private const val TIME_CHARTS_INFO =
+private fun timeChartsInfoText(): String =
     "Time based reports: economy (mpg / vol per distance), money (unit price, cost/distance, monthly \$), " +
-        "trip miles, and trip % by type. All metrics optional. " +
-        "One plot with independent Y scales per unit family: left = mpg and G/mi (separate axes); " +
+        AppStrings.get(R.string.reports_trip_miles_and_trip_by_type_all_metrics_op) +
+        AppStrings.get(R.string.reports_one_plot_with_independent_y_scales_per_uni) +
         "right = $, trip miles, and trip % (separate axes). Sides never swap. " +
-        "Trip % is one line per trip type that has miles (Personal included; all-Personal → Personal at 100%). " +
-        "Smooth bins share one calendar grid. Edge-spanning full-fill legs contribute to both bins. " +
-        "PDF includes multi-scale combined chart + per-series charts and tables."
+        AppStrings.get(R.string.reports_trip_is_one_line_per_trip_type_that_has_mi) +
+        AppStrings.get(R.string.reports_smooth_bins_share_one_calendar_grid_edge_s) +
+        AppStrings.get(R.string.reports_pdf_includes_multi_scale_combined_chart_pe)

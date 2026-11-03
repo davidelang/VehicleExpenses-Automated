@@ -12,6 +12,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 /** One tray cell. [sortA]/[sortB]/[sortC] are HTML file order (e.g. photo, row, column). */
 data class ReportCellRef(
@@ -90,7 +92,7 @@ class ReportCollapser(
      * Signal end-of-run consolidation: cancel the schedule delay so the collapser
      * job wakes and drains, then [drainAll] from the run finally as a backstop.
      */
-    fun requestFinal(cancelMessage: String = "report collapse final") {
+    fun requestFinal(cancelMessage: String = AppStrings.get(R.string.reports_report_collapse_final)) {
         finalRequested = true
         job?.cancel(CancellationException(cancelMessage))
     }
@@ -144,7 +146,7 @@ class ReportCollapser(
             if (force && finalRequested) {
                 // Quiet when mid-run force is rare; end-of-run drain logs via drainAll.
             } else if (force) {
-                onLog("COLLAPSE cursor=$cursor (no new cells)")
+                onLog(AppStrings.get(R.string.reports_collapse_cursor_1_s_no_new_cells, cursor))
             }
             return 0
         }
@@ -182,13 +184,13 @@ class ReportCollapser(
             val tag = idTag(cid)
             File(cellsDir, "$tag.html").delete()
             File(cellsDir, "$tag.json").delete()
-            File(cellsDir, "$tag.html.part").delete()
-            File(cellsDir, "$tag.json.part").delete()
+            File(cellsDir, AppStrings.get(R.string.reports_s_1_s_html_part, tag)).delete()
+            File(cellsDir, AppStrings.get(R.string.reports_s_1_s_json_part, tag)).delete()
         }
 
         cursor = batch.last()
         cursorFile.writeText(cursor.toString())
-        onStatus?.invoke("collapsing", cursor, nCells, cursor, "merged ${batch.size}")
+        onStatus?.invoke("collapsing", cursor, nCells, cursor, AppStrings.get(R.string.reports_merged_1_s, batch.size))
         return batch.size
     }
 
@@ -510,9 +512,9 @@ class ReportCollapser(
             jsonBody: String,
         ) {
             val tag = idTag(id)
-            val htmlPart = File(cellsDir, "$tag.html.part")
+            val htmlPart = File(cellsDir, AppStrings.get(R.string.reports_s_1_s_html_part, tag))
             val htmlFinal = File(cellsDir, "$tag.html")
-            val jsonPart = File(cellsDir, "$tag.json.part")
+            val jsonPart = File(cellsDir, AppStrings.get(R.string.reports_s_1_s_json_part, tag))
             val jsonFinal = File(cellsDir, "$tag.json")
             writeTextSynced(htmlPart, htmlBody)
             writeTextSynced(jsonPart, jsonBody)

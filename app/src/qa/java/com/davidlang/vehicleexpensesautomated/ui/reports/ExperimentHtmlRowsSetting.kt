@@ -12,6 +12,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
 
 /** Qa Settings slot. Main no longer names ExperimentReportHtml. */
 @Composable
@@ -35,7 +37,7 @@ fun ExperimentHtmlRowsSetting() {
             rows = v
             prefs.edit().putInt(ExperimentReportHtml.KEY_HTML_ROWS_PER_FILE, v).apply()
         },
-        label = { Text("Experiment HTML photos per file (0 = unlimited)") },
+        label = { Text(stringResource(R.string.reports_experiment_html_photos_per_file_0_unlimite)) },
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
     )

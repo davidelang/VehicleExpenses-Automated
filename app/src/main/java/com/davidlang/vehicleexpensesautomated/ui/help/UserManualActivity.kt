@@ -17,6 +17,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.davidlang.vehicleexpensesautomated.ui.theme.VehicleExpensesAutomatedTheme
+import com.davidlang.vehicleexpensesautomated.R
 
 /**
  * Offline illustrated user manual (HTML + screenshots from assets).
@@ -32,7 +33,7 @@ class UserManualActivity : ComponentActivity() {
                 Scaffold(
                     topBar = {
                         TopAppBar(
-                            title = { Text("User Manual") },
+                            title = { Text(getString(R.string.user_manual_title)) },
                             navigationIcon = {
                                 IconButton(onClick = { finish() }) {
                                     Text("←")

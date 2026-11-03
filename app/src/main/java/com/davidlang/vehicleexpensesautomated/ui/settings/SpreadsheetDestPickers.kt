@@ -27,6 +27,9 @@ import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.util.SyncSetupDocs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 @Composable
 internal fun SpreadsheetOtherKindPicker(
@@ -34,7 +37,7 @@ internal fun SpreadsheetOtherKindPicker(
     onCancel: () -> Unit,
 ) {
     SyncProviderChoiceScreen(
-        title = "Other — pick category",
+        title = stringResource(R.string.settings_other_pick_category),
         choices = TabularOtherProviderCatalog.KIND_GROUPS.map { kind ->
             kind.label to { onPick(kind) }
         },
@@ -52,7 +55,7 @@ internal fun SpreadsheetOtherProviderPicker(
     SyncProviderChoiceScreen(
         title = kind.label,
         choices = providers.map { info ->
-            (if (info.implemented) info.label else "${info.label} (coming soon)") to { onPick(info) }
+            (if (info.implemented) info.label else AppStrings.get(R.string.settings_s_1_s_coming_soon, info.label)) to { onPick(info) }
         },
         onCancel = onCancel,
     )
@@ -64,12 +67,12 @@ internal fun SpreadsheetProviderPicker(
     onCancel: () -> Unit,
 ) {
     SyncProviderChoiceScreen(
-        title = "Add spreadsheet destination",
+        title = stringResource(R.string.settings_add_spreadsheet_destination),
         choices = listOf(
-            "Google Sheets" to { onPick(SpreadsheetProvider.GOOGLE_SHEETS) },
-            "Excel" to { onPick(SpreadsheetProvider.EXCEL_GRAPH) },
-            "EtherCalc" to { onPick(SpreadsheetProvider.ETHERCALC) },
-            "Other" to { onPick(SpreadsheetProvider.OTHER) },
+            stringResource(R.string.settings_google_sheets) to { onPick(SpreadsheetProvider.GOOGLE_SHEETS) },
+            stringResource(R.string.settings_excel) to { onPick(SpreadsheetProvider.EXCEL_GRAPH) },
+            stringResource(R.string.settings_ethercalc) to { onPick(SpreadsheetProvider.ETHERCALC) },
+            stringResource(R.string.reports_other_category) to { onPick(SpreadsheetProvider.OTHER) },
         ),
         onCancel = onCancel,
     )
@@ -84,10 +87,10 @@ internal fun SpreadsheetDestList(
 ) {
     val context = LocalContext.current
     RegisterPageHelp(
-        title = "Spreadsheet Sync",
-        "Add destinations (Google Sheets is common). Sync now runs all configured destinations.",
-        "Open a destination for Test connection, Sync now (this destination), and Details on failures.",
-        "Background sync uses destinations with background enabled only.",
+        title = stringResource(R.string.nav_spreadsheet_sync),
+        stringResource(R.string.settings_add_destinations_google_sheets_is_common_sync_no),
+        stringResource(R.string.settings_open_a_destination_for_test_connection_sync_now_),
+        stringResource(R.string.settings_background_sync_uses_destinations_with_backgroun),
     )
     var statusText by remember { mutableStateOf("") }
     var statusIsError by remember { mutableStateOf(false) }
@@ -121,9 +124,9 @@ internal fun SpreadsheetDestList(
                     context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
                         .getBoolean("show_experiment_screens", false)
                 ) {
-                    "Unmatched partials may need Run merge (Import Old Pictures)"
+                    AppStrings.get(R.string.settings_unmatched_partials_may_need_run_merge_import_old)
                 } else {
-                    "Unmatched partials may need a merge"
+                    AppStrings.get(R.string.settings_unmatched_partials_may_need_a_merge)
                 }
                 Toast.makeText(
                     context,
@@ -136,26 +139,26 @@ internal fun SpreadsheetDestList(
     }
 
     SyncDestinationListLayout(
-        title = "Spreadsheet Sync",
-        description = "Add a destination (Google Sheets is the common choice: Sign in → Sheet URL or 🔍 browse → save → Sync now). Manual sync runs all configured destinations; background sync runs enabled ones only.",
+        title = stringResource(R.string.nav_spreadsheet_sync),
+        description = stringResource(R.string.settings_add_a_destination_google_sheets_is_the_com),
         statusText = displayStatus,
         syncInProgress = syncInProgress,
         statusIsError = displayIsError,
         destinationCount = destinations.size,
         maxDestinations = SyncDestinationStore.MAX_DESTINATIONS_PER_TYPE,
-        addButtonLabel = "Add spreadsheet destination",
+        addButtonLabel = stringResource(R.string.settings_add_spreadsheet_destination),
         onAdd = onAdd,
-        syncNowLabel = "Sync now (all configured)",
+        syncNowLabel = stringResource(R.string.settings_sync_now_all_configured),
         onSyncNow = {
             val configured = SyncDestinationStore(context).configuredSpreadsheet()
             if (configured.isEmpty()) {
                 statusIsError = true
-                statusText = "No configured spreadsheet destinations"
+                statusText = AppStrings.get(R.string.settings_no_configured_spreadsheet_destinations)
                 return@SyncDestinationListLayout
             }
             viewModel.startManualSync("")
         },
-        docLinkLabel = "Self-hosted spreadsheet servers",
+        docLinkLabel = stringResource(R.string.settings_self_hosted_spreadsheet_servers),
         onDocLinkClick = { SyncSetupDocs.open(context, SyncSetupDocs.tabularReadme()) },
         listContent = {
             LazyColumn(modifier = Modifier.weight(1f)) {
@@ -179,13 +182,13 @@ internal fun SpreadsheetDestCard(
         else -> dest.provider.displayLabel()
     }
     val account = dest.accountHint.ifBlank {
-        if (dest.provider == SpreadsheetProvider.ETHERCALC) "No account required" else "No account"
+        if (dest.provider == SpreadsheetProvider.ETHERCALC) AppStrings.get(R.string.settings_no_account_required) else AppStrings.get(R.string.settings_no_account)
     }
-    val enabledLabel = if (dest.enabled) "On" else "Off"
+    val enabledLabel = if (dest.enabled) stringResource(R.string.settings_on) else stringResource(R.string.settings_off)
     val configured = SyncDestinationStore.isSpreadsheetConfigured(dest)
     val detailLines = buildList {
-        add("Account: $account")
-        add(if (configured) "Enabled: $enabledLabel" else "Not configured")
+        add(AppStrings.get(R.string.settings_account_1_s, account))
+        add(if (configured) AppStrings.get(R.string.settings_enabled_1_s, enabledLabel) else AppStrings.get(R.string.settings_not_configured))
         if (configured) {
             add(SyncDestinationStore.spreadsheetSummaryLine(dest))
         }

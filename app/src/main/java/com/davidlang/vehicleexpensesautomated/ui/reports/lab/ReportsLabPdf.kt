@@ -9,6 +9,8 @@ import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 /**
  * Multi-page text/table/chart PDF builder for Lab reports using platform [PdfDocument].
@@ -195,17 +197,17 @@ object ReportsLabPdf {
     ): ByteArray {
         val allLines = plainText.lines()
         val meta = mutableListOf(
-            "Vehicle Expenses",
-            "Generated: ${formatGenerated(generatedMs)}",
+            AppStrings.get(R.string.app_name),
+            AppStrings.get(R.string.reports_generated_at, formatGenerated(generatedMs)),
         )
         // Promote Period: / Vehicle: lines into header when present
         val body = mutableListOf<String>()
         for (line in allLines) {
             val t = line.trim()
             when {
-                t.startsWith("Period:", ignoreCase = true) -> meta.add(t)
-                t.startsWith("Vehicle:", ignoreCase = true) -> meta.add(t)
-                t.startsWith("Vehicle Expenses", ignoreCase = true) -> { /* skip redundant title line */ }
+                t.startsWith(AppStrings.get(R.string.reports_period_2), ignoreCase = true) -> meta.add(t)
+                t.startsWith(AppStrings.get(R.string.reports_vehicle), ignoreCase = true) -> meta.add(t)
+                t.startsWith(AppStrings.get(R.string.app_name), ignoreCase = true) -> { /* skip redundant title line */ }
                 else -> body.add(line)
             }
         }

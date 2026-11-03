@@ -18,6 +18,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 /** Shared shutter / capture button visual states (Fill + Start trip). */
 enum class CaptureButtonState {
@@ -36,7 +39,7 @@ fun RoundCaptureButton(
     viewState: CaptureButtonState,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    contentDescriptionLive: String = "Shutter",
+    contentDescriptionLive: String = AppStrings.get(R.string.ui_shutter),
 ) {
     IconButton(
         onClick = onClick,
@@ -64,19 +67,19 @@ fun RoundCaptureButton(
             )
             CaptureButtonState.Processing -> Icon(
                 imageVector = Icons.Filled.Close,
-                contentDescription = "Cancel processing",
+                contentDescription = stringResource(R.string.ui_cancel_processing),
                 tint = MaterialTheme.colorScheme.onError,
                 modifier = Modifier.size(32.dp),
             )
             CaptureButtonState.Restart -> Text(
-                text = "Restart",
+                text = stringResource(R.string.ui_restart),
                 color = MaterialTheme.colorScheme.onErrorContainer,
                 style = MaterialTheme.typography.labelSmall,
                 textAlign = TextAlign.Center,
             )
             CaptureButtonState.Results -> Icon(
                 imageVector = Icons.Filled.Refresh,
-                contentDescription = "Retry",
+                contentDescription = stringResource(R.string.settings_retry),
                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier.size(32.dp),
             )
@@ -89,7 +92,7 @@ fun RoundCaptureButton(
 fun DiskSaveIconButton(
     onClick: () -> Unit,
     enabled: Boolean,
-    contentDescription: String = "Save",
+    contentDescription: String = AppStrings.get(R.string.fuel_save),
     modifier: Modifier = Modifier,
 ) {
     IconButton(

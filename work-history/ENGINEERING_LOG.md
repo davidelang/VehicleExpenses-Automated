@@ -12629,3 +12629,7 @@ feature-group: label=''
 ## 2026-11-03 - Drop the ML Kit discovery card and two dead build warnings
 
 - Manage Vehicles no longer shows the discovery heading, the tap-card line, or the ML Kit engine card. The manifest no longer removes FOREGROUND_SERVICE_DATA_SYNC, and the heatmap null tests that were always true are gone.
+
+## 2026-11-03 - Add the catalogs and read UI copy from them
+
+- English catalog, locale packs, manuals, and locale selection land together. Screens, toasts, and content descriptions read that catalog. The open locale-pack TODO stays open.

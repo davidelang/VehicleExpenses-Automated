@@ -17,6 +17,9 @@ import androidx.compose.ui.platform.LocalContext
 import com.davidlang.vehicleexpensesautomated.data.storage.PickedImageReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 private sealed class Decoded {
     data object Loading : Decoded()
@@ -37,7 +40,7 @@ fun DecodedPhotoImage(
             try {
                 Decoded.Ready(PickedImageReader.decodeFullSize(context, Uri.parse(uri)))
             } catch (e: Exception) {
-                Decoded.Failed(e.message ?: "Cannot display")
+                Decoded.Failed(e.message ?: AppStrings.get(R.string.ui_cannot_display))
             }
         }
     }
@@ -46,7 +49,7 @@ fun DecodedPhotoImage(
             Text("…", color = Color.White)
         }
         is Decoded.Failed -> Box(modifier, contentAlignment = Alignment.Center) {
-            Text("Cannot display", color = Color.White)
+            Text(stringResource(R.string.ui_cannot_display), color = Color.White)
         }
         is Decoded.Ready -> Image(
             bitmap = state.bitmap.asImageBitmap(),

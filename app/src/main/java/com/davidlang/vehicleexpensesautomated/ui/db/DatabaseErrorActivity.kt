@@ -50,6 +50,9 @@ import java.io.PrintWriter
 import java.io.StringWriter
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 /** Full-screen database open or migration failure. No Hilt and no database access. */
 class DatabaseErrorActivity : ComponentActivity() {
@@ -169,7 +172,7 @@ class DatabaseErrorActivity : ComponentActivity() {
 
     private fun sendReport(failed: Failed) {
         val report = bugReport(failed)
-        val subject = "VehicleExpenses database upgrade failed (" +
+        val subject = getString(R.string.startup_vehicleexpenses_database_upgrade_failed) +
             "${schemaFrom(failed)} -> ${failed.toVersion}, ${BuildConfig.VERSION_NAME})"
         val intent = Intent(Intent.ACTION_SENDTO).apply {
             data = Uri.parse(MAILTO)
@@ -190,7 +193,7 @@ class DatabaseErrorActivity : ComponentActivity() {
 
     private fun copyReport(report: String) {
         val clipboard = getSystemService(ClipboardManager::class.java)
-        clipboard.setPrimaryClip(ClipData.newPlainText("bug report", report))
+        clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.startup_bug_report), report))
     }
 
     /**
@@ -211,14 +214,14 @@ class DatabaseErrorActivity : ComponentActivity() {
     private fun cleanupDirsLine(): String {
         val marker = File(dataDir, "no_backup/datatransfer/import-commit.json")
         val internal = File(dataDir, "no_backup/datatransfer-staging")
-        return place("commit marker", marker) + "\n" +
-            place("internal staging", internal) + "\n" +
+        return place(getString(R.string.startup_commit_marker), marker) + "\n" +
+            place(getString(R.string.startup_internal_staging), internal) + "\n" +
             externalStagingLine()
     }
 
     private fun externalStagingLine(): String {
-        val parent = externalCacheDir?.parentFile ?: return "external staging: unavailable"
-        return place("external staging", File(parent, "datatransfer-staging"))
+        val parent = externalCacheDir?.parentFile ?: return getString(R.string.startup_external_staging_unavailable)
+        return place(getString(R.string.startup_external_staging), File(parent, "datatransfer-staging"))
     }
 
     private fun place(label: String, file: File): String =
@@ -252,30 +255,30 @@ private fun DatabaseErrorScreen(
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Your data couldn't be upgraded", style = MaterialTheme.typography.headlineMedium)
+        Text(stringResource(R.string.startup_your_data_couldn_t_be_upgraded), style = MaterialTheme.typography.headlineMedium)
         if (cleanupDetail != null) {
             Text(cleanupDetail)
         } else {
             Text(
-                "The database couldn't be opened or upgraded from schema $from to ${failed.toVersion}; " +
-                    "nothing has been deleted.",
+                stringResource(R.string.startup_the_database_couldn_t_be_opened_or_upgrade, from, failed.toVersion) +
+                    stringResource(R.string.startup_nothing_has_been_deleted),
             )
         }
         transferLine?.let { Text(it) }
         Text(export)
         notice?.let { Text(it) }
         Button(onClick = onEmail, modifier = Modifier.fillMaxWidth()) {
-            Text("Email bug report")
+            Text(stringResource(R.string.startup_email_bug_report))
         }
         Button(
             onClick = { confirm = true },
             enabled = wipeEnabled,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Wipe data and continue")
+            Text(stringResource(R.string.startup_wipe_data_and_continue))
         }
         TextButton(onClick = onQuit, modifier = Modifier.fillMaxWidth()) {
-            Text("Quit")
+            Text(stringResource(R.string.startup_quit))
         }
     }
     if (confirm) {
@@ -283,12 +286,12 @@ private fun DatabaseErrorScreen(
             onDismissRequest = { confirm = false },
             text = {
                 Text(
-                    "This permanently deletes all vehicles, fuel and expense records on this device. " +
-                        "Export first with: $export. This cannot be undone.",
+                    stringResource(R.string.startup_this_permanently_deletes_all_vehicles_fuel) +
+                        stringResource(R.string.startup_export_first_with_1_s_this_cannot_be_undon, export),
                 )
             },
             confirmButton = {
-                TextButton(onClick = { confirm = false }) { Text("Cancel") }
+                TextButton(onClick = { confirm = false }) { Text(stringResource(R.string.settings_cancel)) }
             },
             dismissButton = {
                 TextButton(
@@ -296,7 +299,7 @@ private fun DatabaseErrorScreen(
                         confirm = false
                         notice = onWipe()
                     },
-                ) { Text("Delete everything") }
+                ) { Text(stringResource(R.string.startup_delete_everything)) }
             },
         )
     }
@@ -312,7 +315,7 @@ private fun CopyReportScreen(report: String, onCopy: () -> Unit) {
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("No email app found", style = MaterialTheme.typography.headlineMedium)
+        Text(stringResource(R.string.startup_no_email_app_found), style = MaterialTheme.typography.headlineMedium)
         Text(report)
         Button(
             onClick = {
@@ -321,7 +324,7 @@ private fun CopyReportScreen(report: String, onCopy: () -> Unit) {
             },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(if (copied) "Copied" else "Copy")
+            Text(if (copied) stringResource(R.string.settings_copied) else stringResource(R.string.settings_copy))
         }
     }
 }
@@ -337,8 +340,8 @@ private fun failedShown(health: DbState): Failed? = when (health) {
 
 private fun transferLine(health: DbState, progress: String): String? {
     val title = when (health) {
-        is Importing -> "Importing data…"
-        is Exporting -> "Exporting data…"
+        is Importing -> AppStrings.get(R.string.startup_importing_data)
+        is Exporting -> AppStrings.get(R.string.startup_exporting_data)
         else -> return null
     }
     return if (progress.isBlank()) title else "$title\n$progress"
@@ -348,8 +351,8 @@ private fun transferLine(health: DbState, progress: String): String? {
 private fun cleanupFailure(failed: Failed): Boolean {
     if (failed.fromVersion != null) return false
     val message = failed.error.message ?: return false
-    return message.contains("marker delete failed") ||
-        message.contains("stale transfer staging couldn't be removed")
+    return message.contains(AppStrings.get(R.string.startup_marker_delete_failed)) ||
+        message.contains(AppStrings.get(R.string.startup_stale_transfer_staging_couldn_t_be_removed))
 }
 
 private fun exportCommand(): String =
@@ -360,20 +363,20 @@ private fun bugReport(failed: Failed): String {
     failed.error.printStackTrace(PrintWriter(trace))
     var stack = trace.toString()
     if (stack.length > 50_000) {
-        stack = stack.take(50_000) + "\n... truncated"
+        stack = stack.take(50_000) + AppStrings.get(R.string.startup_truncated)
     }
     return buildString {
-        appendLine("applicationId: ${BuildConfig.APPLICATION_ID}")
-        appendLine("versionName: ${BuildConfig.VERSION_NAME}")
-        appendLine("versionCode: ${BuildConfig.VERSION_CODE}")
-        appendLine("buildType: ${BuildConfig.BUILD_TYPE}")
-        appendLine("TEST_BUILD: ${BuildConfig.TEST_BUILD}")
-        appendLine("fromSchema: ${schemaFrom(failed)}")
-        appendLine("toSchema: ${failed.toVersion}")
-        appendLine("manufacturer: ${Build.MANUFACTURER}")
-        appendLine("model: ${Build.MODEL}")
-        appendLine("release: ${Build.VERSION.RELEASE}")
-        appendLine("sdkInt: ${Build.VERSION.SDK_INT}")
+        appendLine(AppStrings.get(R.string.startup_applicationid_1_s, BuildConfig.APPLICATION_ID))
+        appendLine(AppStrings.get(R.string.startup_versionname_1_s, BuildConfig.VERSION_NAME))
+        appendLine(AppStrings.get(R.string.startup_versioncode_1_s, BuildConfig.VERSION_CODE))
+        appendLine(AppStrings.get(R.string.startup_buildtype_1_s, BuildConfig.BUILD_TYPE))
+        appendLine(AppStrings.get(R.string.startup_test_build_1_s, BuildConfig.TEST_BUILD))
+        appendLine(AppStrings.get(R.string.startup_fromschema_1_s, schemaFrom(failed)))
+        appendLine(AppStrings.get(R.string.startup_toschema_1_s, failed.toVersion))
+        appendLine(AppStrings.get(R.string.startup_manufacturer_1_s, Build.MANUFACTURER))
+        appendLine(AppStrings.get(R.string.startup_model_1_s, Build.MODEL))
+        appendLine(AppStrings.get(R.string.startup_release_1_s, Build.VERSION.RELEASE))
+        appendLine(AppStrings.get(R.string.startup_sdkint_1_s, Build.VERSION.SDK_INT))
         appendLine()
         append(stack)
     }

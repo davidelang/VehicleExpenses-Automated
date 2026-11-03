@@ -15,6 +15,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
 import com.davidlang.vehicleexpensesautomated.ui.util.SyncSetupDocs
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 @Composable
 fun FirebaseSpreadsheetForm(
@@ -31,46 +34,46 @@ fun FirebaseSpreadsheetForm(
 ) {
     val context = LocalContext.current
     TextButton(onClick = { SyncSetupDocs.open(context, SyncSetupDocs.tabular("firebase")) }) {
-        Text("Setup help — Firebase")
+        Text(stringResource(R.string.settings_setup_help_firebase))
     }
     Text(
-        "Create Firestore collections with string fields matching app headers (Sync ID first). " +
-            "Use a short-lived ID token or power-user access token — never ship unrestricted service accounts in the APK.",
+        stringResource(R.string.settings_create_firestore_collections_with_string_f) +
+            stringResource(R.string.settings_use_a_short_lived_id_token_or_power_user_access_),
         style = MaterialTheme.typography.bodySmall,
     )
     Spacer(modifier = Modifier.height(8.dp))
     OutlinedTextField(
         value = projectId,
         onValueChange = onProjectIdChange,
-        label = { Text("Firebase project id") },
-        supportingText = { Text("e.g. my-vehicle-expenses") },
+        label = { Text(stringResource(R.string.settings_firebase_project_id)) },
+        supportingText = { Text(AppStrings.get(R.string.settings_e_g_my_vehicle_expenses)) },
         modifier = Modifier.fillMaxWidth(),
     )
     OutlinedTextField(
         value = token,
         onValueChange = onTokenChange,
-        label = { Text("ID token / access token") },
+        label = { Text(stringResource(R.string.settings_id_token_access_token)) },
         visualTransformation = PasswordVisualTransformation(),
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(
         value = vehiclesCollection,
         onValueChange = onVehiclesCollectionChange,
-        label = { Text("${TabularSchema.TAB_VEHICLES} collection") },
+        label = { Text(stringResource(R.string.settings_collection_fmt, TabularSchema.TAB_VEHICLES)) },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(
         value = expensesCollection,
         onValueChange = onExpensesCollectionChange,
-        label = { Text("${TabularSchema.TAB_EXPENSES} collection") },
+        label = { Text(stringResource(R.string.settings_collection_fmt, TabularSchema.TAB_EXPENSES)) },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(
         value = fuelCollections,
         onValueChange = onFuelCollectionsChange,
-        label = { Text("Fuel tab collections (optional)") },
+        label = { Text(stringResource(R.string.settings_fuel_tab_collections_optional)) },
         supportingText = {
-            Text("One per line: Fuel - VehicleName=collectionId")
+            Text(AppStrings.get(R.string.settings_one_per_line_fuel_vehiclename_collectionid))
         },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         minLines = 2,

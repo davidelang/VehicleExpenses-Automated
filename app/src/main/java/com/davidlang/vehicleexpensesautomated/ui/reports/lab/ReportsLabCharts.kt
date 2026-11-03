@@ -20,6 +20,9 @@ import com.patrykandpatrick.vico.compose.cartesian.data.columnModel
 import com.patrykandpatrick.vico.compose.cartesian.layer.rememberColumnCartesianLayer
 import com.patrykandpatrick.vico.compose.cartesian.rememberCartesianChart
 import com.patrykandpatrick.vico.compose.cartesian.rememberVicoScrollState
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 private const val CHART_TAG = "ReportsLabCharts"
 
@@ -39,16 +42,16 @@ fun familyColorForSeriesKey(key: String): Color? {
     val k = key.lowercase()
     return when {
         k.contains("+exp") || k.contains("incl") -> LabChartColors.DpmIncl
-        k.contains("trip %") -> LabChartColors.DpmIncl
-        k.contains("trip miles") || k.contains("trip mi") -> Color(0xFFEF6C00)
+        k.contains(AppStrings.get(R.string.reports_trip)) -> LabChartColors.DpmIncl
+        k.contains(AppStrings.get(R.string.reports_trip_miles_2)) || k.contains(AppStrings.get(R.string.reports_trip_mi)) -> Color(0xFFEF6C00)
         // $/G, $/L unit price (not $/mi)
         (k.contains("$/") || k.contains("\$/")) &&
             (k.endsWith("/g") || k.endsWith("/l") || k.contains("/g") || k.contains("/l")) &&
             !k.contains("/mi") && !k.contains("/km") -> Color(0xFF0277BD)
-        k.endsWith(" fuel") || k == "fuel $" || k.endsWith(" fuel $") ||
+        k.endsWith(AppStrings.get(R.string.reports_fuel)) || k == AppStrings.get(R.string.reports_fuel_2) || k.endsWith(AppStrings.get(R.string.reports_fuel_3)) ||
             (k.contains("fuel") && (k.contains("/mi") || k.contains("/km") || k.contains("per"))) ->
             LabChartColors.DpmFuel
-        k.contains("other $") -> Color(0xFF5D4037)
+        k.contains(AppStrings.get(R.string.reports_other)) -> Color(0xFF5D4037)
         // G/mi, L/mi volume-per-distance
         k.contains("gpm") || k.contains("/mi") && (k.contains("g/") || k.contains("l/") ||
             k.startsWith("g/") || k.startsWith("l/") ||
@@ -91,7 +94,7 @@ fun LabMultiSeriesIndexChart(
     series: Map<String, List<Float>>,
     xLabels: List<String>,
     caption: String,
-    emptyMessage: String = "Not enough data for a chart.",
+    emptyMessage: String = AppStrings.get(R.string.reports_not_enough_data_for_a_chart),
     heightDp: Int = 220,
 ) {
     val clean = series.filter { it.value.isNotEmpty() }
@@ -124,7 +127,7 @@ fun LabMultiSeriesIndexChart(
     }
     Text(caption, style = MaterialTheme.typography.labelMedium, softWrap = true)
     Text(
-        "Series: ${clean.keys.joinToString(" · ")}",
+        stringResource(R.string.reports_series_1_s, clean.keys.joinToString(" · ")),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         softWrap = true,
@@ -150,7 +153,7 @@ fun LabCategoryBarsChart(
     caption: String,
 ) {
     if (amounts.isEmpty()) {
-        ReportsLabEmpty("No category totals for a chart.")
+        ReportsLabEmpty(stringResource(R.string.reports_no_category_totals_for_a_chart))
         return
     }
     val modelProducer = remember { CartesianChartModelProducer() }

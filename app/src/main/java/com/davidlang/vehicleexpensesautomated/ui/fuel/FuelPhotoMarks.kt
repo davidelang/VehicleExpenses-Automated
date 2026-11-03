@@ -6,19 +6,21 @@ import androidx.compose.runtime.Composable
 import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
 import com.davidlang.vehicleexpensesautomated.data.model.StoredParse
 import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 fun fuelPhotoMarkText(photoUrl: String?): String? = when (val parsed = FuelPhotoJson.read(photoUrl)) {
-    is StoredParse.Corrupt -> "photo reference unreadable"
+    is StoredParse.Corrupt -> AppStrings.get(R.string.expense_photo_reference_unreadable)
     is StoredParse.Blank -> null
     is StoredParse.Valid -> when {
         parsed.value.any { it.missing } -> "missing"
-        parsed.value.any { it.fallbackFrame } -> "fallback frame"
+        parsed.value.any { it.fallbackFrame } -> AppStrings.get(R.string.fill_fallback_frame)
         else -> null
     }
 }
 
 fun fuelLocationMarkText(location: String?): String? =
-    if (FuelLocationJson.readBlob(location) is StoredParse.Corrupt) "location unreadable" else null
+    if (FuelLocationJson.readBlob(location) is StoredParse.Corrupt) AppStrings.get(R.string.fill_location_unreadable) else null
 
 @Composable
 fun FuelPhotoMarkLine(photoUrl: String?) {

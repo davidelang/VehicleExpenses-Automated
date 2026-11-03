@@ -42,6 +42,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -52,8 +54,8 @@ fun TutorialPagerScreen(
     val tutorial = TutorialCatalog.get(tutorialId)
     if (tutorial == null) {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
-            Text("Tutorial not found")
-            TextButton(onClick = { navController.popBackStack() }) { Text("Back") }
+            Text(stringResource(R.string.onboarding_tutorial_not_found))
+            TextButton(onClick = { navController.popBackStack() }) { Text(stringResource(R.string.settings_back)) }
         }
         return
     }
@@ -68,7 +70,7 @@ fun TutorialPagerScreen(
     ) {
         FeatureScreenHeader(tutorial.title)
         Text(
-            "Step ${pagerState.currentPage + 1} of ${tutorial.steps.size}",
+            stringResource(R.string.onboarding_step_1_s_of_2_s, pagerState.currentPage + 1, tutorial.steps.size),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -120,7 +122,7 @@ fun TutorialPagerScreen(
                         ) {
                             if (decodeDone) {
                                 Text(
-                                    "(Illustration unavailable offline asset)",
+                                    stringResource(R.string.onboarding_illustration_unavailable_offline_asset),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -145,7 +147,7 @@ fun TutorialPagerScreen(
                     }
                 },
             ) {
-                Text(if (pagerState.currentPage > 0) "Back" else "Close")
+                Text(if (pagerState.currentPage > 0) stringResource(R.string.settings_back) else stringResource(R.string.settings_close))
             }
             val last = pagerState.currentPage >= tutorial.steps.lastIndex
             Button(
@@ -160,7 +162,7 @@ fun TutorialPagerScreen(
                     }
                 },
             ) {
-                Text(if (last) tutorial.endCtaLabel else "Next")
+                Text(if (last) tutorial.endCtaLabel else stringResource(R.string.ui_next))
             }
         }
         if (pagerState.currentPage >= tutorial.steps.lastIndex) {
@@ -168,7 +170,7 @@ fun TutorialPagerScreen(
                 onClick = { navController.popBackStack() },
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             ) {
-                Text("Done without navigating")
+                Text(stringResource(R.string.onboarding_done_without_navigating))
             }
         }
     }

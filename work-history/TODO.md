@@ -88,3 +88,5 @@ Review the user manual against the current app (screenshots and behavior may be 
 - [ ] First-party libs / row-db backends still need live verification (dev-ai-interaction/plans/first-party-libs-m3-full-migration-roadmap-20260802-plan.md)
 
 - [ ] Sync/fuel merge conflict UI: a reachable resolution screen when one fill's fields contradict (dev-ai-interaction/research/code-review-conflict-resolution-mining-20261015-1905.md)
+
+- [ ] Finish the skipped locale packs (dev-ai-interaction/locale-translations-remaining-20261031.md)

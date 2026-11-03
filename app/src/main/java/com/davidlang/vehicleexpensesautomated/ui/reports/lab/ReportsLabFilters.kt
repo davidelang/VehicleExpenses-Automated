@@ -4,6 +4,8 @@ import android.content.Context
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import java.util.Calendar
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 enum class LabPeriod {
     ALL_TIME,
@@ -163,16 +165,16 @@ fun filterExpenses(
 fun periodLabel(state: ReportsLabFilterState, nowMs: Long = System.currentTimeMillis()): String {
     val fmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
     return when (state.period) {
-        LabPeriod.ALL_TIME -> "All time"
+        LabPeriod.ALL_TIME -> AppStrings.get(R.string.reports_period_all_time)
         LabPeriod.YTD -> {
             val (s, e) = periodBounds(state, nowMs)
-            "YTD (${fmt.format(java.util.Date(s!!))} – ${fmt.format(java.util.Date(e!!))})"
+            AppStrings.get(R.string.reports_period_ytd_range, fmt.format(java.util.Date(s!!)), fmt.format(java.util.Date(e!!)))
         }
-        LabPeriod.LAST_12_MONTHS -> "Last 12 months"
-        LabPeriod.LAST_90_DAYS -> "Last 90 days"
+        LabPeriod.LAST_12_MONTHS -> AppStrings.get(R.string.reports_period_last_12_months)
+        LabPeriod.LAST_90_DAYS -> AppStrings.get(R.string.reports_period_last_90_days)
         LabPeriod.CUSTOM -> {
             val (s, e) = periodBounds(state, nowMs)
-            "Custom (${fmt.format(java.util.Date(s ?: 0))} – ${fmt.format(java.util.Date(e ?: nowMs))})"
+            AppStrings.get(R.string.reports_period_custom_range_dates, fmt.format(java.util.Date(s ?: 0)), fmt.format(java.util.Date(e ?: nowMs)))
         }
     }
 }

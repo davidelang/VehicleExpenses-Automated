@@ -112,6 +112,9 @@ import com.davidlang.vehicleexpensesautomated.data.batch.nearestFillBefore
 import com.davidlang.vehicleexpensesautomated.data.batch.nearestFillAfter
 import com.davidlang.vehicleexpensesautomated.data.batch.resolvePendingPhotoUris
 import com.davidlang.vehicleexpensesautomated.data.batch.PerVehicleNeighbor
+import androidx.compose.ui.res.stringResource
+import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 /**
  * Stage A/B/C: batch import, merge, image-first questions with manual entry.
@@ -180,10 +183,10 @@ fun ImportOldPicturesScreen(
         stagePhase = StageCPhaseStore.currentPhase(context)
     }
 
-    fun runMerge(toastPrefix: String = "Merge") {
+    fun runMerge(toastPrefix: String = AppStrings.get(R.string.import_merge)) {
         if (running || merging || answering) return
         merging = true
-        mergeStatus = "Planning…"
+        mergeStatus = AppStrings.get(R.string.import_planning)
         scope.launch {
             try {
                 val result = coordinator.applyMerge { msg -> mergeStatus = msg }
@@ -191,8 +194,8 @@ fun ImportOldPicturesScreen(
                 reloadPending()
                 Toast.makeText(context, "$toastPrefix: ${result.message}", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
-                mergeStatus = "failed: ${e.message}"
-                Toast.makeText(context, "$toastPrefix failed: ${e.message}", Toast.LENGTH_LONG).show()
+                mergeStatus = AppStrings.get(R.string.import_failed_1_s, e.message)
+                Toast.makeText(context, AppStrings.get(R.string.import_s_1_s_failed_2_s, toastPrefix, e.message), Toast.LENGTH_LONG).show()
             } finally {
                 merging = false
             }
@@ -218,19 +221,19 @@ fun ImportOldPicturesScreen(
                 lastResult = result
                 pendingSnapshot = result.pending
                 var toast =
-                    if (result.cancelled) "$toastLabel cancelled"
-                    else "$toastLabel done: +${result.dashInserted + result.pumpInserted} rows" +
-                        " · pending ${result.pending.size}"
+                    if (result.cancelled) AppStrings.get(R.string.import_s_1_s_cancelled, toastLabel)
+                    else AppStrings.get(R.string.import_s_1_s_done_2_s_rows, toastLabel, result.dashInserted + result.pumpInserted) +
+                        AppStrings.get(R.string.import_pending_1_s, result.pending.size)
                 if (mergeAfterImport && !result.cancelled) {
-                    mergeStatus = "Merge after import…"
+                    mergeStatus = AppStrings.get(R.string.import_merge_after_import)
                     val mergeResult = coordinator.applyMerge { msg -> mergeStatus = msg }
                     lastMerge = mergeResult
                     reloadPending()
-                    toast += " · merge ${mergeResult.message}"
+                    toast += AppStrings.get(R.string.import_merge_1_s, mergeResult.message)
                 }
                 Toast.makeText(context, toast, Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
-                Toast.makeText(context, "$toastLabel failed: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, AppStrings.get(R.string.import_s_1_s_failed_2_s, toastLabel, e.message), Toast.LENGTH_LONG).show()
             } finally {
                 running = false
             }
@@ -248,15 +251,15 @@ fun ImportOldPicturesScreen(
                 reloadPending()
                 var toast = result.message
                 if (result.success && result.remerge) {
-                    mergeStatus = "Re-merge after answer…"
+                    mergeStatus = AppStrings.get(R.string.import_re_merge_after_answer)
                     val mergeResult = coordinator.applyMerge { msg -> mergeStatus = msg }
                     lastMerge = mergeResult
                     reloadPending()
-                    toast += " · merge ${mergeResult.message}"
+                    toast += AppStrings.get(R.string.import_merge_1_s, mergeResult.message)
                 }
                 Toast.makeText(context, toast, Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
-                Toast.makeText(context, "Answer failed: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, AppStrings.get(R.string.import_answer_failed_1_s, e.message), Toast.LENGTH_LONG).show()
             } finally {
                 answering = false
             }
@@ -270,23 +273,23 @@ fun ImportOldPicturesScreen(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("Import Old Pictures", style = MaterialTheme.typography.headlineMedium)
+        Text(stringResource(R.string.nav_import_old_pictures), style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Batch OCR · merge · image-first questions with manual entry. " +
-                "Tap photo to enlarge (+/− zoom). Unknown vehicle never labeled as id 0.",
+            stringResource(R.string.import_batch_ocr_merge_image_first_questions_with) +
+                stringResource(R.string.import_tap_photo_to_enlarge_zoom_unknown_vehicle),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Sources", style = MaterialTheme.typography.titleMedium)
-                Text("Dash photos: $dashCount")
-                Text("Pump photos: $pumpCount")
-                Text("Vehicles in DB: ${activeVehicles.size}")
+                Text(stringResource(R.string.import_sources), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.import_dash_photos_1_s, dashCount))
+                Text(stringResource(R.string.import_pump_photos_1_s, pumpCount))
+                Text(stringResource(R.string.import_vehicles_in_db_1_s, activeVehicles.size))
                 Text(
                     "${StageCPhaseStore.label(stagePhase)} · " +
-                        "${pendingSnapshot.size} questions (this phase only)",
+                        stringResource(R.string.import_s_1_s_questions_this_phase_only, pendingSnapshot.size),
                 )
             }
         }
@@ -318,25 +321,25 @@ fun ImportOldPicturesScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Button(
-                onClick = { startIngest(null, null, "Batch") },
+                onClick = { startIngest(null, null, AppStrings.get(R.string.import_batch)) },
                 enabled = !busy && (dashCount + pumpCount) > 0,
                 modifier = Modifier.weight(1f),
             ) {
-                Text(if (running) "Running…" else "Run batch import")
+                Text(if (running) stringResource(R.string.import_running) else stringResource(R.string.import_run_batch_import))
             }
             OutlinedButton(onClick = { coordinator.requestCancel() }, enabled = running) {
-                Text("Cancel")
+                Text(stringResource(R.string.settings_cancel))
             }
         }
 
         OutlinedButton(
             onClick = {
-                startIngest(limitN, limitN, "Limited ($limitN+$limitN)")
+                startIngest(limitN, limitN, AppStrings.get(R.string.import_limited_1_s_2_s, limitN, limitN))
             },
             enabled = !busy && (dashCount + pumpCount) > 0,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(if (running) "Running…" else "First $limitN dash + first $limitN pump")
+            Text(if (running) stringResource(R.string.import_running) else stringResource(R.string.import_first_1_s_dash_first_2_s_pump, limitN, limitN))
         }
 
         Row(
@@ -348,11 +351,11 @@ fun ImportOldPicturesScreen(
                 onCheckedChange = { mergeAfterImport = it },
                 enabled = !busy,
             )
-            Text("Merge after import (default off)", style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.import_merge_after_import_default_off), style = MaterialTheme.typography.bodyMedium)
         }
 
         Button(onClick = { runMerge() }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-            Text(if (merging) "Merging…" else "Run merge")
+            Text(if (merging) stringResource(R.string.import_merging) else stringResource(R.string.import_run_merge))
         }
 
         Row(
@@ -365,7 +368,7 @@ fun ImportOldPicturesScreen(
                 enabled = !busy,
             )
             Text(
-                "Location enhance with import (default off)",
+                stringResource(R.string.import_location_enhance_with_import_default_off),
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -374,16 +377,16 @@ fun ImportOldPicturesScreen(
             onClick = {
                 if (busy) return@Button
                 enhancingLocation = true
-                mergeStatus = "Location enhance…"
+                mergeStatus = AppStrings.get(R.string.import_location_enhance)
                 scope.launch {
                     try {
                         val msg = coordinator.runLocationEnhance { m -> mergeStatus = m }
                         Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                     } catch (e: Exception) {
-                        mergeStatus = "location enhance failed: ${e.message}"
+                        mergeStatus = AppStrings.get(R.string.import_location_enhance_failed_1_s, e.message)
                         Toast.makeText(
                             context,
-                            "Location enhance failed: ${e.message}",
+                            AppStrings.get(R.string.import_location_enhance_failed_1_s_2, e.message),
                             Toast.LENGTH_LONG,
                         ).show()
                     } finally {
@@ -394,14 +397,14 @@ fun ImportOldPicturesScreen(
             enabled = !busy,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(if (enhancingLocation) "Enhancing…" else "Run location enhance")
+            Text(if (enhancingLocation) stringResource(R.string.import_enhancing) else stringResource(R.string.import_run_location_enhance))
         }
 
         OutlinedButton(
             onClick = {
                 if (running || merging || answering || enhancingLocation) return@OutlinedButton
                 merging = true
-                mergeStatus = "Clearing pending…"
+                mergeStatus = AppStrings.get(R.string.import_clearing_pending)
                 scope.launch {
                     try {
                         val result = coordinator.clearPendingAndRescan { msg -> mergeStatus = msg }
@@ -409,11 +412,11 @@ fun ImportOldPicturesScreen(
                         reloadPending()
                         Toast.makeText(
                             context,
-                            "Clear & re-scan: ${result.message}",
+                            AppStrings.get(R.string.import_clear_re_scan_1_s, result.message),
                             Toast.LENGTH_LONG,
                         ).show()
                     } catch (e: Exception) {
-                        Toast.makeText(context, "Re-scan failed: ${e.message}", Toast.LENGTH_LONG)
+                        Toast.makeText(context, AppStrings.get(R.string.import_re_scan_failed_1_s, e.message), Toast.LENGTH_LONG)
                             .show()
                     } finally {
                         merging = false
@@ -423,7 +426,7 @@ fun ImportOldPicturesScreen(
             enabled = !busy,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Clear questions & re-scan")
+            Text(stringResource(R.string.import_clear_questions_re_scan))
         }
 
         OutlinedButton(
@@ -435,11 +438,11 @@ fun ImportOldPicturesScreen(
                         val n = coordinator.clearAutoPartialFlags(allComplete = true)
                         Toast.makeText(
                             context,
-                            "Cleared $n auto/illegal partial flags",
+                            AppStrings.get(R.string.import_cleared_1_s_auto_illegal_partial_flags, n),
                             Toast.LENGTH_LONG,
                         ).show()
                     } catch (e: Exception) {
-                        Toast.makeText(context, "Repair failed: ${e.message}", Toast.LENGTH_LONG)
+                        Toast.makeText(context, AppStrings.get(R.string.import_repair_failed_1_s, e.message), Toast.LENGTH_LONG)
                             .show()
                     } finally {
                         answering = false
@@ -449,13 +452,13 @@ fun ImportOldPicturesScreen(
             enabled = !busy,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Repair: clear partial flags")
+            Text(stringResource(R.string.import_repair_clear_partial_flags))
         }
 
-        mergeStatus?.let { Text("Merge: $it", style = MaterialTheme.typography.bodySmall) }
+        mergeStatus?.let { Text(AppStrings.get(R.string.import_merge_1_s_2, it), style = MaterialTheme.typography.bodySmall) }
         lastMerge?.let {
             Text(
-                "Last merge: ${it.message} · total pending=${it.totalPending}",
+                AppStrings.get(R.string.import_last_merge_1_s_total_pending_2_s, it.message, it.totalPending),
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -467,14 +470,14 @@ fun ImportOldPicturesScreen(
             color = MaterialTheme.colorScheme.primary,
         )
         Text(
-            "Phase-scoped queue: only this phase is generated. " +
-                "Next phase rebuilds from Room after your answers. Skip hides for this phase only.",
+            stringResource(R.string.import_phase_scoped_queue_only_this_phase_is_gene) +
+                stringResource(R.string.import_next_phase_rebuilds_from_room_after_your_a),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (phasePending.isEmpty()) {
             Text(
-                "No questions in this phase. Tap Next phase to generate the next stage.",
+                stringResource(R.string.import_no_questions_in_this_phase_tap_next_phase),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -487,7 +490,7 @@ fun ImportOldPicturesScreen(
                 onClick = {
                     if (busy || stagePhase >= StageCPhase.MAX) return@Button
                     merging = true
-                    mergeStatus = "Next phase…"
+                    mergeStatus = AppStrings.get(R.string.import_next_phase)
                     scope.launch {
                         try {
                             val result = coordinator.advancePhaseAndRebuild { msg ->
@@ -499,13 +502,13 @@ fun ImportOldPicturesScreen(
                             showQuestions = true
                             Toast.makeText(
                                 context,
-                                "Phase $stagePhase: ${result.totalPending} questions",
+                                AppStrings.get(R.string.import_phase_1_s_2_s_questions, stagePhase, result.totalPending),
                                 Toast.LENGTH_LONG,
                             ).show()
                         } catch (e: Exception) {
                             Toast.makeText(
                                 context,
-                                "Next phase failed: ${e.message}",
+                                AppStrings.get(R.string.import_next_phase_failed_1_s, e.message),
                                 Toast.LENGTH_LONG,
                             ).show()
                         } finally {
@@ -516,18 +519,18 @@ fun ImportOldPicturesScreen(
                 enabled = !busy && stagePhase < StageCPhase.MAX,
                 modifier = Modifier.weight(1f),
             ) {
-                Text("Next phase")
+                Text(stringResource(R.string.import_next_phase_2))
             }
             OutlinedButton(
                 onClick = {
                     StageCPhaseStore.resetToPhase1(context)
                     stagePhase = StageCPhaseStore.currentPhase(context)
-                    runMerge(toastPrefix = "Rescan phase 1")
+                    runMerge(toastPrefix = AppStrings.get(R.string.import_rescan_phase_1))
                 },
                 enabled = !busy,
                 modifier = Modifier.weight(1f),
             ) {
-                Text("Reset to phase 1")
+                Text(stringResource(R.string.import_reset_to_phase_1))
             }
         }
 
@@ -558,7 +561,7 @@ fun ImportOldPicturesScreen(
                             showReorderDialog = true
                         }
                     } catch (e: Exception) {
-                        Toast.makeText(context, "Preview failed: ${e.message}", Toast.LENGTH_LONG)
+                        Toast.makeText(context, AppStrings.get(R.string.import_preview_failed_1_s, e.message), Toast.LENGTH_LONG)
                             .show()
                     } finally {
                         merging = false
@@ -570,9 +573,9 @@ fun ImportOldPicturesScreen(
         ) {
             Text(
                 if (reorderGatePhaseOk) {
-                    "Reorder by odometer…"
+                    stringResource(R.string.import_reorder_by_odometer)
                 } else {
-                    "Reorder by odometer… (finish odo phases first)"
+                    stringResource(R.string.import_reorder_by_odometer_finish_odo_phases_firs)
                 },
             )
         }
@@ -586,8 +589,8 @@ fun ImportOldPicturesScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                if (showQuestions) "Hide questions (${phasePending.size})"
-                else "Review questions (${phasePending.size} in phase $stagePhase)",
+                if (showQuestions) stringResource(R.string.import_hide_questions_1_s, phasePending.size)
+                else stringResource(R.string.import_review_questions_1_s_in_phase_2_s, phasePending.size, stagePhase),
             )
         }
 
@@ -604,25 +607,25 @@ fun ImportOldPicturesScreen(
                             Toast.makeText(
                                 context,
                                 if (out != null) {
-                                    "Journal exported ($n lines) → ${out.absolutePath}"
+                                    AppStrings.get(R.string.import_journal_exported_1_s_lines_2_s, n, out.absolutePath)
                                 } else {
-                                    "Journal empty or export failed"
+                                    AppStrings.get(R.string.import_journal_empty_or_export_failed)
                                 },
                                 Toast.LENGTH_LONG,
                             ).show()
                         } catch (e: Exception) {
-                            Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_LONG)
+                            Toast.makeText(context, AppStrings.get(R.string.import_export_failed_1_s, e.message), Toast.LENGTH_LONG)
                                 .show()
                         }
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Export answer journal")
+                Text(stringResource(R.string.import_export_answer_journal))
             }
             if (phasePending.isEmpty()) {
                 Text(
-                    "No questions in this phase. Tap Next phase to generate the next stage.",
+                    stringResource(R.string.import_no_questions_in_this_phase_tap_next_phase),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -653,7 +656,7 @@ fun ImportOldPicturesScreen(
                     showReorderDialog = false
                     if (busy) return@ReorderByOdometerDialog
                     merging = true
-                    mergeStatus = "Reorder by odometer…"
+                    mergeStatus = AppStrings.get(R.string.import_reorder_by_odometer)
                     val vid = reorderVehicleId
                     val strat = reorderStrategy
                     scope.launch {
@@ -668,7 +671,7 @@ fun ImportOldPicturesScreen(
                         } catch (e: Exception) {
                             Toast.makeText(
                                 context,
-                                "Reorder failed: ${e.message}",
+                                AppStrings.get(R.string.import_reorder_failed_1_s, e.message),
                                 Toast.LENGTH_LONG,
                             ).show()
                         } finally {
@@ -684,7 +687,7 @@ fun ImportOldPicturesScreen(
             onClick = { navController.popBackStack() },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Back")
+            Text(stringResource(R.string.settings_back))
         }
     }
 }
@@ -703,7 +706,7 @@ private fun ReorderByOdometerDialog(
 ) {
     val nameOf: (Int) -> String = { vid ->
         vehicles.find { it.id == vid }?.name
-            ?: if (vid == 0) "Unknown" else "Vehicle $vid"
+            ?: if (vid == 0) AppStrings.get(R.string.ui_unknown) else AppStrings.get(R.string.expense_vehicle_1_s, vid)
     }
     val scoped = if (selectedVehicleId == null) {
         disorders
@@ -716,7 +719,7 @@ private fun ReorderByOdometerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Reorder by odometer") },
+        title = { Text(stringResource(R.string.import_reorder_by_odometer_2)) },
         text = {
             Column(
                 modifier = Modifier
@@ -725,18 +728,18 @@ private fun ReorderByOdometerDialog(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
-                    "Timestamps may be wrong (bad EXIF). Odometer readings are treated as truth. " +
-                        "Pick a vehicle scope and strategy.",
+                    stringResource(R.string.import_timestamps_may_be_wrong_bad_exif_odometer) +
+                        stringResource(R.string.import_pick_a_vehicle_scope_and_strategy),
                     style = MaterialTheme.typography.bodySmall,
                 )
-                Text("Vehicle scope", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.import_vehicle_scope), style = MaterialTheme.typography.titleSmall)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(
                         selected = selectedVehicleId == null,
                         onClick = { onVehicleChange(null) },
                         enabled = enabled,
                     )
-                    Text("All vehicles with anchors")
+                    Text(stringResource(R.string.import_all_vehicles_with_anchors))
                 }
                 disorders.filter { it.anchorCount >= 2 }.forEach { d ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -746,31 +749,31 @@ private fun ReorderByOdometerDialog(
                             enabled = enabled,
                         )
                         Text(
-                            "${nameOf(d.vehicleId)} · anchors ${d.anchorCount} · " +
-                                "reverse ${d.reverseSteps.size}" +
-                                if (d.needsTimestampPermute) " · needs permute" else "",
+                            AppStrings.get(R.string.import_s_1_s_anchors_2_s, nameOf(d.vehicleId), d.anchorCount) +
+                                AppStrings.get(R.string.import_reverse_1_s, d.reverseSteps.size) +
+                                if (d.needsTimestampPermute) AppStrings.get(R.string.import_needs_permute) else "",
                         )
                     }
                 }
-                Text("Strategy", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.import_strategy), style = MaterialTheme.typography.titleSmall)
                 StrategyRadio(
                     selected = strategy == FuelOdoReorder.Strategy.PERMUTE_TIMESTAMPS,
-                    label = "A. Reorder timestamps to match odo (recommended)",
-                    detail = "Permute existing times onto odo order; no invented times.",
+                    label = stringResource(R.string.import_a_reorder_timestamps_to_match_odo_recommen),
+                    detail = stringResource(R.string.import_permute_existing_times_onto_odo_order_no_i),
                     enabled = enabled,
                     onClick = { onStrategyChange(FuelOdoReorder.Strategy.PERMUTE_TIMESTAMPS) },
                 )
                 StrategyRadio(
                     selected = strategy == FuelOdoReorder.Strategy.ECONOMY_IGNORE,
-                    label = "B. Leave order; mark economy ignore",
-                    detail = "economyIgnored on later-by-time reverse offenders ($reverseTotal steps).",
+                    label = stringResource(R.string.import_b_leave_order_mark_economy_ignore),
+                    detail = stringResource(R.string.import_economyignored_on_later_by_time_reverse_of, reverseTotal),
                     enabled = enabled,
                     onClick = { onStrategyChange(FuelOdoReorder.Strategy.ECONOMY_IGNORE) },
                 )
                 StrategyRadio(
                     selected = strategy == FuelOdoReorder.Strategy.DELETE_OFFENDERS,
-                    label = "C. Delete out-of-order rows",
-                    detail = "Soft-delete later-by-time reverse offenders ($reverseTotal). Destructive.",
+                    label = stringResource(R.string.import_c_delete_out_of_order_rows),
+                    detail = stringResource(R.string.import_soft_delete_later_by_time_reverse_offender, reverseTotal),
                     enabled = enabled,
                     onClick = { onStrategyChange(FuelOdoReorder.Strategy.DELETE_OFFENDERS) },
                 )
@@ -786,11 +789,11 @@ private fun ReorderByOdometerDialog(
                 onClick = onConfirm,
                 enabled = enabled && scoped.any { it.anchorCount >= 2 },
             ) {
-                Text(if (confirmDestructive) "Confirm delete" else "Apply")
+                Text(if (confirmDestructive) stringResource(R.string.import_confirm_delete) else stringResource(R.string.import_apply))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) }
         },
     )
 }
@@ -1001,12 +1004,12 @@ private fun PendingQuestionCard(
                 val uris = FuelPhotoJson.parse(refreshed.photoUrl).map { it.uri }
                 if (uris.isNotEmpty()) {
                     onPaths(uris)
-                    Toast.makeText(context, "Image fetched", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, AppStrings.get(R.string.fuel_image_fetched), Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(context, "Could not fetch image", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, AppStrings.get(R.string.fuel_could_not_fetch_image), Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
-                Toast.makeText(context, e.message ?: "Fetch failed", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, e.message ?: AppStrings.get(R.string.expense_fetch_failed), Toast.LENGTH_LONG).show()
             } finally {
                 fetchingArchive = false
             }
@@ -1121,7 +1124,7 @@ private fun PendingQuestionCard(
                     Text(
                         "Leg mpg=${"%.1f".format(mpg)} · ref=${"%.1f".format(ref)} · " +
                             "odoΔ=${item.extra["odoDelta"]} · vol=${item.extra["sumVol"]} · " +
-                            "Δt last→this $legDt",
+                            stringResource(R.string.import_t_last_this_1_s, legDt),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -1135,7 +1138,7 @@ private fun PendingQuestionCard(
                     .orEmpty()
                 if (windowLines.isNotEmpty()) {
                     Text(
-                        "Fills in this leg (time order)",
+                        stringResource(R.string.import_fills_in_this_leg_time_order),
                         style = MaterialTheme.typography.labelMedium,
                     )
                     windowLines.forEach { line ->
@@ -1148,7 +1151,7 @@ private fun PendingQuestionCard(
                 }
 
                 // ── Last fill (photos above button) ──
-                Text("── Last fill ──", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.import_last_fill), style = MaterialTheme.typography.titleSmall)
                 PendingPhotoRow(
                     paths = lastPhotos,
                     conflict = lastPhotos.size > 1,
@@ -1164,17 +1167,17 @@ private fun PendingQuestionCard(
                         onClick = { mpgFocusThis = false },
                         enabled = enabled && lastEntryId != null,
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Last fill") }
+                    ) { Text(stringResource(R.string.import_last_fill_2)) }
                 } else {
                     Button(
                         onClick = { mpgFocusThis = false },
                         enabled = enabled && lastEntryId != null,
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Last fill (selected)") }
+                    ) { Text(stringResource(R.string.import_last_fill_selected)) }
                 }
 
                 // ── This fill (photos above button) ──
-                Text("── This fill ──", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.import_this_fill), style = MaterialTheme.typography.titleSmall)
                 PendingPhotoRow(
                     paths = thisPhotos,
                     conflict = thisPhotos.size > 1,
@@ -1190,32 +1193,32 @@ private fun PendingQuestionCard(
                         onClick = { mpgFocusThis = true },
                         enabled = enabled,
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("This fill (selected)") }
+                    ) { Text(stringResource(R.string.import_this_fill_selected)) }
                 } else {
                     OutlinedButton(
                         onClick = { mpgFocusThis = true },
                         enabled = enabled,
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("This fill") }
+                    ) { Text(stringResource(R.string.import_this_fill_2)) }
                 }
 
                 // ── Context (text only): before last, last, this, after this ──
-                Text("── Context (text only) ──", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.import_context_text_only), style = MaterialTheme.typography.titleSmall)
                 beforeLast?.let { n ->
                     NeighborLine(
                         n, vehicles,
-                        prefix = "Before last: ",
+                        prefix = AppStrings.get(R.string.import_before_last),
                         anchorTs = thisTsAnchor,
                     )
                 } ?: Text(
-                    "Before last: —",
+                    stringResource(R.string.import_before_last_2),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 NeighborLine(
                     lastRow,
                     vehicles,
-                    prefix = "Last fill: ",
+                    prefix = stringResource(R.string.import_last_fill_3),
                     anchorTs = thisTsAnchor,
                     fallback = mpgContextFallback(
                         context, item, isLast = true,
@@ -1224,7 +1227,7 @@ private fun PendingQuestionCard(
                 NeighborLine(
                     thisRow,
                     vehicles,
-                    prefix = "This fill: ",
+                    prefix = stringResource(R.string.import_this_fill_3),
                     anchorTs = thisTsAnchor,
                     fallback = mpgContextFallback(
                         context, item, isLast = false,
@@ -1233,11 +1236,11 @@ private fun PendingQuestionCard(
                 afterThis?.let { n ->
                     NeighborLine(
                         n, vehicles,
-                        prefix = "After this: ",
+                        prefix = AppStrings.get(R.string.import_after_this),
                         anchorTs = thisTsAnchor,
                     )
                 } ?: Text(
-                    "After this: —",
+                    stringResource(R.string.import_after_this_2),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1253,9 +1256,9 @@ private fun PendingQuestionCard(
                     (item.extra["parsedOdo"] == "0" && guess.isBlank())
                 Text(
                     if (missingZero) {
-                        "Odometer missing — read dash photo, enter value, then Save."
+                        stringResource(R.string.import_odometer_missing_read_dash_photo_enter_val)
                     } else {
-                        "Suggested fix (length OCR). Edit if wrong, then Save."
+                        stringResource(R.string.import_suggested_fix_length_ocr_edit_if_wrong_the)
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
@@ -1276,7 +1279,7 @@ private fun PendingQuestionCard(
                 com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
                     value = simpleOdo,
                     onValueChange = { simpleOdo = it },
-                    label = { Text("Odometer") },
+                    label = { Text(stringResource(R.string.import_odometer)) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = enabled,
                     singleLine = true,
@@ -1301,11 +1304,11 @@ private fun PendingQuestionCard(
                     enabled = enabled && (simpleOdo.toIntOrNull() ?: 0) > 0,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Save odometer")
+                    Text(stringResource(R.string.import_save_odometer))
                 }
                 Text(
-                    "Gap/digit flags are detect-only. If the odometer is already right, " +
-                        "acknowledge so this chain is not re-asked after rescan.",
+                    stringResource(R.string.import_gap_digit_flags_are_detect_only_if_the_odo) +
+                        stringResource(R.string.import_acknowledge_so_this_chain_is_not_re_asked),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1313,14 +1316,14 @@ private fun PendingQuestionCard(
                     onClick = {
                         onAction(
                             PendingAnswerAction.AcknowledgeLooksCorrect(
-                                kind = "ODO_SUSPECT",
+                                kind = AppStrings.get(R.string.import_odo_suspect),
                             ),
                         )
                     },
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("These odometers look correct")
+                    Text(stringResource(R.string.import_these_odometers_look_correct))
                 }
             } else if (item.kind == BatchPendingKind.ODO_SUSPECT) {
                 // Phase 2: per-fill dash-only blocks previous → cur → next
@@ -1330,27 +1333,27 @@ private fun PendingQuestionCard(
                 val nextTs = item.extra["nextTs"]?.toLongOrNull()
                 val dtLine = buildString {
                     if (prevTs != null && curTs != null) {
-                        append("Δt prev→cur ${formatTimeDelta(curTs - prevTs)}")
+                        append(AppStrings.get(R.string.import_t_prev_cur_1_s, formatTimeDelta(curTs - prevTs)))
                     }
                     if (curTs != null && nextTs != null) {
                         if (isNotEmpty()) append(" · ")
-                        append("Δt cur→next ${formatTimeDelta(nextTs - curTs)}")
+                        append(AppStrings.get(R.string.import_t_cur_next_1_s, formatTimeDelta(nextTs - curTs)))
                     }
                 }
                 if (dtLine.isNotEmpty()) {
                     Text(dtLine, style = MaterialTheme.typography.bodySmall)
                 }
                 Text(
-                    "Dash photos only — fix any wrong odo, then Save odometers",
+                    stringResource(R.string.import_dash_photos_only_fix_any_wrong_odo_then_sa),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
 
                 OdoPeerBlock(
                     title = if (odoSuspectId == odoPrevId) {
-                        "── Previous fill (suspect) ──"
+                        stringResource(R.string.import_previous_fill_suspect)
                     } else {
-                        "── Previous fill ──"
+                        stringResource(R.string.import_previous_fill)
                     },
                     emphasize = odoSuspectId == odoPrevId,
                     photos = odoPrevPhotos,
@@ -1372,9 +1375,9 @@ private fun PendingQuestionCard(
                 )
                 OdoPeerBlock(
                     title = if (odoSuspectId == odoCurId || odoSuspectId == null) {
-                        "── This fill (suspect) ──"
+                        stringResource(R.string.import_this_fill_suspect)
                     } else {
-                        "── This fill ──"
+                        stringResource(R.string.import_this_fill)
                     },
                     emphasize = odoSuspectId == odoCurId ||
                         (odoSuspectId != odoPrevId && odoSuspectId != odoNextId),
@@ -1398,9 +1401,9 @@ private fun PendingQuestionCard(
                 if (odoNextId != null) {
                     OdoPeerBlock(
                         title = if (odoSuspectId == odoNextId) {
-                            "── Next fill (suspect) ──"
+                            stringResource(R.string.import_next_fill_suspect)
                         } else {
-                            "── Next fill ──"
+                            stringResource(R.string.import_next_fill)
                         },
                         emphasize = odoSuspectId == odoNextId,
                         photos = odoNextPhotos,
@@ -1438,11 +1441,11 @@ private fun PendingQuestionCard(
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Save odometers")
+                    Text(stringResource(R.string.import_save_odometers))
                 }
                 Text(
-                    "Gap/digit flags are detect-only. If all peer odos are already right, " +
-                        "acknowledge so this chain is not re-asked after rescan (keeps numbers).",
+                    stringResource(R.string.import_gap_digit_flags_are_detect_only_if_all_pee) +
+                        stringResource(R.string.import_acknowledge_so_this_chain_is_not_re_asked_2),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1450,14 +1453,14 @@ private fun PendingQuestionCard(
                     onClick = {
                         onAction(
                             PendingAnswerAction.AcknowledgeLooksCorrect(
-                                kind = "ODO_SUSPECT",
+                                kind = AppStrings.get(R.string.import_odo_suspect),
                             ),
                         )
                     },
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("These odometers look correct")
+                    Text(stringResource(R.string.import_these_odometers_look_correct))
                 }
                 // Optional partial on suspect if complete (cost+vol from extra)
                 val suspectComplete = run {
@@ -1494,14 +1497,14 @@ private fun PendingQuestionCard(
                             enabled = enabled,
                         )
                         Text(
-                            "Treat as partial fill (suspect, all fields present)",
+                            stringResource(R.string.import_treat_as_partial_fill_suspect_all_fields_p),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
                 }
             } else {
                 Text(
-                    "Tap photo to enlarge",
+                    stringResource(R.string.import_tap_photo_to_enlarge),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -1537,14 +1540,14 @@ private fun PendingQuestionCard(
             if (item.kind == BatchPendingKind.ASSIGN_UNKNOWN_VEHICLE) {
                 val anchorTs = item.timestampMs
                 Text(
-                    "Nearest fill per vehicle (before / after):",
+                    stringResource(R.string.import_nearest_fill_per_vehicle_before_after),
                     style = MaterialTheme.typography.labelMedium,
                 )
                 perVehicleNeighbors.forEach { pv ->
                     Text(pv.vehicleName, style = MaterialTheme.typography.labelLarge)
                     if (pv.before.isEmpty() && pv.after.isEmpty()) {
                         Text(
-                            "  (no other fills)",
+                            AppStrings.get(R.string.import_no_other_fills),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1557,12 +1560,12 @@ private fun PendingQuestionCard(
                     }
                 }
                 TextButton(onClick = { expandNeighbors += 1 }, enabled = enabled) {
-                    Text("Show more (2nd/3rd nearest)")
+                    Text(stringResource(R.string.import_show_more_2nd_3rd_nearest))
                 }
             }
 
             if (item.kind == BatchPendingKind.ECONOMY_IGNORED) {
-                Text("Context fills:", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.import_context_fills), style = MaterialTheme.typography.labelMedium)
                 neighbors.take(12).forEach { n ->
                     NeighborLine(n, vehicles)
                 }
@@ -1570,18 +1573,18 @@ private fun PendingQuestionCard(
                     onClick = { expandNeighbors += 1 },
                     enabled = enabled,
                 ) {
-                    Text("Show more neighbors")
+                    Text(stringResource(R.string.import_show_more_neighbors))
                 }
             }
 
             // Manual pump
             if (item.kind == BatchPendingKind.UNREADABLE_PUMP) {
-                Text("Manual pump entry:", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.import_manual_pump_entry), style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     CaretEnabledOutlinedTextField(
                         value = costText,
                         onValueChange = { costText = it },
-                        label = { Text("Cost") },
+                        label = { Text(stringResource(R.string.fuel_cost)) },
                         modifier = Modifier.weight(1f),
                         enabled = enabled,
                         showCaretButtons = true,
@@ -1591,7 +1594,7 @@ private fun PendingQuestionCard(
                     CaretEnabledOutlinedTextField(
                         value = volText,
                         onValueChange = { volText = it },
-                        label = { Text("Volume") },
+                        label = { Text(stringResource(R.string.import_volume)) },
                         modifier = Modifier.weight(1f),
                         enabled = enabled,
                         showCaretButtons = true,
@@ -1608,14 +1611,14 @@ private fun PendingQuestionCard(
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Save cost/vol + re-merge")
+                    Text(stringResource(R.string.import_save_cost_vol_re_merge))
                 }
                 OutlinedButton(
                     onClick = { onAction(PendingAnswerAction.MarkAsGap()) },
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Mark as gap (blank chain-breaker)")
+                    Text(stringResource(R.string.import_mark_as_gap_blank_chain_breaker))
                 }
             }
 
@@ -1623,11 +1626,11 @@ private fun PendingQuestionCard(
             if (item.kind == BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE ||
                 item.kind == BatchPendingKind.SKIP_OR_ASSIGN_VEHICLE
             ) {
-                Text("Manual odometer:", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.import_manual_odometer), style = MaterialTheme.typography.labelMedium)
                 CaretEnabledOutlinedTextField(
                     value = odoText,
                     onValueChange = { odoText = it },
-                    label = { Text("Odometer") },
+                    label = { Text(stringResource(R.string.import_odometer)) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = enabled,
                     showCaretButtons = true,
@@ -1652,14 +1655,14 @@ private fun PendingQuestionCard(
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Save odo + re-merge")
+                    Text(stringResource(R.string.import_save_odo_re_merge))
                 }
             }
 
             // Conflict free odo
             if (item.kind == BatchPendingKind.CONFLICT_ODO) {
                 if (conflictOdos.isNotEmpty()) {
-                    Text("Keep odometer:", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.import_keep_odometer), style = MaterialTheme.typography.labelMedium)
                     Row(
                         modifier = Modifier.horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1671,21 +1674,21 @@ private fun PendingQuestionCard(
                                 },
                                 enabled = enabled,
                             ) {
-                                Text("Keep odo $odo")
+                                Text(AppStrings.get(R.string.import_keep_odo_1_s, odo))
                             }
                         }
                         OutlinedButton(
                             onClick = { onAction(PendingAnswerAction.KeepBothNoMerge) },
                             enabled = enabled,
                         ) {
-                            Text("Keep both")
+                            Text(stringResource(R.string.import_keep_both))
                         }
                     }
                 }
                 CaretEnabledOutlinedTextField(
                     value = freeOdoText,
                     onValueChange = { freeOdoText = it },
-                    label = { Text("Enter different odometer") },
+                    label = { Text(stringResource(R.string.import_enter_different_odometer)) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = enabled,
                     showCaretButtons = true,
@@ -1702,14 +1705,14 @@ private fun PendingQuestionCard(
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Use entered odo + re-merge")
+                    Text(stringResource(R.string.import_use_entered_odo_re_merge))
                 }
                 OutlinedButton(
                     onClick = { onAction(PendingAnswerAction.KeepBothNoMerge) },
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Looks correct — don't ask again")
+                    Text(stringResource(R.string.import_looks_correct_don_t_ask_again))
                 }
             }
 
@@ -1717,7 +1720,7 @@ private fun PendingQuestionCard(
             if (item.kind == BatchPendingKind.ASSIGN_UNKNOWN_VEHICLE ||
                 item.kind == BatchPendingKind.ASSIGN_VEHICLE
             ) {
-                Text("Assign vehicle:", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.import_assign_vehicle), style = MaterialTheme.typography.labelMedium)
                 VehiclePickRow(
                     vehicles = vehicles,
                     enabled = enabled,
@@ -1749,7 +1752,7 @@ private fun PendingQuestionCard(
                         enabled = enabled,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("Assign to $sugName (suggested)")
+                        Text(stringResource(R.string.import_assign_to_1_s_suggested, sugName))
                     }
                     if (!reason.isNullOrBlank()) {
                         Text(
@@ -1779,7 +1782,7 @@ private fun PendingQuestionCard(
                 } else {
                     vehicles
                 }
-                Text("Or reprocess OCR with vehicle:", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.import_or_reprocess_ocr_with_vehicle), style = MaterialTheme.typography.labelMedium)
                 VehiclePickRow(
                     vehicles = shown,
                     enabled = enabled,
@@ -1793,7 +1796,7 @@ private fun PendingQuestionCard(
                         onClick = { showAllDashVehicles = true },
                         enabled = enabled,
                     ) {
-                        Text("Show all vehicles")
+                        Text(stringResource(R.string.vehicle_show_all_vehicles))
                     }
                 }
             }
@@ -1810,7 +1813,7 @@ private fun PendingQuestionCard(
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("This is a gap (blank breaker)")
+                    Text(stringResource(R.string.import_this_is_a_gap_blank_breaker))
                 }
             }
             if (item.kind == BatchPendingKind.AMBIGUOUS_MULTI_PUMP) {
@@ -1825,14 +1828,14 @@ private fun PendingQuestionCard(
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Looks correct — don't ask again")
+                    Text(stringResource(R.string.import_looks_correct_don_t_ask_again))
                 }
             }
 
             // Bad pump ratio (phase 3): cost/vol edit or unreadable → gap
             if (item.kind == BatchPendingKind.BAD_PUMP_RATIO) {
                 Text(
-                    "Cost/volume look wrong (\$/vol outside 2–7). Fix numbers or mark as gap.",
+                    stringResource(R.string.import_cost_volume_look_wrong_vol_outside_2_7_fix),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -1840,7 +1843,7 @@ private fun PendingQuestionCard(
                     CaretEnabledOutlinedTextField(
                         value = costText,
                         onValueChange = { costText = it },
-                        label = { Text("Cost") },
+                        label = { Text(stringResource(R.string.fuel_cost)) },
                         modifier = Modifier.weight(1f),
                         enabled = enabled,
                         singleLine = true,
@@ -1850,7 +1853,7 @@ private fun PendingQuestionCard(
                     CaretEnabledOutlinedTextField(
                         value = volText,
                         onValueChange = { volText = it },
-                        label = { Text("Vol") },
+                        label = { Text(stringResource(R.string.import_vol)) },
                         modifier = Modifier.weight(1f),
                         enabled = enabled,
                         singleLine = true,
@@ -1872,7 +1875,7 @@ private fun PendingQuestionCard(
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Save cost / vol")
+                    Text(stringResource(R.string.import_save_cost_vol))
                 }
                 OutlinedButton(
                     onClick = {
@@ -1881,10 +1884,10 @@ private fun PendingQuestionCard(
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Unreadable — make a gap")
+                    Text(stringResource(R.string.import_unreadable_make_a_gap))
                 }
                 Text(
-                    "Blank chain-breaker at this fill (keeps timestamp/vehicle).",
+                    stringResource(R.string.import_blank_chain_breaker_at_this_fill_keeps_tim),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1896,18 +1899,18 @@ private fun PendingQuestionCard(
             ) {
                 val editLabel = when {
                     item.kind == BatchPendingKind.MPG_OUTLIER && mpgFocusThis ->
-                        "Editing: This fill (id=${focusEntryId ?: "?"})"
+                        stringResource(R.string.import_editing_this_fill_id_1_s, focusEntryId ?: "?")
                     item.kind == BatchPendingKind.MPG_OUTLIER && !mpgFocusThis ->
-                        "Editing: Last fill (id=${focusEntryId ?: "?"})"
+                        stringResource(R.string.import_editing_last_fill_id_1_s, focusEntryId ?: "?")
                     else ->
-                        "Edit fields (pre-filled; clears ignore on save)"
+                        stringResource(R.string.import_edit_fields_pre_filled_clears_ignore_on_sa)
                 }
                 Text(editLabel, style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     CaretEnabledOutlinedTextField(
                         value = odoText,
                         onValueChange = { odoText = it },
-                        label = { Text("Odo") },
+                        label = { Text(stringResource(R.string.fuel_odo)) },
                         modifier = Modifier.weight(1f),
                         enabled = enabled,
                         singleLine = true,
@@ -1917,7 +1920,7 @@ private fun PendingQuestionCard(
                     CaretEnabledOutlinedTextField(
                         value = costText,
                         onValueChange = { costText = it },
-                        label = { Text("Cost") },
+                        label = { Text(stringResource(R.string.fuel_cost)) },
                         modifier = Modifier.weight(1f),
                         enabled = enabled,
                         singleLine = true,
@@ -1927,7 +1930,7 @@ private fun PendingQuestionCard(
                     CaretEnabledOutlinedTextField(
                         value = volText,
                         onValueChange = { volText = it },
-                        label = { Text("Vol") },
+                        label = { Text(stringResource(R.string.import_vol)) },
                         modifier = Modifier.weight(1f),
                         enabled = enabled,
                         singleLine = true,
@@ -1951,7 +1954,7 @@ private fun PendingQuestionCard(
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Save edit")
+                    Text(stringResource(R.string.import_save_edit))
                 }
                 if (item.kind == BatchPendingKind.MPG_OUTLIER) {
                     val focusComplete = run {
@@ -1980,9 +1983,9 @@ private fun PendingQuestionCard(
                         )
                         Text(
                             if (focusComplete) {
-                                "Treat as partial fill (do not use as full-fill anchor)"
+                                stringResource(R.string.import_treat_as_partial_fill_do_not_use_as_full_f)
                             } else {
-                                "Treat as partial (need odo+cost+vol)"
+                                stringResource(R.string.import_treat_as_partial_need_odo_cost_vol)
                             },
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -1995,10 +1998,10 @@ private fun PendingQuestionCard(
                         enabled = enabled,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("Missing data between last & this")
+                        Text(stringResource(R.string.import_missing_data_between_last_this))
                     }
                     Text(
-                        "Inserts a blank chain-breaker between last and this fills; keeps both fills.",
+                        stringResource(R.string.import_inserts_a_blank_chain_breaker_between_last),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -2014,20 +2017,20 @@ private fun PendingQuestionCard(
                         enabled = enabled,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("Ignore")
+                        Text(stringResource(R.string.import_ignore))
                     }
                     OutlinedButton(
                         onClick = {
                             onAction(
                                 PendingAnswerAction.AcknowledgeLooksCorrect(
-                                    kind = "MPG_OUTLIER",
+                                    kind = AppStrings.get(R.string.import_mpg_outlier),
                                 ),
                             )
                         },
                         enabled = enabled,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("Looks correct — don't ask again")
+                        Text(stringResource(R.string.import_looks_correct_don_t_ask_again))
                     }
                 }
                 if (item.kind == BatchPendingKind.ECONOMY_IGNORED) {
@@ -2043,7 +2046,7 @@ private fun PendingQuestionCard(
                         enabled = enabled,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("Unignore")
+                        Text(stringResource(R.string.import_unignore))
                     }
                 }
             }
@@ -2057,7 +2060,7 @@ private fun PendingQuestionCard(
                     enabled = enabled,
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text("Skip")
+                    Text(stringResource(R.string.import_skip))
                 }
                 if (item.kind == BatchPendingKind.UNREADABLE_PUMP) {
                     Button(
@@ -2065,7 +2068,7 @@ private fun PendingQuestionCard(
                         enabled = enabled,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Retry pump")
+                        Text(stringResource(R.string.import_retry_pump))
                     }
                 }
             }
@@ -2109,7 +2112,7 @@ private fun OdoPeerBlock(
         // Empty + no archive identity → "No dash photo"; empty + archive → fetch button via PendingPhotoRow.
         if (photos.isEmpty() && !(canFetchArchive && onFetchArchive != null)) {
             Text(
-                "No dash photo",
+                stringResource(R.string.import_no_dash_photo),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -2133,7 +2136,7 @@ private fun OdoPeerBlock(
         CaretEnabledOutlinedTextField(
             value = odoText,
             onValueChange = onOdoChange,
-            label = { Text("Odo") },
+            label = { Text(stringResource(R.string.fuel_odo)) },
             modifier = Modifier.fillMaxWidth(),
             enabled = enabled,
             singleLine = true,
@@ -2181,7 +2184,7 @@ private fun mpgContextFallback(
     val vol = item.extra[volKey]?.toDoubleOrNull() ?: 0.0
     val defaultSymbol = CurrencyCodes.settingsDefaultSymbol(context)
     val unit = VolumeUnits.resolvedPreferredVolumeUnit(context)
-    return "$whenStr · odo $odo · ${CurrencyCodes.formatAmount(cost, "", defaultSymbol)} · " +
+    return context.getString(R.string.import_s_1_s_odo_2_s_3_s, whenStr, odo, CurrencyCodes.formatAmount(cost, "", defaultSymbol)) +
         VolumeUnits.formatVolume(vol, unit)
 }
 
@@ -2204,8 +2207,8 @@ private fun NeighborLine(
         return
     }
     val name = when {
-        n.vehicleId == 0 -> "Unknown"
-        else -> vehicles.find { it.id == n.vehicleId }?.name ?: "Vehicle ${n.vehicleId}"
+        n.vehicleId == 0 -> stringResource(R.string.ui_unknown)
+        else -> vehicles.find { it.id == n.vehicleId }?.name ?: stringResource(R.string.expense_vehicle_1_s, n.vehicleId)
     }
     val flags = buildList {
         if (n.isPartialFill) add("p")
@@ -2220,7 +2223,7 @@ private fun NeighborLine(
     val defaultSymbol = CurrencyCodes.settingsDefaultSymbol(context)
     val unit = VolumeUnits.resolvedPreferredVolumeUnit(context)
     Text(
-        "$prefix$ts · $name · odo ${n.odometer} · " +
+        stringResource(R.string.import_s_1_s_2_s_3_s_odo_4_s, prefix, ts, name, n.odometer) +
             "${CurrencyCodes.formatAmount(n.cost, n.currency, defaultSymbol)} · " +
             VolumeUnits.formatVolume(n.gallons, unit) +
             delta +
@@ -2256,7 +2259,7 @@ private fun VehiclePickRow(
             ) {
                 Text(
                     if (eliminated) {
-                        "${v.name} (tank)"
+                        AppStrings.get(R.string.import_s_1_s_tank, v.name)
                     } else if (selectedId == v.id) {
                         "✓ ${v.name}"
                     } else {
@@ -2287,17 +2290,17 @@ private fun PendingPhotoRow(
         ) {
             if (canFetchArchive && onFetchArchive != null) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Photo not local", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.import_photo_not_local), style = MaterialTheme.typography.bodyMedium)
                     Button(
                         onClick = onFetchArchive,
                         enabled = !isFetchingArchive,
                         modifier = Modifier.padding(top = 8.dp),
                     ) {
-                        Text(if (isFetchingArchive) "Fetching…" else "Fetch image from archive")
+                        Text(if (isFetchingArchive) stringResource(R.string.fuel_fetching) else stringResource(R.string.fuel_fetch_image_from_archive))
                     }
                 }
             } else {
-                Text("Photo unavailable", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.ui_photo_unavailable), style = MaterialTheme.typography.bodyMedium)
             }
         }
         return
@@ -2367,27 +2370,27 @@ private fun PendingPhotoThumb(
                 bitmap != null -> {
                     Image(
                         bitmap = bitmap!!.asImageBitmap(),
-                        contentDescription = "Pending photo",
+                        contentDescription = AppStrings.get(R.string.import_pending_photo),
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Fit,
                     )
                 }
-                loadState == "loading" -> Text("Loading…", style = MaterialTheme.typography.bodySmall)
+                loadState == "loading" -> Text(stringResource(R.string.settings_loading), style = MaterialTheme.typography.bodySmall)
                 canFetchArchive && onFetchArchive != null -> {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Photo unavailable", style = MaterialTheme.typography.bodySmall)
+                        Text(AppStrings.get(R.string.ui_photo_unavailable), style = MaterialTheme.typography.bodySmall)
                         TextButton(
                             onClick = onFetchArchive,
                             enabled = !isFetchingArchive,
                         ) {
                             Text(
-                                if (isFetchingArchive) "Fetching…" else "Fetch image from archive",
+                                if (isFetchingArchive) AppStrings.get(R.string.fuel_fetching) else AppStrings.get(R.string.fuel_fetch_image_from_archive),
                                 style = MaterialTheme.typography.labelSmall,
                             )
                         }
                     }
                 }
-                else -> Text("Photo unavailable", style = MaterialTheme.typography.bodySmall)
+                else -> Text(stringResource(R.string.ui_photo_unavailable), style = MaterialTheme.typography.bodySmall)
             }
         }
         Text(
