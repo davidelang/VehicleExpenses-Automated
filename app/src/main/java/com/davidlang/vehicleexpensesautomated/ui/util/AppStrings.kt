@@ -5,8 +5,8 @@ import androidx.annotation.StringRes
 
 /**
  * String lookup for non-composable call sites (catalog init, toasts outside composition).
- * [install] runs from [com.davidlang.vehicleexpensesautomated.VehicleExpensesApplication.onCreate]
- * after [AppLanguage.applyFromPrefs], so the application context already has the pack locale.
+ * [install] stores the application context. [get] resolves on [AppLanguage.wrap] of that
+ * context, so a later pref change is not stuck on the locale from startup.
  */
 object AppStrings {
     private lateinit var app: Context
@@ -17,6 +17,6 @@ object AppStrings {
 
     fun get(@StringRes id: Int, vararg args: Any?): String {
         val safe = Array<Any>(args.size) { args[it] ?: "" }
-        return app.getString(id, *safe)
+        return AppLanguage.wrap(app).getString(id, *safe)
     }
 }

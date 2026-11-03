@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated
 
 import android.app.Application
+import android.content.Context
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.davidlang.vehicleexpensesautomated.data.db.DatabaseHealth
@@ -64,6 +65,10 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
 
     companion object {
         var anchoredEngineV3: NativePaddleEngine? = null; private set
+    }
+
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(AppLanguage.wrap(base))
     }
 
     override fun onCreate() {

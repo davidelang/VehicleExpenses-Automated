@@ -1,6 +1,10 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.res.Configuration
+import android.os.LocaleList
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import com.davidlang.vehicleexpensesautomated.R
@@ -22,6 +26,9 @@ import java.util.Locale
  *
  * All supported packs ship in the base APK (`values/` + `values-*`). Right-to-left packs
  * are not in [SUPPORTED]. See `docs/reference/I18N.md`.
+ *
+ * [wrap] is the configuration context for the active pack. [applyFromPrefs] still calls
+ * [AppCompatDelegate.setApplicationLocales], which is the API 33 platform record.
  */
 object AppLanguage {
     const val PREFS_NAME = "vehicle_settings"
@@ -237,6 +244,33 @@ object AppLanguage {
             .putString(PREF_KEY, normalized)
             .apply()
         applyFromPrefs(context)
+        // stringResource keeps the activity configuration until that activity is recreated.
+        findActivity(context)?.recreate()
+    }
+
+    /**
+     * Configuration context for [resolveActiveLocale]'s bcp47 tag, the same tag
+     * [applyFromPrefs] passes to [LocaleListCompat]. Unset is English. `system` is
+     * [matchSystemToSupported]. A [androidx.activity.ComponentActivity] does not apply
+     * [AppCompatDelegate.setApplicationLocales] before API 33, so this is what puts the
+     * pack on screen.
+     */
+    fun wrap(context: Context): Context {
+        val tag = resolveActiveLocale(context).bcp47
+        val config = Configuration(context.resources.configuration)
+        config.setLocales(LocaleList.forLanguageTags(tag))
+        return context.createConfigurationContext(config)
+    }
+
+    private fun findActivity(context: Context): Activity? {
+        var current: Context? = context
+        while (current is ContextWrapper) {
+            if (current is Activity) return current
+            val next = current.baseContext
+            if (next === current) return null
+            current = next
+        }
+        return null
     }
 
     /** Apply locales from current pref. Call early in [android.app.Application.onCreate]. */

@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.help
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.os.Bundle
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -18,12 +19,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.davidlang.vehicleexpensesautomated.ui.theme.VehicleExpensesAutomatedTheme
 import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppLanguage
 
 /**
  * Offline illustrated user manual (HTML + screenshots from assets).
  * No network and no GitHub login required.
  */
 class UserManualActivity : ComponentActivity() {
+
+    override fun attachBaseContext(newBase: Context) {
+        // setApplicationLocales does not reach a ComponentActivity before API 33.
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {

@@ -12641,3 +12641,9 @@ feature-group: label=''
 ## 2026-11-03 - Local PR prepared
 
 - PR document is dev-ai-interaction/PRs/PR-bugfixes-1.md. Original tip is backup-bugfixes-1. Ready for Master review. Not merged.
+
+## 2026-11-03 - Chosen language on screen
+
+- Plan: dev-ai-interaction/plans/locale-apply-on-screen-20261103-1612-plan.md (cite standard-plan-compliance-block.md)
+- exec-preflight exited 1: plan Host is the orchestration root and Worktree is orchestration (AGENT_CONTEXT has no Agent ID). Execute directive names this checkout (agent-1, bugfixes-1) at 35e9b50a. Continuing here.
+- AppLanguage.wrap is a configuration context for the active pack. The application and each ComponentActivity pass it from attachBaseContext. AppStrings.get wraps its stored context on lookup. setPref still calls setApplicationLocales and recreates the calling activity.

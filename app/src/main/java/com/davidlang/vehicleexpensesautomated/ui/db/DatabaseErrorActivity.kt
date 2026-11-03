@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.db
 
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
@@ -52,10 +53,16 @@ import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import androidx.compose.ui.res.stringResource
 import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppLanguage
 import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 /** Full-screen database open or migration failure. No Hilt and no database access. */
 class DatabaseErrorActivity : ComponentActivity() {
+
+    override fun attachBaseContext(newBase: Context) {
+        // setApplicationLocales does not reach a ComponentActivity before API 33.
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

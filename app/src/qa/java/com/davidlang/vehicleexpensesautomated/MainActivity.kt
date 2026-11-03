@@ -125,6 +125,7 @@ import dagger.hilt.android.EntryPointAccessors
 import com.davidlang.vehicleexpensesautomated.ui.settings.SpreadsheetSyncScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.SyncingScreen
 import com.davidlang.vehicleexpensesautomated.ui.theme.VehicleExpensesAutomatedTheme
+import com.davidlang.vehicleexpensesautomated.ui.util.AppLanguage
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.ManageVehicles2Screen
@@ -278,6 +279,11 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         // Re-composition reads intent via setContent; force recreate for deep-link re-entry
+    }
+
+    override fun attachBaseContext(newBase: Context) {
+        // setApplicationLocales does not reach a ComponentActivity before API 33.
+        super.attachBaseContext(AppLanguage.wrap(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

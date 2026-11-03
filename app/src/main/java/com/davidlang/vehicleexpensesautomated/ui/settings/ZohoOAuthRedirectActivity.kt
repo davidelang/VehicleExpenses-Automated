@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -11,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.davidlang.vehicleexpensesautomated.TransferBlockingScreen
+import com.davidlang.vehicleexpensesautomated.ui.util.AppLanguage
 import com.davidlang.vehicleexpensesautomated.data.db.DatabaseHealthState
 import com.davidlang.vehicleexpensesautomated.data.db.Exporting
 import com.davidlang.vehicleexpensesautomated.data.db.Importing
@@ -21,6 +23,11 @@ import javax.inject.Inject
 /** Receives implicit OAuth redirect `vehicleexpenses://zoho/oauth#access_token=...`. */
 @AndroidEntryPoint
 class ZohoOAuthRedirectActivity : ComponentActivity() {
+
+    override fun attachBaseContext(newBase: Context) {
+        // setApplicationLocales does not reach a ComponentActivity before API 33.
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
 
     @Inject lateinit var zohoAuth: ZohoSheetAuth
 

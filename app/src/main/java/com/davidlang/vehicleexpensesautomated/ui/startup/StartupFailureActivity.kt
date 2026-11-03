@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.startup
 
+import android.content.Context
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
@@ -25,10 +26,16 @@ import java.io.PrintWriter
 import java.io.StringWriter
 import androidx.compose.ui.res.stringResource
 import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.AppLanguage
 import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 
 /** OpenCV, Paddle, or rclone failed during startup. No Paddle and no OpenCV. */
 class StartupFailureActivity : ComponentActivity() {
+
+    override fun attachBaseContext(newBase: Context) {
+        // setApplicationLocales does not reach a ComponentActivity before API 33.
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
