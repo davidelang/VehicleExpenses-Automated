@@ -9,7 +9,6 @@ import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -29,7 +28,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -39,7 +37,6 @@ import com.davidlang.vehicleexpensesautomated.data.repository.forManageList
 import com.davidlang.vehicleexpensesautomated.data.storage.PickedImageReader
 import com.davidlang.vehicleexpensesautomated.data.sync.CloudManifest
 import com.davidlang.vehicleexpensesautomated.ui.components.LandmarkDebugDialog
-import com.davidlang.vehicleexpensesautomated.ui.components.LandmarkGlyphFont
 import com.davidlang.vehicleexpensesautomated.ui.components.rememberImagePicker
 import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
@@ -632,34 +629,6 @@ fun ManageVehicles2Screen(
                         enabled = !landmarkTextBlocksJson.isNullOrEmpty() && !isLoadingDiscovery
                     ) {
                         Text("Show Landmarks")
-                    }
-                }
-
-                if (discoveryResults != null) {
-                    Text("Discovery Results (tap seed on photo for odo box):", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
-                    Text("Tap card to see full debug pass", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
-
-                    Surface(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = MaterialTheme.shapes.small
-                    ) {
-                        Column(modifier = Modifier.padding(8.dp)) {
-                            val result = discoveryResults!!
-                            Card(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable(enabled = !isLoadingDiscovery) { showLandmarkCheck = true },
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text(result.engineName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                    Text("Landmarks found: ${result.textBlocks.size}", style = MaterialTheme.typography.labelMedium)
-                                    Text(
-                                        result.debugText,
-                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = LandmarkGlyphFont),
-                                    )
-                                }
-                            }
-                        }
                     }
                 }
             }

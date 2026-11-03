@@ -12625,3 +12625,7 @@ feature-group: label=''
 ## 2026-11-03 - Letterbox the odometer detector feed
 
 - A non-square gray image is letterboxed into the square feed. R8 keeps DetectionResult and DetectionBox.
+
+## 2026-11-03 - Drop the ML Kit discovery card and two dead build warnings
+
+- Manage Vehicles no longer shows the discovery heading, the tap-card line, or the ML Kit engine card. The manifest no longer removes FOREGROUND_SERVICE_DATA_SYNC, and the heatmap null tests that were always true are gone.
