@@ -12480,3 +12480,140 @@ feature-group: label=''
 ## 2026-10-29 - code-review PR prepared
 
 - Local PR doc: dev-ai-interaction/PRs/PR-code-review.md. Master reviews from there. Nothing is merged or pushed.
+
+## 2026-10-29 - Pump shutter descriptor and vehicle list
+
+- Plan: dev-ai-interaction/plans/fill-pump-shutter-and-vehicle-picker-20261029-2031-plan.md (cite standard-plan-compliance-block.md)
+- exec-preflight exited 1: plan Host is the orchestration root and Worktree is unstamped. Execute directive names this checkout (agent-1, bugfixes-1). Continuing here.
+- prepareScale returns an int array (width, height, or 0, 0). qfRotGmmDetect looks up that descriptor and reads the two elements. No kotlin.Pair keep.
+- VehicleNotIdentifiedDialog no longer treats content dispose as dismiss. Fill and Trip still resume null only from onDismissRequest, and leaving the screen cancels the capture scope.
+
+## 2026-10-30 - Odometer letterbox feed and pump detect keep
+
+- Plan: dev-ai-interaction/plans/fill-image-pick-odo-and-pump-20261030-0633-plan.md (cite standard-plan-compliance-block.md)
+- exec-preflight exited 1: plan Host is the orchestration root and Worktree is unstamped. Execute directive names this checkout (agent-1, bugfixes-1). Continuing here.
+- R8 keeps NativePaddleEngine$DetectionResult and NativePaddleEngine$DetectionBox. qfRotGmmDetect still looks up detect returning DetectionResult, then getNativeBoxes, getPoints, and getConfidence.
+- Both detectQuads letterbox a non-square CV_8UC1 into a side×side feed (content at the top-left, remainder 0) before populateMonoUInt8. contentW and contentH stay the content size. The native exact-size check is unchanged.
+
+## 2026-10-31 - User manual matches current screens
+
+- Plan: dev-ai-interaction/plans/user-manual-current-pages-20261031-1306-plan.md (cite standard-plan-compliance-block.md)
+- exec-preflight exited 1: plan Host is the orchestration root and Worktree is unstamped. Execute directive names this checkout (agent-1, bugfixes-1). Continuing here.
+- Screenshots from the Pixel 6 Pro (raven, adb-19231FDEE00BG9-6XI5do._adb-tls-connect._tcp). No fill, trip, expense, or vehicle save.
+
+## 2026-10-31 - User manual blocked after the shutter cleanup
+
+- Plan: dev-ai-interaction/plans/user-manual-current-pages-20261031-1306-plan.md (cite standard-plan-compliance-block.md)
+- Save fill and trip photos is checked on again. Deleted only Pictures/VehicleExpenses/fuel_1793478891139.jpg (MediaStore id 1000003162). No other file dated 2026-10-31 remains under Pictures or DCIM. No fill, trip, expense, or vehicle row was saved.
+- Debug Fill stayed on. The report count is 7. Clear-all was not used. That extra session is not deleted.
+- Acceptance is not met. The vehicle list has no Pixel shot. Manage Vehicles still shows Discovery Results, so those shots wait on the drop-mlkit plan. Status set BLOCKED. No commit.
+
+## 2026-10-31 - Manage Vehicles drops the ML Kit diagnostic card
+
+- Plan: dev-ai-interaction/plans/manage-vehicles-drop-mlkit-diagnostic-20261031-1323-plan.md (cite standard-plan-compliance-block.md)
+- exec-preflight exited 1: plan Host is the orchestration root and Worktree is unstamped. Execute directive names this checkout (agent-1, bugfixes-1). Continuing here.
+- Removed the Discovery Results heading, the tap-card line, and the ML Kit engine card from ManageVehicles2Screen. Run Discovery, yellow seeds, Select Odo, Edit Odo, Clear Odo, and Show Landmarks stay. Show Landmarks still opens LandmarkDebugDialog. Saved landmarks still use the "ML Kit" JSON key. No manual edits.
+
+## 2026-10-31 - EXEC START: port-i18n-packs-do-not-merge-20261031-1426-plan.md
+
+- Plan path: dev-ai-interaction/plans/port-i18n-packs-do-not-merge-20261031-1426-plan.md
+- Branch bugfixes-1 at 50f0d02f. Do not merge i18n_lang_packs. LTR Play packs only.
+
+## 2026-10-31 - LTR Play language packs
+
+- Resource packs for every left-to-right Play store-listing language, with translated user manuals. Right-to-left packs stay out. Did not merge i18n_lang_packs.
+
+## 2026-10-31 - i18n compile fix
+
+- String lookups are not const or annotation arguments. Nullable format args use an empty string.
+
+## 2026-10-31 - i18n review fixes
+
+- Renamed keys keep the tag translation when the English sentence is unchanged. Romansh manual code spans restored. Leftover Slovenian, Swedish, and Bulgarian product sentences translated.
+
+## 2026-10-31 - i18n leftover product strings
+
+- Slovenian, Swedish, and Bulgarian packs: product sentences that were still the English source are translated. Placeholders kept. Tag restorations and the Romansh manual were left as they were.
+
+## 2026-10-31 - i18n Swedish and Bulgarian chips
+
+- Swedish fill and average report chips, and the Swedish and Bulgarian import limit label, are translated. Placeholders kept.
+
+## 2026-10-31 - Gallery pick opens the device gallery
+
+- Plan: dev-ai-interaction/plans/gallery-pick-not-file-picker-20261031-1306-plan.md (cite standard-plan-compliance-block.md)
+- exec-preflight exited 1: plan Host is the orchestration root and Worktree is unstamped. Execute directive names this checkout (agent-1, bugfixes-1). Continuing here.
+- rememberImagePicker launches ACTION_PICK on the images collection with image/* and image/x-adobe-dng. It does not use OpenDocument or the photo picker. A refused persistable grant still calls onPicked. A URI that would not stay readable is copied byte-for-byte, and a DNG copy keeps the DNG bytes.
+
+## 2026-10-31 - Gallery launch does not grant the images collection
+
+- Plan: dev-ai-interaction/plans/gallery-pick-not-file-picker-20261031-1306-plan.md (cite standard-plan-compliance-block.md)
+- Review of 86e08b4e..9b0178b6 failed: FLAG_GRANT_READ_URI_PERMISSION and FLAG_GRANT_PERSISTABLE_URI_PERMISSION on ACTION_PICK grant content://media/external/images/media. MediaProvider denies that collection URI and the gallery never opens.
+- Those flags are off the launch. The picked item is still persisted when the provider allows it, and a URI that cannot be read later is still copied byte-for-byte.
+
+## 2026-10-31 - Retry arrow mirrors and gallery shows one image
+
+- Plan: dev-ai-interaction/plans/retry-icon-mirror-20261031-1430-plan.md (cite standard-plan-compliance-block.md)
+- exec-preflight exited 1: plan Host is the orchestration root and Worktree is orchestration (AGENT_CONTEXT has no Agent ID). Execute directive names this checkout (agent-1, bugfixes-1) at 2884f5a0. Continuing here.
+- The Results control draws Icons.Filled.Refresh scaled by -1 on X, so the arrowhead is on the left. The content description stays Retry. The live shutter, the cancel mark, and the Restart label are unchanged.
+- The Fill gallery button draws Icons.Filled.Image and still calls pickFromGallery.
+
+## 2026-10-31 - Exact locale set
+
+- exec-preflight exited 1: plan Host is the orchestration root and Worktree is orchestration (AGENT_CONTEXT has no Agent ID). Execute directive names this checkout (agent-1, bugfixes-1) at 9f20cf9e. Continuing here.
+- Locale packs: drop values-id and values-ms-rMY, move values-pt-rBR to values-pt, add the missing qualifiers, generateLocaleConfig, and point AppLanguage and i18n_apply_supplied.py at that set.
+
+## 2026-10-31 - Drop dead build warnings
+
+- Plan: dev-ai-interaction/plans/build-warnings-20261031-2029-plan.md (cite standard-plan-compliance-block.md)
+- exec-preflight exited 1: plan Host is the orchestration root and Worktree is orchestration (AGENT_CONTEXT has no Agent ID). Execute directive names this checkout (agent-1, bugfixes-1) at e5b61e90. Continuing here.
+- gradle.properties no longer sets android.disallowKotlinSourceSets. The main manifest no longer removes FOREGROUND_SERVICE_DATA_SYNC. detect and detectTiledLarge fill boxes, the histogram, and the optional u8 dump without null tests. The testing-version prompt, the aapt2 override, and the armv7 abiFilters stay.
+
+## 2026-10-31 - KSP output on Android source sets
+
+- Plan: dev-ai-interaction/plans/build-warnings-20261031-2029-plan.md (cite standard-plan-compliance-block.md)
+- Removing android.disallowKotlinSourceSets failed configure: KSP 2.1.0-1.0.29 (AGP lifts it to 2.2.10-2.0.2) adds build/generated/ksp on kotlin.sourceSets. The property stays absent. KSP is 2.3.6, which registers those outputs on AGP source sets.
+
+## 2026-10-31 - KSP output on android.sourceSets
+
+- Plan: dev-ai-interaction/plans/build-warnings-20261031-2029-plan.md (cite standard-plan-compliance-block.md)
+- Review of e5b61e90..ba8ed229 failed: KSP must stay 2.1.0-1.0.29. KSP adds generated/ksp on kotlin.sourceSets, which AGP 9 rejects with the flag absent. Those dirs move onto android.sourceSets, and the compile tasks depend on the KSP task. The flag stays absent. The three warning fixes stay.
+
+## 2026-10-31 - KSP adds go to android.sourceSets
+
+- Plan: dev-ai-interaction/plans/build-warnings-20261031-2029-plan.md (cite standard-plan-compliance-block.md)
+- KSP stays 2.1.0-1.0.29. Its kotlin.srcDirs of generated/ksp is sent to the matching android.sourceSets kotlin or java directory, and the compile tasks depend on that output. The disallow flag stays absent.
+
+## 2026-11-01 - KSP srcDirs reach android.sourceSets
+
+- KSP stays 2.1.0-1.0.29. The script compiler rejected java.lang in app/build.gradle.kts, so the source-set move never ran. srcDirs of generated/ksp now lands on the matching android.sourceSets kotlin or java directory, and compile tasks depend on that output. The disallow flag stays absent.
+
+## 2026-11-01 - Keep the Kotlin source-set opt-out
+
+- Plan: dev-ai-interaction/plans/build-warnings-20261101-0103-plan.md (cite standard-plan-compliance-block.md)
+- exec-preflight exited 1: plan Host is the orchestration root and Worktree is orchestration (AGENT_CONTEXT has no Agent ID). Execute directive names this checkout (agent-1, bugfixes-1) at 8ebb6c63. Continuing here.
+- gradle.properties sets android.disallowKotlinSourceSets=false again. The KSP source-set reflection hook is gone. KSP stays 2.1.0-1.0.29 and Kotlin stays 2.1.0. The manifest remove and the heatmap null checks stay as they were.
+
+## 2026-11-03 - Locale packs in the model
+
+- Plan: dev-ai-interaction/plans/locale-packs-in-model-20261102-2123-plan.md (cite standard-plan-compliance-block.md)
+- exec-preflight exited 1: plan Host is the orchestration root and Worktree is orchestration (AGENT_CONTEXT has no Agent ID). Execute directive names this checkout (agent-1, bugfixes-1) at 3a749f280828f6d72ffbad4a2ef284ea3c092f1a. Continuing here.
+- Finish the left-to-right set in this session: keep-English tokens on the two library strings, endonym keys, drop values-id and values-ms-rMY, rename values-pt-rBR to values-pt, write the missing packs and a distinct Latin American values-b+es+419, and point AppLanguage, i18n_apply_supplied.py, and localeFilters at that set. No new manuals.
+
+## 2026-11-03 - Locale pack reviewer fixes
+
+- Plan: dev-ai-interaction/plans/locale-packs-in-model-20261102-2123-plan.md (cite standard-plan-compliance-block.md)
+- exec-preflight exited 1: plan Host is the orchestration root and Worktree is orchestration (AGENT_CONTEXT has no Agent ID). Execute directive names this checkout (agent-1, bugfixes-1) at b79d9c29a. Continuing here for the reviewer fixes only.
+
+## 2026-11-03 - Locale pack reviewer fixes, second pass
+
+- Plan: dev-ai-interaction/plans/locale-packs-in-model-20261102-2123-plan.md (cite standard-plan-compliance-block.md)
+- exec-preflight exited 1: plan Host is the orchestration root and Worktree is orchestration (AGENT_CONTEXT has no Agent ID). Execute directive names this checkout (agent-1, bugfixes-1) at 69bbcd64d. Continuing here for the two reviewer strings only.
+
+## 2026-11-03 - history rewrite started (backup tag backup-bugfixes-1)
+
+- Branch bugfixes-1, reference backup-bugfixes-1 (37ef1382e).
+
+## 2026-11-03 - reset to c4767ec70 done
+
+- Reset to merge-base with master; log kept; infra kept: 38 path(s).

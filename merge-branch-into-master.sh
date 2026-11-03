@@ -20,6 +20,24 @@
 
 set -euo pipefail
 
+USAGE_LINE="usage: ./merge-branch-into-master.sh [-h] BRANCH"
+usage() {
+  cat <<EOF
+$USAGE_LINE
+
+Merge BRANCH into master, index-first, and leave the merge uncommitted.
+
+options:
+  -h, --help  show this help message and exit
+
+Details: the comment at the top of ./merge-branch-into-master.sh.
+EOF
+}
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+  -[A-Za-z-]*) echo "$USAGE_LINE" >&2; echo "merge-branch-into-master.sh: error: unrecognized option: $1" >&2; exit 2 ;;
+esac
+
 BRANCH="${1:-}"
 if [ -z "$BRANCH" ]; then
   echo "Usage: $0 <branch-name>" >&2
@@ -134,9 +152,13 @@ englog_merge_via_driver() {
     return 1
   fi
   base=$(git merge-base "$pre_head" "$branch")
-  ancestor=$(mktemp)
-  ours=$(mktemp)
-  theirs=$(mktemp)
+  # The three versions go next to the log (work-history/, else the top level), as
+  # git-merge-drivers/ve-englog does; never /tmp. Removed below on every path.
+  local tdir=.
+  [ ! -d work-history ] || tdir=work-history
+  ancestor=$(mktemp "$tdir/.englog-ancestor.XXXXXX") || { echo "ERROR: cannot create a temp file in $tdir" >&2; return 1; }
+  ours=$(mktemp "$tdir/.englog-ours.XXXXXX") || { rm -f "$ancestor"; echo "ERROR: cannot create a temp file in $tdir" >&2; return 1; }
+  theirs=$(mktemp "$tdir/.englog-theirs.XXXXXX") || { rm -f "$ancestor" "$ours"; echo "ERROR: cannot create a temp file in $tdir" >&2; return 1; }
   show_log() {
     local rev="$1" dest="$2"
     if git cat-file -e "$rev:work-history/ENGINEERING_LOG.md" >/dev/null 2>&1; then
@@ -150,8 +172,10 @@ englog_merge_via_driver() {
   show_log "$base" "$ancestor"
   show_log "$pre_head" "$ours"
   show_log "$branch" "$theirs"
-  ./git-merge-drivers/ve-englog "$ancestor" "$ours" "$theirs" "" ENGINEERING_LOG.md
+  local drc=0
+  ./git-merge-drivers/ve-englog "$ancestor" "$ours" "$theirs" "" ENGINEERING_LOG.md || drc=$?
   rm -f "$ancestor" "$ours" "$theirs"
+  [ "$drc" -eq 0 ] || { echo "ERROR: ve-englog failed (exit $drc)" >&2; return "$drc"; }
   echo "  ENGINEERING_LOG.md: ve-englog append complete"
 }
 

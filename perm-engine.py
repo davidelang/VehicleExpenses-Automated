@@ -88,11 +88,20 @@ def apply_spec(spec, mode, is_dir):
             cur = (cur & ~mask) | bits
     return cur
 
+_OPT_LONG = {
+    "-t": "--top-only",
+    "-p": "--prune",
+    "-P": "--prune-name",
+    "-d": "--maxdepth",
+    "-s": "--skip-glob",
+    "-o": "--owner",
+}
+
 def parse_opts(a):
     o = {"prune": [], "prune_name": [], "top_only": False, "maxdepth": None, "skip_glob": [], "owner": None}
     i = 0
     while i < len(a):
-        k = a[i]
+        k = _OPT_LONG.get(a[i], a[i])
         if k == "--top-only":
             o["top_only"] = True; i += 1; continue
         if k in ("--prune", "--prune-name", "--maxdepth", "--skip-glob", "--owner"):
@@ -172,7 +181,11 @@ def name_g(gid):
     try: return grp.getgrgid(gid).gr_name
     except KeyError: return str(gid)
 
-FIX_HINT = "only its owner or root can change it: run 'sudo ./fix-perms' from the orchestration root"
+def fix_hint(uid):
+    if uid == 0:
+        return "only root can change it: run ./fix-perms from the orchestration root (it must run as root)"
+    return (f"only {name_u(uid)} (its owner) or root can change it: have {name_u(uid)} remove it if "
+            f"it is not needed, or run ./fix-perms from the orchestration root (it must run as root)")
 
 def run(argv, path, st):
     r = subprocess.run(argv)
@@ -180,7 +193,7 @@ def run(argv, path, st):
         me = pwd.getpwuid(os.geteuid()).pw_name
         hint = ""
         if os.geteuid() != 0 and st.st_uid != os.geteuid():
-            hint = f"; it is not owned by {me}, so {FIX_HINT}"
+            hint = f"; it is not owned by {me}, so {fix_hint(st.st_uid)}"
         print(f"ERROR: perm-lib: '{' '.join(argv)}' failed (exit {r.returncode}); "
               f"{path} is {name_u(st.st_uid)}:{name_g(st.st_gid)} {format(st.st_mode & 0o7777, '04o')}, "
               f"running as {me}{hint}", file=sys.stderr)
@@ -206,7 +219,9 @@ def cmd_preflight(area, root, *a):
                   f"{format(st.st_mode & 0o7777, '04o')} ({'; '.join(why)})")
     if bad:
         print(f"ERROR: perm-lib: {bad} path(s) in area '{area}' differ from perm-model.tsv and are not "
-              f"owned by {name_u(me)}; {FIX_HINT}", file=sys.stderr)
+              f"owned by {name_u(me)}; only their owners or root can change them: have each owner remove "
+              f"the ones that are not needed, or run ./fix-perms from the orchestration root (it must run as root)",
+              file=sys.stderr)
         sys.exit(1)
 
 def cmd_apply(area, root, *a):
@@ -309,6 +324,28 @@ def cmd_readable_nogroups(user, *paths):
 
 def main(argv):
     global model_path, config_path, MODEL
+    usage_line = "usage: perm-engine.py [-h] MODEL CONFIG COMMAND [ARGS] [options]"
+    if argv and argv[0] in ("-h", "--help"):
+        print(f"""{usage_line}
+
+The engine behind perm-lib.sh: owners, groups and modes from MODEL (perm-model.tsv).
+COMMAND is apply|verify|preflight AREA ROOT, umask AREA, or readable-nogroups USER PATH...
+
+options:
+  -h, --help             show this help message and exit
+  -t, --top-only         ROOT itself, not below it
+  -p, --prune PATH       skip PATH (repeatable)
+  -P, --prune-name NAME  skip every entry named NAME (repeatable)
+  -d, --maxdepth N       descend at most N levels
+  -s, --skip-glob GLOB   skip paths matching GLOB (repeatable)
+  -o, --owner USER       owner to set instead of the model's owner column
+
+Details: the comment at the top of perm-engine.py, and perm-lib.sh.""")
+        return 0
+    if argv and argv[0].startswith("-"):
+        print(usage_line, file=sys.stderr)
+        print(f"perm-engine.py: error: unrecognized option: {argv[0]}", file=sys.stderr)
+        return 2
     if len(argv) < 3:
         die("usage: perm-engine.py MODEL CONFIG COMMAND [ARGS]")
     model_path, config_path, cmd, *args = argv
@@ -326,4 +363,4 @@ def main(argv):
         die(f"unknown user or group {e}")
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    sys.exit(main(sys.argv[1:]) or 0)
