@@ -12621,3 +12621,7 @@ feature-group: label=''
 ## 2026-11-03 - Return pump shutter scale as an IntArray
 
 - prepareScale returns width then height. The native lookup uses that descriptor. Content dispose on the vehicle dialog is not a dismiss.
+
+## 2026-11-03 - Letterbox the odometer detector feed
+
+- A non-square gray image is letterboxed into the square feed. R8 keeps DetectionResult and DetectionBox.

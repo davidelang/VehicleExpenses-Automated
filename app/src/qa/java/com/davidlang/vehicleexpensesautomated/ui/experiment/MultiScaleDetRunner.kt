@@ -450,6 +450,7 @@ object MultiScaleDetRunner {
             val (contentW, contentH) = contentSize(srcW, srcH, side)
             var scaled: Mat = gray
             var ownedScale = false
+            var square: Mat? = null
             try {
                 if (contentW != srcW || contentH != srcH) {
                     val m = Mat()
@@ -461,9 +462,30 @@ object MultiScaleDetRunner {
                         0.0, 0.0, Imgproc.INTER_AREA,
                     )
                 }
+                // mapHeatCorners reads content as the top-left of the side square. No offset.
+                val feed = if (
+                    scaled.type() == CvType.CV_8UC1 &&
+                    scaled.cols() == side &&
+                    scaled.rows() == side
+                ) {
+                    scaled
+                } else if (scaled.type() == CvType.CV_8UC1) {
+                    val sq = Mat.zeros(side, side, CvType.CV_8UC1)
+                    square = sq
+                    val roi = sq.submat(0, contentH, 0, contentW)
+                    try {
+                        scaled.copyTo(roi)
+                    } finally {
+                        roi.release()
+                    }
+                    sq
+                } else {
+                    scaled
+                }
                 Arrays.fill(buf, 0.toByte())
-                NativeImageUtils.populateMonoUInt8(scaled, buf, side, side)
+                NativeImageUtils.populateMonoUInt8(feed, buf, side, side)
             } finally {
+                square?.release()
                 if (ownedScale) scaled.release()
             }
             val p = ensureLiteShape(side)
