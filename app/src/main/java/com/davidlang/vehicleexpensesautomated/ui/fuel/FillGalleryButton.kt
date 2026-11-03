@@ -4,7 +4,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -41,6 +41,6 @@ fun FillGalleryButton(
         }
     }
     IconButton(onClick = { picker.pickFromGallery() }, enabled = enabled, modifier = modifier) {
-        Icon(Icons.Filled.PhotoLibrary, contentDescription = stringResource(R.string.fill_pick_an_existing_image))
+        Icon(Icons.Filled.Image, contentDescription = stringResource(R.string.fill_pick_an_existing_image))
     }
 }

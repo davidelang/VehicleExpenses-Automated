@@ -12633,3 +12633,7 @@ feature-group: label=''
 ## 2026-11-03 - Add the catalogs and read UI copy from them
 
 - English catalog, locale packs, manuals, and locale selection land together. Screens, toasts, and content descriptions read that catalog. The open locale-pack TODO stays open.
+
+## 2026-11-03 - Open the device gallery and mirror the retry arrow
+
+- Picking an existing photo opens the device gallery, including DNG, with no grant on the images collection. Retry points the same way as undo and save, the Fill gallery control is one image, and versionCode is 25.
