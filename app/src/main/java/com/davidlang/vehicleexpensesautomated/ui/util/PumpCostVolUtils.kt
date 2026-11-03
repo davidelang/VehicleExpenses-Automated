@@ -457,7 +457,7 @@ object PumpCostVolUtils {
     )
 
 
-    fun prepareScale(buffer: BufferSet, targetLongEdge: Int): Pair<Int, Int> {
+    fun prepareScale(buffer: BufferSet, targetLongEdge: Int): IntArray {
         val dest = NativePaddleEngine.deskewSetFor(targetLongEdge)
         val S = dest.width
         val letterEdge = min(targetLongEdge, S)
@@ -472,14 +472,14 @@ object PumpCostVolUtils {
         Log.d(TAG, "prepareScale: request=$targetLongEdge destS=$S -> ${targetW}x${targetH} (Aligned: ${alignedW}x${alignedH})")
         if (alignedW > S || alignedH > S) {
             Log.e(TAG, "prepareScale: aligned ${alignedW}x${alignedH} exceeds packed S=$S")
-            return Pair(0, 0)
+            return intArrayOf(0, 0)
         }
         val raw = (dest.s as BufferSet.Instance).tensorBindRaw()
         if (!NativeImageUtils.scalePackedU8(buffer.p.mat, raw, S, targetW, targetH)) {
             Log.e(TAG, "prepareScale: packed scale failed S=$S inner=${targetW}x$targetH")
-            return Pair(0, 0)
+            return intArrayOf(0, 0)
         }
-        return Pair(targetW, targetH)
+        return intArrayOf(targetW, targetH)
     }
 
     suspend fun snapRecCrop(

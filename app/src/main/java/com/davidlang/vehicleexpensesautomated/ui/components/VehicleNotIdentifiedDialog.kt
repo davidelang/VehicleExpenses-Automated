@@ -13,7 +13,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,11 +36,6 @@ fun VehicleNotIdentifiedDialog(
     onDismiss: () -> Unit,
 ) {
     val settled = remember { AtomicBoolean(false) }
-    DisposableEffect(Unit) {
-        onDispose {
-            if (settled.compareAndSet(false, true)) onDismiss()
-        }
-    }
     fun dismiss() {
         if (settled.compareAndSet(false, true)) onDismiss()
     }

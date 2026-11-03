@@ -2335,8 +2335,8 @@ suspend fun runPumpExperiment(
                     branch.metadata["content_expand_bound"] = "tight"
                     prodDetScales.forEach { scale ->
                         val prepared = PumpCostVolUtils.prepareScale(workspace, scale)
-                        val contentW = prepared.first
-                        val contentH = prepared.second
+                        val contentW = prepared[0]
+                        val contentH = prepared[1]
                         if (contentW < 1 || contentH < 1) return@forEach
                         val dest = NativePaddleEngine.deskewSetFor(scale)
                         val S = dest.width
@@ -2606,8 +2606,8 @@ suspend fun runPumpExperiment(
                     branch.metadata["content_expand_bound"] = "edge-retract"
                     prodDetScales.forEach { scale ->
                         val prepared = PumpCostVolUtils.prepareScale(workspace, scale)
-                        val contentW = prepared.first
-                        val contentH = prepared.second
+                        val contentW = prepared[0]
+                        val contentH = prepared[1]
                         if (contentW < 1 || contentH < 1) return@forEach
                         val dest = NativePaddleEngine.deskewSetFor(scale)
                         val S = dest.width
@@ -2875,8 +2875,8 @@ suspend fun runPumpExperiment(
                     branch.metadata["content_expand_bound"] = "tight"
                     prodDetScales.forEach { scale ->
                         val prepared = PumpCostVolUtils.prepareScale(workspace, scale)
-                        val contentW = prepared.first
-                        val contentH = prepared.second
+                        val contentW = prepared[0]
+                        val contentH = prepared[1]
                         if (contentW < 1 || contentH < 1) return@forEach
                         val dest = NativePaddleEngine.deskewSetFor(scale)
                         val S = dest.width
@@ -3188,8 +3188,8 @@ suspend fun runPumpExperiment(
                     branch.metadata["content_expand_bound"] = "edge-retract"
                     prodDetScales.forEach { scale ->
                         val prepared = PumpCostVolUtils.prepareScale(workspace, scale)
-                        val contentW = prepared.first
-                        val contentH = prepared.second
+                        val contentW = prepared[0]
+                        val contentH = prepared[1]
                         if (contentW < 1 || contentH < 1) return@forEach
                         val dest = NativePaddleEngine.deskewSetFor(scale)
                         val S = dest.width
@@ -3512,8 +3512,8 @@ suspend fun runPumpExperiment(
                     branch.metadata["content_expand_chroma"] = "color_adaptive"
                     prodDetScales.forEach { scale ->
                         val prepared = PumpCostVolUtils.prepareScale(workspace, scale)
-                        val contentW = prepared.first
-                        val contentH = prepared.second
+                        val contentW = prepared[0]
+                        val contentH = prepared[1]
                         if (contentW < 1 || contentH < 1) return@forEach
                         val dest = NativePaddleEngine.deskewSetFor(scale)
                         val S = dest.width
@@ -3880,8 +3880,8 @@ suspend fun runPumpExperiment(
                 ): List<android.graphics.Rect> {
                     prodDetScales.forEach { scale ->
                         val prepared = PumpCostVolUtils.prepareScale(workspace, scale)
-                        val contentW = prepared.first
-                        val contentH = prepared.second
+                        val contentW = prepared[0]
+                        val contentH = prepared[1]
                         if (contentW < 1 || contentH < 1) return@forEach
                         val dest = NativePaddleEngine.deskewSetFor(scale)
                         val S = dest.width
@@ -3982,8 +3982,8 @@ suspend fun runPumpExperiment(
                     val collected = ArrayList<ContentExpandUtils.OrientedQuad>()
                     prodDetScales.forEach { scale ->
                         val prepared = PumpCostVolUtils.prepareScale(workspace, scale)
-                        val contentW = prepared.first
-                        val contentH = prepared.second
+                        val contentW = prepared[0]
+                        val contentH = prepared[1]
                         if (contentW < 1 || contentH < 1) return@forEach
                         val dest = NativePaddleEngine.deskewSetFor(scale)
                         val S = dest.width
@@ -6548,8 +6548,8 @@ suspend fun runPumpExperiment(
                     val collected = ArrayList<ContentExpandUtils.OrientedQuad>()
                     prodDetScales.forEach { scale ->
                         val prepared = PumpCostVolUtils.prepareScale(workspace, scale)
-                        val contentW = prepared.first
-                        val contentH = prepared.second
+                        val contentW = prepared[0]
+                        val contentH = prepared[1]
                         if (contentW < 1 || contentH < 1) return@forEach
                         val dest = NativePaddleEngine.deskewSetFor(scale)
                         val S = dest.width

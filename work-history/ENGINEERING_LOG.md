@@ -12617,3 +12617,7 @@ feature-group: label=''
 ## 2026-11-03 - reset to c4767ec70 done
 
 - Reset to merge-base with master; log kept; infra kept: 38 path(s).
+
+## 2026-11-03 - Return pump shutter scale as an IntArray
+
+- prepareScale returns width then height. The native lookup uses that descriptor. Content dispose on the vehicle dialog is not a dismiss.
