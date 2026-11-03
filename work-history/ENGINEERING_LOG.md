@@ -12637,3 +12637,7 @@ feature-group: label=''
 ## 2026-11-03 - Open the device gallery and mirror the retry arrow
 
 - Picking an existing photo opens the device gallery, including DNG, with no grant on the images collection. Retry points the same way as undo and save, the Fill gallery control is one image, and versionCode is 25.
+
+## 2026-11-03 - Local PR prepared
+
+- PR document is dev-ai-interaction/PRs/PR-bugfixes-1.md. Original tip is backup-bugfixes-1. Ready for Master review. Not merged.
