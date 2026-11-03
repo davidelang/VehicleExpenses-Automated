@@ -12647,3 +12647,7 @@ feature-group: label=''
 - Plan: dev-ai-interaction/plans/locale-apply-on-screen-20261103-1612-plan.md (cite standard-plan-compliance-block.md)
 - exec-preflight exited 1: plan Host is the orchestration root and Worktree is orchestration (AGENT_CONTEXT has no Agent ID). Execute directive names this checkout (agent-1, bugfixes-1) at 35e9b50a. Continuing here.
 - AppLanguage.wrap is a configuration context for the active pack. The application and each ComponentActivity pass it from attachBaseContext. AppStrings.get wraps its stored context on lookup. setPref still calls setApplicationLocales and recreates the calling activity.
+
+## 2026-11-03 - Locale config default for the bugfixes-1 merge
+
+- Merge commit 5b65482ec took bugfixes-1. assembleDebug stopped in extractArm64DebugSupportedLocales: generateLocaleConfig needs res/resources.properties. Added unqualifiedResLocale=en (values/ is English). No hand-written locales_config.xml.
