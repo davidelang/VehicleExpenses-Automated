@@ -61,7 +61,6 @@ for SANDBOX_DIR in "${SANDBOX_DIRS[@]}"; do
     setup-project
     filter-apply-config
     filter-clean-config
-    set-worktree-perms
     set-sandbox-perms
     post-checkout
   )

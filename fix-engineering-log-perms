@@ -37,7 +37,7 @@ umask 007
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
-# Load config (same style as set-worktree-perms)
+# Load config
 if [ -f "$SCRIPT_DIR/project.config" ]; then
   . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|shared_group|docker_group|orchestrator_user|planning_user|coder_user)')
 fi
@@ -234,9 +234,6 @@ ai-planner,ai-coder,ai-orchestrator ALL=(root) NOPASSWD: /home/dlang/git/Vehicle
 dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/append-to-engineering-log
 dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/*/append-to-engineering-log
 dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/*/*/append-to-engineering-log
-
-dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/set-worktree-perms
-dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/*/set-worktree-perms
 
 dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/fix-engineering-log-perms
 SUDOEOF

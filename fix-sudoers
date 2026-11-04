@@ -40,9 +40,6 @@ dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/append-to-e
 dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/*/append-to-engineering-log
 dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/*/*/append-to-engineering-log
 
-dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/set-worktree-perms
-dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/*/set-worktree-perms
-
 dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/fix-engineering-log-perms
 dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/fix-this-worktree
 dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/fix-sudoers

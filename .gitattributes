@@ -1,7 +1,6 @@
 # Permission filters (smudge/clean for @@ tokens in stamped files)
 # Do NOT apply to the filter scripts themselves to avoid circular "no such file" during initial checkout.
 setup-project filter=manage-configs
-set-worktree-perms filter=manage-configs
 set-sandbox-perms filter=manage-configs
 project.config.example filter=manage-configs
 landlock.config filter=manage-configs
