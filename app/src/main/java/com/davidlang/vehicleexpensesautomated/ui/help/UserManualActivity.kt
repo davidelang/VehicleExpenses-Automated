@@ -2,6 +2,8 @@ package com.davidlang.vehicleexpensesautomated.ui.help
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -14,16 +16,18 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.davidlang.vehicleexpensesautomated.ui.theme.VehicleExpensesAutomatedTheme
-import com.davidlang.vehicleexpensesautomated.R
 import com.davidlang.vehicleexpensesautomated.ui.util.AppLanguage
+import com.davidlang.vehicleexpensesautomated.ui.util.ManualHtmlSegments
+import com.davidlang.vehicleexpensesautomated.ui.util.S
+import com.davidlang.vehicleexpensesautomated.ui.util.UserManualDocs
 
 /**
- * Offline illustrated user manual (HTML + screenshots from assets).
- * No network and no GitHub login required.
+ * Illustrated user manual. The WebView loads the bundled English HTML.
  */
 class UserManualActivity : ComponentActivity() {
 
@@ -39,11 +43,30 @@ class UserManualActivity : ComponentActivity() {
             VehicleExpensesAutomatedTheme {
                 Scaffold(
                     topBar = {
+                        val loc = AppLanguage.resolveActiveLocale(this@UserManualActivity)
+                        val english = loc.bcp47 == "en" || loc.bcp47.startsWith("en-")
+                        val showWeb = !english &&
+                            loc.manualPathSegment.isNotEmpty() &&
+                            ManualHtmlSegments.present.contains(loc.manualPathSegment)
                         TopAppBar(
-                            title = { Text(getString(R.string.user_manual_title)) },
+                            title = { Text(S("User Manual")) },
                             navigationIcon = {
                                 IconButton(onClick = { finish() }) {
                                     Text("←")
+                                }
+                            },
+                            actions = {
+                                if (showWeb) {
+                                    TextButton(onClick = {
+                                        openExternal(AppLanguage.onlineManualHtmlUrlFor(loc))
+                                    }) {
+                                        Text(S("This language on the web"))
+                                    }
+                                }
+                                if (UserManualDocs.ONLINE_HTML_URL.isNotEmpty()) {
+                                    TextButton(onClick = { openExternal(translateLatestEnglishUrl()) }) {
+                                        Text(S("Translate the latest English"))
+                                    }
                                 }
                             },
                         )
@@ -81,6 +104,17 @@ class UserManualActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun openExternal(url: String) {
+        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
+
+    private fun translateLatestEnglishUrl(): String {
+        val loc = AppLanguage.resolveActiveLocale(this)
+        val tl = Uri.encode(loc.prefTag)
+        val page = Uri.encode(UserManualDocs.ONLINE_HTML_URL)
+        return "https://translate.google.com/translate?sl=en&tl=$tl&u=$page"
     }
 
     companion object {

@@ -54,9 +54,7 @@ import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 @Composable
 internal fun SpreadsheetDestEditForm(
@@ -192,9 +190,9 @@ internal fun SpreadsheetDestEditForm(
         Toast.makeText(
             context,
             if (result.success) {
-                AppStrings.get(R.string.settings_sync_complete)
+                S("Sync complete")
             } else {
-                SyncRateLimit.shortTitle(result.message) ?: AppStrings.get(R.string.settings_sync_failed_open_details)
+                SyncRateLimit.shortTitle(result.message) ?: S("Sync failed — open Details")
             },
             Toast.LENGTH_SHORT,
         ).show()
@@ -210,7 +208,7 @@ internal fun SpreadsheetDestEditForm(
     var driveBrowseReloadNonce by remember { mutableIntStateOf(0) }
     val consentRecovery = rememberConsentRecoveryHandle()
     val displayNameRequired = totalDestCount > 1
-    val formTitle = if (isNew) stringResource(R.string.settings_add_1_s, provider.displayLabel()) else stringResource(R.string.settings_edit_1_s, provider.displayLabel())
+    val formTitle = if (isNew) S("Add %1\$s", provider.displayLabel()) else S("Edit %1\$s", provider.displayLabel())
 
     LaunchedEffect(targetUrl) {
         if (targetUrl.isNotBlank()) {
@@ -324,11 +322,11 @@ internal fun SpreadsheetDestEditForm(
             viewModel.driveAuth.persistAccountEmail(email)
             accountHint = email
             driveReadonlyGranted = viewModel.driveAuth.hasReadonlyBrowseScope()
-            statusText = AppStrings.get(R.string.settings_signed_in_as_1_s, email)
-            Toast.makeText(context, AppStrings.get(R.string.settings_signed_in_as_1_s, email), Toast.LENGTH_SHORT).show()
+            statusText = S("Signed in as %1\$s", email)
+            Toast.makeText(context, S("Signed in as %1\$s", email), Toast.LENGTH_SHORT).show()
         // kept: failure stays on this call so the screen or caller can continue
         } catch (e: ApiException) {
-            statusText = AppStrings.get(R.string.settings_sign_in_failed_try_again_or_pick_a_google_2)
+            statusText = S("Sign-in failed — try again or pick a Google account with Sheets access")
             Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
         }
     }
@@ -344,13 +342,13 @@ internal fun SpreadsheetDestEditForm(
             }
             driveReadonlyGranted = viewModel.driveAuth.hasReadonlyBrowseScope()
             if (driveReadonlyGranted) {
-                statusText = AppStrings.get(R.string.settings_drive_browse_access_granted)
+                statusText = S("Drive browse access granted")
             } else {
-                statusText = AppStrings.get(R.string.settings_drive_browse_access_not_granted_try_again)
+                statusText = S("Drive browse access not granted — try again")
             }
         // kept: failure stays on this call so the screen or caller can continue
         } catch (e: ApiException) {
-            statusText = AppStrings.get(R.string.settings_drive_browse_sign_in_failed)
+            statusText = S("Drive browse sign-in failed")
             Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
         }
     }
@@ -364,10 +362,10 @@ internal fun SpreadsheetDestEditForm(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(if (accountHint.isBlank()) AppStrings.get(R.string.settings_sign_in_with_google) else AppStrings.get(R.string.settings_signed_in_1_s, accountHint))
+                    Text(if (accountHint.isBlank()) S("Sign in with Google") else S("Signed in: %1\$s", accountHint))
                 }
                 Text(
-                    AppStrings.get(R.string.settings_one_sign_in_covers_sheets_and_browsing_spr),
+                    S("One sign-in covers Sheets and browsing spreadsheets you own or that are shared with you."),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 4.dp),
                 )
@@ -378,16 +376,16 @@ internal fun SpreadsheetDestEditForm(
                 OutlinedButton(
                     onClick = {
                         if (activity == null) {
-                            Toast.makeText(context, AppStrings.get(R.string.settings_sign_in_requires_activity), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, S("Sign-in requires activity"), Toast.LENGTH_SHORT).show()
                         } else {
                             scope.launch {
                                 try {
                                     val result = viewModel.msAuth.signInInteractive(activity, accountHint.ifBlank { null })
                                     accountHint = result.email
-                                    statusText = AppStrings.get(R.string.settings_signed_in_as_1_s, result.email)
+                                    statusText = S("Signed in as %1\$s", result.email)
                                 // kept: failure stays on this call so the screen or caller can continue
                                 } catch (e: Exception) {
-                                    statusText = e.message ?: AppStrings.get(R.string.settings_microsoft_sign_in_failed)
+                                    statusText = e.message ?: S("Microsoft sign-in failed")
                                     Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
                                 }
                             }
@@ -395,7 +393,7 @@ internal fun SpreadsheetDestEditForm(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(if (accountHint.isBlank()) AppStrings.get(R.string.settings_sign_in_with_microsoft) else AppStrings.get(R.string.settings_signed_in_1_s, accountHint))
+                    Text(if (accountHint.isBlank()) S("Sign in with Microsoft") else S("Signed in: %1\$s", accountHint))
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
@@ -413,7 +411,7 @@ internal fun SpreadsheetDestEditForm(
             SpreadsheetProvider.OTHER,
             -> {
                 Text(
-                    AppStrings.get(R.string.settings_s_1_s_is_not_yet_implemented_pick_an_impleme, provider.displayLabel()),
+                    S("%1\$s is not yet implemented. Pick an implemented provider under Other.", provider.displayLabel()),
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -434,20 +432,20 @@ internal fun SpreadsheetDestEditForm(
                     OutlinedTextField(
                         value = targetUrl,
                         onValueChange = { targetUrl = it },
-                        label = { Text(AppStrings.get(R.string.settings_sheet_url)) },
-                        supportingText = { Text(AppStrings.get(R.string.settings_paste_a_link_or_use_browse)) },
+                        label = { Text(S("Sheet URL")) },
+                        supportingText = { Text(S("Paste a link or use browse")) },
                         modifier = Modifier.weight(1f),
                     )
                     IconButton(
                         onClick = {
                             if (accountHint.isBlank() && viewModel.auth.getLastAccount() == null) {
-                                Toast.makeText(context, AppStrings.get(R.string.settings_sign_in_first), Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, S("Sign in first"), Toast.LENGTH_SHORT).show()
                             } else {
                                 showBrowseDialog = true
                             }
                         },
                     ) {
-                        Icon(Icons.Default.Search, contentDescription = AppStrings.get(R.string.settings_browse_spreadsheets))
+                        Icon(Icons.Default.Search, contentDescription = S("Browse spreadsheets"))
                     }
                 }
 
@@ -461,7 +459,7 @@ internal fun SpreadsheetDestEditForm(
                             targetUrl = GoogleSheetsClient.spreadsheetUrlFromId(item.id)
                             if (displayName.isBlank()) displayName = item.name
                             showBrowseDialog = false
-                            statusText = AppStrings.get(R.string.settings_selected_1_s, item.name)
+                            statusText = S("Selected: %1\$s", item.name)
                         },
                         enableHybridCatalog = true,
                         readonlyAccessGranted = driveReadonlyGranted,
@@ -500,7 +498,7 @@ internal fun SpreadsheetDestEditForm(
                             }
                         },
                         emptyMessage =
-                            AppStrings.get(R.string.settings_no_spreadsheets_visible_create_one_here_or_open_),
+                            S("No spreadsheets visible. Create one here or open an existing sheet in this app first."),
                     )
                 }
             }
@@ -508,33 +506,33 @@ internal fun SpreadsheetDestEditForm(
                 OutlinedTextField(
                     value = targetId,
                     onValueChange = { targetId = it },
-                    label = { Text(AppStrings.get(R.string.settings_workbook_item_id)) },
-                    supportingText = { Text(AppStrings.get(R.string.settings_onedrive_sharepoint_drive_item_id_for_the_xlsx_w)) },
+                    label = { Text(S("Workbook item ID")) },
+                    supportingText = { Text(S("OneDrive/SharePoint drive item id for the .xlsx workbook")) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = targetUrl,
                     onValueChange = { targetUrl = it },
-                    label = { Text(AppStrings.get(R.string.settings_workbook_url_optional)) },
+                    label = { Text(S("Workbook URL (optional)")) },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
             }
             SpreadsheetProvider.ETHERCALC -> {
                 TextButton(onClick = { SyncSetupDocs.open(context, SyncSetupDocs.tabular("ethercalc")) }) {
-                    Text(AppStrings.get(R.string.settings_setup_help_ethercalc))
+                    Text(S("Setup help — EtherCalc"))
                 }
                 OutlinedTextField(
                     value = etherCalcBaseUrl,
                     onValueChange = { etherCalcBaseUrl = it },
-                    label = { Text(AppStrings.get(R.string.settings_ethercalc_base_url)) },
-                    supportingText = { Text(AppStrings.get(R.string.settings_e_g_https_ethercalc_example_com)) },
+                    label = { Text(S("EtherCalc base URL")) },
+                    supportingText = { Text(S("e.g. https://ethercalc.example.com")) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = etherCalcRoomPrefix,
                     onValueChange = { etherCalcRoomPrefix = it },
-                    label = { Text(AppStrings.get(R.string.settings_room_prefix)) },
-                    supportingText = { Text(AppStrings.get(R.string.settings_each_tab_maps_to_a_room_prefix_tabname)) },
+                    label = { Text(S("Room prefix")) },
+                    supportingText = { Text(S("Each tab maps to a room: prefix-tabname")) },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
             }
@@ -599,7 +597,7 @@ internal fun SpreadsheetDestEditForm(
                     signedIn = zohoAccessToken.isNotBlank(),
                     onSignIn = {
                         if (zohoClientId.isBlank()) {
-                            Toast.makeText(context, AppStrings.get(R.string.settings_enter_oauth_client_id_first), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, S("Enter OAuth client id first"), Toast.LENGTH_SHORT).show()
                         } else {
                             scope.launch {
                                 try {
@@ -619,11 +617,11 @@ internal fun SpreadsheetDestEditForm(
                                     }
                                     zohoAccountsServer = result.accountsServer
                                     accountHint = "zoho"
-                                    statusText = AppStrings.get(R.string.settings_signed_in_with_zoho)
+                                    statusText = S("Signed in with Zoho")
                                     Toast.makeText(context, statusText, Toast.LENGTH_SHORT).show()
                                 // kept: failure stays on this call so the screen or caller can continue
                                 } catch (e: Exception) {
-                                    statusText = e.message ?: AppStrings.get(R.string.settings_zoho_sign_in_failed)
+                                    statusText = e.message ?: S("Zoho sign-in failed")
                                     Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
                                 }
                             }
@@ -638,9 +636,9 @@ internal fun SpreadsheetDestEditForm(
         }
 
         SyncBackgroundScheduleSection(
-            title = stringResource(R.string.settings_background_sync),
-            enableLabel = stringResource(R.string.settings_enable_background_sync),
-            intervalSliderLabel = stringResource(R.string.settings_background_sync_interval_hours),
+            title = S("Background sync"),
+            enableLabel = S("Enable background sync"),
+            intervalSliderLabel = S("Background sync interval (hours)"),
             state = SyncScheduleUiState(
                 enabled = enabled,
                 wifiOnly = wifiOnly,
@@ -653,7 +651,7 @@ internal fun SpreadsheetDestEditForm(
             onFrequencyHoursChange = { frequencyHours = SyncFrequencyUi.snapHours(it) },
             enableSwitchEnabled = !isDeferredStub,
             deferredStubMessage = if (isDeferredStub) {
-                stringResource(R.string.settings_s_1_s_is_not_yet_available_background_sync_c, provider.displayLabel())
+                S("%1\$s is not yet available — background sync cannot be enabled.", provider.displayLabel())
             } else {
                 null
             },
@@ -666,7 +664,7 @@ internal fun SpreadsheetDestEditForm(
                 SyncDestinationStore.isSpreadsheetConfigured(it)
             } == true
         SyncDestinationEditFooter(
-            testButtonLabel = stringResource(R.string.settings_test_connection_this_destination),
+            testButtonLabel = S("Test connection (this destination)"),
             onTest = {
                 fun runTest(allowRecovery: Boolean) {
                     scope.launch {
@@ -741,7 +739,7 @@ internal fun SpreadsheetDestEditForm(
                             accountHint = accountHint,
                         )
                         if (!SyncDestinationStore.isSpreadsheetConfigured(testDest)) {
-                            Toast.makeText(context, AppStrings.get(R.string.settings_configure_a_destination_first), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, S("Configure a destination first"), Toast.LENGTH_SHORT).show()
                             return@launch
                         }
                         try {
@@ -749,7 +747,7 @@ internal fun SpreadsheetDestEditForm(
                                 viewModel.testConnection(testDest)
                             }
                             statusIsError = !ok
-                            statusText = if (ok) AppStrings.get(R.string.settings_connection_test_passed) else AppStrings.get(R.string.settings_connection_test_failed)
+                            statusText = if (ok) S("Connection test passed") else S("Connection test failed")
                             Toast.makeText(context, statusText, Toast.LENGTH_SHORT).show()
                         // kept: failure stays on this call so the screen or caller can continue
                         } catch (e: SheetsRecoverableAuthException) {
@@ -777,7 +775,7 @@ internal fun SpreadsheetDestEditForm(
                     if (!canSyncThisDest) {
                         Toast.makeText(
                             context,
-                            AppStrings.get(R.string.settings_save_a_configured_destination_first),
+                            S("Save a configured destination first"),
                             Toast.LENGTH_SHORT,
                         ).show()
                     } else {
@@ -789,12 +787,12 @@ internal fun SpreadsheetDestEditForm(
             syncNowEnabled = canSyncThisDest,
             statusIsError = footerIsError,
             failureDetailMessage = storedFailureDetail,
-            failureDialogTitle = displayName.ifBlank { AppStrings.get(R.string.settings_spreadsheet_sync_failure) },
+            failureDialogTitle = displayName.ifBlank { S("Spreadsheet sync failure") },
             showRemove = !isNew,
             onRemove = {
                 store.removeSpreadsheet(id)
                 viewModel.rescheduleBackgroundSync()
-                Toast.makeText(context, AppStrings.get(R.string.settings_destination_removed), Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, S("Destination removed"), Toast.LENGTH_SHORT).show()
                 onRemoved()
             },
             statusText = footerStatus,

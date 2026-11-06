@@ -32,8 +32,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 @HiltViewModel
 class SpreadsheetSyncViewModel @Inject constructor(
@@ -68,7 +67,7 @@ class SpreadsheetSyncViewModel @Inject constructor(
             _manualSyncInProgress.value = true
             _manualSyncIsError.value = false
             _manualSyncResult.value = null
-            _manualSyncStatus.value = AppStrings.get(R.string.settings_starting_spreadsheet_sync)
+            _manualSyncStatus.value = S("Starting spreadsheet sync…")
             try {
                 val result = withContext(Dispatchers.IO) {
                     coordinator.syncNow(
@@ -89,7 +88,7 @@ class SpreadsheetSyncViewModel @Inject constructor(
             // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 _manualSyncIsError.value = true
-                _manualSyncStatus.value = e.message ?: AppStrings.get(R.string.settings_sync_failed)
+                _manualSyncStatus.value = e.message ?: S("Sync failed")
                 _manualSyncResult.value = SyncResult(false, _manualSyncStatus.value)
             } finally {
                 _manualSyncInProgress.value = false
@@ -133,7 +132,7 @@ class SpreadsheetSyncViewModel @Inject constructor(
         return result.success
     }
 
-    suspend fun createSpreadsheet(accountHint: String, title: String = AppStrings.get(R.string.app_name)): Pair<String, String> {
+    suspend fun createSpreadsheet(accountHint: String, title: String = S("Vehicle Expenses")): Pair<String, String> {
         try {
             val created = sheetsClient.createSpreadsheet(title, accountHint.ifBlank { null })
             val id = created.spreadsheetId

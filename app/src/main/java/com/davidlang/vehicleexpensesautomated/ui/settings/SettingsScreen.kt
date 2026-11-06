@@ -37,10 +37,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Currency
 import java.util.Locale
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
 import com.davidlang.vehicleexpensesautomated.ui.util.AppLanguage
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 private fun mediaImagesPermission(): String {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -67,10 +65,10 @@ fun SettingsScreen(
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
     val viewModel: SettingsViewModel = hiltViewModel()
     RegisterPageHelp(
-        title = AppStrings.get(R.string.nav_settings),
-        AppStrings.get(R.string.settings_units_photo_save_toggles_debug_fill_and_ex),
-        AppStrings.get(R.string.settings_spreadsheet_and_photo_destinations_are_under_men),
-        AppStrings.get(R.string.settings_show_experiment_screens_reveals_alignment_pump_e),
+        title = S("Settings"),
+        S("Units, photo save toggles, debug Fill, and experiment screens live here."),
+        S("Spreadsheet and photo destinations are under Menu → Syncing (not only this page)."),
+        S("Show experiment screens reveals Alignment, Pump Experiment, and Import Old Pictures in the drawer."),
     )
     val fuelViewModel: FuelViewModel = hiltViewModel()
     val fuelEntries by fuelViewModel.fuelEntries.collectAsState(initial = emptyList())
@@ -133,8 +131,8 @@ fun SettingsScreen(
     }
     val shortCurrencySymbols = listOf("system", "$", "€", "£", "CA$", "A$", "¥")
     val shortCurrencyOptions = shortCurrencySymbols.map { sym ->
-        if (sym == "system") AppStrings.get(R.string.settings_system_default_currency, systemCurrencySymbol) else sym
-    } + AppStrings.get(R.string.settings_see_more_currencies)
+        if (sym == "system") S("System default (%1\$s)", systemCurrencySymbol) else sym
+    } + S("See more")
     var volumeUnit by remember {
         mutableStateOf(
             if (prefs.contains("volume_unit")) {
@@ -148,12 +146,12 @@ fun SettingsScreen(
     var showVolumeConvertDialog by remember { mutableStateOf(false) }
     val systemVolumeLabel = remember {
         if (VolumeUnits.systemDefaultUnit() == VolumeUnits.LITERS) {
-            AppStrings.get(R.string.settings_volume_system_default_liters)
+            S("System default (Liters)")
         } else {
-            AppStrings.get(R.string.settings_volume_system_default_gallons)
+            S("System default (Gallons)")
         }
     }
-    val volumeOptions = listOf(systemVolumeLabel, AppStrings.get(R.string.settings_volume_gallons_g), AppStrings.get(R.string.settings_volume_liters_l))
+    val volumeOptions = listOf(systemVolumeLabel, S("Gallons (G)"), S("Liters (L)"))
 
     fun resolveVolumePref(pref: String): String {
         if (pref == VolumeUnits.GALLONS || pref == VolumeUnits.LITERS) return pref
@@ -162,19 +160,19 @@ fun SettingsScreen(
 
     fun volumeDisplayLabel(pref: String): String = when (pref) {
         "system" -> systemVolumeLabel
-        VolumeUnits.GALLONS -> AppStrings.get(R.string.settings_volume_gallons_g)
-        VolumeUnits.LITERS -> AppStrings.get(R.string.settings_volume_liters_l)
+        VolumeUnits.GALLONS -> S("Gallons (G)")
+        VolumeUnits.LITERS -> S("Liters (L)")
         else -> systemVolumeLabel
     }
 
     fun volumePrefFromLabel(label: String): String = when (label) {
         systemVolumeLabel -> "system"
-        AppStrings.get(R.string.settings_volume_gallons_g) -> VolumeUnits.GALLONS
-        AppStrings.get(R.string.settings_volume_liters_l) -> VolumeUnits.LITERS
+        S("Gallons (G)") -> VolumeUnits.GALLONS
+        S("Liters (L)") -> VolumeUnits.LITERS
         else -> VolumeUnits.LITERS
     }
 
-    var status by remember { mutableStateOf(AppStrings.get(R.string.settings_ready)) }
+    var status by remember { mutableStateOf(S("Ready")) }
     var showClearDebugConfirm by remember { mutableStateOf(false) }
     var showDebugInfoDialog by remember { mutableStateOf(false) }
     var debugDataRefreshKey by remember { mutableIntStateOf(0) }
@@ -192,7 +190,7 @@ fun SettingsScreen(
         if (!isGranted) {
             Toast.makeText(
                 context,
-                AppStrings.get(R.string.settings_photos_permission_denied_grant_photos_acce),
+                S("Photos permission denied. Grant Photos access in App info → Permissions so fuel photos can save to gallery."),
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -211,11 +209,11 @@ fun SettingsScreen(
     }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        uri?.let { scope.launch { csvManager.exportToZip(); status = AppStrings.get(R.string.settings_exported); Toast.makeText(context, AppStrings.get(R.string.settings_csv_zip_exported), Toast.LENGTH_LONG).show() } }
+        uri?.let { scope.launch { csvManager.exportToZip(); status = S("Exported"); Toast.makeText(context, S("CSV ZIP exported"), Toast.LENGTH_LONG).show() } }
     }
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { scope.launch { csvManager.importFromZip(uri); status = AppStrings.get(R.string.settings_imported); Toast.makeText(context, AppStrings.get(R.string.settings_csv_import_complete), Toast.LENGTH_LONG).show() } }
+        uri?.let { scope.launch { csvManager.importFromZip(uri); status = S("Imported"); Toast.makeText(context, S("CSV import complete"), Toast.LENGTH_LONG).show() } }
     }
 
     LaunchedEffect(debugMaxSessions) {
@@ -274,10 +272,10 @@ fun SettingsScreen(
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        Text(AppStrings.get(R.string.settings_general), style = MaterialTheme.typography.headlineMedium)
+        Text(S("General Settings"), style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            AppStrings.get(R.string.settings_sync_lives_under),
+            S("Sync & backup lives under Menu → Syncing (spreadsheet + photo destinations, Sync now, failures)."),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -355,24 +353,24 @@ fun SettingsScreen(
                     if (email.isNotEmpty()) {
                         emailPrefs.accountEmail = email
                         emailAccount = email
-                        Toast.makeText(context, AppStrings.get(R.string.settings_gmail_account_1_s, email), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, S("Gmail account: %1\$s", email), Toast.LENGTH_SHORT).show()
                     }
                 // kept: failure stays on this call so the screen or caller can continue
                 } catch (e: Exception) {
                     Toast.makeText(
                         context,
-                        AppStrings.get(R.string.settings_gmail_sign_in_failed_1_s, e.message?.take(80).orEmpty()),
+                        S("Gmail sign-in failed: %1\$s", e.message?.take(80).orEmpty()),
                         Toast.LENGTH_LONG,
                     ).show()
                 }
             }
-            Text(stringResource(R.string.settings_email_receipts_shell_sam_s_club), style = MaterialTheme.typography.titleMedium)
+            Text(S("Email receipts (Shell + Sam's Club)"), style = MaterialTheme.typography.titleMedium)
             Text(
-                (if (experimentsEnabled) stringResource(R.string.settings_offline_packaged_samples_unassigned_fuel) else "") +
-                    stringResource(R.string.settings_live_gmail_label_oauth_and_or_generic_imap) +
-                    stringResource(R.string.settings_same_label_folder_may_hold_multiple_vendor) +
-                    stringResource(R.string.settings_rows_vehicle_unassigned_id_0_odometer_0_pa) +
-                    stringResource(R.string.settings_imap_uses_tls_port_993_passwords_are_not_w),
+                (if (experimentsEnabled) S("Offline: packaged samples → Unassigned fuel. ") else "") +
+                    S("Live: Gmail label (OAuth) and/or generic IMAP folder (host + app password). ") +
+                    S("Same label/folder may hold multiple vendors; parser auto-detects. ") +
+                    S("Rows: vehicle Unassigned (id 0), odometer 0, Partial Fill off. ") +
+                    S("IMAP uses TLS (port 993). Passwords are not written to logcat."),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -394,7 +392,7 @@ fun SettingsScreen(
                             } catch (e: Exception) {
                                 Toast.makeText(
                                     context,
-                                    AppStrings.get(R.string.settings_offline_ingest_failed_1_s, e.message?.take(100).orEmpty()),
+                                    S("Offline ingest failed: %1\$s", e.message?.take(100).orEmpty()),
                                     Toast.LENGTH_LONG,
                                 ).show()
                             } finally {
@@ -406,17 +404,17 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
-                        if (emailOfflineBusy) stringResource(R.string.settings_ingesting_sample_receipts)
-                        else stringResource(R.string.settings_ingest_sample_receipts_offline_goldens),
+                        if (emailOfflineBusy) S("Ingesting sample receipts…")
+                        else S("Ingest sample receipts (offline goldens)"),
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
             }
-            SwitchSetting(stringResource(R.string.settings_enable_scheduled_email_poll), emailPollEnabled) { enabled ->
+            SwitchSetting(S("Enable scheduled email poll"), emailPollEnabled) { enabled ->
                 emailPollEnabled = enabled
                 persistEmailSource()
             }
-            SwitchSetting(stringResource(R.string.settings_use_gmail_oauth_label), emailGmailEnabled) { on ->
+            SwitchSetting(S("Use Gmail (OAuth + label)"), emailGmailEnabled) { on ->
                 emailGmailEnabled = on
                 if (!on && !emailImapEnabled) emailImapEnabled = true
                 persistEmailSource()
@@ -427,25 +425,25 @@ fun SettingsScreen(
                     emailLabel = it
                     emailPrefs.labelName = it
                 },
-                label = { Text(stringResource(R.string.settings_gmail_label_name)) },
+                label = { Text(S("Gmail label name")) },
                 singleLine = true,
                 enabled = emailGmailEnabled,
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                if (emailAccount.isBlank()) stringResource(R.string.settings_gmail_account_not_signed_in)
-                else stringResource(R.string.settings_gmail_account_1_s, emailAccount),
+                if (emailAccount.isBlank()) S("Gmail account: (not signed in)")
+                else S("Gmail account: %1\$s", emailAccount),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Button(
                 onClick = { emailSignInLauncher.launch(viewModel.emailReceiptSignInIntent()) },
                 enabled = emailGmailEnabled,
             ) {
-                Text(stringResource(R.string.settings_sign_in_for_gmail))
+                Text(S("Sign in for Gmail"))
             }
             Spacer(modifier = Modifier.height(12.dp))
-            SwitchSetting(stringResource(R.string.settings_use_imap_folder), emailImapEnabled) { on ->
+            SwitchSetting(S("Use IMAP (folder)"), emailImapEnabled) { on ->
                 emailImapEnabled = on
                 if (!on && !emailGmailEnabled) emailGmailEnabled = true
                 persistEmailSource()
@@ -453,7 +451,7 @@ fun SettingsScreen(
             OutlinedTextField(
                 value = imapHost,
                 onValueChange = { imapHost = it },
-                label = { Text(stringResource(R.string.settings_imap_host_e_g_imap_gmail_com)) },
+                label = { Text(S("IMAP host (e.g. imap.gmail.com)")) },
                 singleLine = true,
                 enabled = emailImapEnabled,
                 modifier = Modifier.fillMaxWidth(),
@@ -461,7 +459,7 @@ fun SettingsScreen(
             OutlinedTextField(
                 value = imapPort,
                 onValueChange = { imapPort = it.filter { ch -> ch.isDigit() }.take(5) },
-                label = { Text(stringResource(R.string.settings_imap_port_993_tls)) },
+                label = { Text(S("IMAP port (993 TLS)")) },
                 singleLine = true,
                 enabled = emailImapEnabled,
                 modifier = Modifier.fillMaxWidth(),
@@ -469,7 +467,7 @@ fun SettingsScreen(
             OutlinedTextField(
                 value = imapUser,
                 onValueChange = { imapUser = it },
-                label = { Text(stringResource(R.string.settings_imap_username)) },
+                label = { Text(S("IMAP username")) },
                 singleLine = true,
                 enabled = emailImapEnabled,
                 modifier = Modifier.fillMaxWidth(),
@@ -477,7 +475,7 @@ fun SettingsScreen(
             OutlinedTextField(
                 value = imapPassword,
                 onValueChange = { imapPassword = it },
-                label = { Text(stringResource(R.string.settings_imap_password_app_password)) },
+                label = { Text(S("IMAP password / app password")) },
                 singleLine = true,
                 enabled = emailImapEnabled,
                 modifier = Modifier.fillMaxWidth(),
@@ -485,7 +483,7 @@ fun SettingsScreen(
             OutlinedTextField(
                 value = imapFolder,
                 onValueChange = { imapFolder = it },
-                label = { Text(stringResource(R.string.settings_imap_folder_e_g_inbox_or_receipts)) },
+                label = { Text(S("IMAP folder (e.g. INBOX or Receipts)")) },
                 singleLine = true,
                 enabled = emailImapEnabled,
                 modifier = Modifier.fillMaxWidth(),
@@ -497,7 +495,7 @@ fun SettingsScreen(
                     emailPrefs.enabled = true
                     emailPollEnabled = true
                     viewModel.pollEmailReceiptsNow()
-                    Toast.makeText(context, AppStrings.get(R.string.settings_email_receipt_poll_queued), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, S("Email receipt poll queued"), Toast.LENGTH_SHORT).show()
                     emailLastSummary = emailPrefs.lastRunSummary
                     emailPollWatchToken++
                 },
@@ -507,16 +505,16 @@ fun SettingsScreen(
                     ),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(stringResource(R.string.settings_poll_now))
+                Text(S("Poll now"))
             }
             TextButton(onClick = {
                 emailLastSummary = viewModel.readEmailReceiptLastSummary()
             }) {
-                Text(stringResource(R.string.settings_refresh_last_run))
+                Text(S("Refresh last run"))
             }
             if (emailLastSummary.isNotBlank()) {
                 Text(
-                    stringResource(R.string.settings_last_run_1_s, emailLastSummary),
+                    S("Last run: %1\$s", emailLastSummary),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -525,19 +523,19 @@ fun SettingsScreen(
         SettingsEmailReceipts()
         Spacer(modifier = Modifier.height(16.dp))
 
-        SwitchSetting(AppStrings.get(R.string.settings_save_fill_and_trip_photos), saveFuelPhotos) { enabled ->
+        SwitchSetting(S("Save fill and trip photos"), saveFuelPhotos) { enabled ->
             saveFuelPhotos = enabled
             if (enabled) {
                 requestMediaPermissionIfNeeded()
             }
         }
-        SwitchSetting(AppStrings.get(R.string.settings_save_receipt_photos), saveExpensePhotos) { enabled ->
+        SwitchSetting(S("Save receipt photos"), saveExpensePhotos) { enabled ->
             saveExpensePhotos = enabled
             if (enabled) {
                 requestMediaPermissionIfNeeded()
             }
         }
-        SwitchSetting(AppStrings.get(R.string.settings_play_shutter_sound), shutterSounds) { shutterSounds = it }
+        SwitchSetting(S("Play Shutter Sound"), shutterSounds) { shutterSounds = it }
         @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
         @Composable
         fun SettingsFillDebugRow() {
@@ -569,14 +567,14 @@ fun SettingsScreen(
                     ) {
                         Icon(
                             Icons.Default.Delete,
-                            contentDescription = stringResource(R.string.settings_delete_debug_reports),
+                            contentDescription = S("Delete debug reports"),
                             modifier = Modifier.size(24.dp),
                         )
                     }
                     IconButton(
                         onClick = {
                             if (!hasDebugData) {
-                                Toast.makeText(context, AppStrings.get(R.string.settings_no_debug_reports_to_send), Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, S("No debug reports to send"), Toast.LENGTH_SHORT).show()
                             } else {
                                 selectedSessionPaths = emptySet()
                                 selectedCrashPaths = emptySet()
@@ -587,7 +585,7 @@ fun SettingsScreen(
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.Send,
-                            contentDescription = stringResource(R.string.settings_send_debug_reports),
+                            contentDescription = S("Send debug reports"),
                             modifier = Modifier.size(24.dp),
                         )
                     }
@@ -602,7 +600,7 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
-                            stringResource(R.string.settings_debug_fill),
+                            S("Debug Fill"),
                             modifier = Modifier.weight(1f),
                             maxLines = 2,
                             softWrap = true,
@@ -611,7 +609,7 @@ fun SettingsScreen(
                             onClick = { showDebugInfoDialog = true },
                             modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                         ) {
-                            Icon(Icons.Default.Info, contentDescription = stringResource(R.string.settings_about_debug_fill))
+                            Icon(Icons.Default.Info, contentDescription = S("About Debug Fill"))
                         }
                         countMaxBlock()
                         deleteSendBlock()
@@ -626,7 +624,7 @@ fun SettingsScreen(
                                 .heightIn(min = 48.dp),
                         ) {
                             Text(
-                                stringResource(R.string.settings_debug_fill),
+                                S("Debug Fill"),
                                 modifier = Modifier.weight(1f),
                                 maxLines = 2,
                                 softWrap = true,
@@ -635,7 +633,7 @@ fun SettingsScreen(
                                 onClick = { showDebugInfoDialog = true },
                                 modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                             ) {
-                                Icon(Icons.Default.Info, contentDescription = stringResource(R.string.settings_about_debug_fill))
+                                Icon(Icons.Default.Info, contentDescription = S("About Debug Fill"))
                             }
                             Switch(checked = debugFill, onCheckedChange = { debugFill = it })
                         }
@@ -658,9 +656,9 @@ fun SettingsScreen(
         @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
         @Composable
         fun SettingsSetupTips() {
-            Text(stringResource(R.string.nav_setup_tips), style = MaterialTheme.typography.titleSmall)
+            Text(S("Setup tips"), style = MaterialTheme.typography.titleSmall)
             Text(
-                stringResource(R.string.settings_first_run_walkthroughs_for_adding_a_vehicle_or_c),
+                S("First-run walkthroughs for adding a vehicle or connecting sync (also under Help)."),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -668,30 +666,30 @@ fun SettingsScreen(
                 onClick = { navController.navigate("tutorial/tutorial_add_vehicle") },
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             ) {
-                Text(stringResource(R.string.settings_tutorial_add_a_vehicle))
+                Text(S("Tutorial: Add a vehicle"))
             }
             OutlinedButton(
                 onClick = { navController.navigate("tutorial/tutorial_setup_sync") },
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             ) {
-                Text(stringResource(R.string.settings_tutorial_connect_existing_setup))
+                Text(S("Tutorial: Connect existing setup"))
             }
             OutlinedButton(
                 onClick = { navController.navigate("onboarding") },
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp),
             ) {
-                Text(stringResource(R.string.settings_show_first_run_welcome))
+                Text(S("Show first-run welcome"))
             }
         }
         SettingsSetupTips()
         if (experimentsAvailable) {
-        SwitchSetting(AppStrings.get(R.string.settings_show_experiment_screens_dev), showExperimentScreens) { showExperimentScreens = it }
+        SwitchSetting(S("Show experiment screens (dev)"), showExperimentScreens) { showExperimentScreens = it }
         if (experimentsEnabled) {
             Spacer(modifier = Modifier.height(8.dp))
-            Text(AppStrings.get(R.string.settings_pump_ocr_advanced), style = MaterialTheme.typography.titleSmall)
+            Text(S("Pump OCR (advanced)"), style = MaterialTheme.typography.titleSmall)
             Text(
-                AppStrings.get(R.string.settings_label_y_band_uses_smallest_value_cluster_r) +
-                    AppStrings.get(R.string.settings_ratio_lo_hi_are_band_gated_extreme_checks),
+                S("Label Y-band uses smallest value-cluster rect height × extra fraction (resolution-independent). ") +
+                    S("Ratio lo/hi are band-gated extreme checks (not a target \$/gal)."),
                 style = MaterialTheme.typography.bodySmall,
             )
             OutlinedTextField(
@@ -702,28 +700,28 @@ fun SettingsScreen(
                         PumpOcrSettings.MAX_MAX_RED_BOXES,
                     )?.let { pumpMaxRedBoxes = it }
                 },
-                label = { Text(AppStrings.get(R.string.settings_pump_max_red_boxes_kept_1_s_2_s, PumpOcrSettings.MIN_MAX_RED_BOXES, PumpOcrSettings.MAX_MAX_RED_BOXES)) },
+                label = { Text(S("Pump max red boxes kept (%1\$s–%2\$s)", PumpOcrSettings.MIN_MAX_RED_BOXES, PumpOcrSettings.MAX_MAX_RED_BOXES)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
             OutlinedTextField(
                 value = pumpLabelYBandExtra,
                 onValueChange = { pumpLabelYBandExtra = it },
-                label = { Text(AppStrings.get(R.string.settings_label_y_band_extra_fraction_of_smallest_value_re)) },
+                label = { Text(S("Label Y-band extra (fraction of smallest value rect height, 0–1)")) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
             OutlinedTextField(
                 value = pumpRatioBandLo,
                 onValueChange = { pumpRatioBandLo = it },
-                label = { Text(AppStrings.get(R.string.settings_cost_vol_ratio_band_low_gal)) },
+                label = { Text(S("Cost/vol ratio band low (\$/gal)")) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
             OutlinedTextField(
                 value = pumpRatioBandHi,
                 onValueChange = { pumpRatioBandHi = it },
-                label = { Text(AppStrings.get(R.string.settings_cost_vol_ratio_band_high_gal)) },
+                label = { Text(S("Cost/vol ratio band high (\$/gal)")) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -736,15 +734,15 @@ fun SettingsScreen(
             if (showDebugInfoDialog) {
                 AlertDialog(
                     onDismissRequest = { showDebugInfoDialog = false },
-                    title = { Text(stringResource(R.string.settings_debug_fill)) },
+                    title = { Text(S("Debug Fill")) },
                     text = {
                         Text(
-                            stringResource(R.string.settings_this_captures_images_and_ocr_details_durin),
+                            S("This captures images and OCR details during a fill that can be emailed for debugging."),
                         )
                     },
                     confirmButton = {
                         TextButton(onClick = { showDebugInfoDialog = false }) {
-                            Text(stringResource(R.string.settings_ok))
+                            Text(S("OK"))
                         }
                     },
                 )
@@ -752,11 +750,11 @@ fun SettingsScreen(
             if (showSendReportPicker) {
                 AlertDialog(
                     onDismissRequest = { showSendReportPicker = false },
-                    title = { Text(stringResource(R.string.settings_select_items_to_attach)) },
+                    title = { Text(S("Select items to attach")) },
                     text = {
                         LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
                             if (debugSessions.isNotEmpty()) {
-                                item { Text(stringResource(R.string.settings_fill_sessions), style = MaterialTheme.typography.titleSmall) }
+                                item { Text(S("Fill sessions"), style = MaterialTheme.typography.titleSmall) }
                                 items(debugSessions, key = { it.absolutePath }) { session ->
                                     val path = session.absolutePath
                                     Row(
@@ -781,7 +779,7 @@ fun SettingsScreen(
                                 }
                             }
                             if (crashReports.isNotEmpty()) {
-                                item { Text(stringResource(R.string.settings_crash_reports), style = MaterialTheme.typography.titleSmall) }
+                                item { Text(S("Crash reports"), style = MaterialTheme.typography.titleSmall) }
                                 items(crashReports, key = { it.absolutePath }) { crash ->
                                     val path = crash.absolutePath
                                     Row(
@@ -811,7 +809,7 @@ fun SettingsScreen(
                                 selectedCrashPaths,
                             )
                             if (attachments.isEmpty()) {
-                                Toast.makeText(context, AppStrings.get(R.string.settings_select_at_least_one_item), Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, S("Select at least one item"), Toast.LENGTH_SHORT).show()
                                 return@TextButton
                             }
                             val launched = FillDebugStore.launchFailureReport(context, attachments)
@@ -820,17 +818,17 @@ fun SettingsScreen(
                             } else {
                                 Toast.makeText(
                                     context,
-                                    AppStrings.get(R.string.settings_no_email_app_found_to_send_report),
+                                    S("No email app found to send report"),
                                     Toast.LENGTH_LONG,
                                 ).show()
                             }
                         }) {
-                            Text(stringResource(R.string.settings_send))
+                            Text(S("Send"))
                         }
                     },
                     dismissButton = {
                         TextButton(onClick = { showSendReportPicker = false }) {
-                            Text(stringResource(R.string.settings_cancel))
+                            Text(S("Cancel"))
                         }
                     },
                 )
@@ -842,12 +840,12 @@ fun SettingsScreen(
                         pendingVolumeUnit = null
                         showVolumeConvertDialog = false
                     },
-                    title = { Text(stringResource(R.string.settings_convert_fuel_volumes)) },
+                    title = { Text(S("Convert fuel volumes?")) },
                     text = {
                         Text(
-                            stringResource(R.string.settings_convert_existing_fuel_volumes_between_g_an) +
-                                stringResource(R.string.settings_if_you_choose_no_historical_numbers_keep_t) +
-                                stringResource(R.string.settings_display_labels_will_change_without_conversion),
+                            S("Convert existing fuel volumes between G and L?\n\n") +
+                                S("If you choose No, historical numbers keep their current values but ") +
+                                S("display labels will change without conversion."),
                         )
                     },
                     confirmButton = {
@@ -856,14 +854,14 @@ fun SettingsScreen(
                                 pendingVolumeUnit = null
                                 showVolumeConvertDialog = false
                             }) {
-                                Text(stringResource(R.string.settings_cancel))
+                                Text(S("Cancel"))
                             }
                             TextButton(onClick = {
                                 volumeUnit = targetPref
                                 pendingVolumeUnit = null
                                 showVolumeConvertDialog = false
                             }) {
-                                Text(stringResource(R.string.settings_no))
+                                Text(S("No"))
                             }
                             TextButton(onClick = {
                                 val fromUnit = resolveVolumePref(volumeUnit)
@@ -874,7 +872,7 @@ fun SettingsScreen(
                                     showVolumeConvertDialog = false
                                 }
                             }) {
-                                Text(stringResource(R.string.settings_yes))
+                                Text(S("Yes"))
                             }
                         }
                     },
@@ -883,21 +881,21 @@ fun SettingsScreen(
             if (showClearDebugConfirm) {
                 AlertDialog(
                     onDismissRequest = { showClearDebugConfirm = false },
-                    title = { Text(stringResource(R.string.settings_clear_debug_data)) },
-                    text = { Text(stringResource(R.string.settings_deletes_all_fill_debug_sessions_and_crash)) },
+                    title = { Text(S("Clear debug data?")) },
+                    text = { Text(S("Deletes all Fill debug sessions and crash reports.")) },
                     confirmButton = {
                         TextButton(onClick = {
                             FillDebugStore.clearAllDebugData(context)
                             debugDataRefreshKey++
                             showClearDebugConfirm = false
-                            Toast.makeText(context, AppStrings.get(R.string.settings_debug_data_cleared), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, S("Debug data cleared"), Toast.LENGTH_SHORT).show()
                         }) {
-                            Text(stringResource(R.string.settings_clear))
+                            Text(S("Clear"))
                         }
                     },
                     dismissButton = {
                         TextButton(onClick = { showClearDebugConfirm = false }) {
-                            Text(stringResource(R.string.settings_cancel))
+                            Text(S("Cancel"))
                         }
                     },
                 )
@@ -911,13 +909,13 @@ fun SettingsScreen(
             var appLanguagePref by remember { mutableStateOf(AppLanguage.readPrefForUi(context)) }
             var languageMenuExpanded by remember { mutableStateOf(false) }
             Spacer(modifier = Modifier.height(16.dp))
-            Text(stringResource(R.string.settings_localization_units), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.settings_language), style = MaterialTheme.typography.titleSmall)
+            Text(S("Localization & Units"), style = MaterialTheme.typography.titleMedium)
+            Text(S("Language"), style = MaterialTheme.typography.titleSmall)
             val languageLabel = when (appLanguagePref) {
-                AppLanguage.SYSTEM -> stringResource(R.string.settings_language_system)
+                AppLanguage.SYSTEM -> S("System default")
                 else -> {
                     val loc = AppLanguage.SUPPORTED.firstOrNull { it.prefTag == appLanguagePref }
-                    if (loc != null) stringResource(loc.displayNameRes) else stringResource(R.string.lang_name_en)
+                    if (loc != null) S(loc.displayName) else S("English")
                 }
             }
             ExposedDropdownMenuBox(
@@ -929,7 +927,7 @@ fun SettingsScreen(
                     value = languageLabel,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text(stringResource(R.string.settings_language)) },
+                    label = { Text(S("Language")) },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = languageMenuExpanded) },
                     modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth(),
                 )
@@ -938,7 +936,7 @@ fun SettingsScreen(
                     onDismissRequest = { languageMenuExpanded = false },
                 ) {
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.settings_language_system)) },
+                        text = { Text(S("System default")) },
                         onClick = {
                             appLanguagePref = AppLanguage.SYSTEM
                             AppLanguage.setPref(context, AppLanguage.SYSTEM)
@@ -947,7 +945,7 @@ fun SettingsScreen(
                     )
                     AppLanguage.SUPPORTED.forEach { loc ->
                         DropdownMenuItem(
-                            text = { Text(stringResource(loc.displayNameRes)) },
+                            text = { Text(S(loc.displayName)) },
                             onClick = {
                                 appLanguagePref = loc.prefTag
                                 AppLanguage.setPref(context, loc.prefTag)
@@ -958,7 +956,7 @@ fun SettingsScreen(
                 }
             }
             Text(
-                stringResource(R.string.settings_language_restart_hint),
+                S("Language applies immediately to the app UI."),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -969,18 +967,18 @@ fun SettingsScreen(
             ) {
                 Box(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                     DropdownSetting(
-                        label = stringResource(R.string.settings_default_currency_2),
+                        label = S("Default Currency"),
                         selectedValue = if (currencySymbol == "system") {
-                            stringResource(R.string.settings_system_default_currency, systemCurrencySymbol)
+                            S("System default (%1\$s)", systemCurrencySymbol)
                         } else {
                             currencySymbol
                         },
                         options = shortCurrencyOptions,
                         onValueChange = { selected ->
                             when (selected) {
-                                AppStrings.get(R.string.settings_system_default_currency, systemCurrencySymbol) ->
+                                S("System default (%1\$s)", systemCurrencySymbol) ->
                                     currencySymbol = "system"
-                                AppStrings.get(R.string.settings_see_more_currencies) -> showMoreCurrencies = true
+                                S("See more") -> showMoreCurrencies = true
                                 else -> currencySymbol = selected
                             }
                         },
@@ -992,7 +990,7 @@ fun SettingsScreen(
                     }
                     AlertDialog(
                         onDismissRequest = { showMoreCurrencies = false },
-                        title = { Text(stringResource(R.string.settings_all_currencies)) },
+                        title = { Text(S("All currencies")) },
                         text = {
                             LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
                                 items(allCurrencies, key = { it.currencyCode }) { currency ->
@@ -1013,14 +1011,14 @@ fun SettingsScreen(
                         },
                         confirmButton = {
                             TextButton(onClick = { showMoreCurrencies = false }) {
-                                Text(stringResource(R.string.settings_close))
+                                Text(S("Close"))
                             }
                         },
                     )
                 }
                 Box(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
                     DropdownSetting(
-                        label = stringResource(R.string.settings_default_unit),
+                        label = S("Default Unit"),
                         selectedValue = volumeDisplayLabel(volumeUnit),
                         options = volumeOptions,
                         onValueChange = { label ->
@@ -1045,24 +1043,24 @@ fun SettingsScreen(
         @Composable
         fun SettingsDarkMode() {
             Spacer(modifier = Modifier.height(16.dp))
-            Text(stringResource(R.string.settings_dark_mode), style = MaterialTheme.typography.titleMedium)
+            Text(S("Dark Mode"), style = MaterialTheme.typography.titleMedium)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 RadioButton(selected = darkModePref == "system", onClick = { darkModePref = "system" })
-                Text(stringResource(R.string.settings_system))
+                Text(S("System"))
                 Spacer(modifier = Modifier.width(8.dp))
                 RadioButton(selected = darkModePref == "off", onClick = { darkModePref = "off" })
-                Text(stringResource(R.string.settings_light))
+                Text(S("Light"))
                 Spacer(modifier = Modifier.width(8.dp))
                 RadioButton(selected = darkModePref == "on", onClick = { darkModePref = "on" })
-                Text(stringResource(R.string.settings_dark))
+                Text(S("Dark"))
             }
         }
         SettingsDarkMode()
 
         Spacer(modifier = Modifier.height(24.dp))
-        Button(onClick = { exportLauncher.launch("vehicle_expenses_backup.zip") }, modifier = Modifier.fillMaxWidth()) { Text(AppStrings.get(R.string.settings_export_to_csv_zip)) }
-        Button(onClick = { importLauncher.launch("*/*") }, modifier = Modifier.fillMaxWidth()) { Text(AppStrings.get(R.string.settings_import_from_csv_zip)) }
-        if (status != AppStrings.get(R.string.settings_ready)) {
+        Button(onClick = { exportLauncher.launch("vehicle_expenses_backup.zip") }, modifier = Modifier.fillMaxWidth()) { Text(S("Export to CSV (ZIP)")) }
+        Button(onClick = { importLauncher.launch("*/*") }, modifier = Modifier.fillMaxWidth()) { Text(S("Import from CSV ZIP")) }
+        if (status != S("Ready")) {
             Text(status, modifier = Modifier.padding(top = 8.dp))
         }
     }

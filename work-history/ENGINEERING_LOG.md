@@ -12719,3 +12719,7 @@ feature-group: label=''
 ## 2026-11-06 - skip a bad landmark quad
 
 - A Fill quad that boxFromQuad rejects returns an empty row. The other recognition throws still abort the batch.
+
+## 2026-11-06 - in-app strings use the translation catalog
+
+- English stays at the call site. Locale text is the catalog. Generated strings.xml is no longer committed. The manual reader has the two web actions.

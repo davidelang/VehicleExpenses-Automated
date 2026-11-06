@@ -27,8 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -65,7 +64,7 @@ class SettingsViewModel @Inject constructor(
             _spreadsheetSyncInProgress.value = true
             _spreadsheetSyncIsError.value = false
             _spreadsheetSyncResult.value = null
-            _spreadsheetSyncStatus.value = AppStrings.get(R.string.settings_starting_spreadsheet_sync)
+            _spreadsheetSyncStatus.value = S("Starting spreadsheet sync…")
             try {
                 val result = withContext(Dispatchers.IO) {
                     syncCoordinator.syncNow(
@@ -84,7 +83,7 @@ class SettingsViewModel @Inject constructor(
             // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 _spreadsheetSyncIsError.value = true
-                _spreadsheetSyncStatus.value = e.message ?: AppStrings.get(R.string.settings_sync_failed)
+                _spreadsheetSyncStatus.value = e.message ?: S("Sync failed")
                 _spreadsheetSyncResult.value = SyncResult(false, _spreadsheetSyncStatus.value)
             } finally {
                 _spreadsheetSyncInProgress.value = false
@@ -98,7 +97,7 @@ class SettingsViewModel @Inject constructor(
             _photoSyncInProgress.value = true
             _photoSyncIsError.value = false
             _photoSyncResult.value = null
-            _photoSyncStatus.value = AppStrings.get(R.string.settings_starting_photo_backup)
+            _photoSyncStatus.value = S("Starting photo backup…")
             try {
                 val result = withContext(Dispatchers.IO) {
                     photoBackupCoordinator.syncNow(
@@ -117,7 +116,7 @@ class SettingsViewModel @Inject constructor(
             // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 _photoSyncIsError.value = true
-                _photoSyncStatus.value = e.message ?: AppStrings.get(R.string.settings_photo_sync_failed)
+                _photoSyncStatus.value = e.message ?: S("Photo sync failed")
                 _photoSyncResult.value = PhotoBackupResult(false, _photoSyncStatus.value)
             } finally {
                 _photoSyncInProgress.value = false

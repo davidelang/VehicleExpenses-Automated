@@ -20,9 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.trip.TripSegments
 import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 @Composable
 fun ReportsLabTripMilesScreen(navController: NavHostController) {
@@ -114,7 +112,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
     val leadingCount = remember(inPeriod) { inPeriod.count { it.isImplicitLeading } }
 
     ReportsLabScreenScaffold(
-        title = stringResource(R.string.reports_trip_miles),
+        title = S("Trip miles"),
         infoText = tripMilesInfoText(),
         filterState = data.filter,
         vehicles = data.vehicles,
@@ -133,7 +131,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                 )
             }
             ReportsLabShareActions(
-                subject = AppStrings.get(R.string.reports_trip_miles),
+                subject = S("Trip miles"),
                 textBody = buildText,
                 csvFileName = "lab_trip_miles.csv",
                 csvBody = {
@@ -143,7 +141,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                         listSegs = listSegs,
                     )
                 },
-                pdfBody = { ReportsLabPdf.fromPlainText(AppStrings.get(R.string.reports_trip_miles), buildText()) },
+                pdfBody = { ReportsLabPdf.fromPlainText(S("Trip miles"), buildText()) },
             )
         },
     ) {
@@ -154,7 +152,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                     onCheckedChange = { includePersonalInTotals = it },
                 )
                 Text(
-                    stringResource(R.string.reports_include_personal_in_mile_totals_incl_implicit_le),
+                    S("Include Personal in mile totals (incl. implicit leading)"),
                     style = MaterialTheme.typography.bodyMedium,
                     softWrap = true,
                     modifier = Modifier.weight(1f),
@@ -166,7 +164,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                     onCheckedChange = { showPersonalInList = it },
                 )
                 Text(
-                    stringResource(R.string.reports_show_personal_segments_in_list),
+                    S("Show Personal segments in list"),
                     style = MaterialTheme.typography.bodyMedium,
                     softWrap = true,
                     modifier = Modifier.weight(1f),
@@ -178,7 +176,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                     onCheckedChange = { showZeroLength = it },
                 )
                 Text(
-                    stringResource(R.string.reports_include_zero_length_segments),
+                    S("Include zero-length segments"),
                     style = MaterialTheme.typography.bodyMedium,
                     softWrap = true,
                     modifier = Modifier.weight(1f),
@@ -186,22 +184,22 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             }
         }
 
-        Text(stringResource(R.string.reports_kpis), style = MaterialTheme.typography.titleMedium)
+        Text(S("KPIs"), style = MaterialTheme.typography.titleMedium)
         Text(
-            stringResource(R.string.reports_total_miles, UnitFormat.distanceDeltaLabel(totalMiles)) +
-                if (!includePersonalInTotals) stringResource(R.string.trip_personal_excluded) else "",
+            S("Total miles: %1\$s", UnitFormat.distanceDeltaLabel(totalMiles)) +
+                if (!includePersonalInTotals) S(" (Personal excluded)") else "",
             softWrap = true,
             maxLines = 3,
         )
         Text(
-            stringResource(R.string.trip_closed_segments_in_list_1_s_open_2_s, listSegs.count { !it.isOpen }, openCount) +
-                if (leadingCount > 0) stringResource(R.string.trip_implicit_leading_personal_1_s, leadingCount) else "",
+            S("Closed segments in list: %1\$s · Open: %2\$s", listSegs.count { !it.isOpen }, openCount) +
+                if (leadingCount > 0) S(" · Implicit leading Personal: %1\$s", leadingCount) else "",
             style = MaterialTheme.typography.bodySmall,
             softWrap = true,
         )
         if (isEach) {
             if (milesByVehicleAndType.isEmpty() || eachTypeLabels.isEmpty()) {
-                ReportsLabEmpty(stringResource(R.string.trip_no_closed_trip_miles_for_these_filters_tog))
+                ReportsLabEmpty(S("No closed trip miles for these filters/toggles."))
             } else {
                 milesByVehicleAndType.forEach { (vName, mbt) ->
                     Text(vName, style = MaterialTheme.typography.titleSmall, softWrap = true)
@@ -216,11 +214,11 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                 LabMultiSeriesIndexChart(
                     series = eachChartSeries,
                     xLabels = eachTypeLabels,
-                    caption = stringResource(R.string.trip_miles_by_type_per_vehicle_1_s, UnitFormat.distanceUnitShortLabel()),
+                    caption = S("Miles by type per vehicle (%1\$s)", UnitFormat.distanceUnitShortLabel()),
                 )
             }
         } else if (milesByType.isEmpty()) {
-            ReportsLabEmpty(stringResource(R.string.trip_no_closed_trip_miles_for_these_filters_tog))
+            ReportsLabEmpty(S("No closed trip miles for these filters/toggles."))
         } else {
             milesByType.forEach { (type, miles) ->
                 Text(
@@ -232,11 +230,11 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             LabCategoryBarsChart(
                 amounts = chartY,
                 categoryLabels = chartLabels,
-                caption = stringResource(R.string.trip_miles_by_type_1_s, UnitFormat.distanceUnitShortLabel()),
+                caption = S("Miles by type (%1\$s)", UnitFormat.distanceUnitShortLabel()),
             )
             if (chartLabels.isNotEmpty()) {
                 Text(
-                    stringResource(R.string.trip_bar_order) +
+                    S("Bar order: ") +
                         chartLabels.mapIndexed { i, t ->
                             val m = milesByType[t] ?: 0
                             "${i + 1}. $t (${UnitFormat.distanceDeltaLabel(m)})"
@@ -248,15 +246,15 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             }
         }
 
-        Text(stringResource(R.string.reports_trip_starts_segments), style = MaterialTheme.typography.titleMedium)
+        Text(S("Trip starts / segments"), style = MaterialTheme.typography.titleMedium)
         Text(
-            stringResource(R.string.reports_chronological_trip_list_separate_from_fuel_histo),
+            S("Chronological trip list (separate from Fuel History fills). Tap a row to edit the start fill when it has an id."),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             softWrap = true,
         )
         if (listSegs.isEmpty()) {
-            ReportsLabEmpty(stringResource(R.string.trip_no_trip_segments_match_the_list_filters))
+            ReportsLabEmpty(S("No trip segments match the list filters."))
         } else {
             listSegs.forEach { seg ->
                 val canOpen = !seg.isImplicitLeading && seg.start.id > 0L
@@ -273,22 +271,22 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                         .padding(vertical = 4.dp),
                 ) {
                     val typeLabel = if (seg.isImplicitLeading) {
-                        AppStrings.get(R.string.trip_s_1_s_implicit, seg.tripType)
+                        S("%1\$s (implicit)", seg.tripType)
                     } else {
                         seg.tripType
                     }
                     Text(
                         "${data.vehicleName(seg.vehicleId)} · $typeLabel · ${formatLabDateTime(seg.startTimestamp)}" +
-                            if (canOpen) AppStrings.get(R.string.trip_tap_to_edit) else "",
+                            if (canOpen) S(" · tap to edit") else "",
                         style = MaterialTheme.typography.titleSmall,
                         softWrap = true,
                         maxLines = 3,
                     )
                     val status = when {
-                        seg.isOpen -> AppStrings.get(R.string.trip_open)
-                        seg.isZeroLength -> AppStrings.get(R.string.trip_zero_length)
-                        seg.isImplicitLeading -> AppStrings.get(R.string.trip_closed_leading_gap)
-                        else -> AppStrings.get(R.string.trip_closed)
+                        seg.isOpen -> S("Open")
+                        seg.isZeroLength -> S("Zero-length")
+                        seg.isImplicitLeading -> S("Closed · leading gap")
+                        else -> S("Closed")
                     }
                     val milesLabel = if (seg.isOpen) {
                         "n/a"
@@ -318,15 +316,15 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
 
 private fun tripMilesInfoText(): String =
     "Miles by trip purpose from open-only segments (start → next start). " +
-        AppStrings.get(R.string.trip_within_a_report_period_miles_from_the_peri) +
-        AppStrings.get(R.string.trip_start_trip_count_as_personal_when_you_neve) +
-        AppStrings.get(R.string.trip_same_as_starting_personal_on_day_1_if_a_ve) +
-        AppStrings.get(R.string.trip_baseline_last_odo_in_period_also_counts_as) +
-        AppStrings.get(R.string.trip_each_vehicle_miles_by_type_series_and_tota) +
-        AppStrings.get(R.string.trip_segment_list_is_the_trip_surface_fuel_hist) +
-        AppStrings.get(R.string.trip_not_a_tax_form_export_and_use_elsewhere) +
-        AppStrings.get(R.string.trip_period_filters_by_segment_start_time_zero) +
-        AppStrings.get(R.string.trip_from_totals_by_default)
+        S("Within a report period, miles from the period baseline odometer to the first ") +
+        S("Start trip count as Personal when you never started a purpose earlier ") +
+        S("(same as starting Personal on day 1). If a vehicle has fills but no trip starts, ") +
+        S("baseline → last odo in period also counts as Personal. ") +
+        S("Each vehicle = miles-by-type series and totals per vehicle. ") +
+        S("Segment list is the trip surface (Fuel History lists fills only). ") +
+        S("Not a tax form — export and use elsewhere. ") +
+        S("Period filters by segment start time. Zero-length closed segments are excluded ") +
+        S("from totals by default.")
 
 private fun buildTextShare(
     data: LabReportData,
@@ -338,39 +336,39 @@ private fun buildTextShare(
     showZeroLength: Boolean,
     leadingCount: Int,
 ): String = buildString {
-    appendLine(AppStrings.get(R.string.trip_vehicle_expenses_trip_miles))
-    appendLine(AppStrings.get(R.string.reports_period_label, periodLabel(data.filter)))
-    appendLine(AppStrings.get(R.string.reports_vehicle_label, data.filterVehicleLabel()))
+    appendLine(S("Vehicle Expenses — Trip miles"))
+    appendLine(S("Period: %1\$s", periodLabel(data.filter)))
+    appendLine(S("Vehicle: %1\$s", data.filterVehicleLabel()))
     appendLine(
-        AppStrings.get(R.string.trip_totals_personal_1_s, if (includePersonalInTotals) "included" else "excluded") +
-            AppStrings.get(R.string.trip_zero_length_1_s, if (showZeroLength) "included" else "excluded"),
+        S("Totals: Personal %1\$s; ", if (includePersonalInTotals) "included" else "excluded") +
+            S("zero-length %1\$s", if (showZeroLength) "included" else "excluded"),
     )
     if (leadingCount > 0) {
-        appendLine(AppStrings.get(R.string.trip_implicit_leading_personal_segments_in_wind, leadingCount))
+        appendLine(S("Implicit leading Personal segments in window: %1\$s", leadingCount))
     }
-    appendLine(AppStrings.get(R.string.reports_total_miles, UnitFormat.distanceDeltaLabel(totalMiles)))
-    appendLine(AppStrings.get(R.string.trip_open_segments_in_period_by_start_1_s, openCount))
+    appendLine(S("Total miles: %1\$s", UnitFormat.distanceDeltaLabel(totalMiles)))
+    appendLine(S("Open segments (in period by start): %1\$s", openCount))
     appendLine()
-    appendLine(AppStrings.get(R.string.trip_miles_by_type))
+    appendLine(S("Miles by type:"))
     if (milesByType.isEmpty()) {
-        appendLine(AppStrings.get(R.string.reports_none))
+        appendLine(S("  (none)"))
     } else {
         milesByType.forEach { (t, m) ->
             appendLine("  $t: ${UnitFormat.distanceDeltaLabel(m)}")
         }
     }
     appendLine()
-    appendLine(AppStrings.get(R.string.trip_segments))
+    appendLine(S("Segments:"))
     listSegs.forEach { seg ->
         val status = when {
-            seg.isOpen -> AppStrings.get(R.string.trip_open)
-            seg.isZeroLength -> AppStrings.get(R.string.trip_zero)
-            seg.isImplicitLeading -> AppStrings.get(R.string.trip_closed_implicit)
-            else -> AppStrings.get(R.string.trip_closed)
+            seg.isOpen -> S("Open")
+            seg.isZeroLength -> S("Zero")
+            seg.isImplicitLeading -> S("Closed-implicit")
+            else -> S("Closed")
         }
         val miles = if (seg.isOpen) "n/a" else UnitFormat.distanceDeltaLabel(seg.miles)
         val endOdo = seg.endOdo?.let { UnitFormat.odometerReadingLabel(it) } ?: "…"
-        val type = if (seg.isImplicitLeading) AppStrings.get(R.string.trip_s_1_s_implicit_2, seg.tripType) else seg.tripType
+        val type = if (seg.isImplicitLeading) S("%1\$s(implicit)", seg.tripType) else seg.tripType
         appendLine(
             "  ${formatLabDate(seg.startTimestamp)} ${data.vehicleName(seg.vehicleId)} " +
                 "$type $status $miles " +

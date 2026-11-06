@@ -39,8 +39,7 @@ import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 class ImagePickerHandle(
     val pickFromGallery: () -> Unit,
@@ -160,14 +159,14 @@ fun rememberImagePicker(
             if (reason != null) throw IllegalStateException(reason)
             onPicked(durablePickedUri(context, uri, persisted))
         } catch (e: Exception) {
-            Toast.makeText(context, AppStrings.get(R.string.ui_could_not_use_picture_1_s, e.message.orEmpty()), Toast.LENGTH_LONG).show()
+            Toast.makeText(context, S("Could not use picture: %1\$s", e.message.orEmpty()), Toast.LENGTH_LONG).show()
         }
     }
     fun shoot() {
         if (!allowCamera) return
         val mgr = photoStorageManager
         if (mgr == null) {
-            Toast.makeText(context, AppStrings.get(R.string.ui_could_not_use_picture_camera_file), Toast.LENGTH_LONG).show()
+            Toast.makeText(context, S("Could not use picture: camera file"), Toast.LENGTH_LONG).show()
             onCaptureFailed()
             return
         }
@@ -193,7 +192,7 @@ fun rememberImagePicker(
                             main.execute {
                                 Toast.makeText(
                                     context,
-                                    AppStrings.get(R.string.ui_could_not_use_picture_1_s, e.message.orEmpty()),
+                                    S("Could not use picture: %1\$s", e.message.orEmpty()),
                                     Toast.LENGTH_LONG,
                                 ).show()
                                 onCaptureFailed()
@@ -208,7 +207,7 @@ fun rememberImagePicker(
                         main.execute {
                             Toast.makeText(
                                 context,
-                                AppStrings.get(R.string.ui_could_not_use_picture_1_s, exception.message.orEmpty()),
+                                S("Could not use picture: %1\$s", exception.message.orEmpty()),
                                 Toast.LENGTH_LONG,
                             ).show()
                             onCaptureFailed()
@@ -218,7 +217,7 @@ fun rememberImagePicker(
             )
         } catch (e: Exception) {
             file.delete()
-            Toast.makeText(context, AppStrings.get(R.string.ui_could_not_use_picture_1_s, e.message.orEmpty()), Toast.LENGTH_LONG).show()
+            Toast.makeText(context, S("Could not use picture: %1\$s", e.message.orEmpty()), Toast.LENGTH_LONG).show()
             onCaptureFailed()
         }
     }
@@ -237,8 +236,8 @@ fun rememberImagePicker(
                     modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    TextButton(onClick = { shoot() }) { Text(AppStrings.get(R.string.ui_shutter)) }
-                    TextButton(onClick = { showCamera = false }) { Text(AppStrings.get(R.string.settings_close)) }
+                    TextButton(onClick = { shoot() }) { Text(S("Shutter")) }
+                    TextButton(onClick = { showCamera = false }) { Text(S("Close")) }
                 }
             }
         }

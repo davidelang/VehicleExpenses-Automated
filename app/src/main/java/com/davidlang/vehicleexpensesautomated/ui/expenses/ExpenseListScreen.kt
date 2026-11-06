@@ -28,9 +28,7 @@ import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 @Composable
 fun ExpenseListScreen(navController: NavHostController? = null) {
@@ -51,15 +49,15 @@ fun ExpenseListScreen(navController: NavHostController? = null) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         FeatureScreenHeader(
-            title = stringResource(R.string.nav_expense_list),
-            subtitle = stringResource(R.string.expense_tap_a_card_to_edit_add_from_menu_new_exp),
+            title = S("Expense list"),
+            subtitle = S("Tap a card to edit. Add from Menu → New expense, or Reports hub."),
         )
         Spacer(modifier = Modifier.height(8.dp))
         if (expenses.isEmpty()) {
-            EmptyStateText(stringResource(R.string.expense_no_expenses_yet))
+            EmptyStateText(S("No expenses yet"))
         } else {
             AdaptiveItemGrid(items = expenses) { expense ->
-                val vehicleName = vehicleNameById[expense.vehicleId] ?: stringResource(R.string.expense_vehicle_1_s, expense.vehicleId)
+                val vehicleName = vehicleNameById[expense.vehicleId] ?: S("Vehicle %1\$s", expense.vehicleId)
                 val dateStr = dateFmt.format(Date(expense.date))
                 TappableCard(
                     onClick = { navController?.navigate("expense/${expense.id}") },
@@ -72,11 +70,11 @@ fun ExpenseListScreen(navController: NavHostController? = null) {
                     )
                     val vendorPart = expense.vendor.takeIf { it.isNotBlank() }?.let { "$it · " } ?: ""
                     Text(
-                        "${vendorPart}${expense.description}".ifBlank { AppStrings.get(R.string.expense_no_description) },
+                        "${vendorPart}${expense.description}".ifBlank { S("(no description)") },
                         softWrap = true,
                         maxLines = 3,
                     )
-                    val odoPart = expense.odometer?.let { AppStrings.get(R.string.expense_odo_1_s, it) } ?: ""
+                    val odoPart = expense.odometer?.let { S(" · odo %1\$s", it) } ?: ""
                     Text(
                         "${CurrencyCodes.formatAmount(expense.amount, expense.currency, defaultSymbol)} · " +
                             "${expense.category}$odoPart",

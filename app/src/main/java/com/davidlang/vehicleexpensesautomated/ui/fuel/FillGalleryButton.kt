@@ -16,9 +16,7 @@ import com.davidlang.vehicleexpensesautomated.ui.components.rememberImagePicker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 @Composable
 fun FillGalleryButton(
@@ -36,11 +34,11 @@ fun FillGalleryButton(
                 }
                 onPicked(uri, bitmap)
             } catch (e: Exception) {
-                Toast.makeText(context, AppStrings.get(R.string.ui_could_not_use_picture_1_s, e.message.orEmpty()), Toast.LENGTH_LONG).show()
+                Toast.makeText(context, S("Could not use picture: %1\$s", e.message.orEmpty()), Toast.LENGTH_LONG).show()
             }
         }
     }
     IconButton(onClick = { picker.pickFromGallery() }, enabled = enabled, modifier = modifier) {
-        Icon(Icons.Filled.Image, contentDescription = stringResource(R.string.fill_pick_an_existing_image))
+        Icon(Icons.Filled.Image, contentDescription = S("Pick an existing image"))
     }
 }

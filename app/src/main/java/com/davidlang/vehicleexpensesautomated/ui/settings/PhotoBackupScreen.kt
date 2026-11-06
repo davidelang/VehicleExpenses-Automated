@@ -28,9 +28,7 @@ import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 @Composable
 fun PhotoBackupScreen(
@@ -66,7 +64,7 @@ fun PhotoBackupScreen(
                 if (destinations.size >= SyncDestinationStore.MAX_DESTINATIONS_PER_TYPE) {
                     Toast.makeText(
                         context,
-                        AppStrings.get(R.string.settings_maximum_1_s_photo_destinations, SyncDestinationStore.MAX_DESTINATIONS_PER_TYPE),
+                        S("Maximum %1\$s photo destinations", SyncDestinationStore.MAX_DESTINATIONS_PER_TYPE),
                         Toast.LENGTH_SHORT,
                     ).show()
                 } else {
@@ -102,10 +100,10 @@ private fun PhotoDestList(
 ) {
     val context = LocalContext.current
     RegisterPageHelp(
-        title = stringResource(R.string.nav_photo_backup),
-        stringResource(R.string.settings_add_google_drive_or_other_destinations_sync_now_),
-        stringResource(R.string.settings_open_a_destination_for_test_connection_and_sync_),
-        stringResource(R.string.settings_leaving_the_screen_mid_sync_does_not_cancel_the_),
+        title = S("Photo Backup"),
+        S("Add Google Drive (or other) destinations. Sync now uploads vehicle refs and pending photos."),
+        S("Open a destination for Test connection and Sync now (this destination)."),
+        S("Leaving the screen mid-sync does not cancel the backup."),
     )
     var statusText by remember { mutableStateOf("") }
     var statusIsError by remember { mutableStateOf(false) }
@@ -132,21 +130,21 @@ private fun PhotoDestList(
     }
 
     SyncDestinationListLayout(
-        title = stringResource(R.string.nav_photo_backup),
-        description = stringResource(R.string.settings_add_a_destination_google_drive_is_common_s),
+        title = S("Photo Backup"),
+        description = S("Add a destination (Google Drive is common: Sign in with Google (Drive) → optional folder via 🔍 → save → Sync now). Manual sync runs all configured destinations; background backup runs enabled ones only."),
         statusText = displayStatus,
         syncInProgress = syncInProgress,
         statusIsError = displayIsError,
         destinationCount = destinations.size,
         maxDestinations = SyncDestinationStore.MAX_DESTINATIONS_PER_TYPE,
-        addButtonLabel = stringResource(R.string.settings_add_photo_destination),
+        addButtonLabel = S("Add photo destination"),
         onAdd = onAdd,
-        syncNowLabel = stringResource(R.string.settings_sync_now_all_configured),
+        syncNowLabel = S("Sync now (all configured)"),
         onSyncNow = {
             val configured = SyncDestinationStore(context).configuredPhoto()
             if (configured.isEmpty()) {
                 statusIsError = true
-                statusText = AppStrings.get(R.string.settings_no_configured_photo_destinations)
+                statusText = S("No configured photo destinations")
                 return@SyncDestinationListLayout
             }
             viewModel.startManualSync("")
@@ -171,25 +169,25 @@ private fun PhotoDestCard(
     val name = when {
         dest.displayName.isNotBlank() -> dest.displayName
         dest.provider == PhotoProvider.ONEDRIVE ->
-            RcloneDestConfig.parse(dest.configJson)?.pathPrefix?.ifBlank { AppStrings.get(R.string.settings_onedrive) } ?: stringResource(R.string.settings_onedrive)
+            RcloneDestConfig.parse(dest.configJson)?.pathPrefix?.ifBlank { S("OneDrive") } ?: S("OneDrive")
         dest.provider == PhotoProvider.S3 ->
             RcloneDestConfig.parse(dest.configJson)?.pathPrefix?.ifBlank { "S3" } ?: "S3"
         dest.provider == PhotoProvider.OTHER ->
-            RcloneDestConfig.parse(dest.configJson)?.remote?.ifBlank { AppStrings.get(R.string.reports_other_category) } ?: stringResource(R.string.reports_other_category)
+            RcloneDestConfig.parse(dest.configJson)?.remote?.ifBlank { S("Other") } ?: S("Other")
         dest.folderName.isNotBlank() -> dest.folderName
-        else -> stringResource(R.string.settings_google_drive)
+        else -> S("Google Drive")
     }
     val account = when (dest.provider) {
-        PhotoProvider.ONEDRIVE -> dest.accountHint.ifBlank { AppStrings.get(R.string.settings_microsoft_account) }
-        PhotoProvider.S3 -> stringResource(R.string.settings_s3_storage)
-        PhotoProvider.OTHER -> stringResource(R.string.settings_other_storage)
-        else -> dest.accountHint.ifBlank { AppStrings.get(R.string.settings_no_account) }
+        PhotoProvider.ONEDRIVE -> dest.accountHint.ifBlank { S("Microsoft account") }
+        PhotoProvider.S3 -> S("S3 storage")
+        PhotoProvider.OTHER -> S("Other storage")
+        else -> dest.accountHint.ifBlank { S("No account") }
     }
-    val enabledLabel = if (dest.enabled) stringResource(R.string.settings_on) else stringResource(R.string.settings_off)
+    val enabledLabel = if (dest.enabled) S("On") else S("Off")
     val configured = SyncDestinationStore.isPhotoConfigured(dest, context)
     val detailLines = buildList {
-        add(AppStrings.get(R.string.settings_account_1_s, account))
-        add(if (configured) AppStrings.get(R.string.settings_enabled_1_s, enabledLabel) else AppStrings.get(R.string.settings_not_configured))
+        add(S("Account: %1\$s", account))
+        add(if (configured) S("Enabled: %1\$s", enabledLabel) else S("Not configured"))
         if (configured) {
             add(SyncDestinationStore(context).photoSummaryLine(dest))
         }
@@ -207,12 +205,12 @@ private fun PhotoProviderPicker(
     onCancel: () -> Unit,
 ) {
     SyncProviderChoiceScreen(
-        title = stringResource(R.string.settings_add_photo_destination),
+        title = S("Add photo destination"),
         choices = listOf(
-            stringResource(R.string.settings_google_drive) to { onPick(PhotoProvider.GOOGLE_DRIVE) },
-            stringResource(R.string.settings_onedrive) to { onPick(PhotoProvider.ONEDRIVE) },
+            S("Google Drive") to { onPick(PhotoProvider.GOOGLE_DRIVE) },
+            S("OneDrive") to { onPick(PhotoProvider.ONEDRIVE) },
             "S3" to { onPick(PhotoProvider.S3) },
-            stringResource(R.string.reports_other_category) to { onPick(PhotoProvider.OTHER) },
+            S("Other") to { onPick(PhotoProvider.OTHER) },
         ),
         onCancel = onCancel,
     )

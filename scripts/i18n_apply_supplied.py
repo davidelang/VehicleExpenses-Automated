@@ -1,21 +1,12 @@
 #!/usr/bin/env python3
-"""Overlay person-supplied strings onto automated packs, then prune removed keys.
+"""Pref-tag to resource-directory map, and Android string escaping.
 
-English app/src/main/res/values/strings.xml is the key set.
-docs/i18n/supplied/<prefTag>.xml holds only person-supplied entries.
-Indonesian is values-in only. This script does not create values-id.
-A stored pref pt-BR overlays values-pt. ms-MY is not a pack.
-
-Does not translate. A new English key stays missing until an automated pack
-update writes it. A removed English key is deleted from every pack and from
-the supplied file.
+PACKS is the only pref-tag map. The capture script imports it.
+The build generator imports PACKS and escape_android. This module does not write XML.
+Indonesian is values-in. pt-BR is values-pt. Does not list ms-MY or values-id.
 """
 import xml.etree.ElementTree as ET
 from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-RES = ROOT / "app/src/main/res"
-SUPPLIED = ROOT / "docs/i18n/supplied"
 
 # pref tag -> resource directory. Indonesian is values-in. pt-BR is values-pt.
 # Does not list ms-MY or values-id.
@@ -161,40 +152,8 @@ def escape_android(s: str) -> str:
     return s
 
 
-def write_resources(path: Path, rows: list[tuple[str, str]]) -> None:
-    lines = ['<?xml version="1.0" encoding="utf-8"?>', "<resources>"]
-    for name, text in rows:
-        lines.append(f'    <string name="{name}">{escape_android(text)}</string>')
-    lines.append("</resources>")
-    lines.append("")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines), encoding="utf-8")
-
-
-def main() -> None:
-    en_rows = load(RES / "values/strings.xml")
-    en_order = [name for name, _ in en_rows]
-    en_keys = set(en_order)
-    for pref, folder in PACKS.items():
-        pack_path = RES / folder / "strings.xml"
-        if not pack_path.exists():
-            raise SystemExit(f"missing pack {pack_path}")
-        pack = dict(load(pack_path))
-        supplied_path = SUPPLIED / f"{pref}.xml"
-        supplied = dict(load(supplied_path)) if supplied_path.exists() else {}
-        kept_supplied = [(name, text) for name, text in supplied.items() if name in en_keys]
-        for name, text in kept_supplied:
-            pack[name] = text
-        missing = [name for name in en_order if name not in pack]
-        if missing:
-            raise SystemExit(f"{pref} missing {len(missing)} keys, first {missing[0]}")
-        rows = [(name, pack[name]) for name in en_order]
-        write_resources(pack_path, rows)
-        write_resources(supplied_path, kept_supplied)
-    if (RES / "values-id").exists():
-        raise SystemExit("refusing to leave values-id; this script does not create it")
-    print(f"overlay ok, {len(PACKS)} packs, values-in left as the Indonesian pack")
-
-
 if __name__ == "__main__":
-    main()
+    raise SystemExit(
+        "scripts/i18n_apply_supplied.py does not write XML. "
+        "PACKS is for the generator and the capture script."
+    )

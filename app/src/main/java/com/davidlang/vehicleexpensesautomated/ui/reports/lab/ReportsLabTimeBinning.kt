@@ -2,8 +2,7 @@ package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 /** Smooth / bin filter for the unified time report (R3). */
 enum class LabSmoothMode {
@@ -16,12 +15,12 @@ enum class LabSmoothMode {
 }
 
 fun LabSmoothMode.displayLabel(customDays: Int): String = when (this) {
-    LabSmoothMode.NONE -> AppStrings.get(R.string.reports_none_2)
-    LabSmoothMode.DAY -> AppStrings.get(R.string.reports_day)
-    LabSmoothMode.WEEK -> AppStrings.get(R.string.reports_week)
-    LabSmoothMode.MONTH -> AppStrings.get(R.string.reports_month)
-    LabSmoothMode.YEAR -> AppStrings.get(R.string.vehicle_year)
-    LabSmoothMode.CUSTOM_DAYS -> AppStrings.get(R.string.reports_every_1_s_d, customDays)
+    LabSmoothMode.NONE -> S("None")
+    LabSmoothMode.DAY -> S("Day")
+    LabSmoothMode.WEEK -> S("Week")
+    LabSmoothMode.MONTH -> S("Month")
+    LabSmoothMode.YEAR -> S("Year")
+    LabSmoothMode.CUSTOM_DAYS -> S("Every %1\$s d", customDays)
 }
 
 /**

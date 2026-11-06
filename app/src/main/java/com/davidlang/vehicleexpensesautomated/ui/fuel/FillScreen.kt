@@ -104,9 +104,7 @@ import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 import kotlin.math.min
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 private enum class CaptureViewState { Live, Processing, Results }
 
@@ -241,7 +239,7 @@ private fun fillPickPhoto(
     args: FillCaptureArgs,
 ) {
     if (args.capturePendingState.value || !args.bufferSetABusy.compareAndSet(false, true)) {
-        Toast.makeText(args.context, AppStrings.get(R.string.fill_still_processing_try_again), Toast.LENGTH_LONG).show()
+        Toast.makeText(args.context, S("Still processing, try again"), Toast.LENGTH_LONG).show()
         bitmap.recycle()
         return
     }
@@ -270,7 +268,7 @@ private fun fillPickPhoto(
             args.captureViewStateState.value = CaptureViewState.Live
             Toast.makeText(
                 args.context,
-                AppStrings.get(R.string.ui_could_not_use_picture_1_s, error.message.orEmpty()),
+                S("Could not use picture: %1\$s", error.message.orEmpty()),
                 Toast.LENGTH_LONG,
             ).show()
             return@launch
@@ -376,12 +374,12 @@ private fun continueFillCapture(
                             context = context,
                             mode = "odo",
                             debugJson = vetoDebugJson,
-                            error = AppStrings.get(R.string.vehicle_vehicle_not_identified),
+                            error = S("Vehicle not identified"),
                             extraJpegBitmaps = emptyMap(),
                         )
                         suspendCancellableCoroutine { cont ->
                             scope.launch(Dispatchers.Main) {
-                                instructionLine = AppStrings.get(R.string.vehicle_vehicle_not_identified)
+                                instructionLine = S("Vehicle not identified")
                                 NativePaddleEngine.heartbeat("vehicle_dialog_open")
                                 vehicleDialogUp.set(true)
                                 watchdogUp = false
@@ -397,10 +395,10 @@ private fun continueFillCapture(
                 scope.launch(Dispatchers.Main) {
                     if (result.survivorIds != null) {
                         if (vehicles.isEmpty()) {
-                            instructionLine = AppStrings.get(R.string.vehicle_vehicle_not_identified)
+                            instructionLine = S("Vehicle not identified")
                             Toast.makeText(
                                 context,
-                                AppStrings.get(R.string.vehicle_vehicle_not_identified),
+                                S("Vehicle not identified"),
                                 Toast.LENGTH_LONG,
                             ).show()
                             if (result.debugJson != null) {
@@ -410,7 +408,7 @@ private fun continueFillCapture(
                                         context = context,
                                         mode = "odo",
                                         debugJson = result.debugJson,
-                                        error = AppStrings.get(R.string.vehicle_vehicle_not_identified),
+                                        error = S("Vehicle not identified"),
                                         extraJpegBitmaps = emptyMap(),
                                     )
                                 }
@@ -438,8 +436,8 @@ private fun continueFillCapture(
                         }
                         instructionLine = when {
                             result.odometer != null ->
-                                AppStrings.get(R.string.fill_odometer_1_s_stored_tracking_review_then_s, result.odometer)
-                            else -> AppStrings.get(R.string.fill_dash_captured_enter_odometer_if_needed_or)
+                                S("Odometer: %1\$s (stored tracking). Review, then Save.", result.odometer)
+                            else -> S("Dash captured. Enter odometer if needed, or switch to pump.")
                         }
                     }
 
@@ -482,7 +480,7 @@ private fun continueFillCapture(
             } catch (e: Exception) {
                 Log.e("Fill", "OCR Pipeline failed", e)
                 scope.launch(Dispatchers.Main) {
-                    Toast.makeText(context, AppStrings.get(R.string.fill_ocr_failed_1_s, e.localizedMessage ?: AppStrings.get(R.string.fill_unknown_error)), Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, S("OCR failed: %1\$s", e.localizedMessage ?: S("Unknown error")), Toast.LENGTH_LONG).show()
                 }
             } finally {
                 scope.launch(Dispatchers.Main) {
@@ -572,13 +570,13 @@ private fun continueFillCapture(
                         result.volume?.let { gallons = it }
                         result.cost?.let { cost = it }
                         val parts = buildList {
-                            result.cost?.let { add(AppStrings.get(R.string.fill_cost_1_s, it)) }
-                            result.volume?.let { add(AppStrings.get(R.string.fill_volume_1_s, it)) }
+                            result.cost?.let { add(S("cost %1\$s", it)) }
+                            result.volume?.let { add(S("volume %1\$s", it)) }
                         }
                         instructionLine = if (parts.isNotEmpty()) {
-                            AppStrings.get(R.string.fill_pump_1_s_review_fields_then_save, parts.joinToString(", "))
+                            S("Pump: %1\$s. Review fields, then Save.", parts.joinToString(", "))
                         } else {
-                            AppStrings.get(R.string.fill_pump_photo_captured_enter_cost_volume_if_n)
+                            S("Pump photo captured. Enter cost/volume if needed, then Save.")
                         }
                     }
                     if (debugMode && result.debugJson != null) {
@@ -631,7 +629,7 @@ private fun continueFillCapture(
                 scope.launch(Dispatchers.Main) {
                     Toast.makeText(
                         context,
-                        AppStrings.get(R.string.fill_pump_ocr_failed_1_s, e.localizedMessage ?: AppStrings.get(R.string.fill_unknown_error)),
+                        S("Pump OCR failed: %1\$s", e.localizedMessage ?: S("Unknown error")),
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -712,7 +710,7 @@ fun FillScreen(
             lookupSource = null
             return@LaunchedEffect
         }
-        locationStatus = AppStrings.get(R.string.expense_looking_up_place)
+        locationStatus = S("Looking up place…")
         locationLookupDone = false
         val acc = deviceLocation?.takeIf { it.hasAccuracy() }?.accuracy?.toDouble()
         val online = NetworkStatus.hasUsableNetwork(context)
@@ -725,7 +723,7 @@ fun FillScreen(
                 lookupName = station.name
                 lookupAddress = station.address
                 lookupSource = KnownStation.SOURCE_STATIONS
-                locationStatus = AppStrings.get(R.string.fill_known_station_1_s, LocationLookup.fromKnownStation(station, tableMatch.distanceM).displayLine())
+                locationStatus = S("Known station: %1\$s", LocationLookup.fromKnownStation(station, tableMatch.distanceM).displayLine())
                 locationLookupDone = true
                 return@LaunchedEffect
             }
@@ -733,14 +731,14 @@ fun FillScreen(
                 lookupName = null
                 lookupAddress = null
                 lookupSource = null
-                locationStatus = AppStrings.get(R.string.fill_ambiguous_pick_a_station)
+                locationStatus = S("Ambiguous — pick a station")
                 locationLookupDone = true
                 return@LaunchedEffect
             }
             is StationMatch.None -> Unit
         }
         if (!online) {
-            locationStatus = AppStrings.get(R.string.fill_offline_no_known_station_nearby)
+            locationStatus = S("Offline — no known station nearby")
             locationLookupDone = true
             lookupName = null
             lookupAddress = null
@@ -761,12 +759,12 @@ fun FillScreen(
             lookupName = result.name
             lookupAddress = result.address
             lookupSource = result.source
-            locationStatus = AppStrings.get(R.string.fill_network_1_s, result.displayLine())
+            locationStatus = S("Network: %1\$s", result.displayLine())
         } else {
             lookupName = null
             lookupAddress = null
             lookupSource = null
-            locationStatus = AppStrings.get(R.string.expense_no_place_found_will_retry_after_save_if_on)
+            locationStatus = S("No place found (will retry after save if online)")
         }
         locationLookupDone = true
     }
@@ -809,18 +807,18 @@ fun FillScreen(
     val stageLabelState = remember { mutableStateOf("") }
     var stageLabel by stageLabelState
     val instructionLineState = remember {
-        mutableStateOf(AppStrings.get(R.string.fill_aim_at_odometer_tap_shutter_to_capture))
+        mutableStateOf(S("Aim at odometer. Tap shutter to capture."))
     }
     var instructionLine by instructionLineState
     var isPhotoSaving by remember { mutableStateOf(false) }
 
     RegisterPageHelp(
-        title = stringResource(R.string.fill_fill_controls),
-        stringResource(R.string.fuel_white_circle_shutter_capture_dash_or_pump),
-        stringResource(R.string.fuel_disk_save_the_fill_when_fields_are_ready),
-        stringResource(R.string.fuel_switch_odometer_mode_pump_cost_volume_mode),
-        stringResource(R.string.fuel_swap_cost_and_volume_fields),
-        stringResource(R.string.fuel_type_odo_cost_volume_anytime_custom_keypad_menu_),
+        title = S("Fill controls"),
+        S("White circle — shutter (capture dash or pump)."),
+        S("Disk — save the fill when fields are ready."),
+        S("↕ — switch odometer mode ↔ pump (cost/volume) mode."),
+        S("↔ — swap cost and volume fields."),
+        S("Type odo/cost/volume anytime (custom keypad). Menu → Help for the full walkthrough."),
     )
     /** Null when idle/ok; set while saving or after a failed Camera-roll save. */
     var photoSaveStatus by remember { mutableStateOf<String?>(null) }
@@ -1087,7 +1085,7 @@ fun FillScreen(
             if (displayBitmap != null) {
                 Image(
                     bitmap = displayBitmap!!.asImageBitmap(),
-                    contentDescription = stringResource(R.string.fuel_odometer_crop),
+                    contentDescription = S("Odometer Crop"),
                     modifier = Modifier.fillMaxSize().graphicsLayer {
                         if (captureMode != "odo") rotationZ = pumpViewRotation.toFloat()
                     },
@@ -1099,7 +1097,7 @@ fun FillScreen(
                         modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
                     ) {
                         Text(
-                            text = stringResource(R.string.fill_stage_1_s, stageLabel),
+                            text = S("STAGE: %1\$s", stageLabel),
                             color = Color.White,
                             style = MaterialTheme.typography.labelLarge,
                             modifier = Modifier.padding(4.dp)
@@ -1112,7 +1110,7 @@ fun FillScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = stringResource(R.string.fill_no_camera_on_this_device),
+                        text = S("No camera on this device"),
                         color = Color.White,
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -1139,7 +1137,7 @@ fun FillScreen(
                                     bufferSetABusy.set(false)
                                     capturePending = false
                                     captureViewState = CaptureViewState.Live
-                                    Toast.makeText(context, AppStrings.get(R.string.fuel_error_image_buffer_is_not_direct), Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, S("Error: Image buffer is not direct"), Toast.LENGTH_LONG).show()
                                 }
                                 return@CameraPreview
                             }
@@ -1206,9 +1204,9 @@ fun FillScreen(
                         ) {
                             Text(
                                 text = if (ratio == ratio.toLong().toFloat()) {
-                                    AppStrings.get(R.string.expense_s_1_sx, ratio.toLong())
+                                    S("%1\$sx", ratio.toLong())
                                 } else {
-                                    AppStrings.get(R.string.expense_s_1_sx, ratio)
+                                    S("%1\$sx", ratio)
                                 },
                                 style = MaterialTheme.typography.labelSmall
                             )
@@ -1295,9 +1293,9 @@ fun FillScreen(
                                             ) {
                                                 Text(
                                                     text = if (ratio == ratio.toLong().toFloat()) {
-                                                        AppStrings.get(R.string.expense_s_1_sx, ratio.toLong())
+                                                        S("%1\$sx", ratio.toLong())
                                                     } else {
-                                                        AppStrings.get(R.string.expense_s_1_sx, ratio)
+                                                        S("%1\$sx", ratio)
                                                     },
                                                     style = MaterialTheme.typography.labelSmall
                                                 )
@@ -1421,14 +1419,14 @@ fun FillScreen(
                         captureViewState = CaptureViewState.Live
                         Toast.makeText(
                             context,
-                            AppStrings.get(R.string.fuel_fill_up_saved),
+                            S("Fill-up saved"),
                             Toast.LENGTH_SHORT
                         ).show()
                     }
                 },
                 enabled = canSave,
             ) {
-                Icon(Icons.Filled.Save, contentDescription = AppStrings.get(R.string.fuel_save))
+                Icon(Icons.Filled.Save, contentDescription = S("Save"))
             }
         }
     }
@@ -1440,7 +1438,7 @@ fun FillScreen(
             val stackedPump = maxWidth < 340.dp
 
             val textMeasurer = rememberTextMeasurer()
-            val longestVehicle = vehicles.maxOfOrNull { it.name } ?: stringResource(R.string.expense_select_vehicle)
+            val longestVehicle = vehicles.maxOfOrNull { it.name } ?: S("Select vehicle")
             val density = LocalDensity.current
             val vehicleTextWidth = with(density) {
                 textMeasurer.measure(longestVehicle, style = MaterialTheme.typography.bodyLarge).size.width.toDp()
@@ -1463,7 +1461,7 @@ fun FillScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 var dropdownExpanded by remember { mutableStateOf(false) }
-                val vehicleName = vehicles.find { it.id == selectedVehicleId }?.name ?: stringResource(R.string.expense_select_vehicle)
+                val vehicleName = vehicles.find { it.id == selectedVehicleId }?.name ?: S("Select vehicle")
                 ExposedDropdownMenuBox(
                     expanded = dropdownExpanded,
                     onExpandedChange = { dropdownExpanded = it },
@@ -1472,7 +1470,7 @@ fun FillScreen(
                     OutlinedTextField(
                         value = vehicleName,
                         onValueChange = {},
-                        label = { Text(stringResource(R.string.fuel_vehicle)) },
+                        label = { Text(S("Vehicle")) },
                         modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
                         readOnly = true,
                         singleLine = true,
@@ -1499,7 +1497,7 @@ fun FillScreen(
                         // Tracking odo may exceed face width after rollover (e.g. 7+ digits).
                         if (it.length <= 10 && it.all { c -> c.isDigit() }) odometer = it
                     },
-                    label = { Text(stringResource(R.string.fuel_odo)) },
+                    label = { Text(S("Odo")) },
                     // Custom NumericKeypad is the only soft digit UI (both orientations).
                     showCaretButtons = false,
                     caretIndex = odoCaret,
@@ -1688,7 +1686,7 @@ fun FillScreen(
             com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
                 value = notes,
                 onValueChange = { notes = it },
-                label = { Text(stringResource(R.string.fuel_notes)) },
+                label = { Text(S("Notes")) },
                 // Landscape: match Panel C sibling width (not full remaining A+B space).
                 // Portrait: full width of Panel C.
                 modifier = panelCTextWidth,
@@ -1775,7 +1773,7 @@ fun FillScreen(
         val saveFuelPhotosNow = prefs.getBoolean("save_fuel_photos", true) || debugMode
         if (saveFuelPhotosNow) {
             isPhotoSaving = true
-            photoSaveStatus = AppStrings.get(R.string.expense_saving_photo)
+            photoSaveStatus = S("Saving photo…")
             val orientForExif = latestAnalysisRotationDegrees
             val captureFile = java.io.File(context.cacheDir, "fuel_${System.currentTimeMillis()}.jpg")
 
@@ -1817,16 +1815,16 @@ fun FillScreen(
                                             ts = captureTs,
                                         )
                                         photoSaveStatus = null
-                                        Toast.makeText(context, AppStrings.get(R.string.fill_photo_saved), Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, S("Photo saved"), Toast.LENGTH_SHORT).show()
                                         isPhotoSaving = false
                                     }
                                 } catch (e: Exception) {
                                     android.util.Log.e("Fill", "Photo save failed", e)
                                     mainExecutor.execute {
-                                        photoSaveStatus = AppStrings.get(R.string.fill_photo_save_failed_entry_will_have_no_photo)
+                                        photoSaveStatus = S("Photo save failed — entry will have no photo")
                                         Toast.makeText(
                                             context,
-                                            AppStrings.get(R.string.fill_could_not_save_fuel_photo_1_s, e.message ?: e),
+                                            S("Could not save fuel photo: %1\$s", e.message ?: e),
                                             Toast.LENGTH_LONG,
                                         ).show()
                                         isPhotoSaving = false
@@ -1873,17 +1871,17 @@ fun FillScreen(
                                             photoSaveStatus = null
                                             Toast.makeText(
                                                 context,
-                                                AppStrings.get(R.string.fill_photo_saved_to_gallery_fallback_frame),
+                                                S("Photo saved to gallery (fallback frame)"),
                                                 Toast.LENGTH_SHORT
                                             ).show()
                                             isPhotoSaving = false
                                         }
                                     } else {
                                         mainExecutor.execute {
-                                            photoSaveStatus = AppStrings.get(R.string.fill_photo_save_failed_entry_will_have_no_photo)
+                                            photoSaveStatus = S("Photo save failed — entry will have no photo")
                                             Toast.makeText(
                                                 context,
-                                                AppStrings.get(R.string.fill_could_not_save_fuel_photo_to_gallery_1_s, exception.message ?: exception),
+                                                S("Could not save fuel photo to gallery: %1\$s", exception.message ?: exception),
                                                 Toast.LENGTH_LONG
                                             ).show()
                                             isPhotoSaving = false
@@ -1901,11 +1899,11 @@ fun FillScreen(
             // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
                 Log.e("Fill", "Photo takePicture setup failed", e)
-                photoSaveStatus = AppStrings.get(R.string.fill_photo_save_failed_entry_will_have_no_photo)
+                photoSaveStatus = S("Photo save failed — entry will have no photo")
                 isPhotoSaving = false
                 Toast.makeText(
                     context,
-                    AppStrings.get(R.string.fill_could_not_save_fuel_photo_to_gallery_1_s, e.message ?: e),
+                    S("Could not save fuel photo to gallery: %1\$s", e.message ?: e),
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -1920,9 +1918,9 @@ fun FillScreen(
             }
             captureMode = if (captureMode == "odo") "pump" else "odo"
             instructionLine = if (captureMode == "pump") {
-                AppStrings.get(R.string.fill_aim_at_pump_display_cost_volume_tap_shutte)
+                S("Aim at pump display (cost/volume). Tap shutter to capture.")
             } else {
-                AppStrings.get(R.string.fill_aim_at_odometer_tap_shutter_to_capture)
+                S("Aim at odometer. Tap shutter to capture.")
             }
         }
     }
@@ -2242,7 +2240,7 @@ private fun NumericKeypad(
         listOf("1", "2", "3", "⌫"),
         listOf("4", "5", "6", "◀"),
         listOf("7", "8", "9", "▶"),
-        listOf(".", "0", stringResource(R.string.settings_ok), "blank"),
+        listOf(".", "0", S("OK"), "blank"),
     )
     Column(
         modifier = modifier.width(keySize * 4 + gap * 3),
@@ -2257,7 +2255,7 @@ private fun NumericKeypad(
                                 "⌫" -> onBackspace()
                                 "◀" -> onCaretLeft()
                                 "▶" -> onCaretRight()
-                                AppStrings.get(R.string.settings_ok) -> onNextField()
+                                S("OK") -> onNextField()
                                 "blank" -> onDismiss()
                                 else -> onDigit(key)
                             }
@@ -2268,7 +2266,7 @@ private fun NumericKeypad(
                         when (key) {
                             "blank" -> Icon(
                                 imageVector = Icons.Filled.KeyboardArrowDown,
-                                contentDescription = AppStrings.get(R.string.fuel_dismiss_keypad)
+                                contentDescription = S("Dismiss keypad")
                             )
                             "◀" -> Text("◀", style = MaterialTheme.typography.titleMedium)
                             "▶" -> Text("▶", style = MaterialTheme.typography.titleMedium)

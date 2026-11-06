@@ -17,8 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 /**
  * Material3 [ExposedDropdownMenu] with a **scrollable catalog** and a **pinned footer**
@@ -46,7 +45,7 @@ fun ExposedDropdownMenuBoxScope.ExposedDropdownMenuWithPinnedFooter(
         Column(modifier = Modifier.fillMaxWidth()) {
             if (showScrollHint) {
                 Text(
-                    text = stringResource(R.string.ui_scroll_for_more),
+                    text = S("Scroll for more…"),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),

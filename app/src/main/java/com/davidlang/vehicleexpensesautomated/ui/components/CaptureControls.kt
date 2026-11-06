@@ -17,11 +17,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 /** Shared shutter / capture button visual states (Fill + Start trip). */
 enum class CaptureButtonState {
@@ -40,7 +40,7 @@ fun RoundCaptureButton(
     viewState: CaptureButtonState,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    contentDescriptionLive: String = AppStrings.get(R.string.ui_shutter),
+    contentDescriptionLive: String = S("Shutter"),
 ) {
     IconButton(
         onClick = onClick,
@@ -64,23 +64,24 @@ fun RoundCaptureButton(
             CaptureButtonState.Live -> Box(
                 modifier = Modifier
                     .size(48.dp)
+                    .semantics { contentDescription = contentDescriptionLive }
                     .background(Color.White, CircleShape),
             )
             CaptureButtonState.Processing -> Icon(
                 imageVector = Icons.Filled.Close,
-                contentDescription = stringResource(R.string.ui_cancel_processing),
+                contentDescription = S("Cancel processing"),
                 tint = MaterialTheme.colorScheme.onError,
                 modifier = Modifier.size(32.dp),
             )
             CaptureButtonState.Restart -> Text(
-                text = stringResource(R.string.ui_restart),
+                text = S("Restart"),
                 color = MaterialTheme.colorScheme.onErrorContainer,
                 style = MaterialTheme.typography.labelSmall,
                 textAlign = TextAlign.Center,
             )
             CaptureButtonState.Results -> Icon(
                 imageVector = Icons.Filled.Refresh,
-                contentDescription = stringResource(R.string.settings_retry),
+                contentDescription = S("Retry"),
                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier
                     .size(32.dp)
@@ -95,7 +96,7 @@ fun RoundCaptureButton(
 fun DiskSaveIconButton(
     onClick: () -> Unit,
     enabled: Boolean,
-    contentDescription: String = AppStrings.get(R.string.fuel_save),
+    contentDescription: String = S("Save"),
     modifier: Modifier = Modifier,
 ) {
     IconButton(

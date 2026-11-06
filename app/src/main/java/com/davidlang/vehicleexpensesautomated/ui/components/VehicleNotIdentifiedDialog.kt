@@ -22,8 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import java.util.concurrent.atomic.AtomicBoolean
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 /**
  * Name-only list when a dash veto does not leave exactly one vehicle.
@@ -68,7 +67,7 @@ fun VehicleNotIdentifiedDialog(
                     .padding(24.dp),
             ) {
                 Text(
-                    text = stringResource(R.string.vehicle_vehicle_not_identified),
+                    text = S("Vehicle not identified"),
                     style = MaterialTheme.typography.headlineSmall,
                 )
                 LazyColumn(
@@ -90,7 +89,7 @@ fun VehicleNotIdentifiedDialog(
                 }
                 if (properSubset && !showAll) {
                     TextButton(onClick = { showAll = true }) {
-                        Text(stringResource(R.string.vehicle_show_all_vehicles))
+                        Text(S("Show all vehicles"))
                     }
                 }
             }
