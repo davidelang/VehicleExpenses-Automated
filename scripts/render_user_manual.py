@@ -19,11 +19,25 @@ except ImportError:
     import markdown
 
 
+def image_rel_under_images(url: str) -> str:
+    """Path under images/. A directory in the URL is kept (phone/shot.jpg)."""
+    path = url.strip().split("?", 1)[0].split("#", 1)[0]
+    marker = "/images/"
+    if marker in path:
+        rel = path.split(marker, 1)[1]
+    elif path.startswith("images/"):
+        rel = path[len("images/") :]
+    else:
+        rel = path.lstrip("./")
+        if "://" in path or path.startswith("/"):
+            rel = path.rstrip("/").split("/")[-1]
+    return rel.lstrip("/")
+
+
 def normalize_md_for_html(text: str, img_prefix: str) -> str:
     def repl(m: re.Match[str]) -> str:
         alt, url = m.group(1), m.group(2)
-        name = url.rstrip("/").split("/")[-1]
-        return f"![{alt}]({img_prefix}{name})"
+        return f"![{alt}]({img_prefix}{image_rel_under_images(url)})"
 
     return re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", repl, text)
 
@@ -111,14 +125,27 @@ def main() -> None:
     asset_html = render(normalize_md_for_html(md_text, "images/"))
     (asset_root / "index.html").write_text(asset_html, encoding="utf-8")
     src_imgs = root / "docs" / "user-manual" / "images"
-    n = 0
-    for p in sorted(src_imgs.glob("*.jpg")):
-        dest = asset_img / p.name
-        data = p.read_bytes()
-        if not dest.is_file() or dest.read_bytes() != data:
-            dest.write_bytes(data)
-        n += 1
-    print(f"wrote {asset_root / 'index.html'} + {n} jpgs")
+
+    def copy_jpgs(src_dir: Path, dest_dir: Path) -> int:
+        if not src_dir.is_dir():
+            return 0
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        copied = 0
+        for p in sorted(src_dir.glob("*.jpg")):
+            dest = dest_dir / p.name
+            data = p.read_bytes()
+            if not dest.is_file() or dest.read_bytes() != data:
+                dest.write_bytes(data)
+            copied += 1
+        return copied
+
+    n = copy_jpgs(src_imgs, asset_img)
+    n_phone = copy_jpgs(src_imgs / "phone", asset_img / "phone")
+    n_tablet = copy_jpgs(src_imgs / "tablet", asset_img / "tablet")
+    print(
+        f"wrote {asset_root / 'index.html'} + {n} flat jpgs, "
+        f"{n_phone} phone, {n_tablet} tablet"
+    )
 
 
 if __name__ == "__main__":

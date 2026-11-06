@@ -12723,3 +12723,7 @@ feature-group: label=''
 ## 2026-11-06 - in-app strings use the translation catalog
 
 - English stays at the call site. Locale text is the catalog. Generated strings.xml is no longer committed. The manual reader has the two web actions.
+
+## 2026-11-06 - user manual matches the current screens
+
+- The English manual describes the current Fill and experiment screens.

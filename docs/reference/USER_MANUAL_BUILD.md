@@ -12,7 +12,8 @@ ai_directive: "Update when the user-manual render pipeline or package paths chan
 |----------|----------|--------|
 | **`docs/user-manual/manual.md`** | Authors / git | **Edit source.** Markdown is easy to review and diff. |
 | **`docs/user-manual/index.html`** | **Browsers / web** | **Rendered** with screenshots. Browsers do **not** treat raw `.md` as a document with images. |
-| **`docs/user-manual/images/*.jpg`** | Both | Screenshots (phone + chrome). |
+| **`docs/user-manual/images/*.jpg`** | Both | Flat screenshots kept for the current manual. |
+| **`docs/user-manual/images/phone/`** and **`tablet/`** | Both | Same filenames, one tree per form. The renderer copies both. |
 | **`app/src/main/assets/user-manual/`** | **In-app** | Offline HTML + images for Help / About. |
 
 **Never** send end users to a raw GitHub `.md` URL for the full manual — they only see plain text.
@@ -26,7 +27,7 @@ ai_directive: "Update when the user-manual render pipeline or package paths chan
 
 ## How to update the manual
 
-1. Edit **`docs/user-manual/manual.md`** (and add/replace images under **`docs/user-manual/images/`** if needed).
+1. Edit **`docs/user-manual/manual.md`**. Image paths may include a directory (`images/phone/…`, `images/tablet/…`). Add or replace JPEGs under **`docs/user-manual/images/`**, **`images/phone/`**, and **`images/tablet/`**.
 2. Regenerate browser HTML + app assets:
 
    ```bash
