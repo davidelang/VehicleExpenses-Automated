@@ -12727,3 +12727,7 @@ feature-group: label=''
 ## 2026-11-06 - user manual matches the current screens
 
 - The English manual describes the current Fill and experiment screens.
+
+## 2026-11-06 - captured manual shots
+
+- Phone and tablet shots are committed. Translated shots, including regional English, are Git LFS. The default English set stays a normal blob. versionCode is 28.

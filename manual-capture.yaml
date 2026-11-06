@@ -1,0 +1,517 @@
+# VehicleExpenses walk for ./capture-manual-screenshots.
+# David runs a capture. An agent may run --check. No device is required for that.
+# This file stays in this app. It is not a build-examples file.
+# No hooks key: the walk is primitives. A hook would be an audit item
+# (missing primitive, lazy config, or a real one-app exception).
+# scripts/capture-i18n-manual-screenshots.py stays. This config does not replace that file.
+
+package: com.davidlang.vehicleexpensesautomated
+activity: com.davidlang.vehicleexpensesautomated/.MainActivity
+
+forms:
+  phone_max_inches: 8
+  gap_inches: 1.5
+
+ignore_text: ["1x", "2x", "4x"]
+
+# English literals the geometry must not treat as the shutter or the pump control.
+# System gallery labels below are device-language words, not string ids.
+
+never_tap:
+  - settings_sync_now_all_configured
+  - settings_sync_now_this_destination
+  - settings_sync
+  - settings_keep_local_and_write_it_back
+  - settings_keep_local_and_leave_the_sheet
+  - settings_accept_remote_field_cleared
+  - settings_enable_background_sync
+  - settings_enable_background_backup
+  - settings_save_fill_and_trip_photos
+  - fuel_save
+  - vehicle_save_changes
+  - help_create_vehicle
+  - settings_clear
+  - settings_clear_debug_data
+  - settings_fill_sessions
+  - vehicle_show_all_vehicles
+  - vehicle_clear_odo
+  - vehicle_run_discovery
+  - vehicle_gallery
+  - vehicle_camera
+
+never_tap_prefix: ["Sync now"]
+
+output:
+  en: docs/user-manual/images/{form}
+  other: docs/i18n/{segment}/images/{form}
+
+endonym_key: "lang_name_{pref}"
+endonym_row:
+  en-001: 1
+
+drawer:
+  open: nav_menu
+  labels:
+    - nav_fill
+    - nav_manage_vehicles
+    - nav_new_expense
+    - nav_reports
+    - nav_start_trip
+    - nav_syncing
+    - nav_settings
+    - nav_help
+    - nav_about
+  open_if_text: [nav_settings, nav_help]
+  # Some packs translate these two to the same text. The drawer row is Syncing.
+  unblock_when_same: [nav_syncing, settings_sync]
+
+language:
+  menu: nav_menu
+  settings: nav_settings
+  field: settings_language
+  system: settings_language_system
+  ready: nav_menu
+
+launch:
+  sleep: 2.5
+  dismiss: [onboarding_skip_for_now]
+
+locales:
+  - {pref: en, values: values, segment: ""}
+  - {pref: en-001, values: values-b+en+001, segment: en-001}
+  - {pref: en-AU, values: values-en-rAU, segment: en-AU}
+  - {pref: en-CA, values: values-en-rCA, segment: en-CA}
+  - {pref: en-GB, values: values-en-rGB, segment: en-GB}
+  - {pref: en-IN, values: values-en-rIN, segment: en-IN}
+  - {pref: af, values: values-af, segment: af}
+  - {pref: sq, values: values-sq, segment: sq}
+  - {pref: am, values: values-am, segment: am}
+  - {pref: hy, values: values-hy, segment: hy}
+  - {pref: as, values: values-as, segment: as}
+  - {pref: az, values: values-az, segment: az}
+  - {pref: eu, values: values-eu, segment: eu}
+  - {pref: be, values: values-be, segment: be}
+  - {pref: bn, values: values-bn, segment: bn}
+  - {pref: bs, values: values-bs, segment: bs}
+  - {pref: bg, values: values-bg, segment: bg}
+  - {pref: my, values: values-my, segment: my}
+  - {pref: ca, values: values-ca, segment: ca}
+  - {pref: ceb, values: values-b+ceb, segment: ceb}
+  - {pref: zh-HK, values: values-zh-rHK, segment: zh-HK}
+  - {pref: zh-CN, values: values-zh-rCN, segment: zh-CN}
+  - {pref: zh-TW, values: values-zh-rTW, segment: zh-TW}
+  - {pref: hr, values: values-hr, segment: hr}
+  - {pref: cs, values: values-cs, segment: cs}
+  - {pref: da, values: values-da, segment: da}
+  - {pref: nl, values: values-nl, segment: nl}
+  - {pref: et, values: values-et, segment: et}
+  - {pref: fo, values: values-fo, segment: fo}
+  - {pref: tl, values: values-tl, segment: tl}
+  - {pref: fi, values: values-fi, segment: fi}
+  - {pref: fr-CA, values: values-fr-rCA, segment: fr-CA}
+  - {pref: fr, values: values-fr, segment: fr}
+  - {pref: fy, values: values-fy, segment: fy}
+  - {pref: gl, values: values-gl, segment: gl}
+  - {pref: gd, values: values-gd, segment: gd}
+  - {pref: ka, values: values-ka, segment: ka}
+  - {pref: de, values: values-de, segment: de}
+  - {pref: el, values: values-el, segment: el}
+  - {pref: gu, values: values-gu, segment: gu}
+  - {pref: ha, values: values-ha, segment: ha}
+  - {pref: hi, values: values-hi, segment: hi}
+  - {pref: hu, values: values-hu, segment: hu}
+  - {pref: is, values: values-is, segment: is}
+  - {pref: ig, values: values-ig, segment: ig}
+  - {pref: id, values: values-in, segment: id}
+  - {pref: ga, values: values-ga, segment: ga}
+  - {pref: it, values: values-it, segment: it}
+  - {pref: ja, values: values-ja, segment: ja}
+  - {pref: jv, values: values-jv, segment: jv}
+  - {pref: kn, values: values-kn, segment: kn}
+  - {pref: kk, values: values-kk, segment: kk}
+  - {pref: km, values: values-km, segment: km}
+  - {pref: rw, values: values-rw, segment: rw}
+  - {pref: ko, values: values-ko, segment: ko}
+  - {pref: ku, values: values-ku, segment: ku}
+  - {pref: ky, values: values-ky, segment: ky}
+  - {pref: lo, values: values-lo, segment: lo}
+  - {pref: lv, values: values-lv, segment: lv}
+  - {pref: lt, values: values-lt, segment: lt}
+  - {pref: lb, values: values-lb, segment: lb}
+  - {pref: mk, values: values-mk, segment: mk}
+  - {pref: mg, values: values-mg, segment: mg}
+  - {pref: ms, values: values-ms, segment: ms}
+  - {pref: ml, values: values-ml, segment: ml}
+  - {pref: mt, values: values-mt, segment: mt}
+  - {pref: mi, values: values-mi, segment: mi}
+  - {pref: mr, values: values-mr, segment: mr}
+  - {pref: mn, values: values-mn, segment: mn}
+  - {pref: ne, values: values-ne, segment: ne}
+  - {pref: nb, values: values-nb, segment: nb}
+  - {pref: nn, values: values-nn, segment: nn}
+  - {pref: or, values: values-or, segment: or}
+  - {pref: pl, values: values-pl, segment: pl}
+  - {pref: pt-BR, values: values-pt, segment: pt-BR}
+  - {pref: pt-PT, values: values-pt-rPT, segment: pt-PT}
+  - {pref: pa, values: values-pa, segment: pa}
+  - {pref: qu, values: values-qu, segment: qu}
+  - {pref: ro, values: values-ro, segment: ro}
+  - {pref: rm, values: values-rm, segment: rm}
+  - {pref: ru, values: values-ru, segment: ru}
+  - {pref: sr, values: values-sr, segment: sr}
+  - {pref: sr-Latn, values: values-b+sr+Latn, segment: sr-Latn}
+  - {pref: si, values: values-si, segment: si}
+  - {pref: sk, values: values-sk, segment: sk}
+  - {pref: sl, values: values-sl, segment: sl}
+  - {pref: so, values: values-so, segment: so}
+  - {pref: es-419, values: values-b+es+419, segment: es-419}
+  - {pref: es, values: values-es, segment: es}
+  - {pref: es-US, values: values-es-rUS, segment: es-US}
+  - {pref: su, values: values-su, segment: su}
+  - {pref: sw, values: values-sw, segment: sw}
+  - {pref: sv, values: values-sv, segment: sv}
+  - {pref: tg, values: values-tg, segment: tg}
+  - {pref: ta, values: values-ta, segment: ta}
+  - {pref: tt, values: values-tt, segment: tt}
+  - {pref: te, values: values-te, segment: te}
+  - {pref: th, values: values-th, segment: th}
+  - {pref: tr, values: values-tr, segment: tr}
+  - {pref: tk, values: values-tk, segment: tk}
+  - {pref: uk, values: values-uk, segment: uk}
+  - {pref: uz, values: values-uz, segment: uz}
+  - {pref: vi, values: values-vi, segment: vi}
+  - {pref: cy, values: values-cy, segment: cy}
+  - {pref: xh, values: values-xh, segment: xh}
+  - {pref: yo, values: values-yo, segment: yo}
+  - {pref: zu, values: values-zu, segment: zu}
+sections:
+  - group: drawer
+    shots: [01-drawer.jpg]
+    steps:
+      - open_drawer: true
+      - shot: 01-drawer.jpg
+      - close_drawer: true
+        on_fail: stop
+        note: "drawer scrim was not tapped after the drawer shot"
+
+  - group: vehicles
+    shots:
+      - r1-manage-vehicles-crops.jpg
+      - 03b-manage-vehicles-new.jpg
+      - r2-manage-vehicles-landmarks.jpg
+    steps:
+      - block:
+          shots: [r1-manage-vehicles-crops.jpg, 03b-manage-vehicles-new.jpg]
+          steps:
+            - drawer: nav_manage_vehicles
+            - shot: r1-manage-vehicles-crops.jpg
+            - block:
+                shots: [03b-manage-vehicles-new.jpg]
+                steps:
+                  - tap_field: fuel_vehicle
+                  - wait: 0.4
+                  - tap_text: vehicle_add_new_vehicle
+                  - wait: 0.6
+                  - shot: 03b-manage-vehicles-new.jpg
+                  - back: 1
+      - block:
+          shots: [r2-manage-vehicles-landmarks.jpg]
+          steps:
+            - drawer: nav_manage_vehicles
+            - tap_text:
+                id: vehicle_show_landmarks
+                scroll: page
+              note: "Show Landmarks not found; captured Manage Vehicles"
+              note_shots: [r2-manage-vehicles-landmarks.jpg]
+            - wait: 0.6
+            - shot: r2-manage-vehicles-landmarks.jpg
+            - back: 1
+
+  - group: fill
+    shots:
+      - r3-fill-odo-live.jpg
+      - r3b-fill-vehicle-not-identified.jpg
+      - r4-fill-odo-result.jpg
+      - r5-fill-pump-result.jpg
+    steps:
+      - drawer: nav_fill
+      - shot: r3-fill-odo-live.jpg
+      - block:
+          shots: [r3b-fill-vehicle-not-identified.jpg]
+          on_fail: leave
+          steps:
+            - push_if_absent:
+                remote: /sdcard/DCIM/Camera/not-a-dash.jpg
+            - tap_desc: fill_pick_an_existing_image
+            - wait: 1.0
+            - tap_any:
+                text: [Photos, Camera]
+                scroll: page
+            - wait: 0.8
+            - tap_matching:
+                contains: "Photo taken on"
+            - wait_until:
+                dialog: vehicle_vehicle_not_identified
+                show_all: vehicle_show_all_vehicles
+                timeout: 25
+            - shot: r3b-fill-vehicle-not-identified.jpg
+              on_fail: note
+            - back_while_dialog:
+                dialog: vehicle_vehicle_not_identified
+                show_all: vehicle_show_all_vehicles
+      - block:
+          shots: [r4-fill-odo-result.jpg, r5-fill-pump-result.jpg]
+          steps:
+            - tap_between:
+                desc: [fuel_save, fill_pick_an_existing_image]
+              on_fail: skip
+            - wait_settle:
+                kind: fill
+                processing: ui_cancel_processing
+                retry: settings_retry
+                dialog: vehicle_vehicle_not_identified
+                show_all: vehicle_show_all_vehicles
+                between: [fuel_save, fill_pick_an_existing_image]
+                timeout: 20
+            - back_while_dialog:
+                dialog: vehicle_vehicle_not_identified
+                show_all: vehicle_show_all_vehicles
+            - shot:
+                file: r4-fill-odo-result.jpg
+                unless:
+                  - fill_photo_save_failed_entry_will_have_no_photo
+                  - vehicle_vehicle_not_identified
+            - block:
+                shots: [r5-fill-pump-result.jpg]
+                steps:
+                  - tap_beside:
+                      save: fuel_save
+                      pick: fill_pick_an_existing_image
+                      skip: [settings_retry, ui_cancel_processing, nav_start_trip]
+                    on_fail: note
+                    note: "pump mode control not found; captured current Fill"
+                    note_shots: [r5-fill-pump-result.jpg]
+                  - wait: 0.6
+                  - shot:
+                      file: r5-fill-pump-result.jpg
+                      unless:
+                        - fill_photo_save_failed_entry_will_have_no_photo
+                        - vehicle_vehicle_not_identified
+
+  - group: expense
+    shots: [r6-new-expense.jpg]
+    steps:
+      - drawer: nav_new_expense
+      - shot: r6-new-expense.jpg
+      - back: 1
+
+  - group: reports
+    shots:
+      - 06-reports.jpg
+      - 05-expense-list.jpg
+      - expense-edit.jpg
+      - time-based-reports.jpg
+      - time-based-reports-scrolled.jpg
+      - fill-history.jpg
+      - fuel-edit.jpg
+      - trip-miles.jpg
+    steps:
+      - block:
+          shots: [06-reports.jpg, 05-expense-list.jpg, expense-edit.jpg]
+          steps:
+            - drawer: nav_reports
+            - shot: 06-reports.jpg
+            - block:
+                shots: [05-expense-list.jpg, expense-edit.jpg]
+                steps:
+                  - tap_text:
+                      id: reports_expenses_list
+                      else: [nav_expense_list]
+                      scroll: page
+                  - wait: 0.6
+                  - shot: 05-expense-list.jpg
+                  - block:
+                      shots: [expense-edit.jpg]
+                      steps:
+                        - tap_matching:
+                            card: true
+                          on_fail: note
+                          note: "no expense row; captured the list"
+                          note_shots: [expense-edit.jpg]
+                        - wait: 0.6
+                        - shot: expense-edit.jpg
+            - back: 1
+      - block:
+          shots: [time-based-reports.jpg, time-based-reports-scrolled.jpg]
+          steps:
+            - drawer: nav_reports
+            - tap_text:
+                id: reports_time_based_reports
+                scroll: page
+            - wait: 0.8
+            - shot: time-based-reports.jpg
+            - block:
+                shots: [time-based-reports-scrolled.jpg]
+                steps:
+                  - swipe: page
+                  - shot: time-based-reports-scrolled.jpg
+            - back: 1
+      - block:
+          shots: [fill-history.jpg, fuel-edit.jpg]
+          steps:
+            - drawer: nav_reports
+            - tap_text:
+                id: reports_fill_history
+                scroll: page
+            - wait: 0.6
+            - shot: fill-history.jpg
+            - block:
+                shots: [fuel-edit.jpg]
+                steps:
+                  - tap_matching:
+                      card: true
+                      skip_format: fill_s_1_s_fills
+                    on_fail: note
+                    note: "no fill row; captured fill history"
+                    note_shots: [fuel-edit.jpg]
+                  - wait: 0.6
+                  - shot: fuel-edit.jpg
+            - back: 1
+      - block:
+          shots: [trip-miles.jpg]
+          steps:
+            - drawer: nav_reports
+            - tap_text:
+                id: reports_trip_miles
+                scroll: page
+            - wait: 0.6
+            - shot: trip-miles.jpg
+            - back: 1
+
+  - group: trip
+    shots: [start-trip.jpg]
+    steps:
+      - drawer: nav_start_trip
+      - shot: start-trip.jpg
+      - block:
+          shots: []
+          steps:
+            - tap_between:
+                desc: [nav_start_trip, trip_personal_now_at_this_location]
+              on_fail: skip
+              note: "shutter between Start trip and Personal now at this location not found"
+              note_shots: [start-trip.jpg]
+            - wait_settle:
+                kind: trip
+                processing: ui_cancel_processing
+                retry: settings_retry
+                dialog: vehicle_vehicle_not_identified
+                show_all: vehicle_show_all_vehicles
+                between: [nav_start_trip, trip_personal_now_at_this_location]
+                timeout: 20
+            - back_while_dialog:
+                dialog: vehicle_vehicle_not_identified
+                show_all: vehicle_show_all_vehicles
+      - back: 1
+
+  - group: sync
+    shots:
+      - syncing-hub.jpg
+      - 08-spreadsheet-sync.jpg
+      - 09-spreadsheet-provider-picker.jpg
+      - 10-spreadsheet-google-form.jpg
+    steps:
+      - drawer: nav_syncing
+      - shot: syncing-hub.jpg
+      - block:
+          shots:
+            - 08-spreadsheet-sync.jpg
+            - 09-spreadsheet-provider-picker.jpg
+            - 10-spreadsheet-google-form.jpg
+          steps:
+            - tap_text:
+                id: settings_spreadsheet_sync
+                scroll: fling
+              flag: card
+              note: "Spreadsheet sync card not found"
+              note_shots: [08-spreadsheet-sync.jpg]
+            - wait: 0.8
+            - shot: 08-spreadsheet-sync.jpg
+            - block:
+                shots: [09-spreadsheet-provider-picker.jpg, 10-spreadsheet-google-form.jpg]
+                steps:
+                  - tap_text:
+                      id: settings_add_spreadsheet_destination
+                      scroll: page
+                    flag: picker
+                  - wait: 0.6
+                  - shot: 09-spreadsheet-provider-picker.jpg
+                  - block:
+                      shots: [10-spreadsheet-google-form.jpg]
+                      steps:
+                        - tap_text: settings_google_sheets
+                          flag: form
+                        - wait: 0.8
+                        - shot: 10-spreadsheet-google-form.jpg
+                  - back_if: form
+                  - back_if: picker
+
+  - group: sync
+    shots:
+      - 11-photo-backup.jpg
+      - 12-photo-provider-picker.jpg
+      - 13-photo-google-form.jpg
+    steps:
+      - drawer: nav_syncing
+      - tap_text:
+          id: settings_photo_backup
+          scroll: fling
+        flag: card
+        note: "Photo backup card not found"
+        note_shots: [11-photo-backup.jpg]
+      - wait: 0.8
+      - shot: 11-photo-backup.jpg
+      - block:
+          shots: [12-photo-provider-picker.jpg, 13-photo-google-form.jpg]
+          steps:
+            - tap_text:
+                id: settings_add_photo_destination
+                scroll: page
+              flag: picker
+            - wait: 0.6
+            - shot: 12-photo-provider-picker.jpg
+            - block:
+                shots: [13-photo-google-form.jpg]
+                steps:
+                  - tap_text: settings_google_drive
+                    flag: form
+                  - wait: 0.8
+                  - shot: 13-photo-google-form.jpg
+            - back_if: form
+            - back_if: picker
+
+  - group: settings
+    shots: [07-settings.jpg, 07b-settings-more.jpg]
+    steps:
+      - drawer: nav_settings
+      - shot: 07-settings.jpg
+      - block:
+          shots: [07b-settings-more.jpg]
+          steps:
+            - swipe: page
+            - shot: 07b-settings-more.jpg
+      - back: 1
+
+  - group: help
+    shots: [14-help.jpg]
+    steps:
+      - drawer: nav_help
+      - shot: 14-help.jpg
+      - back: 1
+
+  - group: about
+    shots: [15-about.jpg]
+    steps:
+      - drawer: nav_about
+      - shot: 15-about.jpg
+      - back: 1
