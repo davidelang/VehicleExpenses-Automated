@@ -1,7 +1,6 @@
 # Permission filters (smudge/clean for @@ tokens in stamped files)
 # Do NOT apply to the filter scripts themselves to avoid circular "no such file" during initial checkout.
 setup-project filter=manage-configs
-set-worktree-perms filter=manage-configs
 set-sandbox-perms filter=manage-configs
 project.config.example filter=manage-configs
 landlock.config filter=manage-configs
@@ -46,6 +45,9 @@ work-history/TODO.md merge=ve-special-ours
 # Host-only unscheduled server dets (~84–109MB). Never APK assets.
 # GitHub LFS (not regular blobs). See docs/obsolete/EXPERIMENT_DET_MODELS.md
 third_party/paddle/exp_det_ab_unscheduled/PP-OCR*_server_det_*.nb filter=lfs diff=lfs merge=lfs -text
+docs/i18n/** filter=lfs diff=lfs merge=lfs -text
+docs/i18n/**/user-manual.md !filter !diff !merge text
+app/src/main/i18n/** filter=lfs diff=lfs merge=lfs -text
 # @@SANDBOX_PATH@@ — project.config sandbox_dir, else sandbox_path
 new_agent_prompt filter=manage-configs
 AGENTS.md filter=manage-configs

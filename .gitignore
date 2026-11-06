@@ -78,6 +78,9 @@ current-state.md
 # Generated files
 app/src/main/assets/*
 app/src/main/res/raw/*
+# Build writes these from app/src/main/i18n. colors.xml and themes.xml stay tracked.
+app/src/main/res/values/strings.xml
+app/src/main/res/values-*/strings.xml
 
 # Experiment Reports
 alignment_report_*.html

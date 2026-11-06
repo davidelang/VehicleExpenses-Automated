@@ -12651,3 +12651,63 @@ feature-group: label=''
 ## 2026-11-03 - Locale config default for the bugfixes-1 merge
 
 - Merge commit 5b65482ec took bugfixes-1. assembleDebug stopped in extractArm64DebugSupportedLocales: generateLocaleConfig needs res/resources.properties. Added unqualifiedResLocale=en (values/ is English). No hand-written locales_config.xml.
+
+## 2026-11-03 - User manual matches current screens
+
+- Plan: dev-ai-interaction/plans/user-manual-current-pages-20261031-1306-plan.md (cite standard-plan-compliance-block.md)
+- Phase 1: capture script requires --form and --serial, English labels from values/strings.xml, Fill via nav_fill, shutters by content description. RoundCaptureButton publishes contentDescriptionLive. Renderer keeps a directory in an image path and copies phone/ and tablet/.
+- Phase 2 prose: Fill and Start trip vehicle list, Fill page help, experiment drawer labels, Quick Guide. David runs the script on the devices; this pass does not.
+
+## 2026-11-03 - User manual image trees blocked
+
+- Plan: dev-ai-interaction/plans/user-manual-current-pages-20261031-1306-plan.md (cite standard-plan-compliance-block.md)
+- Reviewer FAIL on ee57b0f472..f9539b3d6: HTML points at images/phone and images/tablet, and those trees are not in the commit. Flat JPEGs were not copied in to fake them. No device capture. Status BLOCKED; split the capture-and-render acceptance from the script pass.
+
+## 2026-11-04 - Manual capture script follows the phone
+
+- Plan: dev-ai-interaction/plans/user-manual-capture-sequence-20261103-2313-plan.md (cite standard-plan-compliance-block.md)
+- The capture script taps Close navigation menu instead of Back while the drawer is open, and stops if Back leaves the app. Fill and Start trip shutters are the unlabeled clickable between the labeled neighbors. Sync opens the exact Spreadsheet sync and Photo backup titles after a fling. No device run.
+
+## 2026-11-04 - Capture script walks every language pack
+
+- Plan: dev-ai-interaction/plans/user-manual-capture-all-locales-20261104-0516-plan.md (cite standard-plan-compliance-block.md)
+- scripts/capture-i18n-manual-screenshots.py: --locales all or a pref-tag list; omitted stays en. Each pack writes app_language and cmd locale set-app-locales with that bcp47, then force-stops. The run restores en. Labels come from PACKS; English stays values/strings.xml. English shots stay under docs/user-manual/images/<form>/; other packs under docs/i18n/<manualPathSegment>/images/<form>/. The drawer scrim is the full-height node beside the drawer labels. Expense and fill edit tap the card title, not a clickable fills-count line. The two fill-result shots are not written while photo save failed is showing, and the vehicle-not-identified shot only while that dialog title is up. No device run.
+
+## 2026-11-04 - Manual capture language picker
+
+- scripts/capture-i18n-manual-screenshots.py: packs change from the Settings language menu instead of run-as. English is left alone when the English nav_menu content description is already showing. en is the first English row and en-001 the second. System default is not tapped. Capture waits until that pack's nav_menu content description is showing. --locales all still walks AppLanguage.SUPPORTED and restores en. No device run.
+
+## 2026-11-04 - Manual capture cleanup
+
+- Plan: dev-ai-interaction/plans/user-manual-capture-cleanup-20261104-1221-plan.md (cite standard-plan-compliance-block.md)
+- Sort captured manual JPEGs into phone (1440x3120) and tablet (1600x2560), drop the listed bad shots, fix the reports hub catalog, the vehicle-not-identified string, and the capture script. Re-render the English manual. No device run.
+
+## 2026-11-04 - Manual capture on two devices
+
+- Plan: dev-ai-interaction/plans/user-manual-capture-two-devices-20261104-1325-plan.md (cite standard-plan-compliance-block.md)
+- scripts/capture-i18n-manual-screenshots.py: two --serial values and no --form assign tablet and phone from physical diagonal (physical wm size and density; gap under 1.5 in exits before a shot). One --serial still requires --form and the 1440x3120 / 1600x2560 check. --shots and --replace apply to one or two devices; default locales are all for two serials. A kept pack is not opened. Sections outside the selection are not opened. The devices run together and each restores English. r3b, when taken, is Pictures/not-a-dash.jpg while the name list is up, then Back, not the shutter. No device run.
+
+## 2026-11-04 - Translation catalog
+
+- App strings are read with S() from the English sentence. The build packages imported locale text from app/src/main/i18n and does not translate.
+- The manual reader can open the public English page in Google Translate. Help and About still open the bundled manual.
+
+## 2026-11-04 - Reader action labels go through S
+
+- UserManualActivity passes the two reader actions through S with their existing English sentences. When each action is shown is unchanged, and the catalog is not rewritten.
+
+## 2026-11-04 - Skip a degenerate landmark quad
+
+- ExpRotGmm recognizeOne returns on a bad quad without writing that row, so later quads in the same call are still recognized. Other recognition throws still abort the batch.
+
+## 2026-11-05 - Overlapping language-menu page
+
+- The in-app language menu moves one overlapping page at a time, in both directions, and a miss closes that menu.
+
+## 2026-11-06 - history rewrite redo (backup tag backup-manual-updates kept)
+
+- Branch manual-updates, reference backup-manual-updates (cfbde1d28).
+
+## 2026-11-06 - reset to ee57b0f47 done
+
+- Reset to merge-base with master; log kept; infra kept: 84 path(s).
