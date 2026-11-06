@@ -13,8 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupKind
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 /**
  * Location preview + editable name/address for Fill / Trip / Expense.
@@ -43,9 +42,9 @@ fun LocationConfirmBlock(
         hasCoords &&
         onWrongStationClick != null
     val wrongLabel = if (pickerKind == LocationLookupKind.AUTO_SERVICE) {
-        stringResource(R.string.ui_wrong_place)
+        S("Wrong place")
     } else {
-        stringResource(R.string.ui_wrong_station)
+        S("Wrong station")
     }
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -68,7 +67,7 @@ fun LocationConfirmBlock(
                 CaretEnabledOutlinedTextField(
                     value = name,
                     onValueChange = onNameChange,
-                    label = { Text(stringResource(R.string.fuel_place_name)) },
+                    label = { Text(S("Place name")) },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     showCaretButtons = false,
@@ -76,7 +75,7 @@ fun LocationConfirmBlock(
                 CaretEnabledOutlinedTextField(
                     value = address,
                     onValueChange = onAddressChange,
-                    label = { Text(stringResource(R.string.fuel_address)) },
+                    label = { Text(S("Address")) },
                     modifier = Modifier.weight(1f),
                     singleLine = false,
                     maxLines = 2,

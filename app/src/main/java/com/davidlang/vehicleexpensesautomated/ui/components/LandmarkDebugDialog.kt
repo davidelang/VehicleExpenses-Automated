@@ -53,8 +53,7 @@ import kotlinx.coroutines.withContext
 import kotlin.math.max
 import kotlin.math.min
 import java.io.File
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -66,7 +65,7 @@ fun LandmarkDebugDialog(
     
     onDismiss: () -> Unit,
     onLandmarksChanged: (List<TextBlock>) -> Unit = {},
-    engineName: String = AppStrings.get(R.string.ui_unknown),
+    engineName: String = S("Unknown"),
     odometerText: String = "",
     sourceWidth: Int = 1,
     sourceHeight: Int = 1,
@@ -146,7 +145,7 @@ fun LandmarkDebugDialog(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text(AppStrings.get(R.string.ui_landmarks), style = MaterialTheme.typography.headlineSmall)
+                    Text(S("Landmarks"), style = MaterialTheme.typography.headlineSmall)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -158,7 +157,7 @@ fun LandmarkDebugDialog(
                                     undoStack = emptyList()
                                 },
                                 modifier = Modifier.padding(end = 4.dp),
-                            ) { Text(AppStrings.get(R.string.ui_edit_ocr)) }
+                            ) { Text(S("Edit OCR")) }
                         } else {
                             TextButton(
                                 onClick = {
@@ -168,7 +167,7 @@ fun LandmarkDebugDialog(
                                     }
                                 },
                                 enabled = undoStack.isNotEmpty(),
-                            ) { Text(AppStrings.get(R.string.ui_undo)) }
+                            ) { Text(S("Undo")) }
                             IconButton(
                                 onClick = {
                                     pushUndoSnapshot()

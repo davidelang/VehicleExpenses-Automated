@@ -1,6 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.onboarding
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 /** Stable tutorial IDs (T1). */
 object TutorialIds {
@@ -31,84 +31,84 @@ object TutorialCatalog {
     fun all(): List<Tutorial> = listOf(
         Tutorial(
             id = TutorialIds.ADD_VEHICLE,
-            title = AppStrings.get(R.string.onboarding_add_a_vehicle),
+            title = S("Add a vehicle"),
             endRoute = "managevehicles",
-            endCtaLabel = AppStrings.get(R.string.tutorial_add_vehicle_cta),
+            endCtaLabel = S("Go to Manage Vehicles"),
             steps = listOf(
                 TutorialStep(
-                    title = AppStrings.get(R.string.onboarding_open_manage_vehicles),
-                    body = AppStrings.get(R.string.onboarding_from_the_menu_choose_manage_vehicles_this) +
-                        AppStrings.get(R.string.onboarding_the_app_can_recognize_later),
+                    title = S("Open Manage Vehicles"),
+                    body = S("From the menu (☰), choose Manage Vehicles. This is where you create dashboards ") +
+                        S("the app can recognize later."),
                     imageAsset = "tutorials/drawer.jpg",
                 ),
                 TutorialStep(
-                    title = AppStrings.get(R.string.vehicle_add_new_vehicle),
-                    body = AppStrings.get(R.string.onboarding_open_the_vehicle_dropdown_and_pick_add_new) +
-                        AppStrings.get(R.string.onboarding_as_stand_alone_first_vehicle_or_an_additional_ve),
+                    title = S("Add New Vehicle"),
+                    body = S("Open the vehicle dropdown and pick Add New Vehicle. You are setting up this phone ") +
+                        S("as stand-alone / first vehicle (or an additional vehicle)."),
                     imageAsset = "tutorials/vehicle_manage.jpg",
                 ),
                 TutorialStep(
-                    title = AppStrings.get(R.string.onboarding_dashboard_photo),
-                    body = AppStrings.get(R.string.onboarding_take_or_pick_a_clear_photo_of_the_instrume) +
-                        AppStrings.get(R.string.onboarding_view_of_the_odometer_help_discovery),
+                    title = S("Dashboard photo"),
+                    body = S("Take or pick a clear photo of the instrument cluster. Good lighting and a square-on ") +
+                        S("view of the odometer help discovery."),
                     imageAsset = "tutorials/vehicle_dash.jpg",
                 ),
                 TutorialStep(
-                    title = AppStrings.get(R.string.tutorial_add_vehicle_step4_title),
-                    body = AppStrings.get(R.string.onboarding_run_discovery_select_odo_tap_the_seed_adju) +
-                        AppStrings.get(R.string.onboarding_review_landmarks_edit_ocr_text_if_somethin),
+                    title = S("Odo Crop & Run Discovery"),
+                    body = S("Run Discovery, Select Odo, tap the seed, adjust, Save. ") +
+                        S("Review landmarks. Edit OCR text if something was missed."),
                     imageAsset = "tutorials/vehicle_crops.jpg",
                 ),
                 TutorialStep(
-                    title = AppStrings.get(R.string.onboarding_name_and_create),
-                    body = AppStrings.get(R.string.onboarding_enter_a_vehicle_name_then_create_vehicle_a) +
-                        AppStrings.get(R.string.onboarding_the_first_run_splash_will_not_appear_again),
+                    title = S("Name and Create"),
+                    body = S("Enter a Vehicle Name, then Create Vehicle. After at least one user vehicle exists, ") +
+                        S("the first-run splash will not appear again."),
                     imageAsset = "tutorials/vehicle_manage.jpg",
                 ),
             ),
         ),
         Tutorial(
             id = TutorialIds.SETUP_SYNC,
-            title = AppStrings.get(R.string.tutorial_setup_sync_title),
+            title = S("Connect existing setup"),
             endRoute = "syncing",
-            endCtaLabel = AppStrings.get(R.string.tutorial_setup_sync_cta),
+            endCtaLabel = S("Go to Syncing"),
             steps = listOf(
                 TutorialStep(
-                    title = AppStrings.get(R.string.tutorial_setup_sync_step1_title),
-                    body = AppStrings.get(R.string.onboarding_this_path_is_for_a_new_phone_or_tablet_joi) +
-                        AppStrings.get(R.string.onboarding_another_device_already_has_vehicles_a_shar) +
-                        AppStrings.get(R.string.onboarding_you_use_your_google_microsoft_other_accoun) +
-                        AppStrings.get(R.string.onboarding_stand_alone_first_setup_no_other_device_yet_is_a),
+                    title = S("You already have a cluster"),
+                    body = S("This path is for a **new phone or tablet** joining an **existing** Vehicle Expenses setup. ") +
+                        S("Another device already has vehicles, a **shared spreadsheet**, and usually a **shared photo folder**. ") +
+                        S("You use **your** Google / Microsoft / other account — not an app-hosted cloud. ") +
+                        S("Stand-alone first setup (no other device yet) is **Add a vehicle**, not this tutorial."),
                     imageAsset = "tutorials/drawer.jpg",
                 ),
                 TutorialStep(
-                    title = AppStrings.get(R.string.tutorial_setup_sync_step2_title),
-                    body = AppStrings.get(R.string.onboarding_from_the_menu_open_syncing_you_will_add_de) +
-                        AppStrings.get(R.string.onboarding_sheet_and_photo_folder_the_other_device_already_),
+                    title = S("Open Syncing on this device"),
+                    body = S("From the menu (☰), open **Syncing**. You will add destinations that point at the **same** ") +
+                        S("sheet and photo folder the other device already uses — not brand-new empty ones."),
                     imageAsset = "tutorials/sync_hub.jpg",
                 ),
                 TutorialStep(
-                    title = AppStrings.get(R.string.tutorial_setup_sync_step3_title),
-                    body = AppStrings.get(R.string.onboarding_add_a_spreadsheet_destination_pick_the_sam) +
-                        AppStrings.get(R.string.onboarding_sign_in_paste_the_existing_sheet_url_from) +
-                        AppStrings.get(R.string.onboarding_test_connection_then_sync_now_to_pull_vehi) +
-                        AppStrings.get(R.string.onboarding_do_not_create_a_new_blank_spreadsheet_for_this_p),
+                    title = S("Spreadsheet: open the existing shared file"),
+                    body = S("Add a spreadsheet destination → pick the same provider as the other device (often Google Sheets) → ") +
+                        S("sign in. Paste the **existing sheet URL** from the other phone (or Drive **browse to that file**). ") +
+                        S("Test connection, then **Sync now** to pull vehicles and rows. ") +
+                        S("**Do not Create** a new blank spreadsheet for this path (if the UI still offers Create, skip it)."),
                     imageAsset = "tutorials/sync_sheet.jpg",
                 ),
                 TutorialStep(
-                    title = AppStrings.get(R.string.tutorial_setup_sync_step4_title),
-                    body = AppStrings.get(R.string.onboarding_add_a_photo_destination_same_provider_as_t) +
-                        AppStrings.get(R.string.onboarding_choose_the_same_photo_folder_already_used) +
-                        AppStrings.get(R.string.onboarding_test_connection_sync_now_vehicle_reference) +
-                        AppStrings.get(R.string.onboarding_fill_receipt_photos_are_on_demand_via_fetc) +
-                        AppStrings.get(R.string.onboarding_do_not_create_a_new_empty_folder_for_this_path),
+                    title = S("Photos: same existing folder"),
+                    body = S("Add a photo destination → same provider as the other device → sign in. ") +
+                        S("Choose the **same photo folder** already used by the cluster (URL or browse). ") +
+                        S("Test connection → Sync now. Vehicle reference images can download automatically; ") +
+                        S("fill/receipt photos are on-demand via Fetch from archive. ") +
+                        S("**Do not create a new empty folder** for this path."),
                     imageAsset = "tutorials/sync_photo.jpg",
                 ),
                 TutorialStep(
-                    title = AppStrings.get(R.string.tutorial_setup_sync_step5_title),
-                    body = AppStrings.get(R.string.onboarding_vehicles_and_data_should_appear_from_the_s) +
-                        AppStrings.get(R.string.onboarding_a_local_dash_photo_open_manage_vehicles_an) +
-                        AppStrings.get(R.string.onboarding_you_do_not_need_to_re_type_the_whole_fleet_from_),
+                    title = S("After the first Sync now"),
+                    body = S("Vehicles and data should appear from the shared sheet. Only then, if a vehicle is missing ") +
+                        S("a local dash photo, open Manage Vehicles and capture or fetch the reference image. ") +
+                        S("You do not need to re-type the whole fleet from scratch."),
                     imageAsset = "tutorials/sync_hub.jpg",
                 ),
             ),

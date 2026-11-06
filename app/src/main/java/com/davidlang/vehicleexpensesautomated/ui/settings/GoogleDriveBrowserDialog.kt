@@ -40,8 +40,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.GoogleDriveBrowseCatalog
 import com.davidlang.vehicleexpensesautomated.data.sync.SheetsAuthRecovery
 import com.davidlang.vehicleexpensesautomated.data.sync.SheetsRecoverableAuthException
 import kotlinx.coroutines.launch
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 enum class GoogleDriveBrowserMode {
     SPREADSHEETS,
@@ -62,7 +61,7 @@ fun GoogleDriveBrowserDialog(
     onRecoverableDriveAuth: ((Intent) -> Unit)? = null,
     reloadKey: Int = 0,
     emptyMessage: String =
-        AppStrings.get(R.string.settings_no_items_visible_with_drive_access_limited_to_th),
+        S("No items visible. With Drive access limited to this app, open or create files here first."),
 ) {
     val scope = rememberCoroutineScope()
     var searchQuery by remember { mutableStateOf("") }
@@ -97,22 +96,22 @@ fun GoogleDriveBrowserDialog(
     }
 
     val title = when (mode) {
-        GoogleDriveBrowserMode.SPREADSHEETS -> AppStrings.get(R.string.settings_browse_spreadsheets)
-        GoogleDriveBrowserMode.FOLDERS -> AppStrings.get(R.string.settings_browse_folders)
+        GoogleDriveBrowserMode.SPREADSHEETS -> S("Browse spreadsheets")
+        GoogleDriveBrowserMode.FOLDERS -> S("Browse folders")
     }
     val createLabel = when (mode) {
-        GoogleDriveBrowserMode.SPREADSHEETS -> AppStrings.get(R.string.settings_new_spreadsheet)
-        GoogleDriveBrowserMode.FOLDERS -> AppStrings.get(R.string.settings_new_folder)
+        GoogleDriveBrowserMode.SPREADSHEETS -> S("New spreadsheet")
+        GoogleDriveBrowserMode.FOLDERS -> S("New folder")
     }
     val createDefaultName = when (mode) {
-        GoogleDriveBrowserMode.SPREADSHEETS -> AppStrings.get(R.string.app_name)
-        GoogleDriveBrowserMode.FOLDERS -> AppStrings.get(R.string.settings_vehicle_expenses_photos)
+        GoogleDriveBrowserMode.SPREADSHEETS -> S("Vehicle Expenses")
+        GoogleDriveBrowserMode.FOLDERS -> S("Vehicle Expenses Photos")
     }
     val allCatalogEmptyMessage = when (mode) {
         GoogleDriveBrowserMode.SPREADSHEETS ->
-            AppStrings.get(R.string.settings_no_spreadsheets_found_try_search_or_paste)
+            S("No spreadsheets found. Try search, or paste a sheet URL if it is shared with your account.")
         GoogleDriveBrowserMode.FOLDERS ->
-            AppStrings.get(R.string.settings_no_folders_found_try_search_or_paste_a_fol)
+            S("No folders found. Try search, or paste a folder URL if it is shared with your account.")
     }
 
     fun reload() {
@@ -158,7 +157,7 @@ fun GoogleDriveBrowserDialog(
                 OutlinedTextField(
                     value = createName,
                     onValueChange = { createName = it },
-                    label = { Text(AppStrings.get(R.string.settings_name)) },
+                    label = { Text(S("Name")) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !creating,
                 )
@@ -186,7 +185,7 @@ fun GoogleDriveBrowserDialog(
                     },
                     enabled = createName.isNotBlank() && !creating,
                 ) {
-                    Text(if (creating) AppStrings.get(R.string.settings_creating) else AppStrings.get(R.string.settings_create))
+                    Text(if (creating) S("Creating…") else S("Create"))
                 }
             },
             dismissButton = {
@@ -194,7 +193,7 @@ fun GoogleDriveBrowserDialog(
                     onClick = { if (!creating) showCreatePrompt = false },
                     enabled = !creating,
                 ) {
-                    Text(AppStrings.get(R.string.settings_cancel))
+                    Text(S("Cancel"))
                 }
             },
         )
@@ -210,13 +209,13 @@ fun GoogleDriveBrowserDialog(
                         FilterChip(
                             selected = catalog == GoogleDriveBrowseCatalog.APP,
                             onClick = { catalog = GoogleDriveBrowseCatalog.APP },
-                            label = { Text(AppStrings.get(R.string.settings_this_app)) },
+                            label = { Text(S("This app")) },
                             modifier = Modifier.padding(end = 8.dp),
                         )
                         FilterChip(
                             selected = catalog == GoogleDriveBrowseCatalog.ALL,
                             onClick = { catalog = GoogleDriveBrowseCatalog.ALL },
-                            label = { Text(AppStrings.get(R.string.settings_all_shared)) },
+                            label = { Text(S("All & shared")) },
                         )
                     }
                     val itemLabel = when (mode) {
@@ -226,9 +225,9 @@ fun GoogleDriveBrowserDialog(
                     Text(
                         text = when (catalog) {
                             GoogleDriveBrowseCatalog.APP ->
-                                AppStrings.get(R.string.settings_s_1_s_created_or_opened_in_this_app, itemLabel.replaceFirstChar { it.uppercase() })
+                                S("%1\$s created or opened in this app.", itemLabel.replaceFirstChar { it.uppercase() })
                             GoogleDriveBrowseCatalog.ALL ->
-                                AppStrings.get(R.string.settings_all_1_s_your_google_account_can_view_inclu, itemLabel)
+                                S("All %1\$s your Google account can view, including shared files.", itemLabel)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
@@ -241,7 +240,7 @@ fun GoogleDriveBrowserDialog(
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        label = { Text(AppStrings.get(R.string.settings_search)) },
+                        label = { Text(S("Search")) },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                     )
@@ -264,14 +263,14 @@ fun GoogleDriveBrowserDialog(
                             GoogleDriveBrowserMode.FOLDERS -> "folders"
                         }
                         Text(
-                            AppStrings.get(R.string.settings_allow_drive_read_access_to_list_all_1_s_ow, browseItemLabel),
+                            S("Allow Drive read access to list all %1\$s (owned and shared with you).", browseItemLabel),
                             style = MaterialTheme.typography.bodySmall,
                         )
                         OutlinedButton(
                             onClick = onRequestReadonlyAccess,
                             modifier = Modifier.padding(top = 8.dp),
                         ) {
-                            Text(AppStrings.get(R.string.settings_grant_browse_access))
+                            Text(S("Grant browse access"))
                         }
                     }
                     loading -> {
@@ -280,7 +279,7 @@ fun GoogleDriveBrowserDialog(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             CircularProgressIndicator(modifier = Modifier.padding(end = 12.dp))
-                            Text(AppStrings.get(R.string.settings_loading))
+                            Text(S("Loading…"))
                         }
                     }
                     errorText.isNotBlank() -> {
@@ -292,7 +291,7 @@ fun GoogleDriveBrowserDialog(
                             },
                             modifier = Modifier.padding(top = 8.dp),
                         ) {
-                            Text(AppStrings.get(R.string.settings_retry))
+                            Text(S("Retry"))
                         }
                     }
                     items.isEmpty() -> {
@@ -333,7 +332,7 @@ fun GoogleDriveBrowserDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text(AppStrings.get(R.string.settings_cancel))
+                Text(S("Cancel"))
             }
         },
     )

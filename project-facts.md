@@ -111,6 +111,11 @@ Update only with orientation facts valid for future work. Effort/plan details â†
 ## Google Sheets destination sign-in
 - Before changing spreadsheet Google sign-in: `GoogleSheetsAuth.spreadsheetDestinationSignInClient` requests spreadsheets plus `drive.file` and `drive.readonly` in one flow. Do not drop the Drive scopes. Photo backup stays `GoogleDriveAuth.getSignInClient` (`drive.file` only). Setup note: `docs/user-manual/manual.md` example "add Google Sheets".
 
+## Translations
+- Contract: `docs/facts/translations.md`.
+- **Build:** `./build_app --standard --test`. Never `--play`.
+- **Commit:** those flags, then `"<message>"|@<msg_file> <paths...>`.
+
 ## Review after implement
 - Record HEAD before the executor starts. Each phase: `git diff` that phase's paths against that phase's observable, then commit and build green before the next phase. Before handoff, re-read the plan once.
 - A plan line `Review: diff` starts one reviewer. Prompt is the plan path and `<recorded>..HEAD`. Diff that range only. Check the plan's Critical Files and Acceptance lines. Reply in chat. Do not diff `master..<branch>`.

@@ -13,9 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 @Composable
 fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
@@ -67,18 +65,18 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
     }
 
     ReportsLabScreenScaffold(
-        title = stringResource(R.string.reports_expenses_by_category),
-        infoText = stringResource(R.string.expense_category_totals_for_the_filtered_period_ch) +
-            stringResource(R.string.reports_each_vehicle_multi_series_categories_on_x_one_se),
+        title = S("Expenses by category"),
+        infoText = S("Category totals for the filtered period. Chart uses one currency series (caption). ") +
+            S("Each vehicle = multi-series (categories on X, one series per vehicle)."),
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,
         shareActions = run {
             val buildText = {
                 buildString {
-                    appendLine(AppStrings.get(R.string.expense_vehicle_expenses_expenses_by_category))
-                    appendLine(AppStrings.get(R.string.reports_period_label, periodLabel(data.filter)))
-                    appendLine(AppStrings.get(R.string.reports_vehicle_label, data.filterVehicleLabel()))
+                    appendLine(S("Vehicle Expenses — Expenses by category"))
+                    appendLine(S("Period: %1\$s", periodLabel(data.filter)))
+                    appendLine(S("Vehicle: %1\$s", data.filterVehicleLabel()))
                     if (isEach) {
                         eachByVehicleTotals.forEach { (vName, cats) ->
                             appendLine("--- $vName ---")
@@ -91,7 +89,7 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
                             appendLine("$cat: ${CurrencyCodes.formatAggregateSum(m, data.defaultSymbol)}")
                         }
                     }
-                    appendLine(AppStrings.get(R.string.expense_rows))
+                    appendLine(S("--- rows ---"))
                     data.expenses.sortedByDescending { it.date }.forEach { e ->
                         appendLine(
                             "${formatLabDate(e.date)} ${e.category} " +
@@ -102,7 +100,7 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
                 }
             }
             ReportsLabShareActions(
-                subject = AppStrings.get(R.string.reports_expenses_by_category),
+                subject = S("Expenses by category"),
                 textBody = buildText,
                 csvFileName = "lab_expenses.csv",
                 csvBody = {
@@ -133,7 +131,7 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
                         sb.append(
                             listOf(
                                 "row",
-                                ReportsLabShare.csvEscape(e.category.ifBlank { AppStrings.get(R.string.reports_other_category) }),
+                                ReportsLabShare.csvEscape(e.category.ifBlank { S("Other") }),
                                 formatLabDate(e.date),
                                 "%.4f".format(e.amount),
                                 e.currency.ifBlank { data.defaultStored },
@@ -144,22 +142,22 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
                     }
                     sb.toString()
                 },
-                pdfBody = { ReportsLabPdf.fromPlainText(AppStrings.get(R.string.reports_expenses_by_category), buildText()) },
+                pdfBody = { ReportsLabPdf.fromPlainText(S("Expenses by category"), buildText()) },
             )
         },
     ) {
         if (data.expenses.isEmpty()) {
-            ReportsLabEmpty(AppStrings.get(R.string.expense_no_expenses_in_this_filter))
+            ReportsLabEmpty(S("No expenses in this filter."))
             return@ReportsLabScreenScaffold
         }
         if (isEach) {
             LabMultiSeriesIndexChart(
                 series = eachSeries,
                 xLabels = catLabels,
-                caption = AppStrings.get(R.string.expense_category_amounts_per_vehicle_currency_1_s, chartCurrency),
+                caption = S("Category amounts per vehicle (currency %1\$s, no FX).", chartCurrency),
             )
             Spacer(Modifier.height(8.dp))
-            Text(AppStrings.get(R.string.reports_per_vehicle_category_totals), style = MaterialTheme.typography.titleSmall)
+            Text(S("Per-vehicle category totals"), style = MaterialTheme.typography.titleSmall)
             eachByVehicleTotals.forEach { (vName, cats) ->
                 Text(vName, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
                 cats.entries
@@ -175,16 +173,16 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
             LabCategoryBarsChart(
                 amounts = chartAmounts,
                 categoryLabels = catLabels,
-                caption = AppStrings.get(R.string.expense_category_bars_for_currency_1_s_no_fx_other, chartCurrency),
+                caption = S("Category bars for currency %1\$s (no FX). Other currencies listed in tables.", chartCurrency),
             )
             Spacer(Modifier.height(8.dp))
-            Text(AppStrings.get(R.string.reports_category_totals), style = MaterialTheme.typography.titleSmall)
+            Text(S("Category totals"), style = MaterialTheme.typography.titleSmall)
             sortedCats.forEach { (cat, m) ->
                 Text("$cat · ${CurrencyCodes.formatAggregateSum(m, data.defaultSymbol)}")
             }
         }
         Spacer(Modifier.height(8.dp))
-        Text(AppStrings.get(R.string.reports_all_expenses_in_period), style = MaterialTheme.typography.titleSmall)
+        Text(S("All expenses in period"), style = MaterialTheme.typography.titleSmall)
         data.expenses.sortedByDescending { it.date }.forEach { e ->
             Column(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
                 Text("${formatLabDate(e.date)} · ${e.category.ifBlank { "Other" }} · ${data.vehicleName(e.vehicleId)}")

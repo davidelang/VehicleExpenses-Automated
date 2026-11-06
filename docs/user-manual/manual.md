@@ -10,7 +10,7 @@ Camera-first tracking for fuel fill-ups and vehicle expenses, with optional mult
 
 This is the **full manual** (screenshots + every step). On the phone, **Menu → Help** is a shorter getting-started guide.
 
-**Not covered here:** Import Old Pictures, Alignment Experiment, and Pump Experiment (developer / advanced tools).
+**Not covered here:** Alignment Experiment, Pump Experiment, Heatmap stage, Dash paddle long-edge det/rec, and Import Old Pictures. Those screens are not documented in this manual.
 
 ---
 
@@ -76,11 +76,13 @@ Currency symbols on cost fields and **G/L** on volume fields are tappable: open 
 1. Tap **☰** at the top left.
 2. Choose a page.
 
-![Navigation drawer](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/01-drawer.jpg)
+![Navigation drawer (phone)](images/phone/01-drawer.jpg)
+
+![Navigation drawer (tablet)](images/tablet/01-drawer.jpg)
 
 **Main drawer:** Fill · Start trip · Manage Vehicles · New expense · **Reports** · Settings · Syncing · Help · About.
 
-**Experiment drawer** (Settings → Show experiment screens): Alignment Experiment · Pump Experiment · **Import Old Pictures**.
+**Experiment drawer** (Settings → Show experiment screens): Alignment Experiment · Pump Experiment · Heatmap stage · Dash paddle long-edge det/rec · Import Old Pictures. Those screens are not documented in this manual.
 
 **Via Reports hub (not main drawer):** Expenses list · Fill history.
 
@@ -94,7 +96,9 @@ OCR and **automatic vehicle matching** work best after you register each vehicle
 
 Menu → **Manage Vehicles**. Choose a vehicle (or **Add New Vehicle**).
 
-![Manage Vehicles with reference dash, crops, and discovery](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r1-manage-vehicles-crops.jpg)
+![Manage Vehicles with reference dash, crops, and discovery (phone)](images/phone/r1-manage-vehicles-crops.jpg)
+
+![Manage Vehicles with reference dash, crops, and discovery (tablet)](images/tablet/r1-manage-vehicles-crops.jpg)
 
 ### Add or edit a vehicle
 
@@ -107,13 +111,17 @@ Menu → **Manage Vehicles**. Choose a vehicle (or **Add New Vehicle**).
 7. Fill **Vehicle Name** (required), plus make/model/year/plate as you like.
 8. Tap **Create Vehicle** or **Save Changes** (requires name + reference photo for a new vehicle).
 
-![Add new vehicle form fields](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/03b-manage-vehicles-new.jpg)
+![Add new vehicle form fields (phone)](images/phone/03b-manage-vehicles-new.jpg)
+
+![Add new vehicle form fields (tablet)](images/tablet/03b-manage-vehicles-new.jpg)
 
 ### Landmarks: fix what Discovery missed
 
 After **Show Landmarks**, scroll the list and correct values. Engines sometimes miss small digits (for example a clock **60** on the bottom right of the cluster). Use **Edit OCR** to add or fix them so vehicle identity stays reliable.
 
-![Landmarks dialog — review and edit OCR](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r2-manage-vehicles-landmarks.jpg)
+![Landmarks dialog — review and edit OCR (phone)](images/phone/r2-manage-vehicles-landmarks.jpg)
+
+![Landmarks dialog — review and edit OCR (tablet)](images/tablet/r2-manage-vehicles-landmarks.jpg)
 
 ### Typing without a perfect photo
 
@@ -184,15 +192,21 @@ Setup cheatsheets for self-hosted photo and tabular targets: [self-host index](r
 
 1. **Menu → Syncing → Spreadsheet sync** (or Settings → Spreadsheet sync).
 
-   ![Spreadsheet sync list](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/08-spreadsheet-sync.jpg)
+   ![Spreadsheet sync list (phone)](images/phone/08-spreadsheet-sync.jpg)
+
+   ![Spreadsheet sync list (tablet)](images/tablet/08-spreadsheet-sync.jpg)
 
 2. Tap **Add spreadsheet destination**.
 
-   ![Provider picker](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/09-spreadsheet-provider-picker.jpg)
+   ![Provider picker (phone)](images/phone/09-spreadsheet-provider-picker.jpg)
+
+   ![Provider picker (tablet)](images/tablet/09-spreadsheet-provider-picker.jpg)
 
 3. Choose **Google Sheets**.
 
-   ![Google Sheets form](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/10-spreadsheet-google-form.jpg)
+   ![Google Sheets form (phone)](images/phone/10-spreadsheet-google-form.jpg)
+
+   ![Google Sheets form (tablet)](images/tablet/10-spreadsheet-google-form.jpg)
 
 4. **Sign in with Google** once — that sign-in also lets you browse. Display name → paste a **Sheet URL** (still valid) or **🔍** browse. Browse opens on **All & shared** so you can pick an existing spreadsheet you own or that is shared with you. Then schedule options → enable → save.
 5. **Sync now** once to create/update tabs: `Vehicles`, `Expenses`, `Fuel - {vehicle name}`.
@@ -201,15 +215,21 @@ Setup cheatsheets for self-hosted photo and tabular targets: [self-host index](r
 
 1. **Menu → Syncing → Photo backup** (or Settings → Photo backup).
 
-   ![Photo backup list](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/11-photo-backup.jpg)
+   ![Photo backup list (phone)](images/phone/11-photo-backup.jpg)
+
+   ![Photo backup list (tablet)](images/tablet/11-photo-backup.jpg)
 
 2. Tap **Add photo destination**.
 
-   ![Photo provider picker](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/12-photo-provider-picker.jpg)
+   ![Photo provider picker (phone)](images/phone/12-photo-provider-picker.jpg)
+
+   ![Photo provider picker (tablet)](images/tablet/12-photo-provider-picker.jpg)
 
 3. Choose **Google Drive**.
 
-   ![Google Drive form](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/13-photo-google-form.jpg)
+   ![Google Drive form (phone)](images/phone/13-photo-google-form.jpg)
+
+   ![Google Drive form (tablet)](images/tablet/13-photo-google-form.jpg)
 
 4. **Sign in with Google (Drive)** → optional folder URL/browse → enable → save → **Sync now**.
 
@@ -227,21 +247,32 @@ Manual **Sync now** for photos is a full pass; background backup typically proce
 
 This is the **home screen** when you open the app.
 
-### Vehicle selection (usually automatic)
+### Vehicle selection
 
-You do **not** need to pick the vehicle first. When vehicles have **landmarks** set up in Manage Vehicles, Fill **auto-detects which vehicle** from the dash image after you capture the odometer. You can still open the **Vehicle** dropdown to override if needed.
+You do **not** need to pick the vehicle first. When the dash photo names one vehicle from landmarks set up in Manage Vehicles, Fill selects that vehicle. When the dash photo does not name one vehicle, **Vehicle not identified** stays up until a name is tapped or the dialog is dismissed. **Show all vehicles** appears when the list is a subset.
+
+![Fill — Vehicle not identified (phone)](images/phone/r3b-fill-vehicle-not-identified.jpg)
+
+![Fill — Vehicle not identified (tablet)](images/tablet/r3b-fill-vehicle-not-identified.jpg)
 
 ### Aim at the odometer
 
-Stay in odometer mode and frame the cluster. Instruction: *Aim at odometer. Tap shutter to capture.*
+Stay in odometer mode and frame the cluster. The on-screen instruction is *Aim at odometer. Tap shutter to capture.*
 
-![Fill — live camera on odometer (example dash image in preview)](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r3-fill-odo-live.jpg)
+Portrait capture row, left to right: **Save** (disk), **Shutter**, **Pick an existing image**, **↕**.
+Landscape capture column, top to bottom: **↕**, **Shutter**, **Pick an existing image**, **Save**.
+
+![Fill — live camera on odometer (example dash image in preview) (phone)](images/phone/r3-fill-odo-live.jpg)
+
+![Fill — live camera on odometer (example dash image in preview) (tablet)](images/tablet/r3-fill-odo-live.jpg)
 
 ### After the odometer shutter
 
-OCR fills **Odo** and tries to match the vehicle from landmarks (review both if needed). The main button becomes **Retry** to re-shoot. Instruction summarizes the reading.
+OCR fills **Odo**. If the dash photo names one vehicle, that vehicle is selected. If it does not, **Vehicle not identified** stays up until a name is tapped or the dialog is dismissed, and **Show all vehicles** appears when the list is a subset. The main button becomes **Retry** to re-shoot. The instruction line summarizes the reading.
 
-![Fill — odometer OCR result](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r4-fill-odo-result.jpg)
+![Fill — odometer OCR result (phone)](images/phone/r4-fill-odo-result.jpg)
+
+![Fill — odometer OCR result (tablet)](images/tablet/r4-fill-odo-result.jpg)
 
 ### Pump mode (cost and volume)
 
@@ -249,14 +280,20 @@ OCR fills **Odo** and tries to match the vehicle from landmarks (review both if 
 2. Capture the pump totals. Cost and volume fields fill; use **↔** if they are swapped.
 3. Tap currency or **G/L** if needed, then **Save** (disk). Empty fields make a **partial fill** (still allowed).
 
-![Fill — pump preview / totals (example pump image in preview)](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r5-fill-pump-result.jpg)
+![Fill — pump preview / totals (example pump image in preview) (phone)](images/phone/r5-fill-pump-result.jpg)
+
+![Fill — pump preview / totals (example pump image in preview) (tablet)](images/tablet/r5-fill-pump-result.jpg)
 
 You stay on Fill for the next stop (fields clear after save). Work fully **offline**; sync runs later in the background when configured.
+
+### Place name, address, and Wrong station
+
+Under **Notes**, when the fill has coordinates: **Place name** and **Address** share one row. **Wrong station** is the full-width button under that row.
 
 ### Manual entry (no camera / bad OCR)
 
 1. Tap **Odo**, **cost**, or **volume** and type values (portrait uses the system keyboard; landscape uses an on-screen keypad).
-2. Choose or confirm the **Vehicle** if auto-detect did not run.
+2. If the dash photo did not name one vehicle, **Vehicle not identified** stays up until a name is tapped or the dialog is dismissed. **Show all vehicles** appears when the list is a subset.
 3. Save as above.
 
 ### Modes and borders
@@ -265,7 +302,13 @@ You stay on Fill for the next stop (fields clear after save). Work fully **offli
 - **Green border** around cost+volume → pump mode.
 - **Save** stays disabled until a vehicle is selected and at least one of odo/cost/volume has data, and OCR is not still running.
 
-On-screen tip (below the instruction line): *Shutter = capture · Disk = save · ↕ = odo/pump mode · ↔ = swap cost/volume.*
+Page help (**ⓘ**, title **Fill controls**):
+
+- White circle — shutter (capture dash or pump).
+- Disk — save the fill when fields are ready.
+- ↕ — switch odometer mode ↔ pump (cost/volume) mode.
+- ↔ — swap cost and volume fields.
+- Type odo/cost/volume anytime (custom keypad). Menu → Help for the full walkthrough.
 
 ---
 
@@ -275,7 +318,9 @@ On-screen tip (below the instruction line): *Shutter = capture · Disk = save ·
 
 Menu → **New expense**.
 
-![New expense form and camera controls (example dash image in camera band when empty)](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r6-new-expense.jpg)
+![New expense form and camera controls (example dash image in camera band when empty) (phone)](images/phone/r6-new-expense.jpg)
+
+![New expense form and camera controls (example dash image in camera band when empty) (tablet)](images/tablet/r6-new-expense.jpg)
 
 1. **Save** (disk), **shutter** (receipt photo), or **gallery** (pick image).
 2. Fill **Date**, **Vehicle**, **Vendor**, **Description**, **Amount** (currency symbol tappable), **Category**, optional **Odometer**.
@@ -286,21 +331,29 @@ Menu → **New expense**.
 
 Menu → **Reports** → **Expenses list** — browse past non-fuel expenses; open an item to edit.
 
-![Expense list](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/05-expense-list.jpg)
+![Expense list (phone)](images/phone/05-expense-list.jpg)
+
+![Expense list (tablet)](images/tablet/05-expense-list.jpg)
 
 ### Edit expense
 
 Open a row from the list. Correct vendor, amount, category, vehicle, and description. If the receipt is only in photo backup (no readable local file), use **Fetch image from archive** when shown (works across configured photo destinations).
 
-![Edit expense](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/expense-edit.jpg)
+![Edit expense (phone)](images/phone/expense-edit.jpg)
+
+![Edit expense (tablet)](images/tablet/expense-edit.jpg)
 
 ---
 
 ## Start trip
 
-Menu → **Start trip** (after Fill in the drawer). Capture or enter odometer, choose trip type, save with the **disk** icon. **Stop** is a shortcut for Personal now at the held GPS location. Use **ⓘ** for control reminders.
+Menu → **Start trip** (after Fill in the drawer). Capture or enter the odometer, choose the trip type, and start with the **disk** icon. **Stop** is Personal now at the held GPS location. Use **ⓘ** for control reminders.
 
-![Start trip](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/start-trip.jpg)
+A dash photo which does not name one vehicle leaves **Vehicle not identified** up until a name is tapped or the dialog is dismissed. **Show all vehicles** appears when the list is a subset.
+
+![Start trip (phone)](images/phone/start-trip.jpg)
+
+![Start trip (tablet)](images/tablet/start-trip.jpg)
 
 Trip starts are stored as fuel rows with a **Trip Type** (not normal fills). They appear under **Reports → Trip miles**, not under Fuel History.
 
@@ -310,7 +363,9 @@ Trip starts are stored as fuel rows with a **Trip Type** (not normal fills). The
 
 Menu → **Reports** opens the product hub (all-time summary + catalog cards). This is the only product reports surface — there is no separate “Reports & Charts” drawer item.
 
-![Reports hub](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/06-reports.jpg)
+![Reports hub (phone)](images/phone/06-reports.jpg)
+
+![Reports hub (tablet)](images/tablet/06-reports.jpg)
 
 Open a card for vehicle mode (**All / Each / Single**), period filters, charts, and share (**TEXT / CSV / PDF**). Top bar on report children: **☰ + ←** (and **ⓘ** when registered).
 
@@ -318,9 +373,13 @@ Open a card for vehicle mode (**All / Each / Single**), period filters, charts, 
 
 The main chart card. Optional metrics (mpg, volume/distance such as G/mi, unit price such as $/G, cost/distance, monthly $, trip miles, trip % by type) with **Smooth** bins and **independent Y scales** (economy left; money and trip families on the right).
 
-![Time based reports](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/time-based-reports.jpg)
+![Time based reports (phone)](images/phone/time-based-reports.jpg)
 
-![Time based reports — scrolled metrics](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/time-based-reports-scrolled.jpg)
+![Time based reports (tablet)](images/tablet/time-based-reports.jpg)
+
+![Time based reports — scrolled metrics (phone)](images/phone/time-based-reports-scrolled.jpg)
+
+![Time based reports — scrolled metrics (tablet)](images/tablet/time-based-reports-scrolled.jpg)
 
 Details of economy math: [REPORTS_METRICS.md](reference/REPORTS_METRICS.md).
 
@@ -328,7 +387,9 @@ Details of economy math: [REPORTS_METRICS.md](reference/REPORTS_METRICS.md).
 
 - **Reports → Fill history** — chronological fills for the report filters (**fills only**; no trip starts).
 
-![Fill history report](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/fill-history.jpg)
+![Fill history report (phone)](images/phone/fill-history.jpg)
+
+![Fill history report (tablet)](images/tablet/fill-history.jpg)
 
 - **Fuel History** (if present in your build’s navigation) — per-vehicle fill inventory, also fills only; tap a row to edit.
 
@@ -336,13 +397,17 @@ Details of economy math: [REPORTS_METRICS.md](reference/REPORTS_METRICS.md).
 
 **Reports → Trip miles** — miles by type, charts, and a chronological **trip start / segment list**. Tap a real start to open **Edit fill** for that row.
 
-![Trip miles](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/trip-miles.jpg)
+![Trip miles (phone)](images/phone/trip-miles.jpg)
+
+![Trip miles (tablet)](images/tablet/trip-miles.jpg)
 
 ### Edit fill
 
 From Fill history, Fuel History, or Trip miles, open a fill. Layout: vehicle and odometer, **currency before cost**, volume, notes. Trip type appears only when the row is a trip start. Location has a summary plus **Location details**. Missing local photo with cloud identity: **Fetch image from archive**.
 
-![Edit fill — Fetch from archive when local photo missing](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/fuel-edit.jpg)
+![Edit fill — Fetch from archive when local photo missing (phone)](images/phone/fuel-edit.jpg)
+
+![Edit fill — Fetch from archive when local photo missing (tablet)](images/tablet/fuel-edit.jpg)
 
 Other catalog cards include expenses by category, vehicle summary, and expenses list.
 
@@ -354,7 +419,9 @@ Money uses each row’s currency when set. Mixed-currency totals show **per-curr
 
 Menu → **Syncing** is the hub for spreadsheet and photo destinations (not only buried under Settings).
 
-![Syncing hub](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/syncing-hub.jpg)
+![Syncing hub (phone)](images/phone/syncing-hub.jpg)
+
+![Syncing hub (tablet)](images/tablet/syncing-hub.jpg)
 
 - Cards for **Spreadsheet sync** and **Photo backup** with short status, **Sync** for that kind, and **›** into the destination list.
 - Open a destination for **Test connection** and **Sync now (this destination)** / all configured.
@@ -367,9 +434,13 @@ Menu → **Syncing** is the hub for spreadsheet and photo destinations (not only
 
 Menu → **Settings**.
 
-![Settings](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/07-settings.jpg)
+![Settings (phone)](images/phone/07-settings.jpg)
 
-![More settings (scrolled)](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/07b-settings-more.jpg)
+![Settings (tablet)](images/tablet/07-settings.jpg)
+
+![More settings (scrolled) (phone)](images/phone/07b-settings-more.jpg)
+
+![More settings (scrolled) (tablet)](images/tablet/07b-settings-more.jpg)
 
 For destinations, prefer **Menu → Syncing**. Settings may still show summary rows that open the same lists.
 
@@ -380,7 +451,7 @@ For destinations, prefer **Menu → Syncing**. Settings may still show summary r
 - **Currency** / **Volume unit** — app defaults (system or explicit). Changing volume unit with existing fuel data may offer a convert dialog.
 - **Dark mode**
 - **Setup tips** — re-open first-run vehicle / sync tutorials.
-- **Debug Fill** / **Show experiment screens (dev)** — advanced; leave off for daily use. Experiment screens are not documented here.
+- **Debug Fill** / **Show experiment screens (dev)** — advanced; leave off for daily use. Alignment Experiment, Pump Experiment, Heatmap stage, Dash paddle long-edge det/rec, and Import Old Pictures are not documented here.
 
 CSV **export/import** (ZIP of Vehicles / Expenses / Fuel tabs) is available from Settings when offered by the current build.
 
@@ -388,9 +459,13 @@ CSV **export/import** (ZIP of Vehicles / Expenses / Fuel tabs) is available from
 
 ## Help & About
 
-![Help](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/14-help.jpg)
+![Help (phone)](images/phone/14-help.jpg)
 
-![About](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/15-about.jpg)
+![Help (tablet)](images/tablet/14-help.jpg)
+
+![About (phone)](images/phone/15-about.jpg)
+
+![About (tablet)](images/tablet/15-about.jpg)
 
 - **Help** — on-device quick start, setup tutorials, link to this manual, self-host setup index.
 - **About** — version, licenses, GitHub, this manual (bundled offline + online HTML when published).

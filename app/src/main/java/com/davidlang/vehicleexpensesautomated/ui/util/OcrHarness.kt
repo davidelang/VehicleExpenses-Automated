@@ -340,7 +340,7 @@ object OcrHarness {
                         vetoResults = vetoResults,
                         vetoJson = null,
                         early = AutoFillResult(
-                            error = "Vehicle not identified",
+                            error = S("Vehicle not identified"),
                             debugJson = vetoDebugJson,
                             survivorIds = survivorIds,
                         ),
@@ -351,7 +351,7 @@ object OcrHarness {
                     vetoResults = vetoResults,
                     vetoJson = null,
                     early = AutoFillResult(
-                        error = "Vehicle not identified",
+                        error = S("Vehicle not identified"),
                         debugJson = vetoDebugJson,
                         survivorIds = survivorIds,
                     ),
@@ -552,7 +552,7 @@ object OcrHarness {
                 val errorMsg = if (forcedVehicleId != null) {
                     "Forced vehicle $forcedVehicleId not found"
                 } else {
-                    "Vehicle not identified"
+                    S("Vehicle not identified")
                 }
                 jsonDebug?.addProperty("error", errorMsg)
                 return AutoFillResult(

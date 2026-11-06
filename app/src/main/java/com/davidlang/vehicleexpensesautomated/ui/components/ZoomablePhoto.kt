@@ -46,9 +46,7 @@ import com.davidlang.vehicleexpensesautomated.data.storage.PickedImageReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 /**
  * Fullscreen photo viewer: pinch zoom + pan, on-screen +/−, Close always on top.
@@ -89,7 +87,7 @@ fun ZoomablePhotoDialog(
             }
         // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
-            photoError = e.message ?: AppStrings.get(R.string.ui_could_not_display_photo)
+            photoError = e.message ?: S("Could not display photo")
             null
         }
     }
@@ -125,7 +123,7 @@ fun ZoomablePhotoDialog(
                             .padding(end = 8.dp),
                     )
                     TextButton(onClick = onDismiss) {
-                        Text(stringResource(R.string.settings_close), color = Color.White)
+                        Text(S("Close"), color = Color.White)
                     }
                 }
                 Box(
@@ -153,13 +151,13 @@ fun ZoomablePhotoDialog(
                         fileBitmap != null -> {
                             Image(
                                 bitmap = fileBitmap!!.asImageBitmap(),
-                                contentDescription = AppStrings.get(R.string.ui_photo),
+                                contentDescription = S("Photo"),
                                 modifier = layerMod,
                                 contentScale = ContentScale.Fit,
                             )
                         }
                         photoError != null -> Text(photoError!!, color = Color.White)
-                        else -> Text(stringResource(R.string.ui_photo_unavailable), color = Color.White)
+                        else -> Text(S("Photo unavailable"), color = Color.White)
                     }
                     Column(
                         modifier = Modifier
@@ -190,7 +188,7 @@ fun ZoomablePhotoDialog(
                                 index = (index - 1).coerceAtLeast(0)
                             },
                             enabled = index > 0,
-                        ) { Text(stringResource(R.string.ui_prev), color = Color.White) }
+                        ) { Text(S("Prev"), color = Color.White) }
                         Text(
                             "${index + 1} / ${uris.size}",
                             color = Color.White,
@@ -202,7 +200,7 @@ fun ZoomablePhotoDialog(
                                 index = (index + 1).coerceAtMost(uris.lastIndex)
                             },
                             enabled = index < uris.lastIndex,
-                        ) { Text(stringResource(R.string.ui_next), color = Color.White) }
+                        ) { Text(S("Next"), color = Color.White) }
                     }
                 }
             }
@@ -217,7 +215,7 @@ fun ZoomablePhotoDialog(
 fun ZoomablePhotoThumb(
     uris: List<String>,
     modifier: Modifier = Modifier,
-    contentDescription: String = AppStrings.get(R.string.ui_photo),
+    contentDescription: String = S("Photo"),
     contentScale: ContentScale = ContentScale.Fit,
 ) {
     if (uris.isEmpty()) return
@@ -241,7 +239,7 @@ fun ZoomablePhotoThumb(
                     PickedImageReader.decodeFullSize(context, parsed)
                 }
             } catch (e: Exception) {
-                thumbError = e.message ?: AppStrings.get(R.string.ui_could_not_display_photo)
+                thumbError = e.message ?: S("Could not display photo")
                 null
             }
         }
@@ -270,7 +268,7 @@ fun ZoomablePhotoThumb(
             }
             if (uris.size > 1) {
                 Text(
-                    stringResource(R.string.ui_s_1_s_photos, uris.size),
+                    S("%1\$s photos", uris.size),
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(8.dp)

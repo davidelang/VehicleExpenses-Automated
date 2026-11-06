@@ -57,9 +57,7 @@ import com.google.android.gms.common.api.ApiException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 @Composable
 internal fun PhotoDestEditForm(
@@ -177,10 +175,10 @@ internal fun PhotoDestEditForm(
         Toast.makeText(
             context,
             if (result.success) {
-                AppStrings.get(R.string.settings_backup_complete)
+                S("Backup complete")
             } else {
                 SyncRateLimit.shortTitle(result.message, forSheets = false)
-                    ?: AppStrings.get(R.string.settings_backup_failed_open_details)
+                    ?: S("Backup failed — open Details")
             },
             Toast.LENGTH_SHORT,
         ).show()
@@ -188,11 +186,11 @@ internal fun PhotoDestEditForm(
     }
     val displayNameRequired = totalDestCount > 1
     val formTitle = when {
-        isNew && provider == PhotoProvider.OTHER -> stringResource(R.string.settings_add_other_destination)
-        isNew && provider == PhotoProvider.ONEDRIVE -> stringResource(R.string.settings_add_onedrive_destination)
-        isNew && provider == PhotoProvider.S3 -> stringResource(R.string.settings_add_s3_destination)
-        isNew -> stringResource(R.string.settings_add_google_drive_folder)
-        else -> stringResource(R.string.settings_edit_destination)
+        isNew && provider == PhotoProvider.OTHER -> S("Add Other destination")
+        isNew && provider == PhotoProvider.ONEDRIVE -> S("Add OneDrive destination")
+        isNew && provider == PhotoProvider.S3 -> S("Add S3 destination")
+        isNew -> S("Add Google Drive folder")
+        else -> S("Edit destination")
     }
 
     val configJson = remember(provider, rcloneRemote, rclonePrefix, s3Bucket, id) {
@@ -258,11 +256,11 @@ internal fun PhotoDestEditForm(
             val email = account.email ?: ""
             viewModel.auth.persistAccountEmail(email)
             accountHint = email
-            statusText = AppStrings.get(R.string.settings_signed_in_as_1_s, email)
-            Toast.makeText(context, AppStrings.get(R.string.settings_signed_in_as_1_s_drive, email), Toast.LENGTH_SHORT).show()
+            statusText = S("Signed in as %1\$s", email)
+            Toast.makeText(context, S("Signed in as %1\$s (Drive)", email), Toast.LENGTH_SHORT).show()
         // kept: failure stays on this call so the screen or caller can continue
         } catch (e: ApiException) {
-            statusText = AppStrings.get(R.string.settings_sign_in_failed_try_again_or_pick_a_google)
+            statusText = S("Sign-in failed — try again or pick a Google account with Drive access")
             Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
         }
     }
@@ -280,13 +278,13 @@ internal fun PhotoDestEditForm(
             }
             driveReadonlyGranted = viewModel.auth.hasReadonlyBrowseScope()
             if (driveReadonlyGranted) {
-                statusText = AppStrings.get(R.string.settings_drive_browse_access_granted)
+                statusText = S("Drive browse access granted")
             } else {
-                statusText = AppStrings.get(R.string.settings_drive_browse_access_not_granted_try_again)
+                statusText = S("Drive browse access not granted — try again")
             }
         // kept: failure stays on this call so the screen or caller can continue
         } catch (e: ApiException) {
-            statusText = AppStrings.get(R.string.settings_drive_browse_sign_in_failed)
+            statusText = S("Drive browse sign-in failed")
             Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
         }
     }
@@ -298,7 +296,7 @@ internal fun PhotoDestEditForm(
         val cfg = RcloneDestConfig(remote = rcloneRemote.trim(), pathPrefix = rclonePrefix.trim())
         val ok = RcloneConfStorage.importConf(context, id, uri, cfg.confFileName)
         confImported = ok
-        statusText = if (ok) AppStrings.get(R.string.settings_rclone_conf_imported) else AppStrings.get(R.string.settings_failed_to_import_rclone_conf)
+        statusText = if (ok) S("rclone.conf imported") else S("Failed to import rclone.conf")
         Toast.makeText(context, statusText, Toast.LENGTH_SHORT).show()
     }
 
@@ -308,7 +306,7 @@ internal fun PhotoDestEditForm(
                 onClick = { signInLauncher.launch(viewModel.auth.signInIntent()) },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (accountHint.isBlank()) stringResource(R.string.settings_sign_in_with_google_drive) else stringResource(R.string.settings_signed_in_1_s, accountHint))
+                Text(if (accountHint.isBlank()) S("Sign in with Google (Drive)") else S("Signed in: %1\$s", accountHint))
             }
             Spacer(modifier = Modifier.height(16.dp))
         }
@@ -319,7 +317,7 @@ internal fun PhotoDestEditForm(
                 onClick = {
                     val activity = context as? ComponentActivity
                     if (activity == null) {
-                        Toast.makeText(context, AppStrings.get(R.string.settings_cannot_start_microsoft_sign_in), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, S("Cannot start Microsoft sign-in"), Toast.LENGTH_SHORT).show()
                         return@OutlinedButton
                     }
                     scope.launch {
@@ -333,11 +331,11 @@ internal fun PhotoDestEditForm(
                             rcloneRemote = cfg.remote
                             confImported = true
                             accountHint = authResult.email
-                            statusText = AppStrings.get(R.string.settings_signed_in_as_1_s, authResult.email)
-                            Toast.makeText(context, AppStrings.get(R.string.settings_signed_in_as_1_s_onedrive, authResult.email), Toast.LENGTH_SHORT).show()
+                            statusText = S("Signed in as %1\$s", authResult.email)
+                            Toast.makeText(context, S("Signed in as %1\$s (OneDrive)", authResult.email), Toast.LENGTH_SHORT).show()
                         // kept: failure stays on this call so the screen or caller can continue
                         } catch (e: Exception) {
-                            statusText = e.message ?: AppStrings.get(R.string.settings_microsoft_sign_in_failed)
+                            statusText = e.message ?: S("Microsoft sign-in failed")
                             Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
                         }
                     }
@@ -345,14 +343,14 @@ internal fun PhotoDestEditForm(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    if (accountHint.isBlank()) stringResource(R.string.settings_sign_in_with_microsoft_onedrive)
-                    else stringResource(R.string.settings_using_1_s, accountHint),
+                    if (accountHint.isBlank()) S("Sign in with Microsoft (OneDrive)")
+                    else S("Using: %1\$s", accountHint),
                 )
             }
             if (msHints.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    stringResource(R.string.settings_device_accounts_1_s, msHints.joinToString()),
+                    S("Device accounts: %1\$s", msHints.joinToString()),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -360,16 +358,16 @@ internal fun PhotoDestEditForm(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        Text(stringResource(R.string.settings_destination), style = MaterialTheme.typography.titleMedium)
+        Text(S("Destination"), style = MaterialTheme.typography.titleMedium)
         OutlinedTextField(
             value = when (provider) {
-                PhotoProvider.ONEDRIVE -> stringResource(R.string.settings_onedrive)
+                PhotoProvider.ONEDRIVE -> S("OneDrive")
                 PhotoProvider.S3 -> "S3"
-                PhotoProvider.OTHER -> stringResource(R.string.reports_other_category)
-                else -> stringResource(R.string.settings_google_drive)
+                PhotoProvider.OTHER -> S("Other")
+                else -> S("Google Drive")
             },
             onValueChange = {},
-            label = { Text(stringResource(R.string.settings_provider)) },
+            label = { Text(S("Provider")) },
             modifier = Modifier.fillMaxWidth(),
             readOnly = true,
             enabled = false,
@@ -379,7 +377,7 @@ internal fun PhotoDestEditForm(
             onValueChange = { displayName = it },
             label = {
                 Text(
-                    if (displayNameRequired) stringResource(R.string.settings_display_name_required) else stringResource(R.string.settings_display_name_optional),
+                    if (displayNameRequired) S("Display name (required)") else S("Display name (optional)"),
                 )
             },
             modifier = Modifier.fillMaxWidth(),
@@ -393,27 +391,27 @@ internal fun PhotoDestEditForm(
                 OutlinedTextField(
                     value = folderUrl,
                     onValueChange = { folderUrl = it },
-                    label = { Text(stringResource(R.string.settings_folder_url_optional)) },
-                    supportingText = { Text(AppStrings.get(R.string.settings_paste_a_link_or_use_browse)) },
+                    label = { Text(S("Folder URL (optional)")) },
+                    supportingText = { Text(S("Paste a link or use browse")) },
                     modifier = Modifier.weight(1f),
                 )
                 IconButton(
                     onClick = {
                         if (accountHint.isBlank() && viewModel.auth.getLastAccount() == null) {
-                            Toast.makeText(context, AppStrings.get(R.string.settings_sign_in_first), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, S("Sign in first"), Toast.LENGTH_SHORT).show()
                         } else {
                             showBrowseDialog = true
                         }
                     },
                 ) {
-                    Icon(Icons.Default.Search, contentDescription = stringResource(R.string.settings_browse_folders))
+                    Icon(Icons.Default.Search, contentDescription = S("Browse folders"))
                 }
             }
             if (folderName.isNotBlank() || folderId.isNotBlank()) {
                 OutlinedTextField(
                     value = folderName.ifBlank { folderId.take(12) + if (folderId.length > 12) "…" else "" },
                     onValueChange = {},
-                    label = { Text(stringResource(R.string.settings_selected_folder)) },
+                    label = { Text(S("Selected folder")) },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     readOnly = true,
                     enabled = false,
@@ -430,7 +428,7 @@ internal fun PhotoDestEditForm(
                         folderUrl = GoogleDriveBrowserClient.folderUrlFromId(item.id)
                         if (displayName.isBlank()) displayName = item.name
                         showBrowseDialog = false
-                        statusText = AppStrings.get(R.string.settings_selected_1_s, item.name)
+                        statusText = S("Selected: %1\$s", item.name)
                     },
                     enableHybridCatalog = true,
                     readonlyAccessGranted = driveReadonlyGranted,
@@ -460,19 +458,19 @@ internal fun PhotoDestEditForm(
                         }
                     },
                     emptyMessage =
-                        stringResource(R.string.settings_no_folders_visible_create_one_here_or_open_an_ex),
+                        S("No folders visible. Create one here or open an existing folder in this app first."),
                 )
             }
         } else if (provider == PhotoProvider.S3) {
-            Text(stringResource(R.string.settings_s3_storage), style = MaterialTheme.typography.titleMedium)
+            Text(S("S3 storage"), style = MaterialTheme.typography.titleMedium)
             Text(
-                stringResource(R.string.settings_s3_and_compatible_services_wasabi_cloudflare_r2_),
+                S("S3 and compatible services (Wasabi, Cloudflare R2, MinIO, …)."),
                 style = MaterialTheme.typography.bodySmall,
             )
             TextButton(
                 onClick = { SyncSetupDocs.open(context, SyncSetupDocs.photo("minio-s3-compatible")) },
             ) {
-                Text(stringResource(R.string.settings_setup_help_minio_s3_compatible))
+                Text(S("Setup help — MinIO / S3-compatible"))
             }
             Spacer(modifier = Modifier.height(8.dp))
             S3ProviderDropdown(
@@ -482,40 +480,40 @@ internal fun PhotoDestEditForm(
             OutlinedTextField(
                 value = s3AccessKey,
                 onValueChange = { s3AccessKey = it },
-                label = { Text(stringResource(R.string.settings_access_key_id)) },
+                label = { Text(S("Access Key ID")) },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             )
             OutlinedTextField(
                 value = s3SecretKey,
                 onValueChange = { s3SecretKey = it },
-                label = { Text(stringResource(R.string.settings_secret_access_key)) },
+                label = { Text(S("Secret Access Key")) },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 visualTransformation = PasswordVisualTransformation(),
             )
             OutlinedTextField(
                 value = s3Region,
                 onValueChange = { s3Region = it },
-                label = { Text(stringResource(R.string.settings_region)) },
+                label = { Text(S("Region")) },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             )
             OutlinedTextField(
                 value = s3Endpoint,
                 onValueChange = { s3Endpoint = it },
-                label = { Text(stringResource(R.string.settings_endpoint_advanced)) },
-                supportingText = { Text(AppStrings.get(R.string.settings_required_for_minio_and_custom_s3_compatible_host)) },
+                label = { Text(S("Endpoint (advanced)")) },
+                supportingText = { Text(S("Required for MinIO and custom S3-compatible hosts")) },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             )
             OutlinedTextField(
                 value = s3Bucket,
                 onValueChange = { s3Bucket = it },
-                label = { Text(stringResource(R.string.settings_bucket)) },
+                label = { Text(S("Bucket")) },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             )
             OutlinedTextField(
                 value = rclonePrefix,
                 onValueChange = { rclonePrefix = it },
-                label = { Text(stringResource(R.string.settings_path_prefix)) },
-                supportingText = { Text(AppStrings.get(R.string.settings_e_g_vehicleexpenses_photos)) },
+                label = { Text(S("Path prefix")) },
+                supportingText = { Text(S("e.g. VehicleExpenses/photos")) },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             )
             if (s3AccessKey.isNotBlank() && s3SecretKey.isNotBlank() && s3Bucket.isNotBlank()) {
@@ -539,32 +537,32 @@ internal fun PhotoDestEditForm(
                                 rcloneRemote = cfg.remote
                                 rclonePrefix = cfg.pathPrefix
                                 confImported = true
-                                statusText = AppStrings.get(R.string.settings_s3_credentials_saved)
+                                statusText = S("S3 credentials saved")
                                 Toast.makeText(context, statusText, Toast.LENGTH_SHORT).show()
                             // kept: failure stays on this call so the screen or caller can continue
                             } catch (e: Exception) {
-                                statusText = e.message ?: AppStrings.get(R.string.settings_failed_to_save_s3_credentials)
+                                statusText = e.message ?: S("Failed to save S3 credentials")
                                 Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
                             }
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(stringResource(R.string.settings_save_s3_credentials))
+                    Text(S("Save S3 credentials"))
                 }
             }
         } else if (provider == PhotoProvider.ONEDRIVE) {
-            Text(stringResource(R.string.settings_folder_on_onedrive), style = MaterialTheme.typography.titleMedium)
+            Text(S("Folder on OneDrive"), style = MaterialTheme.typography.titleMedium)
             Text(
-                stringResource(R.string.settings_photos_upload_under_this_path_on_your_signed_in_),
+                S("Photos upload under this path on your signed-in OneDrive."),
                 style = MaterialTheme.typography.bodySmall,
             )
             Spacer(modifier = Modifier.height(8.dp))
             OutlinedTextField(
                 value = rclonePrefix,
                 onValueChange = { rclonePrefix = it },
-                label = { Text(stringResource(R.string.settings_folder_path)) },
-                supportingText = { Text(AppStrings.get(R.string.settings_e_g_vehicleexpenses_photos)) },
+                label = { Text(S("Folder / path")) },
+                supportingText = { Text(S("e.g. VehicleExpenses/photos")) },
                 modifier = Modifier.fillMaxWidth(),
             )
             if (!accountHint.isBlank()) {
@@ -582,28 +580,28 @@ internal fun PhotoDestEditForm(
                                 }
                                 rcloneRemote = cfg.remote
                                 confImported = true
-                                statusText = AppStrings.get(R.string.settings_onedrive_account_refreshed)
+                                statusText = S("OneDrive account refreshed")
                                 Toast.makeText(context, statusText, Toast.LENGTH_SHORT).show()
                             // kept: failure stays on this call so the screen or caller can continue
                             } catch (e: Exception) {
-                                statusText = e.message ?: AppStrings.get(R.string.settings_re_authentication_failed)
+                                statusText = e.message ?: S("Re-authentication failed")
                                 Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
                             }
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(stringResource(R.string.settings_re_authenticate_microsoft_account))
+                    Text(S("Re-authenticate Microsoft account"))
                 }
             }
         } else {
-            Text(stringResource(R.string.settings_remotes), style = MaterialTheme.typography.titleMedium)
+            Text(S("Remotes"), style = MaterialTheme.typography.titleMedium)
             Text(
-                stringResource(R.string.settings_create_a_remote_on_this_device_or_pick_one_from_),
+                S("Create a remote on this device or pick one from the conf. Powered by rclone for WebDAV, SFTP, Azure, and more."),
                 style = MaterialTheme.typography.bodySmall,
             )
             TextButton(onClick = { SyncSetupDocs.open(context, SyncSetupDocs.photosReadme()) }) {
-                Text(stringResource(R.string.settings_self_hosted_photo_backup_setup))
+                Text(S("Self-hosted photo backup setup"))
             }
             Spacer(modifier = Modifier.height(8.dp))
             Row(
@@ -613,11 +611,11 @@ internal fun PhotoDestEditForm(
                 OutlinedTextField(
                     value = rcloneRemote,
                     onValueChange = { rcloneRemote = it },
-                    label = { Text(stringResource(R.string.settings_remote_name)) },
+                    label = { Text(S("Remote name")) },
                     modifier = Modifier.weight(1f),
                 )
                 IconButton(onClick = { showRcloneRemotesDialog = true }) {
-                    Icon(Icons.AutoMirrored.Filled.List, contentDescription = stringResource(R.string.settings_list_remotes))
+                    Icon(Icons.AutoMirrored.Filled.List, contentDescription = S("List remotes"))
                 }
             }
             OutlinedButton(
@@ -629,19 +627,19 @@ internal fun PhotoDestEditForm(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)
-                Text(stringResource(R.string.settings_create_new_remote))
+                Text(S("Create new remote"))
             }
             OutlinedTextField(
                 value = rclonePrefix,
                 onValueChange = { rclonePrefix = it },
-                label = { Text(stringResource(R.string.settings_path_prefix_on_remote)) },
+                label = { Text(S("Path prefix on remote")) },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             )
             OutlinedButton(
                 onClick = { importConfLauncher.launch(arrayOf("*/*")) },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             ) {
-                Text(if (confImported) stringResource(R.string.settings_import_existing_conf_re_import) else stringResource(R.string.settings_import_existing_conf))
+                Text(if (confImported) S("Import existing conf… (re-import)") else S("Import existing conf…"))
             }
             if (showRcloneRemotesDialog) {
                 val cfg = RcloneDestConfig(
@@ -657,7 +655,7 @@ internal fun PhotoDestEditForm(
                         rcloneRemote = remote
                         confImported = true
                         showRcloneRemotesDialog = false
-                        statusText = AppStrings.get(R.string.settings_selected_remote_1_s, remote)
+                        statusText = S("Selected remote: %1\$s", remote)
                     },
                     onEdit = { remote ->
                         rcloneWizardMode = RcloneWizardMode.EDIT
@@ -687,17 +685,17 @@ internal fun PhotoDestEditForm(
                         rcloneRemote = name
                         confImported = true
                         showRcloneWizard = false
-                        statusText = AppStrings.get(R.string.settings_remote_saved_1_s, name)
-                        Toast.makeText(context, AppStrings.get(R.string.settings_remote_1_s_saved, name), Toast.LENGTH_SHORT).show()
+                        statusText = S("Remote saved: %1\$s", name)
+                        Toast.makeText(context, S("Remote %1\$s saved", name), Toast.LENGTH_SHORT).show()
                     },
                 )
             }
         }
 
         SyncBackgroundScheduleSection(
-            title = stringResource(R.string.settings_background_backup),
-            enableLabel = stringResource(R.string.settings_enable_background_backup),
-            intervalSliderLabel = stringResource(R.string.settings_background_backup_interval_hours),
+            title = S("Background backup"),
+            enableLabel = S("Enable background backup"),
+            intervalSliderLabel = S("Background backup interval (hours)"),
             state = SyncScheduleUiState(
                 enabled = enabled,
                 wifiOnly = wifiOnly,
@@ -717,8 +715,8 @@ internal fun PhotoDestEditForm(
             } == true
         SyncDestinationEditFooter(
             testButtonLabel = when (provider) {
-                PhotoProvider.GOOGLE_DRIVE -> stringResource(R.string.settings_test_upload_this_destination)
-                else -> stringResource(R.string.settings_test_connection_this_destination)
+                PhotoProvider.GOOGLE_DRIVE -> S("Test upload (this destination)")
+                else -> S("Test connection (this destination)")
             },
             onTest = {
                 fun runTest(allowRecovery: Boolean) {
@@ -732,23 +730,23 @@ internal fun PhotoDestEditForm(
                             folderId = folderId,
                         )
                         if (!SyncDestinationStore.isPhotoConfigured(dest)) {
-                            Toast.makeText(context, AppStrings.get(R.string.settings_configure_a_destination_first), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, S("Configure a destination first"), Toast.LENGTH_SHORT).show()
                             return@launch
                         }
                         if (provider == PhotoProvider.GOOGLE_DRIVE &&
                             accountHint.isBlank() && viewModel.auth.getLastAccount() == null
                         ) {
-                            Toast.makeText(context, AppStrings.get(R.string.settings_sign_in_first), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, S("Sign in first"), Toast.LENGTH_SHORT).show()
                             return@launch
                         }
                         if (provider == PhotoProvider.ONEDRIVE) {
                             if (accountHint.isBlank()) {
-                                Toast.makeText(context, AppStrings.get(R.string.settings_sign_in_with_microsoft_first), Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, S("Sign in with Microsoft first"), Toast.LENGTH_SHORT).show()
                                 return@launch
                             }
                             val cfg = RcloneDestConfig.parse(configJson)
                             if (cfg == null) {
-                                Toast.makeText(context, AppStrings.get(R.string.settings_set_a_folder_path_first), Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, S("Set a folder path first"), Toast.LENGTH_SHORT).show()
                                 return@launch
                             }
                             withContext(Dispatchers.IO) {
@@ -785,7 +783,7 @@ internal fun PhotoDestEditForm(
                                 else -> {
                                     Toast.makeText(
                                         context,
-                                        AppStrings.get(R.string.settings_enter_access_key_and_secret_or_save_s3_credentia),
+                                        S("Enter access key and secret, or save S3 credentials first"),
                                         Toast.LENGTH_SHORT,
                                     ).show()
                                     return@launch
@@ -794,7 +792,7 @@ internal fun PhotoDestEditForm(
                         } else if (provider == PhotoProvider.OTHER) {
                             val cfg = RcloneDestConfig.parse(configJson)
                             if (cfg == null || rcloneRemote.isBlank()) {
-                                Toast.makeText(context, AppStrings.get(R.string.settings_create_or_select_a_remote_first), Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, S("Create or select a remote first"), Toast.LENGTH_SHORT).show()
                                 return@launch
                             }
                             if (!RcloneConfStorage.hasConf(context, id, cfg)) {
@@ -841,7 +839,7 @@ internal fun PhotoDestEditForm(
                     if (!canSyncThisDest) {
                         Toast.makeText(
                             context,
-                            AppStrings.get(R.string.settings_save_a_configured_destination_first),
+                            S("Save a configured destination first"),
                             Toast.LENGTH_SHORT,
                         ).show()
                     } else {
@@ -853,12 +851,12 @@ internal fun PhotoDestEditForm(
             syncNowEnabled = canSyncThisDest,
             statusIsError = footerIsError,
             failureDetailMessage = storedFailureDetail,
-            failureDialogTitle = displayName.ifBlank { AppStrings.get(R.string.settings_photo_backup_failure) },
+            failureDialogTitle = displayName.ifBlank { S("Photo backup failure") },
             showRemove = !isNew,
             onRemove = {
                 store.removePhoto(id)
                 viewModel.rescheduleBackgroundBackup()
-                Toast.makeText(context, AppStrings.get(R.string.settings_destination_removed), Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, S("Destination removed"), Toast.LENGTH_SHORT).show()
                 onRemoved()
             },
             statusText = footerStatus,
@@ -882,7 +880,7 @@ internal fun S3ProviderDropdown(
             value = selected.label,
             onValueChange = {},
             readOnly = true,
-            label = { Text(stringResource(R.string.settings_provider)) },
+            label = { Text(S("Provider")) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth(),
         )

@@ -30,9 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.data.expense.ExpenseCategories
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 /**
  * Per-vehicle expense category catalog: reorder, rename, delete, add.
@@ -53,7 +51,7 @@ fun ManageExpenseCategoriesDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.expense_categories_title, vehicle.name)) },
+        title = { Text(S("Expense categories — %1\$s", vehicle.name)) },
         text = {
             Column(
                 modifier = Modifier
@@ -62,7 +60,7 @@ fun ManageExpenseCategoriesDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
-                    stringResource(R.string.expense_first_item_is_the_new_expense_default_renames_de),
+                    S("First item is the new-expense default. Renames/deletes do not rewrite past expense Category strings."),
                     style = MaterialTheme.typography.bodySmall,
                 )
                 categories.forEachIndexed { index, name ->
@@ -84,7 +82,7 @@ fun ManageExpenseCategoriesDialog(
                         ) {
                             Icon(
                                 Icons.Default.KeyboardArrowUp,
-                                contentDescription = AppStrings.get(R.string.expense_move_up),
+                                contentDescription = S("Move up"),
                                 modifier = Modifier.size(24.dp),
                             )
                         }
@@ -97,7 +95,7 @@ fun ManageExpenseCategoriesDialog(
                         ) {
                             Icon(
                                 Icons.Default.KeyboardArrowDown,
-                                contentDescription = AppStrings.get(R.string.expense_move_down),
+                                contentDescription = S("Move down"),
                                 modifier = Modifier.size(24.dp),
                             )
                         }
@@ -106,7 +104,7 @@ fun ManageExpenseCategoriesDialog(
                                 renameIndex = index
                                 renameText = name
                             },
-                        ) { Text(AppStrings.get(R.string.expense_rename)) }
+                        ) { Text(S("Rename")) }
                         IconButton(
                             onClick = {
                                 if (categories.size <= 1) return@IconButton
@@ -122,7 +120,7 @@ fun ManageExpenseCategoriesDialog(
                         ) {
                             Icon(
                                 Icons.Default.Delete,
-                                contentDescription = AppStrings.get(R.string.expense_delete_category),
+                                contentDescription = S("Delete category"),
                                 modifier = Modifier.size(24.dp),
                             )
                         }
@@ -132,7 +130,7 @@ fun ManageExpenseCategoriesDialog(
                     CaretEnabledOutlinedTextField(
                         value = renameText,
                         onValueChange = { renameText = it },
-                        label = { Text(stringResource(R.string.expense_new_name)) },
+                        label = { Text(S("New name")) },
                         singleLine = true,
                         showCaretButtons = false,
                         modifier = Modifier.fillMaxWidth(),
@@ -144,8 +142,8 @@ fun ManageExpenseCategoriesDialog(
                                 categories = ExpenseCategories.rename(categories, i, renameText).toMutableList()
                                 renameIndex = null
                             },
-                        ) { Text(stringResource(R.string.expense_apply_rename)) }
-                        TextButton(onClick = { renameIndex = null }) { Text(stringResource(R.string.settings_cancel)) }
+                        ) { Text(S("Apply rename")) }
+                        TextButton(onClick = { renameIndex = null }) { Text(S("Cancel")) }
                     }
                 }
                 Row(
@@ -156,7 +154,7 @@ fun ManageExpenseCategoriesDialog(
                     CaretEnabledOutlinedTextField(
                         value = newName,
                         onValueChange = { newName = it },
-                        label = { Text(stringResource(R.string.expense_new_category)) },
+                        label = { Text(S("New category")) },
                         singleLine = true,
                         showCaretButtons = false,
                         modifier = Modifier.weight(1f),
@@ -177,10 +175,10 @@ fun ManageExpenseCategoriesDialog(
                     val json = ExpenseCategories.format(categories)
                     onSave(vehicle.copy(expenseCategoriesJson = json))
                 },
-            ) { Text(stringResource(R.string.fuel_save)) }
+            ) { Text(S("Save")) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) }
+            TextButton(onClick = onDismiss) { Text(S("Cancel")) }
         },
     )
 }

@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""List app sentences the catalog does not already match.
+
+No flags: added, changed, and removed app sentences. Unchanged sentences are
+not printed. --all lists every machine sentence. --manuals adds the user
+manual. Overrides are skipped in every mode. This script does not translate.
+"""
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from i18n_apply_supplied import PACKS
+from i18n_catalog import (
+    catalog_sources,
+    definition_sentences,
+    format_tokens,
+    load_catalog,
+    load_overrides,
+    manual_paragraphs,
+    read_keep_terms,
+    worth_sending,
+)
+
+
+def _fully_overridden(sentence: str, catalog: dict) -> bool:
+    keys: list[str] = []
+    seen: set[str] = set()
+    for entries in catalog.values():
+        for entry in entries:
+            if entry["source"] == sentence and entry["key"] not in seen:
+                seen.add(entry["key"])
+                keys.append(entry["key"])
+    if not keys:
+        return False
+    for pref in PACKS:
+        overrides = load_overrides(pref)
+        for key in keys:
+            matched = False
+            for okey, otext in overrides:
+                if okey == key and format_tokens(otext) == format_tokens(sentence):
+                    matched = True
+            if not matched:
+                return False
+    return True
+
+
+def _emit_blocks(header: str, sentences: list[str]) -> None:
+    if not sentences:
+        return
+    sys.stdout.write(header + "\n")
+    for sentence in sentences:
+        sys.stdout.write(sentence + "\n\n")
+
+
+def main(argv: list[str]) -> None:
+    unknown = [arg for arg in argv if arg.startswith("-") and arg not in ("--manuals", "--all")]
+    if unknown:
+        raise SystemExit(f"unknown flag {unknown[0]}")
+    want_manuals = "--manuals" in argv
+    want_all = "--all" in argv
+    terms = read_keep_terms()
+    code = definition_sentences()
+    catalog = load_catalog()
+    sources = catalog_sources(catalog)
+    source_set = set(sources)
+    code_set = set(code)
+    added = [sentence for sentence in code if sentence not in source_set]
+    removed = [sentence for sentence in sources if sentence not in code_set]
+    if want_manuals:
+        for para in manual_paragraphs():
+            if para not in source_set and para not in code_set:
+                added.append(para)
+    added = [sentence for sentence in added if worth_sending(sentence, terms)]
+    removed = [sentence for sentence in removed if worth_sending(sentence, terms)]
+    if want_all:
+        rows = [
+            sentence
+            for sentence in code
+            if worth_sending(sentence, terms) and not _fully_overridden(sentence, catalog)
+        ]
+        if want_manuals:
+            rows.extend(para for para in manual_paragraphs() if worth_sending(para, terms))
+        for sentence in rows:
+            sys.stdout.write(sentence + "\n\n")
+        return
+    _emit_blocks("added", added)
+    _emit_blocks("removed", removed)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

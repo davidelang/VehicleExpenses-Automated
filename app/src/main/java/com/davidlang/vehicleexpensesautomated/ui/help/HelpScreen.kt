@@ -12,8 +12,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.util.SyncSetupDocs
 import com.davidlang.vehicleexpensesautomated.ui.util.UserManualDocs
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 @Composable
 fun HelpScreen(navController: NavHostController? = null) {
@@ -27,9 +26,9 @@ fun HelpScreen(navController: NavHostController? = null) {
             .verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(stringResource(R.string.nav_help), style = MaterialTheme.typography.headlineMedium)
+        Text(S("Help"), style = MaterialTheme.typography.headlineMedium)
         Text(
-            stringResource(R.string.help_short_on_device_guide_so_you_can_start_immediate),
+            S("Short on-device guide so you can start immediately. For screenshots and every step, open the full illustrated manual (bundled in the app — works offline, no GitHub login)."),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -37,14 +36,14 @@ fun HelpScreen(navController: NavHostController? = null) {
             onClick = { UserManualDocs.openFullManual(context) },
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         ) {
-            Text(stringResource(R.string.help_open_full_user_manual))
+            Text(S("Open full user manual"))
         }
 
         if (navController != null) {
-            SectionTitle(stringResource(R.string.help_setup_tips_animated))
+            SectionTitle(S("Setup tips (animated)"))
             Text(
-                stringResource(R.string.help_short_step_by_step_walkthroughs_with_scree) +
-                    stringResource(R.string.help_connect_existing_setup_join_another_device_s_sha),
+                S("Short step-by-step walkthroughs with screenshots (offline). Also offered on first run when you have no vehicles. ") +
+                    S("Connect existing setup = join another device’s shared sheet + photo folder (not create a new blank sheet)."),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -54,7 +53,7 @@ fun HelpScreen(navController: NavHostController? = null) {
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             ) {
-                Text(stringResource(R.string.settings_tutorial_add_a_vehicle))
+                Text(S("Tutorial: Add a vehicle"))
             }
             Button(
                 onClick = {
@@ -62,99 +61,99 @@ fun HelpScreen(navController: NavHostController? = null) {
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             ) {
-                Text(stringResource(R.string.settings_tutorial_connect_existing_setup))
+                Text(S("Tutorial: Connect existing setup"))
             }
             TextButton(
                 onClick = { navController.navigate("onboarding") },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(stringResource(R.string.help_show_first_run_welcome_choices))
+                Text(S("Show first-run welcome choices"))
             }
         }
 
-        SectionTitle(stringResource(R.string.help_icons))
-        Bullet(stringResource(R.string.help_top_left_open_the_menu))
-        Bullet(stringResource(R.string.help_title_bar_page_help_for_the_current_screen))
-        Bullet(stringResource(R.string.help_red_title_bar_last_spreadsheet_or_photo_sy))
-        Bullet(stringResource(R.string.help_n_title_bar_open_import_review_questions_w))
-        Bullet(stringResource(R.string.help_white_circle_shutter_capture_dash_pump_or))
-        Bullet(stringResource(R.string.help_disk_save_fill_up_or_expense))
-        Bullet(stringResource(R.string.help_on_fill_switch_odometer_mode_pump_cost_vol))
-        Bullet(stringResource(R.string.help_between_cost_and_volume_swap_the_two_value))
-        Bullet(stringResource(R.string.help_on_sync_forms_browse_google_drive_for_a_sh))
+        SectionTitle(S("Icons"))
+        Bullet(S("☰ (top left) — open the menu"))
+        Bullet(S("ⓘ (title bar) — page help for the current screen (stays while you stay on the page)"))
+        Bullet(S("! (red, title bar) — last spreadsheet or photo sync failed; opens Syncing"))
+        Bullet(S("?N (title bar) — open Import / Review questions when items need answers"))
+        Bullet(S("White circle — shutter (capture dash, pump, or receipt)"))
+        Bullet(S("Disk — save fill-up or expense"))
+        Bullet(S("↕ on Fill — switch odometer mode ↔ pump (cost/volume) mode"))
+        Bullet(S("↔ between cost and volume — swap the two values if OCR swapped them"))
+        Bullet(S("🔍 on sync forms — browse Google Drive for a sheet or folder"))
 
-        SectionTitle(stringResource(R.string.help_s_1_add_a_vehicle_do_this_first))
-        Bullet(stringResource(R.string.help_menu_manage_vehicles_vehicle_dropdown_add))
-        Bullet(stringResource(R.string.help_take_or_pick_a_clear_dashboard_photo))
-        Bullet(stringResource(R.string.help_run_discovery_select_odo_tap_the_seed_adju))
-        Bullet(stringResource(R.string.help_run_discovery_review_landmarks_edit_ocr_to))
-        Bullet(stringResource(R.string.help_create_vehicle))
+        SectionTitle(S("1. Add a vehicle (do this first)"))
+        Bullet(S("Menu → Manage Vehicles → Vehicle dropdown → Add New Vehicle"))
+        Bullet(S("Take or pick a clear dashboard photo"))
+        Bullet(S("Run Discovery, Select Odo, tap the seed, adjust, Save"))
+        Bullet(S("Run Discovery, review landmarks (Edit OCR to fix misses), enter a Vehicle Name"))
+        Bullet(S("Create Vehicle"))
         Text(
-            stringResource(R.string.help_landmarks_power_auto_vehicle_match_on_fill),
+            S("Landmarks power auto vehicle match on Fill. No camera? Type odo/volume/cost by hand."),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
         )
 
-        SectionTitle(stringResource(R.string.help_s_2_log_a_fill_up))
-        Bullet(stringResource(R.string.help_open_the_app_fill_is_home_no_need_to_pick))
-        Bullet(stringResource(R.string.help_aim_at_the_odometer_shutter_confirm_odo_ve))
-        Bullet(stringResource(R.string.help_tap_for_pump_mode_aim_at_pump_totals_shutt))
-        Bullet(stringResource(R.string.help_fix_fields_if_needed_tap_currency_or_g_l_t))
-        Bullet(stringResource(R.string.help_disk_save_blank_fields_are_allowed_as_a_pa))
+        SectionTitle(S("2. Log a fill-up"))
+        Bullet(S("Open the app (Fill is home) — no need to pick the vehicle first"))
+        Bullet(S("Aim at the odometer → shutter → confirm Odo (vehicle auto-detects from landmarks)"))
+        Bullet(S("Tap ↕ for pump mode → aim at pump totals → shutter"))
+        Bullet(S("Fix fields if needed (tap currency or G/L to change units)"))
+        Bullet(S("Disk (Save). Blank fields are allowed as a partial fill. Works offline"))
 
-        SectionTitle(stringResource(R.string.help_s_3_log_an_expense))
-        Bullet(stringResource(R.string.help_menu_new_expense))
-        Bullet(stringResource(R.string.help_shutter_or_gallery_for_the_receipt_fill_ve))
-        Bullet(stringResource(R.string.help_save_open_expenses_from_reports_expenses_l))
+        SectionTitle(S("3. Log an expense"))
+        Bullet(S("Menu → New expense"))
+        Bullet(S("Shutter or gallery for the receipt; fill vendor, amount, category, vehicle"))
+        Bullet(S("Save. Open expenses from Reports → Expenses list to review or edit later"))
 
-        SectionTitle(stringResource(R.string.help_s_4_reports))
-        Bullet(stringResource(R.string.help_menu_reports_hub_summary_then_report_cards))
+        SectionTitle(S("4. Reports"))
+        Bullet(S("Menu → Reports — hub summary, then report cards"))
         Bullet(
-            stringResource(R.string.help_time_based_reports_one_plot_with_independe) +
-                stringResource(R.string.help_optional_smooth_bins),
+            S("Time based reports — one plot with independent Y scales (mpg and G/mi on the left; \$ / trip miles / trip %% by type on the right), ") +
+                S("optional Smooth bins"),
         )
-        Bullet(stringResource(R.string.help_fill_history_lists_fills_only_trip_miles_h))
-        Bullet(stringResource(R.string.help_fuel_history_and_edit_screens_can_fetch_im))
+        Bullet(S("Fill history lists fills only; Trip miles has the trip-start list (tap a row to edit)"))
+        Bullet(S("Fuel History and edit screens can Fetch image from archive when any photo destination has the file"))
 
-        SectionTitle(stringResource(R.string.help_s_5_backups_multi_device_optional))
+        SectionTitle(S("5. Backups & multi-device (optional)"))
         Text(
-            stringResource(R.string.help_use_your_own_accounts_not_a_shared_app_cloud_syn),
+            S("Use your own accounts — not a shared app cloud. Sync is background; no network needed to add fills."),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            stringResource(R.string.help_data_spreadsheet),
+            S("Data (spreadsheet)"),
             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
             modifier = Modifier.padding(top = 8.dp),
         )
-        Bullet(stringResource(R.string.help_settings_spreadsheet_sync_google_sheets_ex))
+        Bullet(S("Settings → Spreadsheet sync: Google Sheets, Excel, EtherCalc, or Other (Baserow, NocoDB, Airtable, PocketBase, Supabase, Firebase, Zoho Sheet, …)"))
         Text(
-            stringResource(R.string.help_photos),
+            S("Photos"),
             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
             modifier = Modifier.padding(top = 8.dp),
         )
-        Bullet(stringResource(R.string.help_settings_photo_backup_google_drive_onedriv))
+        Bullet(S("Settings → Photo backup: Google Drive, OneDrive, S3, or Other (WebDAV/SFTP/… via rclone)"))
         Text(
-            stringResource(R.string.help_full_provider_list_and_setup_online_manual_or_se),
+            S("Full provider list and setup: online manual or self-host index."),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
         )
         TextButton(onClick = { SyncSetupDocs.open(context, SyncSetupDocs.index()) }) {
-            Text(stringResource(R.string.help_self_host_setup_index))
+            Text(S("Self-host setup index"))
         }
 
-        SectionTitle(stringResource(R.string.help_if_something_fails))
-        Bullet(stringResource(R.string.help_red_error_under_spreadsheet_sync_photo_bac))
-        Bullet(stringResource(R.string.help_red_in_the_title_bar_settings))
-        Bullet(stringResource(R.string.help_yellow_in_the_title_bar_import_review_ques))
-        Bullet(stringResource(R.string.help_same_fill_entered_twice_on_two_devices_two))
+        SectionTitle(S("If something fails"))
+        Bullet(S("Red error under Spreadsheet sync / Photo backup in Settings"))
+        Bullet(S("Red ! in the title bar → Settings"))
+        Bullet(S("Yellow ? in the title bar → Import / Review questions"))
+        Bullet(S("Same fill entered twice on two devices = two rows; delete the extra"))
 
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            stringResource(R.string.help_import_old_pictures_and_experiment_screens) +
-                stringResource(R.string.help_batch_import_references_your_existing_dash) +
+            S("Import Old Pictures and experiment screens are advanced tools and are not covered here. ") +
+                S("Batch import references your existing dash/pump photo files in place (does not copy them). ") +
                 "Do not delete experiment_photos or pump_photos while fuel rows still point at those files.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -24,10 +24,8 @@ import com.davidlang.vehicleexpensesautomated.VehicleExpensesApplication
 import com.davidlang.vehicleexpensesautomated.ui.theme.VehicleExpensesAutomatedTheme
 import java.io.PrintWriter
 import java.io.StringWriter
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
 import com.davidlang.vehicleexpensesautomated.ui.util.AppLanguage
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 /** OpenCV, Paddle, or rclone failed during startup. No Paddle and no OpenCV. */
 class StartupFailureActivity : ComponentActivity() {
@@ -66,28 +64,28 @@ private fun StartupFailureScreen(detail: String, onQuit: () -> Unit) {
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(stringResource(R.string.startup_startup_failed), style = MaterialTheme.typography.headlineMedium)
-        Text(stringResource(R.string.startup_the_app_could_not_finish_startup_nothing_w))
+        Text(S("Startup failed"), style = MaterialTheme.typography.headlineMedium)
+        Text(S("The app could not finish startup. Nothing was retried."))
         Text(detail)
         Button(onClick = onQuit, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.startup_quit))
+            Text(S("Quit"))
         }
     }
 }
 
 private fun failureText(failure: Throwable?): String {
-    if (failure == null) return AppStrings.get(R.string.startup_startup_failed_with_no_recorded_reason)
+    if (failure == null) return S("Startup failed with no recorded reason.")
     val trace = StringWriter()
     failure.printStackTrace(PrintWriter(trace))
     var stack = trace.toString()
     if (stack.length > 50_000) {
-        stack = stack.take(50_000) + AppStrings.get(R.string.startup_truncated)
+        stack = stack.take(50_000) + S("\n... truncated")
     }
     return buildString {
-        appendLine(AppStrings.get(R.string.startup_applicationid_1_s, BuildConfig.APPLICATION_ID))
-        appendLine(AppStrings.get(R.string.startup_versionname_1_s, BuildConfig.VERSION_NAME))
-        appendLine(AppStrings.get(R.string.startup_buildtype_1_s, BuildConfig.BUILD_TYPE))
-        appendLine(AppStrings.get(R.string.startup_model_1_s_2_s, Build.MANUFACTURER, Build.MODEL))
+        appendLine(S("applicationId: %1\$s", BuildConfig.APPLICATION_ID))
+        appendLine(S("versionName: %1\$s", BuildConfig.VERSION_NAME))
+        appendLine(S("buildType: %1\$s", BuildConfig.BUILD_TYPE))
+        appendLine(S("model: %1\$s %2\$s", Build.MANUFACTURER, Build.MODEL))
         appendLine()
         append(stack)
     }

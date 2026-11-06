@@ -14,7 +14,7 @@ Short everyday guide. Use the full manual for first-time setup with screenshots.
 
 ## What the app does
 
-- **Fill** — camera OCR for odometer and pump cost/volume, or manual entry; **vehicle auto-detects from dash landmarks** (no need to pick vehicle first).
+- **Fill** — camera OCR for odometer and pump cost/volume, or manual entry. A dash photo that names one vehicle selects it. A dash photo that does not name one vehicle leaves **Vehicle not identified** up until a name is tapped or the dialog is dismissed. **Show all vehicles** appears when the list is a subset.
 - **Start trip** — open/switch tax-style trip segments (Business / Personal / …) as fuel rows with **Trip Type** (drawer after Fill).
 - **Manage Vehicles** — reference dash photo; **Run Discovery** (paddle seeds on the photo); **Select Odo**, tap the seed on the digits, adjust the handles, **Save**. **Edit Odo** adjusts a box that is already there. **Clear Odo** removes it, and the button then reads **Select Odo**. Landmarks stored under the same JSON key as before.
 - **Expenses** — non-fuel costs with optional receipt photos (New expense in drawer; list via **Reports** hub).
@@ -22,7 +22,7 @@ Short everyday guide. Use the full manual for first-time setup with screenshots.
 - **Settings** — units, currency, local photo prefs, debug/experiment gates (not the main sync summary).
 - **Syncing** — spreadsheet + photo destination summary, **Sync now**, Details on failures, entry to Spreadsheet Sync / Photo Backup.
 
-**Advanced / experiment drawer (Settings → Show experiment screens):** Alignment Experiment, Pump Experiment, **Import Old Pictures**. Import is not on the main drawer when the gate is off; yellow **`?N`** still opens import review when questions are pending.
+**Advanced / experiment drawer (Settings → Show experiment screens):** Alignment Experiment, Pump Experiment, Heatmap stage, Dash paddle long-edge det/rec, and Import Old Pictures. Those screens are not documented here. Import is not on the main drawer when the gate is off; yellow **`?N`** still opens import review when questions are pending.
 
 ## Icons (cheat sheet)
 
@@ -43,7 +43,7 @@ Short everyday guide. Use the full manual for first-time setup with screenshots.
 ## Getting started
 
 1. **Manage Vehicles** → Add New Vehicle → dash photo → **Run Discovery** → **Select Odo** → tap the seed on the digits → adjust the handles → **Save** → **Show Landmarks** / fix OCR → name → Create.
-2. **Fill** → shutter on odometer (vehicle matches from landmarks) → **↕** → shutter on pump → **Save**. Works offline. Use **ⓘ** for control reminders.
+2. **Fill** → shutter on the odometer. If the dash photo does not name one vehicle, **Vehicle not identified** stays up until a name is tapped or the dialog is dismissed (**Show all vehicles** when the list is a subset). **↕** → shutter on the pump → **Save**. Works offline. Use **ⓘ** for control reminders.
 3. Optional multi-device / backup: open **Syncing** → **Spreadsheet Sync** / **Photo Backup**. New device into an **existing** cluster: sign in and open the **same** shared sheet + photo folder (Help → **Connect existing setup** tutorial); stand-alone first setup is **Add a vehicle**.
 
 ## Units

@@ -20,8 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.FileProvider
 import java.io.File
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 /** Share payload builders for [ReportsLabShareIconButton]. */
 data class ReportsLabShareActions(
@@ -46,9 +45,9 @@ object ReportsLabShare {
             putExtra(Intent.EXTRA_TEXT, body)
         }
         if (intent.resolveActivity(context.packageManager) != null) {
-            context.startActivity(Intent.createChooser(intent, context.getString(R.string.reports_share_report)))
+            context.startActivity(Intent.createChooser(intent, S("Share report")))
         } else {
-            Toast.makeText(context, context.getString(R.string.reports_no_app_available_to_share), Toast.LENGTH_LONG).show()
+            Toast.makeText(context, S("No app available to share"), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -60,7 +59,7 @@ object ReportsLabShare {
             file.writeText(csvBody)
             val uri = FileProvider.getUriForFile(
                 context,
-                context.getString(R.string.reports_s_1_s_fileprovider, context.packageName),
+                S("%1\$s.fileprovider", context.packageName),
                 file,
             )
             val intent = Intent(Intent.ACTION_SEND).apply {
@@ -70,32 +69,32 @@ object ReportsLabShare {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             if (intent.resolveActivity(context.packageManager) != null) {
-                context.startActivity(Intent.createChooser(intent, context.getString(R.string.reports_share_csv)))
+                context.startActivity(Intent.createChooser(intent, S("Share CSV")))
             } else {
-                Toast.makeText(context, context.getString(R.string.reports_no_app_available_to_share_csv), Toast.LENGTH_LONG).show()
+                Toast.makeText(context, S("No app available to share CSV"), Toast.LENGTH_LONG).show()
             }
         // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
-            Toast.makeText(context, e.message ?: context.getString(R.string.reports_csv_share_failed), Toast.LENGTH_LONG).show()
+            Toast.makeText(context, e.message ?: S("CSV share failed"), Toast.LENGTH_LONG).show()
         }
     }
 
     fun sharePdf(context: Context, fileName: String, pdfBytes: ByteArray, subject: String) {
         try {
             if (pdfBytes.isEmpty()) {
-                Toast.makeText(context, context.getString(R.string.reports_pdf_is_empty), Toast.LENGTH_LONG).show()
+                Toast.makeText(context, S("PDF is empty"), Toast.LENGTH_LONG).show()
                 return
             }
             val dir = File(context.filesDir, "reports_lab")
             if (!dir.exists()) dir.mkdirs()
             val safeName = fileName.ifBlank { "lab_report.pdf" }.let {
-                if (it.endsWith(".pdf", ignoreCase = true)) it else context.getString(R.string.reports_s_1_s_pdf, it)
+                if (it.endsWith(".pdf", ignoreCase = true)) it else S("%1\$s.pdf", it)
             }
             val file = File(dir, safeName)
             file.writeBytes(pdfBytes)
             val uri = FileProvider.getUriForFile(
                 context,
-                context.getString(R.string.reports_s_1_s_fileprovider, context.packageName),
+                S("%1\$s.fileprovider", context.packageName),
                 file,
             )
             val intent = Intent(Intent.ACTION_SEND).apply {
@@ -105,13 +104,13 @@ object ReportsLabShare {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             if (intent.resolveActivity(context.packageManager) != null) {
-                context.startActivity(Intent.createChooser(intent, context.getString(R.string.reports_share_pdf)))
+                context.startActivity(Intent.createChooser(intent, S("Share PDF")))
             } else {
-                Toast.makeText(context, context.getString(R.string.reports_no_app_available_to_share_pdf), Toast.LENGTH_LONG).show()
+                Toast.makeText(context, S("No app available to share PDF"), Toast.LENGTH_LONG).show()
             }
         // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
-            Toast.makeText(context, e.message ?: context.getString(R.string.reports_pdf_share_failed), Toast.LENGTH_LONG).show()
+            Toast.makeText(context, e.message ?: S("PDF share failed"), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -131,12 +130,12 @@ fun ReportsLabShareIconButton(
 ) {
     var showPicker by remember { mutableStateOf(false) }
     IconButton(onClick = { showPicker = true }) {
-        Icon(Icons.Default.Share, contentDescription = stringResource(R.string.reports_share_report))
+        Icon(Icons.Default.Share, contentDescription = S("Share report"))
     }
     if (showPicker) {
         AlertDialog(
             onDismissRequest = { showPicker = false },
-            title = { Text(stringResource(R.string.reports_share_as)) },
+            title = { Text(S("Share as")) },
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     TextButton(
@@ -150,13 +149,13 @@ fun ReportsLabShareIconButton(
                                 )
                             // kept: failure stays on this call so the screen or caller can continue
                             } catch (e: Exception) {
-                                Toast.makeText(context, e.message ?: context.getString(R.string.reports_share_failed), Toast.LENGTH_LONG)
+                                Toast.makeText(context, e.message ?: S("Share failed"), Toast.LENGTH_LONG)
                                     .show()
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(stringResource(R.string.reports_text))
+                        Text(S("TEXT"))
                     }
                     TextButton(
                         onClick = {
@@ -170,13 +169,13 @@ fun ReportsLabShareIconButton(
                                 )
                             // kept: failure stays on this call so the screen or caller can continue
                             } catch (e: Exception) {
-                                Toast.makeText(context, e.message ?: context.getString(R.string.reports_csv_share_failed), Toast.LENGTH_LONG)
+                                Toast.makeText(context, e.message ?: S("CSV share failed"), Toast.LENGTH_LONG)
                                     .show()
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(stringResource(R.string.reports_csv))
+                        Text(S("CSV"))
                     }
                     TextButton(
                         onClick = {
@@ -194,22 +193,22 @@ fun ReportsLabShareIconButton(
                                 } catch (e: Exception) {
                                     Toast.makeText(
                                         context,
-                                        e.message ?: context.getString(R.string.reports_pdf_share_failed),
+                                        e.message ?: S("PDF share failed"),
                                         Toast.LENGTH_LONG,
                                     ).show()
                                 }
                             } else {
-                                Toast.makeText(context, context.getString(R.string.reports_pdf_coming_soon), Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, S("PDF coming soon"), Toast.LENGTH_SHORT).show()
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(if (actions.pdfBody != null) stringResource(R.string.reports_pdf) else stringResource(R.string.reports_pdf_coming_soon_2))
+                        Text(if (actions.pdfBody != null) S("PDF") else S("PDF (coming soon)"))
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showPicker = false }) { Text(stringResource(R.string.settings_cancel)) }
+                TextButton(onClick = { showPicker = false }) { Text(S("Cancel")) }
             },
         )
     }

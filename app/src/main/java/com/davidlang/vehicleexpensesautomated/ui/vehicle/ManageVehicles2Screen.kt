@@ -54,9 +54,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.coroutines.coroutineContext
 import kotlin.math.roundToInt
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,7 +124,7 @@ fun ManageVehicles2Screen(
         val res = discoveryResults ?: return landmarkTextBlocksJson
         val odoRectF = odometerCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
         val filtered = res.filterByCrops(odoRectF, null)
-        return OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf(AppStrings.get(R.string.vehicle_ml_kit) to filtered))
+        return OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf(S("ML Kit") to filtered))
     }
 
     // AUTO-SELECT FIRST VEHICLE
@@ -244,7 +242,7 @@ fun ManageVehicles2Screen(
                     originalImageSize = Offset(rawResult.imageWidth.toFloat(), rawResult.imageHeight.toFloat())
                     discoverySettledPhoto = photoPath
                 } else {
-                    Toast.makeText(context, AppStrings.get(R.string.vehicle_could_not_read_that_photo), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, S("Could not read that photo"), Toast.LENGTH_SHORT).show()
                 }
             // kept: failure stays on this call so the screen or caller can continue
             } catch (e: CancellationException) {
@@ -348,7 +346,7 @@ fun ManageVehicles2Screen(
                     if (rawBmp == null) {
                         withContext(Dispatchers.Main) {
                             if (gen != discoveryGen[0]) return@withContext
-                            Toast.makeText(context, AppStrings.get(R.string.vehicle_could_not_read_that_photo), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, S("Could not read that photo"), Toast.LENGTH_SHORT).show()
                         }
                         return@withContext
                     }
@@ -368,7 +366,7 @@ fun ManageVehicles2Screen(
                             } finally {
                                 if (detBmp != uprightBmp) detBmp.recycle()
                             }
-                            val landmarkJson = OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf(AppStrings.get(R.string.vehicle_ml_kit) to rawResult))
+                            val landmarkJson = OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf(S("ML Kit") to rawResult))
                             val path = refFile.absolutePath
                             val width = uprightBmp.width.toFloat()
                             val height = uprightBmp.height.toFloat()
@@ -397,7 +395,7 @@ fun ManageVehicles2Screen(
             } catch (e: Exception) {
                 Log.e("ManageVehicles2", "Photo processing failed", e)
                 if (gen == discoveryGen[0]) {
-                    Toast.makeText(context, AppStrings.get(R.string.vehicle_could_not_read_that_photo), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, S("Could not read that photo"), Toast.LENGTH_SHORT).show()
                 }
             } finally {
                 if (gen == discoveryGen[0]) {
@@ -442,12 +440,12 @@ fun ManageVehicles2Screen(
                     }
                     if (gen != discoveryGen[0]) return@launch
                     if (rawResult == null) {
-                        Toast.makeText(context, AppStrings.get(R.string.vehicle_could_not_read_that_photo), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, S("Could not read that photo"), Toast.LENGTH_SHORT).show()
                         return@launch
                     }
 
                     landmarkTextBlocksJson =
-                        OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf(AppStrings.get(R.string.vehicle_ml_kit) to rawResult))
+                        OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf(S("ML Kit") to rawResult))
                     discoveryResults = rawResult
                     seedBlocks = rawResult.textBlocks
                     showLandmarkCheck = true
@@ -506,22 +504,22 @@ fun ManageVehicles2Screen(
     }
 
     RegisterPageHelp(
-        title = stringResource(R.string.nav_manage_vehicles),
-        stringResource(R.string.vehicle_reference_photo_upright_exif_only_run_disc) +
-            stringResource(R.string.vehicle_landmarks_are_stored_under_the_existing_js),
+        title = S("Manage Vehicles"),
+        S("Reference photo (upright EXIF only) → Run Discovery → Select Odo → tap the seed → adjust → Save. ") +
+            S("Landmarks are stored under the existing JSON key. Menu → Help for walkthrough."),
     )
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         var dropdownExpanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(expanded = dropdownExpanded, onExpandedChange = { dropdownExpanded = it }) {
             OutlinedTextField(
-                value = if (isNewVehicle) stringResource(R.string.vehicle_add_new_vehicle) else (editingVehicle?.name ?: stringResource(R.string.expense_select_vehicle)),
-                onValueChange = {}, label = { Text(stringResource(R.string.fuel_vehicle)) },
+                value = if (isNewVehicle) S("Add New Vehicle") else (editingVehicle?.name ?: S("Select vehicle")),
+                onValueChange = {}, label = { Text(S("Vehicle")) },
                 modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true),
                 readOnly = true
             )
             ExposedDropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
                 vehicles.forEach { vehicle -> DropdownMenuItem(text = { Text(vehicle.name) }, onClick = { selectedVehicleId = vehicle.id; isNewVehicle = false; editMode = CropEditMode.IDLE; odoSeedSelectActive = false; dropdownExpanded = false }) }
-                DropdownMenuItem(text = { Text(stringResource(R.string.vehicle_add_new_vehicle)) }, onClick = { selectedVehicleId = null; editingVehicle = null; isNewVehicle = true; name = ""; make = ""; model = ""; year = ""; licensePlate = ""; odometerReading = ""; pickedPhotoUrl = null; referencePhotoUrl = null; landmarkTextBlocksJson = null; odometerCropRect = null; editMode = CropEditMode.IDLE; odoSeedSelectActive = false; dropdownExpanded = false })
+                DropdownMenuItem(text = { Text(S("Add New Vehicle")) }, onClick = { selectedVehicleId = null; editingVehicle = null; isNewVehicle = true; name = ""; make = ""; model = ""; year = ""; licensePlate = ""; odometerReading = ""; pickedPhotoUrl = null; referencePhotoUrl = null; landmarkTextBlocksJson = null; odometerCropRect = null; editMode = CropEditMode.IDLE; odoSeedSelectActive = false; dropdownExpanded = false })
             }
         }
 
@@ -534,21 +532,21 @@ fun ManageVehicles2Screen(
                 processImportedPhoto(uri.toString())
             }
             Row {
-                TextButton(onClick = { imagePicker.pickFromGallery() }) { Text(stringResource(R.string.vehicle_gallery)) }
-                TextButton(onClick = { imagePicker.takePhoto() }) { Text(stringResource(R.string.vehicle_camera)) }
+                TextButton(onClick = { imagePicker.pickFromGallery() }) { Text(S("Gallery")) }
+                TextButton(onClick = { imagePicker.takePhoto() }) { Text(S("Camera")) }
             }
 
             if (photoCannotDisplay) {
-                Text(stringResource(R.string.ui_cannot_display))
+                Text(S("Cannot display"))
             } else if (referencePhotoUrl != null) {
                 var showFullPhoto by remember(referencePhotoUrl) { mutableStateOf(false) }
                 TextButton(onClick = { showFullPhoto = true }) {
-                    Text(stringResource(R.string.vehicle_view_full_photo_zoom))
+                    Text(S("View full photo (zoom +/−)"))
                 }
                 if (showFullPhoto) {
                     com.davidlang.vehicleexpensesautomated.ui.components.ZoomablePhotoDialog(
                         uris = listOf(referencePhotoUrl!!),
-                        title = stringResource(R.string.vehicle_reference_dash_photo),
+                        title = S("Reference dash photo"),
                         onDismiss = { showFullPhoto = false },
                     )
                 }
@@ -581,7 +579,7 @@ fun ManageVehicles2Screen(
                         modifier = Modifier.weight(1f),
                         enabled = editMode == CropEditMode.EDIT_CROPS || odometerCropRect != null,
                     ) {
-                        Text(if (editMode == CropEditMode.EDIT_CROPS) stringResource(R.string.fuel_save) else stringResource(R.string.vehicle_edit_odo))
+                        Text(if (editMode == CropEditMode.EDIT_CROPS) S("Save") else S("Edit Odo"))
                     }
                     Button(
                         onClick = {
@@ -598,7 +596,7 @@ fun ManageVehicles2Screen(
                         },
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text(if (odometerCropRect == null) stringResource(R.string.vehicle_select_odo) else stringResource(R.string.vehicle_clear_odo))
+                        Text(if (odometerCropRect == null) S("Select Odo") else S("Clear Odo"))
                     }
                 }
 
@@ -611,7 +609,7 @@ fun ManageVehicles2Screen(
                         if (isLoadingDiscovery) {
                             CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
                         } else {
-                            Text(stringResource(R.string.vehicle_run_discovery))
+                            Text(S("Run Discovery"))
                         }
                     }
 
@@ -624,39 +622,39 @@ fun ManageVehicles2Screen(
                                     originalImageSize.y.toInt()
                                 )
                                 // Fallback to whatever engine was cached, or default
-                                discoveryResults = map[AppStrings.get(R.string.vehicle_ml_kit)] ?: map.values.firstOrNull()
+                                discoveryResults = map[S("ML Kit")] ?: map.values.firstOrNull()
                                 showLandmarkCheck = true
                             }
                         },
                         modifier = Modifier.weight(1f),
                         enabled = !landmarkTextBlocksJson.isNullOrEmpty() && !isLoadingDiscovery
                     ) {
-                        Text(stringResource(R.string.vehicle_show_landmarks))
+                        Text(S("Show Landmarks"))
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(stringResource(R.string.vehicle_vehicle_name)) }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = make, onValueChange = { make = it }, label = { Text(stringResource(R.string.vehicle_make)) }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text(stringResource(R.string.vehicle_model)) }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = year, onValueChange = { year = it }, label = { Text(stringResource(R.string.vehicle_year)) }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = licensePlate, onValueChange = { licensePlate = it }, label = { Text(stringResource(R.string.vehicle_license_plate)) }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(S("Vehicle Name")) }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = make, onValueChange = { make = it }, label = { Text(S("Make")) }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text(S("Model")) }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = year, onValueChange = { year = it }, label = { Text(S("Year")) }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = licensePlate, onValueChange = { licensePlate = it }, label = { Text(S("License Plate")) }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(
                 value = odometerDigitCount,
                 onValueChange = { v -> if (v.length <= 1 && v.all { it.isDigit() }) odometerDigitCount = v },
-                label = { Text(stringResource(R.string.vehicle_odometer_digits_face_width)) },
+                label = { Text(S("Odometer digits (face width)")) },
                 supportingText = {
-                    Text(AppStrings.get(R.string.vehicle_default_6_ocr_prefers_this_length_near_9xx))
+                    Text(S("Default 6. OCR prefers this length; near 9xxxxx allows one extra digit before rollover."))
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = odometerRolloverCount,
                 onValueChange = { v -> if (v.length <= 3 && v.all { it.isDigit() }) odometerRolloverCount = v },
-                label = { Text(stringResource(R.string.vehicle_odometer_rollover_count)) },
+                label = { Text(S("Odometer rollover count")) },
                 supportingText = {
-                    Text(AppStrings.get(R.string.vehicle_times_face_rolled_past_max_fills_store_tra))
+                    Text(S("Times face rolled past max. Fills store tracking = rollover×10^digits + face."))
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -711,7 +709,7 @@ fun ManageVehicles2Screen(
                 },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = name.isNotBlank() && referencePhotoUrl != null,
-            ) { Text(if (isNewVehicle) stringResource(R.string.help_create_vehicle) else stringResource(R.string.vehicle_save_changes)) }
+            ) { Text(if (isNewVehicle) S("Create Vehicle") else S("Save Changes")) }
         }
     }
 
@@ -736,7 +734,7 @@ fun ManageVehicles2Screen(
                     )
                     withContext(Dispatchers.Main) {
                         discoveryResults = updatedRes
-                        landmarkTextBlocksJson = OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf(AppStrings.get(R.string.vehicle_ml_kit) to updatedRes))
+                        landmarkTextBlocksJson = OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf(S("ML Kit") to updatedRes))
                     }
                 }
             }
@@ -1159,7 +1157,7 @@ private suspend fun runMv2PaddleDiscovery(
         val landmarks = OdometerOcrUtils.processRawLandmarks(blocks, null, decodedW, decodedH)
         val scaled = landmarks.map { scaleBlockToFull(it, fullW, fullH, decodedW, decodedH) }
         return OcrResult(
-            engineName = context.getString(R.string.vehicle_ml_kit),
+            engineName = S("ML Kit"),
             debugText = scaled.joinToString(" ") { it.text },
             textBlocks = scaled,
             imageWidth = fullW,

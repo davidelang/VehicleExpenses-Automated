@@ -23,8 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 private const val TAG = "MultiScaleDetUI"
 
@@ -56,10 +55,10 @@ fun ExperimentMultiScaleDetScreen(
     val status = when {
         running -> jobState.status
         jobState.kind == "multi_scale_det" && jobState.status == "done" ->
-            stringResource(R.string.experiment_done_1_s, jobState.resultPath)
+            S("Done → %1\$s", jobState.resultPath)
         jobState.kind == "multi_scale_det" && jobState.status == "failed" ->
-            stringResource(R.string.experiment_failed_1_s, jobState.error)
-        else -> stringResource(R.string.experiment_ready_dash_ml_kit_paddle_long_edge_det_rec)
+            S("FAILED: %1\$s", jobState.error)
+        else -> S("Ready — dash ML Kit + paddle long-edge det/rec (FGS background-safe)")
     }
 
     fun startJob(
@@ -109,22 +108,22 @@ fun ExperimentMultiScaleDetScreen(
             .verticalScroll(rememberScrollState()),
     ) {
         Text(
-            stringResource(R.string.experiment_dash_ml_kit_paddle_long_edge_det_rec),
+            S("Dash ML Kit + paddle long-edge det/rec"),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
         )
         Text(status, style = MaterialTheme.typography.bodyMedium)
         Text(
             "arch=$arch · product_det (${models.joinToString().ifEmpty { "missing" }})\n" +
-                stringResource(R.string.experiment_long_edges_1_s_single_feed, MultiScaleDetRunner.OUTER_SCALES) +
+                S("Long-edges=%1\$s · single feed · ", MultiScaleDetRunner.OUTER_SCALES) +
                 "rows=${MultiScaleDetRunner.effectiveRowCount()} · " +
-                stringResource(R.string.experiment_rot_g_vert_0_34_l_r_0_54_0_55_no_expand_no) +
-                stringResource(R.string.experiment_fgs_keeps_the_job_alive_if_you_leave_this),
+                S("rot-G-- vert 0.34 L/R 0.54/0.55 · no expand · no seed merge · ") +
+                S("FGS keeps the job alive if you leave this screen."),
             style = MaterialTheme.typography.labelSmall,
         )
         Text(
-            stringResource(R.string.experiment_dash_photos_1_s, counts["dash"] ?: photos.size) +
-                stringResource(R.string.experiment_full_run_is_every_dash_photo_pump_and_expe),
+            S("Dash photos: %1\$s. ", counts["dash"] ?: photos.size) +
+                S("Full run is every dash photo. Pump and expense are not collected."),
             style = MaterialTheme.typography.labelSmall,
         )
         if (running) {
@@ -149,7 +148,7 @@ fun ExperimentMultiScaleDetScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                stringResource(R.string.experiment_run_all_dash_photos_1_s, photos.size),
+                S("Run all dash photos (%1\$s)", photos.size),
                 fontWeight = FontWeight.Bold,
             )
         }
@@ -158,7 +157,7 @@ fun ExperimentMultiScaleDetScreen(
             enabled = !ExperimentJobRunner.isRunning() && photos.isNotEmpty() && models.isNotEmpty(),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(stringResource(R.string.experiment_smoke_first_5_dash_photos))
+            Text(S("Smoke: first 5 dash photos"))
         }
         Button(
             onClick = { startSelectedSample() },
@@ -166,20 +165,20 @@ fun ExperimentMultiScaleDetScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                stringResource(R.string.experiment_selected_dash_sample_1_s_on_device_2_s, SelectedSamplePhotos.DASH.size, selectedOnDevice),
+                S("Selected dash sample (%1\$s; on device %2\$s)", SelectedSamplePhotos.DASH.size, selectedOnDevice),
                 fontWeight = FontWeight.Bold,
             )
         }
         Text(
-            stringResource(R.string.experiment_selected_sample_1_s_dash_names, SelectedSamplePhotos.DASH.size) +
-                stringResource(R.string.experiment_deep_link_vehicleexpenses_experiment_multi) +
+            S("Selected sample = %1\$s dash names. ", SelectedSamplePhotos.DASH.size) +
+                S("Deep link: vehicleexpenses://experiment/multiscale_det ") +
                 "(auto=1 smoke, auto=selected dash sample).",
             style = MaterialTheme.typography.labelSmall,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            stringResource(R.string.experiment_one_ml_kit_pass_on_the_raw_photo_and_one_o) +
-                stringResource(R.string.experiment_each_long_edge_is_one_product_det_square_f) +
+            S("One ML Kit pass on the raw photo and one on the deskewed copy. ") +
+                S("Each long-edge is one product_det square feed plus rot-G-- recognition ") +
                 "on both grays. Reports: …/multi_scale_det_reports/.",
             style = MaterialTheme.typography.labelSmall,
         )

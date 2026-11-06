@@ -203,6 +203,7 @@ android {
             // Paddle .so files: third_party/paddle/artifact/jni/<abi>/ (fetch-deps build paddle).
             // src/main/jniLibs keeps only non-Paddle natives (opencv, libc++_shared).
             jniLibs.srcDir(rootProject.file("third_party/paddle/artifact/jni"))
+            kotlin.srcDir(rootProject.file("build/generated/i18n/kotlin"))
         }
     }
     packaging {
@@ -237,6 +238,24 @@ androidComponents {
         }
     }
 }
+
+// Catalog -> gitignored strings.xml and the S() resource map, before resources are compiled.
+val generateI18nStrings = tasks.register<Exec>("generateI18nStrings") {
+    workingDir = rootProject.projectDir
+    commandLine("python3", "scripts/i18n_generate_resources.py")
+    environment("PYTHONDONTWRITEBYTECODE", "1")
+}
+tasks.matching { task ->
+    val n = task.name
+    n != "generateI18nStrings" && (
+        n == "preBuild" ||
+            n.contains("Kotlin") ||
+            (n.contains("Resources") && (
+                n.startsWith("merge") || n.startsWith("parse") || n.startsWith("process") ||
+                    n.startsWith("package") || n.startsWith("generate")
+                ))
+        )
+}.configureEach { dependsOn(generateI18nStrings) }
 
 // Hilt's javac task does not inherit kotlin.jvmToolchain; pin all JavaCompile to JDK 17 via Foojay.
 val java17Compiler = javaToolchains.compilerFor {

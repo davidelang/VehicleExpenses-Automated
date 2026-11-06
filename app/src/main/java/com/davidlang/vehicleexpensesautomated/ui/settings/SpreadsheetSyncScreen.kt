@@ -13,8 +13,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetProvider
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.data.sync.TabularOtherKind
 import com.davidlang.vehicleexpensesautomated.data.sync.TabularOtherProviderCatalog
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 @Composable
 fun SpreadsheetSyncScreen(
@@ -43,7 +42,7 @@ fun SpreadsheetSyncScreen(
                 } else {
                     Toast.makeText(
                         context,
-                        AppStrings.get(R.string.settings_s_1_s_is_not_yet_implemented, info.label),
+                        S("%1\$s is not yet implemented", info.label),
                         Toast.LENGTH_LONG,
                     ).show()
                 }
@@ -78,7 +77,7 @@ fun SpreadsheetSyncScreen(
                 if (destinations.size >= SyncDestinationStore.MAX_DESTINATIONS_PER_TYPE) {
                     Toast.makeText(
                         context,
-                        AppStrings.get(R.string.settings_maximum_1_s_spreadsheet_destinations, SyncDestinationStore.MAX_DESTINATIONS_PER_TYPE),
+                        S("Maximum %1\$s spreadsheet destinations", SyncDestinationStore.MAX_DESTINATIONS_PER_TYPE),
                         Toast.LENGTH_SHORT,
                     ).show()
                 } else {

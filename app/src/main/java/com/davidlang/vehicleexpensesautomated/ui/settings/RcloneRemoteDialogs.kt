@@ -62,9 +62,7 @@ import com.davidlang.vehicleexpensesautomated.ui.util.SyncSetupDocs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.ui.res.stringResource
-import com.davidlang.vehicleexpensesautomated.R
-import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
+import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 @Composable
 fun RcloneRemotesListDialog(
@@ -93,7 +91,7 @@ fun RcloneRemotesListDialog(
                 }
             // kept: failure stays on this call so the screen or caller can continue
             } catch (e: Exception) {
-                errorText = e.message ?: AppStrings.get(R.string.settings_failed_to_list_remotes)
+                errorText = e.message ?: S("Failed to list remotes")
                 remotes = emptyList()
             } finally {
                 loading = false
@@ -105,7 +103,7 @@ fun RcloneRemotesListDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(AppStrings.get(R.string.settings_select_remote)) },
+        title = { Text(S("Select remote")) },
         text = {
             Column {
                 if (loading) {
@@ -113,7 +111,7 @@ fun RcloneRemotesListDialog(
                 } else if (errorText.isNotBlank()) {
                     Text(errorText, color = MaterialTheme.colorScheme.error)
                 } else if (remotes.isEmpty()) {
-                    Text(AppStrings.get(R.string.settings_no_remotes_in_this_conf_yet_create_one_with))
+                    Text(S("No remotes in this conf yet. Create one with +."))
                 } else {
                     LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
                         items(remotes, key = { it }) { remote ->
@@ -129,7 +127,7 @@ fun RcloneRemotesListDialog(
                                     onClick = { onEdit(remote) },
                                     enabled = deleting == null,
                                 ) {
-                                    Icon(Icons.Default.Edit, contentDescription = AppStrings.get(R.string.settings_edit_remote))
+                                    Icon(Icons.Default.Edit, contentDescription = S("Edit remote"))
                                 }
                                 IconButton(
                                     onClick = {
@@ -139,14 +137,14 @@ fun RcloneRemotesListDialog(
                                                 withContext(Dispatchers.IO) {
                                                     viewModel.deleteRcloneRemote(destId, config, remote)
                                                 }
-                                                Toast.makeText(context, AppStrings.get(R.string.settings_deleted_1_s, remote), Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, S("Deleted %1\$s", remote), Toast.LENGTH_SHORT).show()
                                                 onDeleted()
                                                 reload()
                                             // kept: failure stays on this call so the screen or caller can continue
                                             } catch (e: Exception) {
                                                 Toast.makeText(
                                                     context,
-                                                    e.message ?: AppStrings.get(R.string.settings_delete_failed),
+                                                    e.message ?: S("Delete failed"),
                                                     Toast.LENGTH_LONG,
                                                 ).show()
                                             } finally {
@@ -156,7 +154,7 @@ fun RcloneRemotesListDialog(
                                     },
                                     enabled = deleting == null,
                                 ) {
-                                    Icon(Icons.Default.Delete, contentDescription = AppStrings.get(R.string.settings_delete_remote))
+                                    Icon(Icons.Default.Delete, contentDescription = S("Delete remote"))
                                 }
                             }
                         }
@@ -165,7 +163,7 @@ fun RcloneRemotesListDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text(AppStrings.get(R.string.settings_close)) }
+            TextButton(onClick = onDismiss) { Text(S("Close")) }
         },
     )
 }
@@ -215,7 +213,7 @@ fun RcloneRemoteWizardDialog(
             }
         // kept: failure stays on this call so the screen or caller can continue
         } catch (e: Exception) {
-            errorText = e.message ?: AppStrings.get(R.string.settings_failed_to_load_providers)
+            errorText = e.message ?: S("Failed to load providers")
         } finally {
             loading = false
         }
@@ -237,7 +235,7 @@ fun RcloneRemoteWizardDialog(
             intent.launchUrl(context, Uri.parse(url))
         // kept: failure stays on this call so the screen or caller can continue
         } catch (_: Exception) {
-            Toast.makeText(context, AppStrings.get(R.string.settings_could_not_open_browser_for_sign_in), Toast.LENGTH_LONG).show()
+            Toast.makeText(context, S("Could not open browser for sign-in"), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -250,9 +248,9 @@ fun RcloneRemoteWizardDialog(
         continueState: String? = null,
         continueResult: String? = null,
     ) {
-        val provider = selectedProvider ?: throw RcloneException(AppStrings.get(R.string.settings_pick_a_backend_type))
+        val provider = selectedProvider ?: throw RcloneException(S("Pick a backend type"))
         val name = remoteName.trim()
-        if (name.isBlank()) throw RcloneException(AppStrings.get(R.string.settings_remote_name_is_required))
+        if (name.isBlank()) throw RcloneException(S("Remote name is required"))
         val params = buildParameters(provider, fieldValues, showAdvanced)
         val result = if (mode == RcloneWizardMode.EDIT) {
             viewModel.updateRcloneRemote(
@@ -278,7 +276,7 @@ fun RcloneRemoteWizardDialog(
             onSaved(name)
             return
         }
-        val question = result.question ?: throw RcloneException(AppStrings.get(R.string.settings_incomplete_config_step))
+        val question = result.question ?: throw RcloneException(S("Incomplete config step"))
         oauthState = result.state
         oauthQuestion = question
         oauthAnswer = question.defaultValue
@@ -295,12 +293,12 @@ fun RcloneRemoteWizardDialog(
             Text(
                 when (mode) {
                     RcloneWizardMode.CREATE -> when (step) {
-                        0 -> stringResource(R.string.settings_other_storage_pick_kind)
-                        1 -> selectedKind?.label?.let { AppStrings.get(R.string.settings_create_remote_1_s, it) } ?: stringResource(R.string.settings_create_remote_pick_backend)
-                        2 -> stringResource(R.string.settings_create_remote_1_s, remoteName)
-                        else -> stringResource(R.string.settings_create_remote_sign_in)
+                        0 -> S("Other storage — pick kind")
+                        1 -> selectedKind?.label?.let { S("Create remote — %1\$s", it) } ?: S("Create remote — pick backend")
+                        2 -> S("Create remote — %1\$s", remoteName)
+                        else -> S("Create remote — sign in")
                     }
-                    RcloneWizardMode.EDIT -> stringResource(R.string.settings_edit_remote_1_s, remoteName)
+                    RcloneWizardMode.EDIT -> S("Edit remote — %1\$s", remoteName)
                 },
             )
         },
@@ -328,13 +326,13 @@ fun RcloneRemoteWizardDialog(
                         Spacer(modifier = Modifier.height(8.dp))
                         if (q.requiresOAuthStyle()) {
                             Text(
-                                AppStrings.get(R.string.settings_requires_browser_sign_in_complete_authorization_),
+                                S("Requires browser sign-in. Complete authorization in the browser, then continue."),
                                 style = MaterialTheme.typography.labelSmall,
                             )
                             pendingOAuthUrl?.let { url ->
                                 Spacer(modifier = Modifier.height(4.dp))
                                 TextButton(onClick = { openOAuthUrl(url) }) {
-                                    Text(AppStrings.get(R.string.settings_open_sign_in_page))
+                                    Text(S("Open sign-in page"))
                                 }
                             }
                         }
@@ -344,7 +342,7 @@ fun RcloneRemoteWizardDialog(
                             OutlinedTextField(
                                 value = oauthAnswer,
                                 onValueChange = { oauthAnswer = it },
-                                label = { Text(q.name.ifBlank { AppStrings.get(R.string.settings_answer) }) },
+                                label = { Text(q.name.ifBlank { S("Answer") }) },
                                 modifier = Modifier.fillMaxWidth(),
                                 visualTransformation = if (q.isPassword) {
                                     PasswordVisualTransformation()
@@ -356,7 +354,7 @@ fun RcloneRemoteWizardDialog(
                     }
                     step == 0 -> {
                         Text(
-                            AppStrings.get(R.string.settings_choose_a_category_then_pick_a_backend_import_con),
+                            S("Choose a category, then pick a backend. Import conf on the destination screen for advanced setups."),
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Spacer(modifier = Modifier.height(8.dp))
@@ -382,19 +380,19 @@ fun RcloneRemoteWizardDialog(
                         OutlinedTextField(
                             value = providerSearch,
                             onValueChange = { providerSearch = it },
-                            label = { Text(AppStrings.get(R.string.settings_search_backends)) },
+                            label = { Text(S("Search backends")) },
                             modifier = Modifier.fillMaxWidth(),
                         )
                         if (selectedKind?.id == "selfhost") {
                             Spacer(modifier = Modifier.height(4.dp))
                             TextButton(onClick = { SyncSetupDocs.open(context, SyncSetupDocs.photosReadme()) }) {
-                                Text(AppStrings.get(R.string.settings_self_hosted_setup_guide))
+                                Text(S("Self-hosted setup guide"))
                             }
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         if (kindProviders.isEmpty()) {
                             Text(
-                                AppStrings.get(R.string.settings_no_backends_in_this_category_try_another_kind_or),
+                                S("No backends in this category. Try another kind or import rclone.conf."),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         } else {
@@ -415,7 +413,7 @@ fun RcloneRemoteWizardDialog(
                                         Text(provider.description, style = MaterialTheme.typography.bodySmall)
                                         if (provider.requiresOAuth) {
                                             Text(
-                                                AppStrings.get(R.string.settings_requires_browser_sign_in),
+                                                S("Requires browser sign-in"),
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.primary,
                                             )
@@ -430,7 +428,7 @@ fun RcloneRemoteWizardDialog(
                             OutlinedTextField(
                                 value = remoteName,
                                 onValueChange = { remoteName = it },
-                                label = { Text(AppStrings.get(R.string.settings_remote_name)) },
+                                label = { Text(S("Remote name")) },
                                 modifier = Modifier.fillMaxWidth(),
                                 enabled = step == 2,
                             )
@@ -439,8 +437,8 @@ fun RcloneRemoteWizardDialog(
                         selectedProvider?.let { provider ->
                             if (provider.requiresOAuth && provider.options.isEmpty()) {
                                 Text(
-                                    AppStrings.get(R.string.settings_this_backend_needs_browser_oauth_you_can_t) +
-                                        AppStrings.get(R.string.settings_or_use_import_existing_conf_for_a_desktop_built_),
+                                    S("This backend needs browser OAuth. You can try guided sign-in below, ") +
+                                        S("or use Import existing conf… for a desktop-built remote."),
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                             }
@@ -450,11 +448,11 @@ fun RcloneRemoteWizardDialog(
                                         SyncSetupDocs.open(context, SyncSetupDocs.photoUrlForRcloneType(provider.name))
                                     },
                                 ) {
-                                    Text(AppStrings.get(R.string.settings_setup_help_provider_fmt, provider.name))
+                                    Text(S("Setup help — %1\$s", provider.name))
                                 }
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(AppStrings.get(R.string.settings_show_advanced_options), modifier = Modifier.weight(1f))
+                                Text(S("Show advanced options"), modifier = Modifier.weight(1f))
                                 Switch(checked = showAdvanced, onCheckedChange = { showAdvanced = it })
                             }
                             val options = RcloneProviderCatalog.formOptions(provider, showAdvanced)
@@ -468,7 +466,7 @@ fun RcloneRemoteWizardDialog(
                             }
                             if (options.isEmpty() && !provider.requiresOAuth) {
                                 Text(
-                                    AppStrings.get(R.string.settings_no_extra_fields_for_1_s_save_to_add_the_re, provider.name),
+                                    S("No extra fields for %1\$s. Save to add the remote.", provider.name),
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                             }
@@ -491,17 +489,17 @@ fun RcloneRemoteWizardDialog(
                                     }
                                 // kept: failure stays on this call so the screen or caller can continue
                                 } catch (e: Exception) {
-                                    errorText = e.message ?: AppStrings.get(R.string.settings_failed)
+                                    errorText = e.message ?: S("Failed")
                                 } finally {
                                     loading = false
                                 }
                             }
                         },
                         enabled = !loading,
-                    ) { Text(AppStrings.get(R.string.settings_continue)) }
+                    ) { Text(S("Continue")) }
                 }
                 step < 2 -> {
-                    TextButton(onClick = onDismiss) { Text(AppStrings.get(R.string.settings_cancel)) }
+                    TextButton(onClick = onDismiss) { Text(S("Cancel")) }
                 }
                 else -> {
                     TextButton(
@@ -515,14 +513,14 @@ fun RcloneRemoteWizardDialog(
                                     }
                                 // kept: failure stays on this call so the screen or caller can continue
                                 } catch (e: Exception) {
-                                    errorText = e.message ?: AppStrings.get(R.string.settings_save_failed)
+                                    errorText = e.message ?: S("Save failed")
                                 } finally {
                                     loading = false
                                 }
                             }
                         },
                         enabled = !loading && remoteName.isNotBlank(),
-                    ) { Text(if (mode == RcloneWizardMode.EDIT) AppStrings.get(R.string.fuel_save) else AppStrings.get(R.string.settings_create)) }
+                    ) { Text(if (mode == RcloneWizardMode.EDIT) S("Save") else S("Create")) }
                 }
             }
         },
@@ -540,7 +538,7 @@ fun RcloneRemoteWizardDialog(
                         }
                     },
                     enabled = !loading,
-                ) { Text(stringResource(R.string.settings_back)) }
+                ) { Text(S("Back")) }
             }
         },
     )
@@ -559,7 +557,7 @@ private fun OAuthAnswerDropdown(
             value = selected,
             onValueChange = {},
             readOnly = true,
-            label = { Text(question.name.ifBlank { AppStrings.get(R.string.settings_answer) }) },
+            label = { Text(question.name.ifBlank { S("Answer") }) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth(),
         )
