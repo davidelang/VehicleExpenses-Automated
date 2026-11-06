@@ -582,7 +582,7 @@ void recognizeOne(
     (void)scratchW;
     (void)scratchH;
     const BoxUv box = boxFromQuad(quad);
-    if (!box.ok) throw std::runtime_error("recognizeOne: bad quad");
+    if (!box.ok) return;
     const float bw = std::max(1.f, box.u1 - box.u0);
     const float bh = std::max(1.f, box.v1 - box.v0);
     if (bw < 2.f || bh < 2.f) throw std::runtime_error("recognizeOne: crop too small");

@@ -12715,3 +12715,7 @@ feature-group: label=''
 ## 2026-11-06 - changelog lives in work-history
 
 - The changelog record is work-history/CHANGELOG.md. The root path only points there.
+
+## 2026-11-06 - skip a bad landmark quad
+
+- A Fill quad that boxFromQuad rejects returns an empty row. The other recognition throws still abort the batch.
