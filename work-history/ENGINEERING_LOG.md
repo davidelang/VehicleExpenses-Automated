@@ -12711,3 +12711,7 @@ feature-group: label=''
 ## 2026-11-06 - reset to ee57b0f47 done
 
 - Reset to merge-base with master; log kept; infra kept: 84 path(s).
+
+## 2026-11-06 - changelog lives in work-history
+
+- The changelog record is work-history/CHANGELOG.md. The root path only points there.
