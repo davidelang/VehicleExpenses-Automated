@@ -66,6 +66,7 @@ fun CameraPreview(
     val lifecycleOwner = LocalLifecycleOwner.current
     val onListenerSurfaceRotationState = rememberUpdatedState(onListenerSurfaceRotation)
     val onBoundState = rememberUpdatedState(onBound)
+    val onImageCapturedState = rememberUpdatedState(onImageCaptured)
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
     val cameraExecutor: ExecutorService = remember { Executors.newSingleThreadExecutor() }
     var imageAnalysisState by remember { mutableStateOf<ImageAnalysis?>(null) }
@@ -184,7 +185,14 @@ fun CameraPreview(
                             .build()
                             .also { ia ->
                                 ia.setAnalyzer(cameraExecutor) { imageProxy ->
-                                    onImageCaptured(imageProxy)
+                                    // The analyzer outlives recompositions of its caller (including vehicle loading).
+                                    val onFrame = onImageCapturedState.value
+                                    if (onFrame != null) {
+                                        onFrame(imageProxy)
+                                    } else {
+                                        // With no current consumer, the analyzer still owns this proxy.
+                                        imageProxy.close()
+                                    }
                                 }
                             }
                     } else {

@@ -2,6 +2,7 @@ package com.davidlang.vehicleexpensesautomated.ui.components
 
 import android.graphics.Bitmap
 import android.net.Uri
+import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.davidlang.vehicleexpensesautomated.data.storage.PickedImageReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 private sealed class Decoded {
@@ -36,8 +38,10 @@ fun DecodedPhotoImage(
     val decoded = produceState<Decoded>(Decoded.Loading, uri) {
         value = withContext(Dispatchers.IO) {
             try {
-                Decoded.Ready(PickedImageReader.decodeFullSize(context, Uri.parse(uri)))
+                val photoUri = if (uri.startsWith("/")) Uri.fromFile(File(uri)) else Uri.parse(uri)
+                Decoded.Ready(PickedImageReader.decodeFullSize(context, photoUri))
             } catch (e: Exception) {
+                Log.e("DecodedPhotoImage", uri, e)
                 Decoded.Failed(e.message ?: S("Cannot display"))
             }
         }

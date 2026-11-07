@@ -375,6 +375,7 @@ fun ManageVehicles2Screen(
                                 if (gen != discoveryGen[0]) return@withContext
                                 pickedPhotoUrl = path
                                 referencePhotoUrl = path
+                                photoCannotDisplay = false
                                 landmarkTextBlocksJson = landmarkJson
                                 discoveryResults = rawResult
                                 seedBlocks = rawResult.textBlocks
@@ -519,7 +520,7 @@ fun ManageVehicles2Screen(
             )
             ExposedDropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
                 vehicles.forEach { vehicle -> DropdownMenuItem(text = { Text(vehicle.name) }, onClick = { selectedVehicleId = vehicle.id; isNewVehicle = false; editMode = CropEditMode.IDLE; odoSeedSelectActive = false; dropdownExpanded = false }) }
-                DropdownMenuItem(text = { Text(S("Add New Vehicle")) }, onClick = { selectedVehicleId = null; editingVehicle = null; isNewVehicle = true; name = ""; make = ""; model = ""; year = ""; licensePlate = ""; odometerReading = ""; pickedPhotoUrl = null; referencePhotoUrl = null; landmarkTextBlocksJson = null; odometerCropRect = null; editMode = CropEditMode.IDLE; odoSeedSelectActive = false; dropdownExpanded = false })
+                DropdownMenuItem(text = { Text(S("Add New Vehicle")) }, onClick = { selectedVehicleId = null; editingVehicle = null; isNewVehicle = true; name = ""; make = ""; model = ""; year = ""; licensePlate = ""; odometerReading = ""; pickedPhotoUrl = null; referencePhotoUrl = null; photoCannotDisplay = false; landmarkTextBlocksJson = null; odometerCropRect = null; editMode = CropEditMode.IDLE; odoSeedSelectActive = false; dropdownExpanded = false })
             }
         }
 

@@ -12,11 +12,17 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -134,6 +140,7 @@ fun rememberImagePicker(
 ): ImagePickerHandle {
     val context = LocalContext.current
     var showCamera by remember { mutableStateOf(false) }
+    var zoomControl by remember { mutableStateOf<CameraZoomControl?>(null) }
     val ownedCapture = remember(captureProfile) {
         ImageCapture.Builder()
             .setResolutionSelector(CameraResolutionPicker.resolutionSelector(captureProfile))
@@ -231,12 +238,51 @@ fun rememberImagePicker(
                     modifier = Modifier.fillMaxSize(),
                     imageCapture = capture,
                     captureProfile = captureProfile,
+                    onZoomControlChanged = { zoomControl = it },
                 )
+                zoomControl?.let { zoom ->
+                    if (zoom.availableRatios.size > 1) {
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(end = 8.dp, bottom = 144.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            zoom.availableRatios.forEach { ratio ->
+                                val selected = kotlin.math.abs(zoom.currentRatio - ratio) < 0.05f
+                                FilledTonalButton(
+                                    onClick = { zoom.setZoomRatio(ratio) },
+                                    modifier = Modifier.height(32.dp),
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = if (selected) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceVariant
+                                        },
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                ) {
+                                    Text(
+                                        text = if (ratio == ratio.toLong().toFloat()) {
+                                            S("%1\$sx", ratio.toLong())
+                                        } else {
+                                            S("%1\$sx", ratio)
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
                 Column(
                     modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    TextButton(onClick = { shoot() }) { Text(S("Shutter")) }
+                    RoundCaptureButton(
+                        viewState = CaptureButtonState.Live,
+                        onClick = { shoot() },
+                    )
                     TextButton(onClick = { showCamera = false }) { Text(S("Close")) }
                 }
             }
