@@ -9,10 +9,11 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 /**
  * Contract samples and the fill-delivery rules.
- * Hashes are SHA-256 of the canonical lines in torque-ve-contract-20261108.md.
+ * Hashes are SHA-256 of the canonical lines in docs/specs/torque-ve-contract-20261108.md.
  */
 class TorqueFillDeliveryTest {
     @Test
@@ -22,23 +23,19 @@ class TorqueFillDeliveryTest {
 
     @Test
     fun contractSampleHashes() {
-        assertEquals(
-            "a78bf232b713d22b74debc56250077405e3b07baffc2a5d507577ffb449228fe",
-            TorqueFillJson.sha256(SAMPLE_A),
-        )
-        assertEquals(479, SAMPLE_A.toByteArray(Charsets.UTF_8).size)
-        assertEquals(
-            "12195446d9e4992e52fa623b59ec45d9f1fc70a6fdf42667c6a51b746b2d4198",
-            TorqueFillJson.sha256(SAMPLE_B),
-        )
-        assertEquals(482, SAMPLE_B.toByteArray(Charsets.UTF_8).size)
-        assertEquals(
-            "edc4d5c2efce7e51364daf5fb127004f93c5a3fe7a7a1c70282f37272976ac2a",
-            TorqueFillJson.sha256(SAMPLE_C),
-        )
-        assertEquals(989, SAMPLE_C.toByteArray(Charsets.UTF_8).size)
-        assertEquals(SAMPLE_A, TorqueFillJson.canonical(TorqueFillJson.parse(SAMPLE_A)))
-        assertEquals(SAMPLE_C, TorqueFillJson.canonical(TorqueFillJson.parse(SAMPLE_C)))
+        val samples = contractSamples()
+        assertEquals(3, samples.size)
+        for (sample in samples) {
+            assertEquals(sample.sha, TorqueFillJson.sha256(sample.json))
+            assertEquals(sample.length, sample.json.toByteArray(Charsets.UTF_8).size)
+            assertEquals(sample.json, TorqueFillJson.canonical(TorqueFillJson.parse(sample.json)))
+        }
+        val pointer = "The only contract text is `docs/specs/torque-ve-contract-20261108.md`."
+        assertTrue(repoFile("docs/specs/torque-integration-plan-20261108.md").readText().contains(pointer))
+        assertTrue(repoFile("dev-ai-interaction/research/torque-integration-plan-20261108.md").readText().contains(pointer))
+        val sandbox = repoFile("dev-ai-interaction/research/torque-ve-contract-20261108.md").readText()
+        assertTrue(sandbox.contains(pointer))
+        assertFalse(sandbox.contains("SHA-256:"))
     }
 
     @Test
@@ -57,7 +54,7 @@ class TorqueFillDeliveryTest {
             syncId = "vehicle-1",
             odometerUnit = "mi",
         )
-        assertEquals(SAMPLE_A, TorqueFillPayload.upsert(entry, vehicle, null).canonical)
+        assertEquals(contractSamples()[0].json, TorqueFillPayload.upsert(entry, vehicle, null).canonical)
     }
 
     @Test
@@ -75,7 +72,7 @@ class TorqueFillDeliveryTest {
             name = "Example vehicle",
             syncId = "vehicle-1",
         )
-        assertEquals(SAMPLE_B, TorqueFillPayload.void(entry, vehicle, "deleted", null).canonical)
+        assertEquals(contractSamples()[1].json, TorqueFillPayload.void(entry, vehicle, "deleted", null).canonical)
     }
 
     @Test
@@ -204,12 +201,34 @@ class TorqueFillDeliveryTest {
         torqueOdometerRawKm = raw,
     )
 
+    private data class ContractSample(val sha: String, val length: Int, val json: String)
+
+    private fun contractSamples(): List<ContractSample> {
+        val text = repoFile("docs/specs/torque-ve-contract-20261108.md").readText()
+        val found = SAMPLE.findAll(text).map { match ->
+            ContractSample(
+                sha = match.groupValues[1],
+                length = match.groupValues[2].toInt(),
+                json = match.groupValues[3],
+            )
+        }.toList()
+        assertEquals(3, found.size)
+        return found
+    }
+
+    private fun repoFile(relative: String): File {
+        var dir = File(System.getProperty("user.dir") ?: ".")
+        repeat(6) {
+            val candidate = File(dir, relative)
+            if (candidate.isFile) return candidate
+            dir = dir.parentFile ?: return candidate
+        }
+        return File(relative)
+    }
+
     private companion object {
-        const val SAMPLE_A =
-            """{"cost":null,"economyIgnored":false,"fillExtent":"unknown","occurredAtEpochMs":0,"odometer":null,"operation":"upsert","provenance":{"fields":{},"occurrenceTimeQuality":"unknown","originDeviceId":null,"producerBuildAtResolution":null,"sourceKind":"legacy_unknown","sourceUpdatedAtEpochMs":null},"quantity":null,"rawTorqueOdometer":null,"vehicle":{"make":null,"model":null,"name":"Example vehicle","odometerUnit":"mi","syncId":"vehicle-1","vin":null,"year":null},"voidReason":null}"""
-        const val SAMPLE_B =
-            """{"cost":null,"economyIgnored":false,"fillExtent":"unknown","occurredAtEpochMs":0,"odometer":null,"operation":"void","provenance":{"fields":{},"occurrenceTimeQuality":"unknown","originDeviceId":null,"producerBuildAtResolution":null,"sourceKind":"legacy_unknown","sourceUpdatedAtEpochMs":null},"quantity":null,"rawTorqueOdometer":null,"vehicle":{"make":null,"model":null,"name":"Example vehicle","odometerUnit":"mi","syncId":"vehicle-1","vin":null,"year":null},"voidReason":"deleted"}"""
-        const val SAMPLE_C =
-            """{"cost":{"currency":"USD","value":"42.5"},"economyIgnored":false,"fillExtent":"full","occurredAtEpochMs":1794096000000,"odometer":{"observedAtEpochMs":1794096000000,"source":"torque","unit":"km","value":"68825.2"},"operation":"upsert","provenance":{"fields":{"/cost":{"confirmed":null,"observedAtEpochMs":null,"source":"email","sourceRef":null},"/odometer":{"confirmed":null,"observedAtEpochMs":1794096000000,"source":"torque","sourceRef":null},"/quantity":{"confirmed":null,"observedAtEpochMs":null,"source":"email","sourceRef":"café-1"}},"occurrenceTimeQuality":"source_reported","originDeviceId":null,"producerBuildAtResolution":null,"sourceKind":"mixed","sourceUpdatedAtEpochMs":null},"quantity":{"unit":"L","value":"38.800470786"},"rawTorqueOdometer":{"kilometers":"68825.2","observedAtEpochMs":1794096000000,"resolutionKm":"0.1"},"vehicle":{"make":null,"model":null,"name":"Example vehicle","odometerUnit":"mi","syncId":"vehicle-1","vin":"opaque-vin","year":null},"voidReason":null}"""
+        val SAMPLE = Regex(
+            """SHA-256: `([0-9a-f]{64})`; byte length: (\d+)\.\r?\n```json\r?\n(.*)\r?\n```""",
+        )
     }
 }

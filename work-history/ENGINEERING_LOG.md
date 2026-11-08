@@ -12743,3 +12743,7 @@ feature-group: label=''
 ## 2026-11-08 - plugin delivery of the merged fill
 
 - Plugin delivery of the merged fill: an opted-in fill is sent to the local plugin after the existing merge, with email cost and volume when a station email pairs.
+
+## 2026-11-08 - fill contract text the unit test hashes
+
+- The only VE→plugin contract text is docs/specs/torque-ve-contract-20261108.md. The integration note points at it. The unit test checks the sample hashes in that file.
