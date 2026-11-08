@@ -88,8 +88,9 @@ object TorqueLiveDecode {
             values.add(parsed)
         }
         if (values.isEmpty()) return null
-        if (values.distinct().size != 1) return null
-        val value = values.single()
+        val distinct = values.distinct()
+        if (distinct.size != 1) return null
+        val value = distinct.single()
         if (value <= 0L) return null
         return value
     }
