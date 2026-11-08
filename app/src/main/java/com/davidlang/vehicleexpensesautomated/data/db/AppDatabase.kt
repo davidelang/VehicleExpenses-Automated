@@ -13,7 +13,7 @@ import com.davidlang.vehicleexpensesautomated.data.model.KnownStation
 import com.davidlang.vehicleexpensesautomated.data.model.MergeAck
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 
-const val APP_DB_SCHEMA_VERSION = 23
+const val APP_DB_SCHEMA_VERSION = 24
 
 @Database(
     entities = [Vehicle::class, FuelEntry::class, ExpenseEntry::class, MergeAck::class, KnownStation::class],

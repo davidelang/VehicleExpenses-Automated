@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.data.model
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -57,4 +58,10 @@ data class Vehicle(
      * Changing it does not rewrite fuel odometer integers.
      */
     val odometerUnit: String = "mi",
+    /**
+     * When true, a new fill may take a live Torque odometer if [vin] equals the ECU blob.
+     * Unassigned is never stored true.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val integrateWithTorque: Boolean = false,
 )

@@ -48,6 +48,8 @@ class VehicleViewModel @Inject constructor(
         odometerRolloverCount: Int = 0,
         odometerUnit: String = "mi",
         cloudManifest: String? = null,
+        vin: String? = null,
+        integrateWithTorque: Boolean = false,
     ) {
         val newVehicle = Vehicle(
             name = name,
@@ -66,6 +68,8 @@ class VehicleViewModel @Inject constructor(
             odometerDigitCount = odometerDigitCount.coerceIn(3, 9),
             odometerRolloverCount = odometerRolloverCount.coerceAtLeast(0),
             odometerUnit = odometerUnit,
+            vin = vin,
+            integrateWithTorque = integrateWithTorque,
         )
 
         try {

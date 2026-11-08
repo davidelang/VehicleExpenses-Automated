@@ -35,6 +35,7 @@ import com.davidlang.vehicleexpensesautomated.ui.components.DecodedPhotoImage
 import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.forManageList
+import com.davidlang.vehicleexpensesautomated.data.repository.isSystemUnassignedVehicle
 import com.davidlang.vehicleexpensesautomated.data.storage.PickedImageReader
 import com.davidlang.vehicleexpensesautomated.data.sync.CloudManifest
 import com.davidlang.vehicleexpensesautomated.ui.components.LandmarkDebugDialog
@@ -104,6 +105,8 @@ fun ManageVehicles2Screen(
     var odometerRolloverCount by remember { mutableStateOf("0") }
     /** Instrument unit of stored odometer integers. Default miles. Does not scale fills. */
     var odometerUnit by remember { mutableStateOf(UnitFormat.MI) }
+    var vin by remember { mutableStateOf("") }
+    var integrateWithTorque by remember { mutableStateOf(false) }
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
     var pickedOriginalUri by remember { mutableStateOf<String?>(null) }
@@ -159,6 +162,10 @@ fun ManageVehicles2Screen(
             append(v.cleanedReferenceDashPhotoUrl)
             append('|')
             append(v.cloudManifest?.length ?: 0)
+            append('|')
+            append(v.vin ?: "")
+            append('|')
+            append(v.integrateWithTorque)
         }
     } ?: ""
 
@@ -173,6 +180,8 @@ fun ManageVehicles2Screen(
         odometerDigitCount = v.odometerDigitCount.coerceIn(3, 9).toString()
         odometerRolloverCount = v.odometerRolloverCount.coerceAtLeast(0).toString()
         odometerUnit = UnitFormat.normalizeOdometerUnit(v.odometerUnit)
+        vin = v.vin ?: ""
+        integrateWithTorque = v.integrateWithTorque && !isSystemUnassignedVehicle(v)
         pickedPhotoUrl = v.referenceDashPhotoUrl
         referencePhotoUrl = v.referenceDashPhotoUrl
         landmarkTextBlocksJson = v.landmarkTextBlocksJson
@@ -524,7 +533,7 @@ fun ManageVehicles2Screen(
             )
             ExposedDropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
                 vehicles.forEach { vehicle -> DropdownMenuItem(text = { Text(vehicle.name) }, onClick = { selectedVehicleId = vehicle.id; isNewVehicle = false; editMode = CropEditMode.IDLE; odoSeedSelectActive = false; dropdownExpanded = false }) }
-                DropdownMenuItem(text = { Text(S("Add New Vehicle")) }, onClick = { selectedVehicleId = null; editingVehicle = null; isNewVehicle = true; name = ""; make = ""; model = ""; year = ""; licensePlate = ""; odometerReading = ""; odometerUnit = UnitFormat.MI; pickedPhotoUrl = null; referencePhotoUrl = null; photoCannotDisplay = false; landmarkTextBlocksJson = null; odometerCropRect = null; editMode = CropEditMode.IDLE; odoSeedSelectActive = false; dropdownExpanded = false })
+                DropdownMenuItem(text = { Text(S("Add New Vehicle")) }, onClick = { selectedVehicleId = null; editingVehicle = null; isNewVehicle = true; name = ""; make = ""; model = ""; year = ""; licensePlate = ""; vin = ""; integrateWithTorque = false; odometerReading = ""; odometerUnit = UnitFormat.MI; pickedPhotoUrl = null; referencePhotoUrl = null; photoCannotDisplay = false; landmarkTextBlocksJson = null; odometerCropRect = null; editMode = CropEditMode.IDLE; odoSeedSelectActive = false; dropdownExpanded = false })
             }
         }
 
@@ -646,6 +655,23 @@ fun ManageVehicles2Screen(
             OutlinedTextField(value = year, onValueChange = { year = it }, label = { Text(S("Year")) }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = licensePlate, onValueChange = { licensePlate = it }, label = { Text(S("License Plate")) }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(
+                value = vin,
+                onValueChange = { vin = it },
+                label = { Text(S("VIN")) },
+                supportingText = { Text(S("Exact Torque VIN blob. Blank matches nothing.")) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            val showTorqueOptIn = isNewVehicle || (editingVehicle != null && !isSystemUnassignedVehicle(editingVehicle!!))
+            if (showTorqueOptIn) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = integrateWithTorque,
+                        onCheckedChange = { integrateWithTorque = it },
+                    )
+                    Text(S("Integrate with Torque"))
+                }
+            }
+            OutlinedTextField(
                 value = odometerDigitCount,
                 onValueChange = { v -> if (v.length <= 1 && v.all { it.isDigit() }) odometerDigitCount = v },
                 label = { Text(S("Odometer digits (face width)")) },
@@ -690,6 +716,8 @@ fun ManageVehicles2Screen(
                         val dig = odometerDigitCount.toIntOrNull()?.coerceIn(3, 9) ?: 6
                         val rolls = odometerRolloverCount.toIntOrNull()?.coerceAtLeast(0) ?: 0
                         val jsonToSave = landmarkJsonForSave()
+                        val vinToSave = vin.ifBlank { null }
+                        val torqueOptIn = showTorqueOptIn && integrateWithTorque
                         if (isNewVehicle) {
                             vehicleViewModel.createNewVehicleWithReference(
                                 name,
@@ -706,6 +734,8 @@ fun ManageVehicles2Screen(
                                 odometerRolloverCount = rolls,
                                 odometerUnit = UnitFormat.normalizeOdometerUnit(odometerUnit),
                                 cloudManifest = manifestWithOriginal(null),
+                                vin = vinToSave,
+                                integrateWithTorque = torqueOptIn,
                             )
                         } else {
                             editingVehicle?.let {
@@ -715,6 +745,8 @@ fun ManageVehicles2Screen(
                                     model = model,
                                     year = year.toIntOrNull() ?: 0,
                                     licensePlate = licensePlate,
+                                    vin = vinToSave,
+                                    integrateWithTorque = torqueOptIn && !isSystemUnassignedVehicle(it),
                                     referenceDashPhotoUrl = referencePhotoUrl,
                                     cleanedReferenceDashPhotoUrl = referencePhotoUrl,
                                     odometerCropLeft = odometerCropRect?.left,

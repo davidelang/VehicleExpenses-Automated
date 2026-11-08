@@ -54,6 +54,9 @@ class VehicleRepository @Inject constructor(
             byId.name == UNASSIGNED_VEHICLE_NAME &&
             byId.syncId == UNASSIGNED_VEHICLE_SYNC_ID
         ) {
+            if (byId.integrateWithTorque) {
+                vehicleDao.updateVehicle(byId.copy(integrateWithTorque = false))
+            }
             return
         }
         // Explicit SQL keeps id=0 (autoGenerate would reassign)
@@ -73,7 +76,7 @@ class VehicleRepository @Inject constructor(
         v.id == UNASSIGNED_VEHICLE_ID || v.syncId == UNASSIGNED_VEHICLE_SYNC_ID
 
     suspend fun insertVehicle(vehicle: Vehicle): Long {
-        vehicleDao.insertVehicle(stampForWrite(withCatalogsOnInsert(vehicle)))
+        vehicleDao.insertVehicle(stampForWrite(withCatalogsOnInsert(refuseUnassignedOptIn(vehicle))))
         return 0L // Room auto-generates ID; legacy callers expect Long
     }
 
@@ -126,7 +129,7 @@ class VehicleRepository @Inject constructor(
                 FuelTabRenameHintStore(context).recordHint(existing.syncId, oldTab)
             }
         }
-        vehicleDao.updateVehicle(stampForWrite(vehicle))
+        vehicleDao.updateVehicle(stampForWrite(refuseUnassignedOptIn(vehicle)))
     }
 
     /**
@@ -157,7 +160,7 @@ class VehicleRepository @Inject constructor(
 
     /** Sync path: preserve remote/local winner timestamps; do not stamp updatedAt to now. */
     suspend fun upsertFromSync(vehicle: Vehicle) {
-        val withSyncId = ensureSyncId(vehicle)
+        val withSyncId = ensureSyncId(refuseUnassignedOptIn(vehicle))
         val existing = vehicleDao.findBySyncId(withSyncId.syncId)
         val toWrite = if (existing != null) {
             preserveLocalPhotoPaths(withSyncId, existing).copy(id = existing.id)
@@ -204,6 +207,17 @@ class VehicleRepository @Inject constructor(
     private fun ensureSyncId(vehicle: Vehicle): Vehicle =
         if (vehicle.syncId.isNotBlank()) vehicle
         else vehicle.copy(syncId = SyncIdGenerator.randomSyncId())
+
+    /**
+     * A new local row uses id 0 until Room assigns one, so id alone is not Unassigned.
+     * The system bucket is the fixed sync id, or an update of id 0 named Unassigned.
+     */
+    private fun refuseUnassignedOptIn(vehicle: Vehicle): Vehicle {
+        if (!vehicle.integrateWithTorque) return vehicle
+        val system = vehicle.syncId == UNASSIGNED_VEHICLE_SYNC_ID ||
+            (vehicle.id == UNASSIGNED_VEHICLE_ID && vehicle.name == UNASSIGNED_VEHICLE_NAME)
+        return if (system) vehicle.copy(integrateWithTorque = false) else vehicle
+    }
 }
 
 /** True for system Unassigned bucket (id=0 / fixed sync id). */

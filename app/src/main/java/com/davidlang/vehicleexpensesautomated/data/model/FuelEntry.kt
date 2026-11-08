@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.data.model
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -62,4 +63,11 @@ data class FuelEntry(
     val originDeviceId: String = "",
     /** Last-write-wins timestamp (ms). */
     val updatedAt: Long = 0,
+    /**
+     * Tenth-kilometer integer text from a Torque A6 prefill. Null when this row did not keep that reading.
+     */
+    val torqueOdometerRawKm: String? = null,
+    /** `torque`, `photo`, `manual`, or blank. */
+    @ColumnInfo(defaultValue = "''")
+    val odometerSource: String = "",
 )

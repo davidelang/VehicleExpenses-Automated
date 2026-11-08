@@ -4,6 +4,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Process
+import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
 import org.json.JSONObject
@@ -65,6 +66,8 @@ import com.davidlang.vehicleexpensesautomated.ui.util.BufferSet
 import com.davidlang.vehicleexpensesautomated.data.model.KnownStation
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.repository.forUserPicker
+import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.Job
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.components.VehicleNotIdentifiedDialog
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
@@ -847,6 +850,20 @@ fun FillScreen(
     val defaultVolumeUnit = VolumeUnits.systemDefaultUnit()
     val captureModeState = rememberSaveable { mutableStateOf("odo") }
     var captureMode by captureModeState
+    var odoUserEdited by rememberSaveable { mutableStateOf(false) }
+    var dashPhotoTaken by rememberSaveable { mutableStateOf(false) }
+    var userPickedVehicle by rememberSaveable { mutableStateOf(false) }
+    var torqueAppliedVehicleId by rememberSaveable { mutableIntStateOf(-1) }
+    var torqueRawTenths by rememberSaveable { mutableStateOf("") }
+    var torqueMismatch by rememberSaveable { mutableStateOf("") }
+    var torqueAttempted by rememberSaveable { mutableStateOf(false) }
+    var fillGeneration by rememberSaveable { mutableIntStateOf(0) }
+    val torqueClient = remember {
+        EntryPointAccessors.fromApplication(
+            context.applicationContext,
+            TorqueLiveEntryPoint::class.java,
+        ).torqueLiveClient()
+    }
     var currencySymbol by rememberSaveable { mutableStateOf(defaultCurrency) }
     var volumeUnit by rememberSaveable { mutableStateOf(defaultVolumeUnit) }
     var lastCaptureType by rememberSaveable { mutableStateOf("odo") }
@@ -897,6 +914,7 @@ fun FillScreen(
         val c = caret.coerceIn(0, text.length)
         when (field) {
             "odo" -> {
+                if (text != odometer) odoUserEdited = true
                 odometer = text
                 odoCaret = c
             }
@@ -1046,6 +1064,55 @@ fun FillScreen(
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
             selectedVehicleId = vehicles.first().id
         }
+    }
+    val torqueVehicles = rememberUpdatedState(vehicles)
+    val torquePicked = rememberUpdatedState(userPickedVehicle)
+    val torqueEdited = rememberUpdatedState(odoUserEdited)
+    val torqueDash = rememberUpdatedState(dashPhotoTaken)
+    val torqueSelectedId = rememberUpdatedState(selectedVehicleId)
+    LaunchedEffect(fillGeneration) {
+        if (torqueAttempted) return@LaunchedEffect
+        torqueAttempted = true
+        val attempt = coroutineContext[Job] ?: return@LaunchedEffect
+        val generation = fillGeneration
+        var retired = false
+        var applied = false
+        val started = torqueClient.start { reading ->
+            if (!attempt.isActive || generation != fillGeneration || retired || applied) return@start
+            applied = true
+            if (reading == null || torqueEdited.value || torqueDash.value) return@start
+            val decision = TorqueLiveDecode.prefill(
+                reading,
+                torqueVehicles.value,
+                torqueSelectedId.value,
+                torquePicked.value,
+            )
+            when (decision.kind) {
+                TorqueLiveDecode.PrefillKind.FILL -> {
+                    selectedVehicleId = decision.vehicleId
+                    odometer = decision.odometer.toString()
+                    odoCaret = odometer.length
+                    torqueAppliedVehicleId = decision.vehicleId
+                    torqueRawTenths = decision.rawTenths
+                    torqueMismatch = ""
+                    captureMode = "pump"
+                    instructionLine = S("Aim at pump display (cost/volume). Tap shutter to capture.")
+                }
+                TorqueLiveDecode.PrefillKind.MISMATCH -> {
+                    torqueMismatch = S("Torque VIN does not match this vehicle.")
+                    instructionLine = torqueMismatch
+                }
+                TorqueLiveDecode.PrefillKind.NONE -> Unit
+            }
+        }
+        if (!started) return@LaunchedEffect
+        val deadline = SystemClock.elapsedRealtime() + 5_000L
+        while (!applied && SystemClock.elapsedRealtime() < deadline) {
+            val left = deadline - SystemClock.elapsedRealtime()
+            if (left <= 0L) break
+            delay(left.coerceAtMost(200L))
+        }
+        retired = true
     }
 
 
@@ -1370,6 +1437,14 @@ fun FillScreen(
                         } else {
                             baseBlob.coordsOnly()
                         }
+                        val mark = TorqueLiveDecode.savedMark(
+                            odometerText = odoTrim,
+                            dashPhoto = dashPhotoTaken || sessionPhotos.containsKey("dash"),
+                            userTyped = odoUserEdited,
+                            torqueVehicleId = torqueAppliedVehicleId,
+                            saveVehicleId = vehicleId,
+                            torqueRaw = torqueRawTenths,
+                        )
                         fuelViewModel.saveFuel(
                             FuelEntry(
                                 vehicleId = vehicleId,
@@ -1382,6 +1457,8 @@ fun FillScreen(
                                 location = FuelLocationJson.encode(saveBlob),
                                 notes = notes.trim().ifBlank { null },
                                 isPartialFill = false,
+                                torqueOdometerRawKm = mark.rawTenthsKm,
+                                odometerSource = mark.source,
                             )
                         )
                         if (saveBlob.hasCoordsWithoutPlace()) {
@@ -1404,6 +1481,13 @@ fun FillScreen(
                         cost = ""
                         gallons = ""
                         notes = ""
+                        odoUserEdited = false
+                        dashPhotoTaken = false
+                        torqueAppliedVehicleId = -1
+                        torqueRawTenths = ""
+                        torqueMismatch = ""
+                        torqueAttempted = false
+                        fillGeneration += 1
                         sessionPhotos.clear()
                         photoSaveStatus = null
                         capturePending = false
@@ -1476,6 +1560,8 @@ fun FillScreen(
                                 text = { Text(vehicle.name) },
                                 onClick = {
                                     selectedVehicleId = vehicle.id
+                                    userPickedVehicle = true
+                                    torqueMismatch = ""
                                     dropdownExpanded = false
                                 }
                             )
@@ -1486,7 +1572,10 @@ fun FillScreen(
                     value = odometer,
                     onValueChange = {
                         // Tracking odo may exceed face width after rollover (e.g. 7+ digits).
-                        if (it.length <= 10 && it.all { c -> c.isDigit() }) odometer = it
+                        if (it.length <= 10 && it.all { c -> c.isDigit() }) {
+                            if (it != odometer) odoUserEdited = true
+                            odometer = it
+                        }
                     },
                     label = {
                         Text(
@@ -1519,6 +1608,13 @@ fun FillScreen(
                         onNext = { onKeypadNextField() }
                     ),
                     singleLine = true
+                )
+            }
+            if (torqueMismatch.isNotEmpty()) {
+                Text(
+                    text = torqueMismatch,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
                 )
             }
         }
@@ -1750,6 +1846,7 @@ fun FillScreen(
 
     val onShutterClick = shutter@{
         if (!hasCamera) return@shutter
+        if (captureMode == "odo") dashPhotoTaken = true
         lastCaptureType = captureMode
         pumpOriginalJpeg.value = ByteArray(0)
         NativePaddleEngine.heartbeat("capture_accepted")

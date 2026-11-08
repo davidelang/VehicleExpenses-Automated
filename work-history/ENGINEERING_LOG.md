@@ -12735,3 +12735,7 @@ feature-group: label=''
 ## 2026-11-08 - stored fuel is US gallons; miles/km switch
 
 - Stored fuel volume is US gallons (display converts to the device locale); each vehicle has a miles/km switch that does not rewrite odometer integers.
+
+## 2026-11-08 - live A6 prefill
+
+- A new fill can prefill a half-up odometer from Torque mode 01 A6 when an opted-in vehicle's saved VIN blob matches mode 09 02. The dash photo is skipped only for that reading.

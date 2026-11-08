@@ -31,6 +31,8 @@
             <action android:name="android.intent.action.SENDTO" />
             <data android:scheme="mailto" />
         </intent>
+        <package android:name="org.prowl.torque" />
+        <package android:name="com.davidlang.torque.fuelsmoothing" />
     </queries>
 
     <application

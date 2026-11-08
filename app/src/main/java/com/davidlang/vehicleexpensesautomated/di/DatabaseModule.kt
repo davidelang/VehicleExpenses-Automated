@@ -556,6 +556,21 @@ object DatabaseModule {
         }
     }
 
+    /** v24: Torque opt-in defaults off. Fuel rows keep a blank odometer source and no raw kilometers. */
+    val MIGRATION_23_24 = object : Migration(23, 24) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE vehicles ADD COLUMN integrateWithTorque INTEGER NOT NULL DEFAULT 0",
+            )
+            db.execSQL(
+                "ALTER TABLE fuel_entries ADD COLUMN torqueOdometerRawKm TEXT",
+            )
+            db.execSQL(
+                "ALTER TABLE fuel_entries ADD COLUMN odometerSource TEXT NOT NULL DEFAULT ''",
+            )
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabaseHealthState(app: Application): DatabaseHealthState =
@@ -588,6 +603,7 @@ object DatabaseModule {
             MIGRATION_20_21,
             MIGRATION_21_22,
             MIGRATION_22_23,
+            MIGRATION_23_24,
         )
         .build()
     }
