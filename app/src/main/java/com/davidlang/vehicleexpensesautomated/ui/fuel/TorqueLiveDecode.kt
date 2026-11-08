@@ -12,7 +12,7 @@ import java.nio.charset.StandardCharsets
  * VIN blob and mode 01 A6 from Torque `sendCommandGetResponse` text.
  * No bus calls. A live reading is not passed through face-rollover tracking.
  */
-internal object TorqueLiveDecode {
+object TorqueLiveDecode {
     const val SOURCE_TORQUE = "torque"
     const val SOURCE_PHOTO = "photo"
     const val SOURCE_MANUAL = "manual"
