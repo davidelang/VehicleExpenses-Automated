@@ -52,4 +52,9 @@ data class Vehicle(
     val originDeviceId: String = "",
     /** Last-write-wins timestamp (ms). */
     val updatedAt: Long = 0,
+    /**
+     * Unit of stored odometer integers: `"mi"` or `"km"`.
+     * Changing it does not rewrite fuel odometer integers.
+     */
+    val odometerUnit: String = "mi",
 )

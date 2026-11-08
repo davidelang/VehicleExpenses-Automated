@@ -48,7 +48,7 @@ interface VehicleDao {
           referenceDashPhotoUrl, cleanedReferenceDashPhotoUrl,
           odometerCropLeft, odometerCropTop, odometerCropRight, odometerCropBottom,
           landmarkTextBlocksJson, tripTypesJson, expenseCategoriesJson,
-          odometerDigitCount, odometerRolloverCount,
+          odometerDigitCount, odometerRolloverCount, odometerUnit,
           cloudManifest, deleted, deletedAt,
           syncId, originDeviceId, updatedAt
         ) VALUES (
@@ -56,7 +56,7 @@ interface VehicleDao {
           NULL, NULL,
           NULL, NULL, NULL, NULL,
           NULL, '', '',
-          6, 0,
+          6, 0, 'mi',
           NULL, 0, NULL,
           :syncId, :originDeviceId, :updatedAt
         )

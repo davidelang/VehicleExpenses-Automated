@@ -547,6 +547,15 @@ object DatabaseModule {
         }
     }
 
+    /** v23: per-vehicle odometer unit. Existing rows, including Unassigned, are miles. */
+    val MIGRATION_22_23 = object : Migration(22, 23) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE vehicles ADD COLUMN odometerUnit TEXT NOT NULL DEFAULT 'mi'",
+            )
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabaseHealthState(app: Application): DatabaseHealthState =
@@ -578,6 +587,7 @@ object DatabaseModule {
             MIGRATION_19_20,
             MIGRATION_20_21,
             MIGRATION_21_22,
+            MIGRATION_22_23,
         )
         .build()
     }

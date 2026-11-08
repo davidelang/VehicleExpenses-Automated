@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.components.DecodedPhotoImage
+import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.forManageList
 import com.davidlang.vehicleexpensesautomated.data.storage.PickedImageReader
@@ -101,6 +102,8 @@ fun ManageVehicles2Screen(
     var odometerDigitCount by remember { mutableStateOf("6") }
     /** How many times the face has rolled past 10^digitCount. */
     var odometerRolloverCount by remember { mutableStateOf("0") }
+    /** Instrument unit of stored odometer integers. Default miles. Does not scale fills. */
+    var odometerUnit by remember { mutableStateOf(UnitFormat.MI) }
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
     var pickedOriginalUri by remember { mutableStateOf<String?>(null) }
@@ -169,6 +172,7 @@ fun ManageVehicles2Screen(
         odometerReading = ""
         odometerDigitCount = v.odometerDigitCount.coerceIn(3, 9).toString()
         odometerRolloverCount = v.odometerRolloverCount.coerceAtLeast(0).toString()
+        odometerUnit = UnitFormat.normalizeOdometerUnit(v.odometerUnit)
         pickedPhotoUrl = v.referenceDashPhotoUrl
         referencePhotoUrl = v.referenceDashPhotoUrl
         landmarkTextBlocksJson = v.landmarkTextBlocksJson
@@ -520,7 +524,7 @@ fun ManageVehicles2Screen(
             )
             ExposedDropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
                 vehicles.forEach { vehicle -> DropdownMenuItem(text = { Text(vehicle.name) }, onClick = { selectedVehicleId = vehicle.id; isNewVehicle = false; editMode = CropEditMode.IDLE; odoSeedSelectActive = false; dropdownExpanded = false }) }
-                DropdownMenuItem(text = { Text(S("Add New Vehicle")) }, onClick = { selectedVehicleId = null; editingVehicle = null; isNewVehicle = true; name = ""; make = ""; model = ""; year = ""; licensePlate = ""; odometerReading = ""; pickedPhotoUrl = null; referencePhotoUrl = null; photoCannotDisplay = false; landmarkTextBlocksJson = null; odometerCropRect = null; editMode = CropEditMode.IDLE; odoSeedSelectActive = false; dropdownExpanded = false })
+                DropdownMenuItem(text = { Text(S("Add New Vehicle")) }, onClick = { selectedVehicleId = null; editingVehicle = null; isNewVehicle = true; name = ""; make = ""; model = ""; year = ""; licensePlate = ""; odometerReading = ""; odometerUnit = UnitFormat.MI; pickedPhotoUrl = null; referencePhotoUrl = null; photoCannotDisplay = false; landmarkTextBlocksJson = null; odometerCropRect = null; editMode = CropEditMode.IDLE; odoSeedSelectActive = false; dropdownExpanded = false })
             }
         }
 
@@ -659,6 +663,25 @@ fun ManageVehicles2Screen(
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
+            Text(S("Odometer unit"), style = MaterialTheme.typography.titleSmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(
+                    selected = odometerUnit == UnitFormat.MI,
+                    onClick = { odometerUnit = UnitFormat.MI },
+                )
+                Text(S("Miles"))
+                Spacer(modifier = Modifier.width(8.dp))
+                RadioButton(
+                    selected = odometerUnit == UnitFormat.KM,
+                    onClick = { odometerUnit = UnitFormat.KM },
+                )
+                Text(S("Kilometers"))
+            }
+            Text(
+                S("Stored odometer integers are not converted when this changes."),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
             Button(
@@ -681,6 +704,7 @@ fun ManageVehicles2Screen(
                                 jsonToSave,
                                 odometerDigitCount = dig,
                                 odometerRolloverCount = rolls,
+                                odometerUnit = UnitFormat.normalizeOdometerUnit(odometerUnit),
                                 cloudManifest = manifestWithOriginal(null),
                             )
                         } else {
@@ -700,6 +724,7 @@ fun ManageVehicles2Screen(
                                     landmarkTextBlocksJson = jsonToSave,
                                     odometerDigitCount = dig,
                                     odometerRolloverCount = rolls,
+                                    odometerUnit = UnitFormat.normalizeOdometerUnit(odometerUnit),
                                     cloudManifest = manifestWithOriginal(it.cloudManifest),
                                 )
                                 vehicleViewModel.updateVehicle(updated)

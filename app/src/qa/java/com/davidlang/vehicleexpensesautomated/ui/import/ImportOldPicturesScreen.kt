@@ -2158,7 +2158,7 @@ private fun odoPeerMetaLine(
     val cost = costStr?.toDoubleOrNull() ?: 0.0
     val vol = volStr?.toDoubleOrNull() ?: 0.0
     val defaultSymbol = CurrencyCodes.settingsDefaultSymbol(context)
-    val unit = VolumeUnits.resolvedPreferredVolumeUnit(context)
+    val unit = VolumeUnits.systemDefaultUnit()
     return "$whenStr · ${CurrencyCodes.formatAmount(cost, currency, defaultSymbol)} · " +
         VolumeUnits.formatVolume(vol, unit)
 }
@@ -2181,7 +2181,7 @@ private fun mpgContextFallback(
     val cost = item.extra[costKey]?.toDoubleOrNull() ?: 0.0
     val vol = item.extra[volKey]?.toDoubleOrNull() ?: 0.0
     val defaultSymbol = CurrencyCodes.settingsDefaultSymbol(context)
-    val unit = VolumeUnits.resolvedPreferredVolumeUnit(context)
+    val unit = VolumeUnits.systemDefaultUnit()
     return S("%1\$s · odo %2\$s · %3\$s · ", whenStr, odo, CurrencyCodes.formatAmount(cost, "", defaultSymbol)) +
         VolumeUnits.formatVolume(vol, unit)
 }
@@ -2219,7 +2219,7 @@ private fun NeighborLine(
         ""
     }
     val defaultSymbol = CurrencyCodes.settingsDefaultSymbol(context)
-    val unit = VolumeUnits.resolvedPreferredVolumeUnit(context)
+    val unit = VolumeUnits.systemDefaultUnit()
     Text(
         S("%1\$s%2\$s · %3\$s · odo %4\$s · ", prefix, ts, name, n.odometer) +
             "${CurrencyCodes.formatAmount(n.cost, n.currency, defaultSymbol)} · " +

@@ -108,9 +108,11 @@ fun FuelHistoryScreen(navController: NavHostController) {
             EmptyStateText(S("No fuel entries for this vehicle"))
         } else {
             val displayRows = rows.map { base -> rowOverrides[base.id] ?: base }
+            val distanceUnit = vehicleTabs.getOrNull(selectedTab)?.odometerUnit
             AdaptiveItemGrid(items = displayRows) { entry ->
                 FuelHistoryRow(
                     entry = entry,
+                    distanceUnit = distanceUnit,
                     dateLabel = dateFmt.format(Date(entry.timestamp)),
                     defaultSymbol = defaultSymbol,
                     photoStorage = photoStorage,
@@ -134,6 +136,7 @@ fun FuelHistoryScreen(navController: NavHostController) {
 @Composable
 private fun FuelHistoryRow(
     entry: FuelEntry,
+    distanceUnit: String?,
     dateLabel: String,
     defaultSymbol: String,
     photoStorage: PhotoStorageManager,
@@ -256,7 +259,7 @@ private fun FuelHistoryRow(
                     )
                 }
                 Text(
-                    "${UnitFormat.odometerReadingLabel(display.odometer)} · " +
+                    "${UnitFormat.odometerReadingLabel(display.odometer, distanceUnit)} · " +
                         "${CurrencyCodes.formatAmount(display.cost, display.currency, defaultSymbol)} · " +
                         VolumeUnits.formatVolume(context, display.gallons, decimals = 3),
                     style = MaterialTheme.typography.bodySmall,

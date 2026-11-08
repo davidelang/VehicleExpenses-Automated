@@ -4,6 +4,7 @@ import com.davidlang.vehicleexpensesautomated.data.batch.FuelEconomyChains
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
+import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -92,8 +93,15 @@ fun allValidLegsChrono(entries: List<FuelEntry>, defaultStored: String): List<La
     return legs
 }
 
-fun excludeMpgOutliers(legs: List<LabFullFillLeg>): List<LabFullFillLeg> {
-    val banded = legs.filter { it.mpg in DISPLAY_MPG_MIN..DISPLAY_MPG_MAX }
+fun excludeMpgOutliers(
+    legs: List<LabFullFillLeg>,
+    applyMpgClamp: Boolean = true,
+): List<LabFullFillLeg> {
+    val banded = if (applyMpgClamp) {
+        legs.filter { it.mpg in DISPLAY_MPG_MIN..DISPLAY_MPG_MAX }
+    } else {
+        legs
+    }
     if (banded.size < 3) return banded
     val sorted = banded.map { it.mpg }.sorted()
     val mid = sorted.size / 2
@@ -106,11 +114,11 @@ fun excludeMpgOutliers(legs: List<LabFullFillLeg>): List<LabFullFillLeg> {
     return banded.filter { it.mpg >= ref / 3.0 && it.mpg <= ref * 3.0 }
 }
 
-fun lastMpg(legsChrono: List<LabFullFillLeg>): Double? =
-    excludeMpgOutliers(legsChrono).lastOrNull()?.mpg
+fun lastMpg(legsChrono: List<LabFullFillLeg>, applyMpgClamp: Boolean = true): Double? =
+    excludeMpgOutliers(legsChrono, applyMpgClamp).lastOrNull()?.mpg
 
-fun avgMpg(legsChrono: List<LabFullFillLeg>): Double? {
-    val d = excludeMpgOutliers(legsChrono)
+fun avgMpg(legsChrono: List<LabFullFillLeg>, applyMpgClamp: Boolean = true): Double? {
+    val d = excludeMpgOutliers(legsChrono, applyMpgClamp)
     if (d.isEmpty()) return null
     return d.map { it.mpg }.average()
 }
@@ -258,9 +266,9 @@ fun dollarsPerMile(
     return combined.values.first() / miles.toDouble()
 }
 
-fun formatMpg(value: Double?): String {
+fun formatMpg(value: Double?, applyMpgClamp: Boolean = true): String {
     if (value == null) return "n/a"
-    if (value < 1.0 || value > 100.0) return "n/a"
+    if (applyMpgClamp && (value < 1.0 || value > 100.0)) return "n/a"
     return "%.1f".format(value)
 }
 
@@ -341,6 +349,7 @@ data class HubVehicleSummary(
     val avgMpg: Double?,
     val dollarsPerMile: Double?,
     val expenseTotalByCurrency: Map<String, Double>,
+    val odometerUnit: String = UnitFormat.MI,
 )
 
 fun hubVehicleSummaries(
@@ -348,6 +357,7 @@ fun hubVehicleSummaries(
     expenses: List<ExpenseEntry>,
     nameById: Map<Int, String>,
     defaultStored: String,
+    odometerUnitById: Map<Int, String> = emptyMap(),
 ): List<HubVehicleSummary> {
     val fuelByV = fuel.groupBy { it.vehicleId }
     val expByV = expenses.groupBy { it.vehicleId }
@@ -357,6 +367,8 @@ fun hubVehicleSummaries(
         val vFills = vFuel.withoutTripStarts()
         val vExp = expByV[vehicleId].orEmpty()
         val legs = allValidLegsChrono(vFuel, defaultStored)
+        val unit = UnitFormat.normalizeOdometerUnit(odometerUnitById[vehicleId])
+        val clamp = UnitFormat.usesMpgClamp(unit)
         HubVehicleSummary(
             vehicleId = vehicleId,
             name = when {
@@ -369,12 +381,13 @@ fun hubVehicleSummaries(
             gallons = vFuel.sumOf { it.gallons },
             fillCount = vFills.size,
             partialCount = vFills.count { it.isPartialFill },
-            lastMpg = lastMpg(legs),
-            avgMpg = avgMpg(legs),
+            lastMpg = lastMpg(legs, clamp),
+            avgMpg = avgMpg(legs, clamp),
             dollarsPerMile = dollarsPerMile(vFuel, vExp, defaultStored),
             expenseTotalByCurrency = CurrencyCodes.sumByCurrency(
                 vExp, defaultStored, { it.currency }, { it.amount },
             ),
+            odometerUnit = unit,
         )
     }
 }
@@ -405,6 +418,7 @@ fun hubVehicleStatsLine(
     volumeLabel: String,
     defaultSymbol: String,
 ): String {
+    val clamp = UnitFormat.usesMpgClamp(stats.odometerUnit)
     val dpm = if (stats.dollarsPerMile == null) {
         "n/a"
     } else {
@@ -414,8 +428,8 @@ fun hubVehicleStatsLine(
     return S("Fuel %1\$s · ", fuel) +
         "${formatVolume(stats.gallons, volumeLabel)} · " +
         S("fills %1\$s(%2\$sp) · ", stats.fillCount, stats.partialCount) +
-        S("last %1\$s · avg %2\$s · ", formatMpg(stats.lastMpg), formatMpg(stats.avgMpg)) +
-        "${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.costPerDistanceLabel()} $dpm"
+        S("last %1\$s %2\$s · avg %3\$s · ", UnitFormat.economyEfficiencyLabel(stats.odometerUnit), formatMpg(stats.lastMpg, clamp), formatMpg(stats.avgMpg, clamp)) +
+        "${UnitFormat.costPerDistanceLabel(stats.odometerUnit)} $dpm"
 }
 
 fun hubVehicleExpenseLine(stats: HubVehicleSummary, defaultSymbol: String): String {

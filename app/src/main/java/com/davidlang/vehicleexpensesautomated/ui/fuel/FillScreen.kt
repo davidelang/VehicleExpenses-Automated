@@ -75,6 +75,7 @@ import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.components.RoundCaptureButton
 import com.davidlang.vehicleexpensesautomated.ui.components.StationPickerDialog
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
+import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
@@ -112,9 +113,6 @@ private class UnresolvedVehiclePick(
     val survivorIds: List<Int>,
     val cont: CancellableContinuation<Int?>,
 )
-
-private fun convertVolumeForSave(value: Double, fromUnit: String, toUnit: String): Double =
-    VolumeUnits.convert(value, fromUnit, toUnit)
 
 /** In-memory photo pointer until FuelEntry Save (tag dash|pump). */
 private data class SessionPhoto(val uri: String, val ts: Long, val fallback: Boolean = false)
@@ -845,11 +843,8 @@ fun FillScreen(
             else -> prefCurrency
         }
     }
-    // DB stores volume in preferred unit; convert UI unit → preferred at save.
-    val preferredVolumeUnit = remember {
-        com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits.resolvedPreferredVolumeUnit(context)
-    }
-    val defaultVolumeUnit = preferredVolumeUnit
+    // Stored volume is US gallons. The G/L control starts at the locale unit and does not rewrite typed digits.
+    val defaultVolumeUnit = VolumeUnits.systemDefaultUnit()
     val captureModeState = rememberSaveable { mutableStateOf("odo") }
     var captureMode by captureModeState
     var currencySymbol by rememberSaveable { mutableStateOf(defaultCurrency) }
@@ -1349,11 +1344,7 @@ fun FillScreen(
                         // Explicit partial only (default false). Incomplete = missing fields,
                         // not isPartialFill=true. Full-fill anchors use field presence.
                         val rawVolume = galTrim.toDoubleOrNull() ?: 0.0
-                        val saveVolume = if (rawVolume == 0.0) {
-                            0.0
-                        } else {
-                            convertVolumeForSave(rawVolume, volumeUnit, preferredVolumeUnit)
-                        }
+                        val saveVolume = VolumeUnits.toStoredGallons(rawVolume, volumeUnit)
                         val photoUrlJson = sessionPhotosToJson(sessionPhotos)
                         val storedCurrency = CurrencyCodes.fromSymbolOrCode(currencySymbol)
                         val baseBlob = FuelLocationJson.fromLocation(deviceLocation)
@@ -1497,7 +1488,16 @@ fun FillScreen(
                         // Tracking odo may exceed face width after rollover (e.g. 7+ digits).
                         if (it.length <= 10 && it.all { c -> c.isDigit() }) odometer = it
                     },
-                    label = { Text(S("Odo")) },
+                    label = {
+                        Text(
+                            S(
+                                "Odo (%1\$s)",
+                                UnitFormat.distanceUnitShortLabel(
+                                    vehicles.find { it.id == selectedVehicleId }?.odometerUnit,
+                                ),
+                            ),
+                        )
+                    },
                     // Custom NumericKeypad is the only soft digit UI (both orientations).
                     showCaretButtons = false,
                     caretIndex = odoCaret,

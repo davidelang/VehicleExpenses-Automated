@@ -11,6 +11,7 @@ import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.ui.reports.LastFullFillLegsBlock
 import com.davidlang.vehicleexpensesautomated.ui.reports.lastFullFillLegsShareLines
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
+import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 @Composable
@@ -42,6 +43,8 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
         val fills = fuelAll.withoutTripStarts()
         val exp = if (vid != null) data.expenses.filter { it.vehicleId == vid } else data.expenses
         val legs = allValidLegsChrono(fuelAll, data.defaultStored)
+        val distanceUnit = if (v != null) UnitFormat.normalizeOdometerUnit(v.odometerUnit) else data.scopeDistanceUnit()
+        val clamp = UnitFormat.usesMpgClamp(distanceUnit)
         val (minO, maxO) = odometerRange(fuelAll)
         val dist = if (minO != null && maxO != null && maxO >= minO) maxO - minO else null
         val fuelCost = CurrencyCodes.sumByCurrency(fuelAll, data.defaultStored, { it.currency }, { it.cost })
@@ -70,7 +73,7 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
                     minO != null && maxO != null ->
                         "$minO → $maxO" +
                         (dist?.let {
-                            " (≈ ${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.distanceDeltaLabel(it)})"
+                            " (≈ ${UnitFormat.distanceDeltaLabel(it, distanceUnit)})"
                         } ?: "")
                     else -> "n/a"
                 },
@@ -81,11 +84,11 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
             )
             appendLine(S("Fuel cost: %1\$s", CurrencyCodes.formatAggregateSum(fuelCost, data.defaultSymbol)))
             appendLine(
-                S("Last %1\$s: ", com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.economyEfficiencyLabel()) +
-                    S("%1\$s · Avg ", formatMpg(lastMpg(legs))) +
-                    "${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.economyEfficiencyLabel()}: " +
-                    "${formatMpg(avgMpg(legs))} · " +
-                    "${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.costPerDistanceLabel()}: " +
+                S("Last %1\$s: ", UnitFormat.economyEfficiencyLabel(distanceUnit)) +
+                    S("%1\$s · Avg ", formatMpg(lastMpg(legs, clamp), clamp)) +
+                    "${UnitFormat.economyEfficiencyLabel(distanceUnit)}: " +
+                    "${formatMpg(avgMpg(legs, clamp), clamp)} · " +
+                    "${UnitFormat.costPerDistanceLabel(distanceUnit)}: " +
                     if (dpm == null) "n/a" else "%.3f".format(dpm),
             )
             appendLine(S("(Full-fill and economyIgnored rules apply; trip starts excluded from fill counts.)"))
@@ -95,7 +98,7 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
             }
             appendLine()
             appendLine(S("Last 5 full fills:"))
-            lastFullFillLegsShareLines(legs, data.volumeLabel, data.defaultSymbol).forEach {
+            lastFullFillLegsShareLines(legs, data.volumeLabel, data.defaultSymbol, distanceUnit).forEach {
                 appendLine(it)
             }
             appendLine(S("Recent expenses:"))
@@ -140,12 +143,14 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
             CurrencyCodes.sumByCurrency(fuelAll, data.defaultStored, { it.currency }, { it.cost })
                 .forEach { (c, a) -> row("fuel_cost", c, a.toString()) }
             val legs = allValidLegsChrono(fuelAll, data.defaultStored)
-            row("economy", "last_mpg", lastMpg(legs)?.toString() ?: "")
-            row("economy", "avg_mpg", avgMpg(legs)?.toString() ?: "")
+            val distanceUnit = if (v != null) UnitFormat.normalizeOdometerUnit(v.odometerUnit) else data.scopeDistanceUnit()
+            val clamp = UnitFormat.usesMpgClamp(distanceUnit)
+            row("economy", "last_mpg", lastMpg(legs, clamp)?.toString() ?: "")
+            row("economy", "avg_mpg", avgMpg(legs, clamp)?.toString() ?: "")
             row("economy", "dpm", dollarsPerMile(fuelAll, exp, data.defaultStored)?.toString() ?: "")
             CurrencyCodes.sumByCurrency(exp, data.defaultStored, { it.currency }, { it.amount })
                 .forEach { (c, a) -> row("expense_total", c, a.toString()) }
-            excludeMpgOutliers(legs).asReversed().take(5).forEach { leg ->
+            excludeMpgOutliers(legs, clamp).asReversed().take(5).forEach { leg ->
                 sb.append(
                     listOf(
                         "full_fill_leg",
@@ -218,6 +223,12 @@ private fun VehicleSummarySection(
     val fills = fuelAll.withoutTripStarts()
     val exp = if (vid != null) data.expenses.filter { it.vehicleId == vid } else data.expenses
     val legs = allValidLegsChrono(fuelAll, data.defaultStored)
+    val distanceUnit = if (vehicle != null) {
+        UnitFormat.normalizeOdometerUnit(vehicle.odometerUnit)
+    } else {
+        data.scopeDistanceUnit()
+    }
+    val clamp = UnitFormat.usesMpgClamp(distanceUnit)
     val (minO, maxO) = odometerRange(fuelAll)
     val dist = if (minO != null && maxO != null && maxO >= minO) maxO - minO else null
     val fuelCost = CurrencyCodes.sumByCurrency(fuelAll, data.defaultStored, { it.currency }, { it.cost })
@@ -250,7 +261,7 @@ private fun VehicleSummarySection(
                     minO != null && maxO != null ->
                         "$minO → $maxO" +
                         (dist?.let {
-                            " (≈ ${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.distanceDeltaLabel(it)})"
+                            " (≈ ${UnitFormat.distanceDeltaLabel(it, distanceUnit)})"
                         } ?: "")
                     else -> "n/a"
                 },
@@ -263,11 +274,11 @@ private fun VehicleSummarySection(
             )
             Text(S("Fuel: %1\$s", CurrencyCodes.formatAggregateSum(fuelCost, data.defaultSymbol)))
             Text(
-                S("Last %1\$s ", com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.economyEfficiencyLabel()) +
-                    S("%1\$s · Avg ", formatMpg(lastMpg(legs))) +
-                    "${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.economyEfficiencyLabel()} " +
-                    "${formatMpg(avgMpg(legs))} · " +
-                    "${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.costPerDistanceLabel()} " +
+                S("Last %1\$s ", UnitFormat.economyEfficiencyLabel(distanceUnit)) +
+                    S("%1\$s · Avg ", formatMpg(lastMpg(legs, clamp), clamp)) +
+                    "${UnitFormat.economyEfficiencyLabel(distanceUnit)} " +
+                    "${formatMpg(avgMpg(legs, clamp), clamp)} · " +
+                    "${UnitFormat.costPerDistanceLabel(distanceUnit)} " +
                     if (dpm == null) "n/a" else "%.3f".format(dpm),
                 softWrap = true,
             )
@@ -285,6 +296,7 @@ private fun VehicleSummarySection(
                 legsChrono = legs,
                 volumeUnitLabel = data.volumeLabel,
                 defaultSymbol = data.defaultSymbol,
+                distanceUnit = distanceUnit,
             )
             Text(S("Last 5 expenses"), style = MaterialTheme.typography.titleSmall)
             exp.sortedByDescending { it.date }.take(5).forEach { e ->

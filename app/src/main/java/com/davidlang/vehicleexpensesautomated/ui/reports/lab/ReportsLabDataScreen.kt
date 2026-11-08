@@ -10,6 +10,7 @@ import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseViewModel
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
+import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.S
@@ -84,7 +85,7 @@ fun rememberLabReportData(
     val defaultSymbol = remember { CurrencyCodes.settingsDefaultSymbol(context) }
     val defaultStored = remember { CurrencyCodes.settingsDefaultStored(context) }
     val volumeLabel = remember {
-        VolumeUnits.shortLabel(VolumeUnits.resolvedPreferredVolumeUnit(context))
+        VolumeUnits.shortLabel(VolumeUnits.systemDefaultUnit())
     }
     val allFuel = remember(fuels) { fuels.filter { !it.deleted } }
     val allExpenses = remember(expenses) { expenses.filter { !it.deleted } }
@@ -152,6 +153,15 @@ data class LabReportData(
             LabVehicleMode.EACH -> S("Each vehicle")
             LabVehicleMode.SINGLE -> filter.vehicleId?.let { vehicleName(it) } ?: S("All vehicles")
         }
+
+    fun odometerUnit(vehicleId: Int): String =
+        UnitFormat.normalizeOdometerUnit(allVehicles.firstOrNull { it.id == vehicleId }?.odometerUnit)
+
+    /** One unit when every id agrees. Mixed fleets stay miles for a combined label only. */
+    fun scopeDistanceUnit(vehicleIds: Collection<Int> = fuel.map { it.vehicleId }.distinct()): String {
+        val units = vehicleIds.map { odometerUnit(it) }.toSet()
+        return if (units.size == 1) units.first() else UnitFormat.MI
+    }
 
     /** Group fuel by vehicle when EACH; otherwise single bucket null key = combined. */
     fun fuelByVehicleScope(): Map<Int?, List<FuelEntry>> =

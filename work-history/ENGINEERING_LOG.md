@@ -12731,3 +12731,7 @@ feature-group: label=''
 ## 2026-11-06 - captured manual shots
 
 - Phone and tablet shots are committed. Translated shots, including regional English, are Git LFS. The default English set stays a normal blob. versionCode is 28.
+
+## 2026-11-08 - stored fuel is US gallons; miles/km switch
+
+- Stored fuel volume is US gallons (display converts to the device locale); each vehicle has a miles/km switch that does not rewrite odometer integers.

@@ -81,7 +81,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                 .entries
                 .sortedBy { (vid, _) -> data.vehicleName(vid) }
                 .associate { (vid, segs) ->
-                    data.vehicleName(vid) to TripSegments.milesByType(
+                    vid to TripSegments.milesByType(
                         segs,
                         includePersonal = includePersonalInTotals,
                         includeZeroLength = showZeroLength,
@@ -100,11 +100,12 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             ordered
         }
     }
-    val eachChartSeries = remember(milesByVehicleAndType, eachTypeLabels) {
-        milesByVehicleAndType.mapValues { (_, mbt) ->
+    val eachChartSeries = remember(milesByVehicleAndType, eachTypeLabels, data.allVehicles) {
+        milesByVehicleAndType.mapKeys { (vid, _) -> data.vehicleName(vid) }.mapValues { (_, mbt) ->
             eachTypeLabels.map { t -> (mbt[t] ?: 0).toFloat() }
         }
     }
+    val scopeUnit = data.scopeDistanceUnit()
     val totalMiles = milesByType.values.sum()
     val openCount = remember(inPeriod) { TripSegments.openCount(inPeriod) }
     val chartY = remember(milesByType) { milesByType.values.map { it.toFloat() } }
@@ -186,7 +187,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
 
         Text(S("KPIs"), style = MaterialTheme.typography.titleMedium)
         Text(
-            S("Total miles: %1\$s", UnitFormat.distanceDeltaLabel(totalMiles)) +
+            S("Total miles: %1\$s", UnitFormat.distanceDeltaLabel(totalMiles, scopeUnit)) +
                 if (!includePersonalInTotals) S(" (Personal excluded)") else "",
             softWrap = true,
             maxLines = 3,
@@ -201,11 +202,12 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             if (milesByVehicleAndType.isEmpty() || eachTypeLabels.isEmpty()) {
                 ReportsLabEmpty(S("No closed trip miles for these filters/toggles."))
             } else {
-                milesByVehicleAndType.forEach { (vName, mbt) ->
-                    Text(vName, style = MaterialTheme.typography.titleSmall, softWrap = true)
+                milesByVehicleAndType.forEach { (vid, mbt) ->
+                    val unit = data.odometerUnit(vid)
+                    Text(data.vehicleName(vid), style = MaterialTheme.typography.titleSmall, softWrap = true)
                     mbt.forEach { (type, miles) ->
                         Text(
-                            "  $type: ${UnitFormat.distanceDeltaLabel(miles)}",
+                            "  $type: ${UnitFormat.distanceDeltaLabel(miles, unit)}",
                             style = MaterialTheme.typography.bodyMedium,
                             softWrap = true,
                         )
@@ -214,7 +216,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                 LabMultiSeriesIndexChart(
                     series = eachChartSeries,
                     xLabels = eachTypeLabels,
-                    caption = S("Miles by type per vehicle (%1\$s)", UnitFormat.distanceUnitShortLabel()),
+                    caption = S("Miles by type per vehicle (%1\$s)", UnitFormat.distanceUnitShortLabel(scopeUnit)),
                 )
             }
         } else if (milesByType.isEmpty()) {
@@ -222,7 +224,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
         } else {
             milesByType.forEach { (type, miles) ->
                 Text(
-                    "$type: ${UnitFormat.distanceDeltaLabel(miles)}",
+                    "$type: ${UnitFormat.distanceDeltaLabel(miles, scopeUnit)}",
                     style = MaterialTheme.typography.bodyMedium,
                     softWrap = true,
                 )
@@ -230,14 +232,14 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             LabCategoryBarsChart(
                 amounts = chartY,
                 categoryLabels = chartLabels,
-                caption = S("Miles by type (%1\$s)", UnitFormat.distanceUnitShortLabel()),
+                caption = S("Miles by type (%1\$s)", UnitFormat.distanceUnitShortLabel(scopeUnit)),
             )
             if (chartLabels.isNotEmpty()) {
                 Text(
                     S("Bar order: ") +
                         chartLabels.mapIndexed { i, t ->
                             val m = milesByType[t] ?: 0
-                            "${i + 1}. $t (${UnitFormat.distanceDeltaLabel(m)})"
+                            "${i + 1}. $t (${UnitFormat.distanceDeltaLabel(m, scopeUnit)})"
                         }.joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall,
                     softWrap = true,
@@ -291,13 +293,14 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                     val milesLabel = if (seg.isOpen) {
                         "n/a"
                     } else {
-                        UnitFormat.distanceDeltaLabel(seg.miles)
+                        UnitFormat.distanceDeltaLabel(seg.miles, data.odometerUnit(seg.vehicleId))
                     }
                     val odoPart = buildString {
-                        append(UnitFormat.odometerReadingLabel(seg.startOdo))
+                        val unit = data.odometerUnit(seg.vehicleId)
+                        append(UnitFormat.odometerReadingLabel(seg.startOdo, unit))
                         if (seg.endOdo != null) {
                             append(" → ")
-                            append(UnitFormat.odometerReadingLabel(seg.endOdo!!))
+                            append(UnitFormat.odometerReadingLabel(seg.endOdo!!, unit))
                         } else {
                             append(" → …")
                         }
@@ -346,7 +349,7 @@ private fun buildTextShare(
     if (leadingCount > 0) {
         appendLine(S("Implicit leading Personal segments in window: %1\$s", leadingCount))
     }
-    appendLine(S("Total miles: %1\$s", UnitFormat.distanceDeltaLabel(totalMiles)))
+    appendLine(S("Total miles: %1\$s", UnitFormat.distanceDeltaLabel(totalMiles, data.scopeDistanceUnit())))
     appendLine(S("Open segments (in period by start): %1\$s", openCount))
     appendLine()
     appendLine(S("Miles by type:"))
@@ -354,7 +357,7 @@ private fun buildTextShare(
         appendLine(S("  (none)"))
     } else {
         milesByType.forEach { (t, m) ->
-            appendLine("  $t: ${UnitFormat.distanceDeltaLabel(m)}")
+            appendLine("  $t: ${UnitFormat.distanceDeltaLabel(m, data.scopeDistanceUnit())}")
         }
     }
     appendLine()
@@ -366,13 +369,14 @@ private fun buildTextShare(
             seg.isImplicitLeading -> S("Closed-implicit")
             else -> S("Closed")
         }
-        val miles = if (seg.isOpen) "n/a" else UnitFormat.distanceDeltaLabel(seg.miles)
-        val endOdo = seg.endOdo?.let { UnitFormat.odometerReadingLabel(it) } ?: "…"
+        val unit = data.odometerUnit(seg.vehicleId)
+        val miles = if (seg.isOpen) "n/a" else UnitFormat.distanceDeltaLabel(seg.miles, unit)
+        val endOdo = seg.endOdo?.let { UnitFormat.odometerReadingLabel(it, unit) } ?: "…"
         val type = if (seg.isImplicitLeading) S("%1\$s(implicit)", seg.tripType) else seg.tripType
         appendLine(
             "  ${formatLabDate(seg.startTimestamp)} ${data.vehicleName(seg.vehicleId)} " +
                 "$type $status $miles " +
-                "${UnitFormat.odometerReadingLabel(seg.startOdo)} → $endOdo",
+                "${UnitFormat.odometerReadingLabel(seg.startOdo, unit)} → $endOdo",
         )
     }
 }
@@ -382,7 +386,7 @@ private fun buildCsvShare(
     milesByType: Map<String, Int>,
     listSegs: List<TripSegments.Segment>,
 ): String {
-    val unit = UnitFormat.distanceUnitShortLabel()
+    val unit = UnitFormat.distanceUnitShortLabel(data.scopeDistanceUnit())
     val sb = StringBuilder()
     sb.appendLine("section,key,value,unit")
     sb.appendLine("meta,period,${ReportsLabShare.csvEscape(periodLabel(data.filter))},")
@@ -403,6 +407,7 @@ private fun buildCsvShare(
         }
         val miles = if (seg.isOpen) "" else seg.miles.toString()
         val endOdo = seg.endOdo?.toString().orEmpty()
+        val segUnit = UnitFormat.distanceUnitShortLabel(data.odometerUnit(seg.vehicleId))
         sb.append(
             listOf(
                 "segment",
@@ -414,7 +419,7 @@ private fun buildCsvShare(
                 seg.startOdo.toString(),
                 endOdo,
                 if (seg.isImplicitLeading) "1" else "0",
-                unit,
+                segUnit,
             ).joinToString(","),
         ).append('\n')
     }

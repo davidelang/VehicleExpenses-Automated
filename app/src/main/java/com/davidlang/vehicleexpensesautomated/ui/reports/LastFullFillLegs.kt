@@ -35,8 +35,10 @@ fun LastFullFillLegsBlock(
     defaultSymbol: String,
     modifier: Modifier = Modifier,
     title: String = S("Last 5 full fills"),
+    distanceUnit: String = UnitFormat.MI,
 ) {
-    val displayNewestFirst = excludeMpgOutliers(legsChrono).asReversed().take(5)
+    val clamp = UnitFormat.usesMpgClamp(distanceUnit)
+    val displayNewestFirst = excludeMpgOutliers(legsChrono, clamp).asReversed().take(5)
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(title, style = MaterialTheme.typography.titleSmall)
         if (displayNewestFirst.isEmpty()) {
@@ -51,6 +53,7 @@ fun LastFullFillLegsBlock(
                     costLabel = CurrencyCodes.formatAggregateSum(leg.sumCostByCurrency, defaultSymbol),
                     volumeLabel = formatVolume(leg.sumVol, volumeUnitLabel),
                     mpg = leg.mpg,
+                    distanceUnit = distanceUnit,
                     barFraction = barFrac,
                 )
             }
@@ -67,10 +70,11 @@ fun FullFillLegRowUi(
     volumeLabel: String,
     mpg: Double,
     barFraction: Float,
+    distanceUnit: String = UnitFormat.MI,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
-            S("%1\$s · odo %2\$s", dateLabel, odo),
+            S("%1\$s · %2\$s", dateLabel, UnitFormat.odometerReadingLabel(odo, distanceUnit)),
             style = MaterialTheme.typography.labelMedium,
         )
         Row(
@@ -95,7 +99,7 @@ fun FullFillLegRowUi(
                         .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)),
                 )
                 Text(
-                    "${UnitFormat.economyEfficiencyLabel()} ${formatMpg(mpg)}",
+                    "${UnitFormat.economyEfficiencyLabel(distanceUnit)} ${formatMpg(mpg, UnitFormat.usesMpgClamp(distanceUnit))}",
                     style = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
                     modifier = Modifier.padding(horizontal = 4.dp),
@@ -110,13 +114,15 @@ fun lastFullFillLegsShareLines(
     legsChrono: List<LabFullFillLeg>,
     volumeUnitLabel: String,
     defaultSymbol: String,
+    distanceUnit: String = UnitFormat.MI,
 ): List<String> {
-    val display = excludeMpgOutliers(legsChrono).asReversed().take(5)
+    val clamp = UnitFormat.usesMpgClamp(distanceUnit)
+    val display = excludeMpgOutliers(legsChrono, clamp).asReversed().take(5)
     if (display.isEmpty()) return listOf(S("  (none)"))
     return display.map { leg ->
         val cost = CurrencyCodes.formatAggregateSum(leg.sumCostByCurrency, defaultSymbol)
         val vol = formatVolume(leg.sumVol, volumeUnitLabel)
-        S("  %1\$s odo %2\$s ", formatLabDate(leg.endFill.timestamp), leg.endFill.odometer) +
-            "$cost $vol ${UnitFormat.economyEfficiencyLabel()} ${formatMpg(leg.mpg)}"
+        S("  %1\$s %2\$s ", formatLabDate(leg.endFill.timestamp), UnitFormat.odometerReadingLabel(leg.endFill.odometer, distanceUnit)) +
+            "$cost $vol ${UnitFormat.economyEfficiencyLabel(distanceUnit)} ${formatMpg(leg.mpg, clamp)}"
     }
 }

@@ -86,13 +86,6 @@ class FuelViewModel @Inject constructor(
     suspend fun scrubUnreadableFuelPhotos(entry: FuelEntry): FuelEntry =
         photoBackupCoordinator.scrubUnreadableFuelPhotos(entry)
 
-    fun convertAllVolumes(fromUnit: String, toUnit: String, onComplete: () -> Unit = {}) {
-        viewModelScope.launch {
-            fuelEntryRepository.convertAllVolumes(fromUnit, toUnit)
-            onComplete()
-        }
-    }
-
     fun deleteFuelEntry(entry: FuelEntry) {
         viewModelScope.launch {
             fuelEntryRepository.markFuelDeleted(entry)

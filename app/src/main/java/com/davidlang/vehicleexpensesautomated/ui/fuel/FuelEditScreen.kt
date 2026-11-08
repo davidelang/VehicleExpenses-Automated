@@ -132,7 +132,7 @@ fun FuelEditScreen(
         loaded = e
         vehicleId = e.vehicleId
         odometer = if (e.odometer == 0) "" else e.odometer.toString()
-        volume = if (e.gallons == 0.0) "" else e.gallons.toString()
+        volume = VolumeUnits.editableVolumeText(e.gallons)
         cost = if (e.cost == 0.0) "" else e.cost.toString()
         currencySymbol = CurrencyCodes.displaySymbol(e.currency, defaultCurrencySymbol)
         notes = e.notes.orEmpty()
@@ -227,6 +227,7 @@ fun FuelEditScreen(
             }
         }
 
+        val odoUnit = vehicles.find { it.id == vehicleId }?.odometerUnit
         @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
         @Composable
         fun FuelVehicleOdometer() {
@@ -247,7 +248,7 @@ fun FuelEditScreen(
                     CaretEnabledOutlinedTextField(
                         value = odometer,
                         onValueChange = { odometer = it.filter { ch -> ch.isDigit() } },
-                        label = { Text(S("Odometer (%1\$s)", UnitFormat.distanceUnitShortLabel())) },
+                        label = { Text(S("Odometer (%1\$s)", UnitFormat.distanceUnitShortLabel(odoUnit))) },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         showCaretButtons = true,
@@ -265,7 +266,7 @@ fun FuelEditScreen(
                 CaretEnabledOutlinedTextField(
                     value = odometer,
                     onValueChange = { odometer = it.filter { ch -> ch.isDigit() } },
-                    label = { Text(S("Odometer (%1\$s)", UnitFormat.distanceUnitShortLabel())) },
+                    label = { Text(S("Odometer (%1\$s)", UnitFormat.distanceUnitShortLabel(odoUnit))) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     showCaretButtons = true,
@@ -314,7 +315,7 @@ fun FuelEditScreen(
                         onValueChange = { volume = it },
                         label = {
                             Text(
-                                S("Vol (%1\$s)", VolumeUnits.shortLabel(VolumeUnits.resolvedPreferredVolumeUnit(context))),
+                                S("Vol (%1\$s)", VolumeUnits.shortLabel(VolumeUnits.systemDefaultUnit())),
                             )
                         },
                         modifier = Modifier.weight(1f),
@@ -343,7 +344,7 @@ fun FuelEditScreen(
                     onValueChange = { volume = it },
                     label = {
                         Text(
-                            S("Volume (%1\$s)", VolumeUnits.shortLabel(VolumeUnits.resolvedPreferredVolumeUnit(context))),
+                            S("Volume (%1\$s)", VolumeUnits.shortLabel(VolumeUnits.systemDefaultUnit())),
                         )
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -476,7 +477,10 @@ fun FuelEditScreen(
                 val updated = base.copy(
                     vehicleId = vehicleId,
                     odometer = odometer.toIntOrNull() ?: 0,
-                    gallons = volume.toDoubleOrNull() ?: 0.0,
+                    gallons = VolumeUnits.toStoredGallons(
+                        volume.toDoubleOrNull() ?: 0.0,
+                        VolumeUnits.systemDefaultUnit(),
+                    ),
                     cost = cost.toDoubleOrNull() ?: 0.0,
                     currency = CurrencyCodes.fromSymbolOrCode(currencySymbol),
                     timestamp = timestampMs,

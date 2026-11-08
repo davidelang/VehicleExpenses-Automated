@@ -13,6 +13,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.CorruptIncoming
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdGenerator
 import com.davidlang.vehicleexpensesautomated.data.trip.TripTypes
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
+import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 
 /** Canonical tab names, headers, and row encode/decode shared by all tabular backends + CSV zip. */
 object TabularSchema {
@@ -28,6 +29,7 @@ object TabularSchema {
 
     val VEHICLE_HEADERS = listOf(
         "Sync ID", "ID", "Name", "Make", "Model", "Year", "License Plate", "VIN", "Notes",
+        "Odometer Unit",
         "Odo Crop L", "Odo Crop T", "Odo Crop R", "Odo Crop B",
         "Landmark Text Blocks JSON",
         /** Ordered trip type names JSON array; blank → seed/inherit on local insert. */
@@ -134,6 +136,7 @@ object TabularSchema {
             "License Plate" to (vehicle.licensePlate ?: ""),
             "VIN" to (vehicle.vin ?: ""),
             "Notes" to (vehicle.notes ?: ""),
+            "Odometer Unit" to UnitFormat.normalizeOdometerUnit(vehicle.odometerUnit),
             "Odo Crop L" to (vehicle.odometerCropLeft?.toString() ?: ""),
             "Odo Crop T" to (vehicle.odometerCropTop?.toString() ?: ""),
             "Odo Crop R" to (vehicle.odometerCropRight?.toString() ?: ""),
@@ -173,6 +176,7 @@ object TabularSchema {
             licensePlate = cell("License Plate").ifBlank { null },
             vin = cell("VIN").ifBlank { null },
             notes = cell("Notes").ifBlank { null },
+            odometerUnit = UnitFormat.normalizeOdometerUnit(cell("Odometer Unit")),
             odometerCropLeft = optionalFloat("Odo Crop L"),
             odometerCropTop = optionalFloat("Odo Crop T"),
             odometerCropRight = optionalFloat("Odo Crop R"),

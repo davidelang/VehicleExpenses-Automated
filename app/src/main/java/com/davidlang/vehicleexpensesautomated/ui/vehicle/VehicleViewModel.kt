@@ -46,6 +46,7 @@ class VehicleViewModel @Inject constructor(
         imgH: Int = 0,
         odometerDigitCount: Int = 6,
         odometerRolloverCount: Int = 0,
+        odometerUnit: String = "mi",
         cloudManifest: String? = null,
     ) {
         val newVehicle = Vehicle(
@@ -64,6 +65,7 @@ class VehicleViewModel @Inject constructor(
             cloudManifest = cloudManifest,
             odometerDigitCount = odometerDigitCount.coerceIn(3, 9),
             odometerRolloverCount = odometerRolloverCount.coerceAtLeast(0),
+            odometerUnit = odometerUnit,
         )
 
         try {

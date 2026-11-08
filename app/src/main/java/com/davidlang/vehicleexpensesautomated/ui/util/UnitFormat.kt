@@ -1,57 +1,54 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.content.Context
+import java.util.Locale
 
 /**
- * Central façade for economy / distance **display labels** only.
- *
- * Odometer is stored as an instrument integer (no mi/km conversion in-app yet).
- * Economy math remains Δodo / volume; UI language is currently MPG / $/mi.
- * A future distance-unit plan should swap strings here without hunting call sites.
- *
- * Language packs / RTL are deferred (see sandbox research under
- * `dev-ai-interaction/research/i18n-rtl-and-beyond-languages-20260730.md`).
+ * Economy and distance display labels.
+ * Odometer integers are not converted. A km vehicle's economy is that integer delta per stored gallon.
  */
 object UnitFormat {
-    /** Efficiency unit label for full-fill economy display (currently MPG language). */
-    fun economyEfficiencyLabel(): String = "mpg"
+    const val MI = "mi"
+    const val KM = "km"
 
-    /**
-     * Volume per distance (inverse economy), e.g. `G/mi` / `L/mi`.
-     * Uses preferred volume unit from settings when [context] is provided.
-     */
-    fun volumePerDistanceLabel(context: Context? = null): String {
-        val vol = context?.let { VolumeUnits.shortLabel(VolumeUnits.resolvedPreferredVolumeUnit(it)) }
-            ?: "G"
-        return vol + "/" + distanceUnitShortLabel()
+    /** Blank, miles, or anything other than kilometers stays miles. */
+    fun normalizeOdometerUnit(raw: String?): String {
+        val t = raw?.trim()?.lowercase(Locale.US) ?: return MI
+        return when (t) {
+            KM, "kilometers", "kilometres" -> KM
+            else -> MI
+        }
     }
 
+    /** The 5–80 mpg display band applies only to a miles vehicle. */
+    fun usesMpgClamp(unit: String?): Boolean = normalizeOdometerUnit(unit) == MI
+
+    /** Miles: `mpg`. Kilometers: km per stored gallon. */
+    fun economyEfficiencyLabel(unit: String? = MI): String =
+        if (usesMpgClamp(unit)) "mpg" else "km/gal"
+
     /**
-     * Unit price (cost ÷ volume), e.g. `$/G` / `$/L`.
+     * Volume per distance, e.g. `G/mi` / `L/km`.
+     * Volume follows the locale. Distance follows [unit].
      */
+    fun volumePerDistanceLabel(context: Context? = null, unit: String? = MI): String {
+        val vol = context?.let { VolumeUnits.shortLabel(VolumeUnits.systemDefaultUnit()) } ?: "G"
+        return vol + "/" + distanceUnitShortLabel(unit)
+    }
+
+    /** Unit price (cost ÷ stored gallons, labeled in the locale volume unit). */
     fun unitPriceLabel(context: Context? = null): String {
-        val vol = context?.let { VolumeUnits.shortLabel(VolumeUnits.resolvedPreferredVolumeUnit(it)) }
-            ?: "G"
+        val vol = context?.let { VolumeUnits.shortLabel(VolumeUnits.systemDefaultUnit()) } ?: "G"
         return "$/" + vol
     }
 
-    /** Cost per distance label (currently US-style). */
-    fun costPerDistanceLabel(): String = "$/mi"
+    fun costPerDistanceLabel(unit: String? = MI): String = "$/" + distanceUnitShortLabel(unit)
 
-    /**
-     * Short distance unit for odo/Δodo UI (currently `"mi"`).
-     * Instrument reading may be km on some vehicles; no conversion yet.
-     */
-    fun distanceUnitShortLabel(): String = "mi"
+    fun distanceUnitShortLabel(unit: String? = MI): String = normalizeOdometerUnit(unit)
 
-    /**
-     * Format an absolute odometer reading for display (e.g. toast / summary).
-     */
-    fun odometerReadingLabel(odo: Int): String = "$odo ${distanceUnitShortLabel()}"
+    fun odometerReadingLabel(odo: Int, unit: String? = MI): String =
+        "$odo ${distanceUnitShortLabel(unit)}"
 
-    /**
-     * Format an odometer delta for display. Today always uses `mi` wording even though
-     * the instrument may be km — product has not added distance prefs yet.
-     */
-    fun distanceDeltaLabel(delta: Int): String = "$delta ${distanceUnitShortLabel()}"
+    fun distanceDeltaLabel(delta: Int, unit: String? = MI): String =
+        "$delta ${distanceUnitShortLabel(unit)}"
 }

@@ -441,7 +441,7 @@ fun TripTrackingScreen(
         if (saveBlob.hasCoordsWithoutPlace()) {
             LocationLookupScheduler.enqueueSoon(context)
         }
-        statusLine = "$toastLabel: $tripType @ ${UnitFormat.odometerReadingLabel(odo)}"
+        statusLine = "$toastLabel: $tripType @ ${UnitFormat.odometerReadingLabel(odo, selectedVehicle?.odometerUnit)}"
         Toast.makeText(context, statusLine, Toast.LENGTH_SHORT).show()
         eventTimestamp = System.currentTimeMillis()
         timeIsNow = true
@@ -761,7 +761,7 @@ fun TripTrackingScreen(
                 value = odometer,
                 onValueChange = { odometer = it.filter { ch -> ch.isDigit() } },
                 showCaretButtons = true,
-                label = { Text(S("Odometer (%1\$s)", UnitFormat.distanceUnitShortLabel())) },
+                label = { Text(S("Odometer (%1\$s)", UnitFormat.distanceUnitShortLabel(selectedVehicle?.odometerUnit))) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -850,7 +850,7 @@ fun TripTrackingScreen(
                 text = when {
                     openTrip == null -> S("No open trip on this vehicle (implicit personal).")
                     else ->
-                        S("Open: %1\$s since %2\$s", openTrip.tripType, UnitFormat.odometerReadingLabel(openTrip.odometer))
+                        S("Open: %1\$s since %2\$s", openTrip.tripType, UnitFormat.odometerReadingLabel(openTrip.odometer, selectedVehicle?.odometerUnit))
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,

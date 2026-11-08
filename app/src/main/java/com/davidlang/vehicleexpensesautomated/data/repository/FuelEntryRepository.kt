@@ -6,10 +6,8 @@ import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdGenerator
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdentity
-import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -100,15 +98,6 @@ class FuelEntryRepository @Inject constructor(
     suspend fun saveEntry(entry: FuelEntry) = insertFuelEntry(entry)
 
     fun getAllEntries() = getAllFuelEntries()
-
-    suspend fun convertAllVolumes(fromUnit: String, toUnit: String) {
-        if (fromUnit == toUnit) return
-        val entries = fuelEntryDao.getAllFuelEntries().first()
-        entries.forEach { entry ->
-            val converted = VolumeUnits.convert(entry.gallons, fromUnit, toUnit)
-            fuelEntryDao.updateFuelEntry(stampForWrite(entry.copy(gallons = converted)))
-        }
-    }
 
     private fun stampForWrite(entry: FuelEntry): FuelEntry {
         val deviceId = SyncIdentity.getOrCreateDeviceId(context)

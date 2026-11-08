@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.components.AdaptiveItemGrid
 import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
+import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.util.S
 
 private data class TimeMetricToggles(
@@ -121,10 +122,13 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
     var smoothMenu by remember { mutableStateOf(false) }
     var customDaysText by remember { mutableStateOf(smooth.customDays.toString()) }
 
-    val mpgLabel = UnitFormat.economyEfficiencyLabel()
-    val gpmLabel = UnitFormat.volumePerDistanceLabel(context)
+    val scopeUnit = data.scopeDistanceUnit()
+    val mpgLabel = UnitFormat.economyEfficiencyLabel(scopeUnit)
+    val gpmLabel = UnitFormat.volumePerDistanceLabel(context, scopeUnit)
     val unitPriceLabel = UnitFormat.unitPriceLabel(context)
-    val dpmLabel = UnitFormat.costPerDistanceLabel()
+    val dpmLabel = UnitFormat.costPerDistanceLabel(scopeUnit)
+    val volScale = VolumeUnits.displayVolumeScale().toFloat()
+    val priceScale = VolumeUnits.displayUnitPriceScale().toFloat()
 
     fun setToggles(next: TimeMetricToggles) {
         toggles = next
@@ -139,10 +143,11 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
 
     val fillFuel = remember(data.fuel) { data.fuel.withoutTripStarts() }
     val byFuelScope = remember(data.fuel, data.filter.vehicleMode) { data.fuelByVehicleScope() }
-    val metricsByScope = remember(byFuelScope, data.expenses, data.defaultStored) {
-        byFuelScope.mapValues { (_, fuel) ->
+    val metricsByScope = remember(byFuelScope, data.expenses, data.defaultStored, data.allVehicles, scopeUnit) {
+        byFuelScope.mapValues { (vid, fuel) ->
+            val unit = if (vid == null) scopeUnit else data.odometerUnit(vid)
             val legs = allValidLegsChrono(fuel, data.defaultStored)
-            val display = excludeMpgOutliers(legs)
+            val display = excludeMpgOutliers(legs, UnitFormat.usesMpgClamp(unit))
             labLegMetrics(display, fuel, data.expenses, data.defaultStored)
         }
     }
@@ -157,25 +162,28 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
     val mode = smooth.mode
     val customDays = smooth.customDays
 
-    val mpgSeries = remember(metricsByScope, toggles.mpg, mode, customDays, data.filter.vehicleMode) {
+    val mpgSeries = remember(metricsByScope, toggles.mpg, mode, customDays, data.filter.vehicleMode, scopeUnit) {
         if (!toggles.mpg) emptyMap()
         else buildMap {
             for ((vid, metrics) in metricsByScope) {
+                val unit = if (vid == null) scopeUnit else data.odometerUnit(vid)
                 val pts = economyPointsFromLegsBinned(metrics.map { it.leg }, mode, customDays, asGpm = false)
-                if (pts.isNotEmpty()) put(prefix(vid) + mpgLabel, pts)
+                if (pts.isNotEmpty()) put(prefix(vid) + UnitFormat.economyEfficiencyLabel(unit), pts)
             }
         }
     }
-    val gpmSeries = remember(metricsByScope, toggles.gpm, mode, customDays, data.filter.vehicleMode) {
+    val gpmSeries = remember(metricsByScope, toggles.gpm, mode, customDays, data.filter.vehicleMode, scopeUnit, volScale) {
         if (!toggles.gpm) emptyMap()
         else buildMap {
             for ((vid, metrics) in metricsByScope) {
+                val unit = if (vid == null) scopeUnit else data.odometerUnit(vid)
                 val pts = economyPointsFromLegsBinned(metrics.map { it.leg }, mode, customDays, asGpm = true)
-                if (pts.isNotEmpty()) put(prefix(vid) + gpmLabel, pts)
+                    .map { it.copy(y = it.y * volScale) }
+                if (pts.isNotEmpty()) put(prefix(vid) + UnitFormat.volumePerDistanceLabel(context, unit), pts)
             }
         }
     }
-    val unitPriceSeries = remember(byFuelScope, toggles.unitPrice, mode, customDays, data.filter.vehicleMode) {
+    val unitPriceSeries = remember(byFuelScope, toggles.unitPrice, mode, customDays, data.filter.vehicleMode, priceScale) {
         if (!toggles.unitPrice) emptyMap()
         else buildMap {
             for ((vid, fuel) in byFuelScope) {
@@ -184,6 +192,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                     else e.timestamp to (e.cost to e.gallons)
                 }
                 val pts = unitPricePointsBinned(cv, mode, customDays)
+                    .map { it.copy(y = it.y * priceScale) }
                 if (pts.isNotEmpty()) put(prefix(vid) + unitPriceLabel, pts)
             }
         }
@@ -305,7 +314,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                 add(
                     LabAxisFamily(
                         id = "trip_mi",
-                        unitLabel = UnitFormat.distanceUnitShortLabel(),
+                        unitLabel = UnitFormat.distanceUnitShortLabel(scopeUnit),
                         side = LabAxisSide.Right,
                         axisColor = Color(0xFFEF6C00),
                         series = tripMilesSeries,

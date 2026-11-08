@@ -27,10 +27,8 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.email.EmailReceiptPrefs
 import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
-import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.PumpOcrSettings
 import com.davidlang.vehicleexpensesautomated.ui.util.FillDebugStore
-import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -70,9 +68,6 @@ fun SettingsScreen(
         S("Spreadsheet and photo destinations are under Menu → Syncing (not only this page)."),
         S("Show experiment screens reveals Alignment, Pump Experiment, and Import Old Pictures in the drawer."),
     )
-    val fuelViewModel: FuelViewModel = hiltViewModel()
-    val fuelEntries by fuelViewModel.fuelEntries.collectAsState(initial = emptyList())
-    val hasFuelData = fuelEntries.isNotEmpty()
     val csvManager = viewModel.csvManager
     val scope = rememberCoroutineScope()
 
@@ -133,45 +128,6 @@ fun SettingsScreen(
     val shortCurrencyOptions = shortCurrencySymbols.map { sym ->
         if (sym == "system") S("System default (%1\$s)", systemCurrencySymbol) else sym
     } + S("See more")
-    var volumeUnit by remember {
-        mutableStateOf(
-            if (prefs.contains("volume_unit")) {
-                prefs.getString("volume_unit", "system") ?: "system"
-            } else {
-                "system"
-            }
-        )
-    }
-    var pendingVolumeUnit by remember { mutableStateOf<String?>(null) }
-    var showVolumeConvertDialog by remember { mutableStateOf(false) }
-    val systemVolumeLabel = remember {
-        if (VolumeUnits.systemDefaultUnit() == VolumeUnits.LITERS) {
-            S("System default (Liters)")
-        } else {
-            S("System default (Gallons)")
-        }
-    }
-    val volumeOptions = listOf(systemVolumeLabel, S("Gallons (G)"), S("Liters (L)"))
-
-    fun resolveVolumePref(pref: String): String {
-        if (pref == VolumeUnits.GALLONS || pref == VolumeUnits.LITERS) return pref
-        return VolumeUnits.systemDefaultUnit()
-    }
-
-    fun volumeDisplayLabel(pref: String): String = when (pref) {
-        "system" -> systemVolumeLabel
-        VolumeUnits.GALLONS -> S("Gallons (G)")
-        VolumeUnits.LITERS -> S("Liters (L)")
-        else -> systemVolumeLabel
-    }
-
-    fun volumePrefFromLabel(label: String): String = when (label) {
-        systemVolumeLabel -> "system"
-        S("Gallons (G)") -> VolumeUnits.GALLONS
-        S("Liters (L)") -> VolumeUnits.LITERS
-        else -> VolumeUnits.LITERS
-    }
-
     var status by remember { mutableStateOf(S("Ready")) }
     var showClearDebugConfirm by remember { mutableStateOf(false) }
     var showDebugInfoDialog by remember { mutableStateOf(false) }
@@ -229,7 +185,6 @@ fun SettingsScreen(
         darkModePref,
         shutterSounds,
         currencySymbol,
-        volumeUnit,
         pumpMaxRedBoxes,
         pumpLabelYBandExtra,
         pumpRatioBandLo,
@@ -251,7 +206,6 @@ fun SettingsScreen(
             putString("dark_mode", darkModePref)
             putBoolean("shutter_sounds", shutterSounds)
             putString("currency_symbol", currencySymbol)
-            putString("volume_unit", volumeUnit)
             putInt(
                 PumpOcrSettings.KEY_MAX_RED_BOXES,
                 pumpMaxRedBoxes.coerceIn(
@@ -833,51 +787,6 @@ fun SettingsScreen(
                     },
                 )
             }
-            if (showVolumeConvertDialog && pendingVolumeUnit != null) {
-                val targetPref = pendingVolumeUnit!!
-                AlertDialog(
-                    onDismissRequest = {
-                        pendingVolumeUnit = null
-                        showVolumeConvertDialog = false
-                    },
-                    title = { Text(S("Convert fuel volumes?")) },
-                    text = {
-                        Text(
-                            S("Convert existing fuel volumes between G and L?\n\n") +
-                                S("If you choose No, historical numbers keep their current values but ") +
-                                S("display labels will change without conversion."),
-                        )
-                    },
-                    confirmButton = {
-                        Row {
-                            TextButton(onClick = {
-                                pendingVolumeUnit = null
-                                showVolumeConvertDialog = false
-                            }) {
-                                Text(S("Cancel"))
-                            }
-                            TextButton(onClick = {
-                                volumeUnit = targetPref
-                                pendingVolumeUnit = null
-                                showVolumeConvertDialog = false
-                            }) {
-                                Text(S("No"))
-                            }
-                            TextButton(onClick = {
-                                val fromUnit = resolveVolumePref(volumeUnit)
-                                val toUnit = resolveVolumePref(targetPref)
-                                fuelViewModel.convertAllVolumes(fromUnit, toUnit) {
-                                    volumeUnit = targetPref
-                                    pendingVolumeUnit = null
-                                    showVolumeConvertDialog = false
-                                }
-                            }) {
-                                Text(S("Yes"))
-                            }
-                        }
-                    },
-                )
-            }
             if (showClearDebugConfirm) {
                 AlertDialog(
                     onDismissRequest = { showClearDebugConfirm = false },
@@ -1012,25 +921,6 @@ fun SettingsScreen(
                         confirmButton = {
                             TextButton(onClick = { showMoreCurrencies = false }) {
                                 Text(S("Close"))
-                            }
-                        },
-                    )
-                }
-                Box(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                    DropdownSetting(
-                        label = S("Default Unit"),
-                        selectedValue = volumeDisplayLabel(volumeUnit),
-                        options = volumeOptions,
-                        onValueChange = { label ->
-                            val newPref = volumePrefFromLabel(label)
-                            if (newPref == volumeUnit) return@DropdownSetting
-                            val oldResolved = resolveVolumePref(volumeUnit)
-                            val newResolved = resolveVolumePref(newPref)
-                            if (hasFuelData && oldResolved != newResolved) {
-                                pendingVolumeUnit = newPref
-                                showVolumeConvertDialog = true
-                            } else {
-                                volumeUnit = newPref
                             }
                         },
                     )

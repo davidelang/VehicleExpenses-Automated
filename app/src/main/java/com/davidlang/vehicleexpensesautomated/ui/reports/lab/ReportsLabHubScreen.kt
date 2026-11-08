@@ -83,7 +83,10 @@ fun ReportsLabHubScreen(navController: NavHostController) {
     val defaultSymbol = remember { CurrencyCodes.settingsDefaultSymbol(context) }
     val defaultStored = remember { CurrencyCodes.settingsDefaultStored(context) }
     val volumeLabel = remember {
-        VolumeUnits.shortLabel(VolumeUnits.resolvedPreferredVolumeUnit(context))
+        VolumeUnits.shortLabel(VolumeUnits.systemDefaultUnit())
+    }
+    val unitByVehicle = remember(vehicles) {
+        vehicles.associate { it.id to it.odometerUnit }
     }
     val catalog = reportsCatalog()
 
@@ -97,8 +100,8 @@ fun ReportsLabHubScreen(navController: NavHostController) {
     val overallLine = remember(allFuel, allExp, volumeLabel, defaultSymbol, defaultStored) {
         hubOverallSummaryLine(allFuel, allExp, volumeLabel, defaultSymbol, defaultStored)
     }
-    val vehicleSummaries = remember(allFuel, allExp, nameById, defaultStored) {
-        hubVehicleSummaries(allFuel, allExp, nameById, defaultStored)
+    val vehicleSummaries = remember(allFuel, allExp, nameById, defaultStored, unitByVehicle) {
+        hubVehicleSummaries(allFuel, allExp, nameById, defaultStored, unitByVehicle)
     }
 
     Column(
