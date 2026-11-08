@@ -2,9 +2,7 @@ package com.davidlang.vehicleexpensesautomated.data.batch
 
 import android.content.Context
 import android.util.Log
-import androidx.room.withTransaction
 import com.davidlang.vehicleexpensesautomated.testOnlyBuild
-import com.davidlang.vehicleexpensesautomated.data.db.AppDatabase
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 // FuelLocationJson same package
@@ -61,7 +59,6 @@ data class MergeApplyResult(
 @Singleton
 class BatchFuelImportCoordinator @Inject constructor(
     @param:ApplicationContext internal val appContext: Context,
-    private val database: AppDatabase,
     internal val fuelEntryRepository: FuelEntryRepository,
     internal val vehicleRepository: VehicleRepository,
     internal val mergeAckStore: MergeAckStore,
@@ -206,10 +203,8 @@ class BatchFuelImportCoordinator @Inject constructor(
             val paired = plan.updates.zip(plan.hardDeletes)
             for ((u, d) in paired) {
                 try {
-                    val softDeleted = database.withTransaction {
-                        fuelEntryRepository.updateFuelEntry(u)
-                        absorbMergedRow(d)
-                    }
+                    val softDeleted = shouldSoftDeleteOnAbsorb(d)
+                    fuelEntryRepository.applyMerge(u, d, hardDeleteDonor = !softDeleted)
                     updated++
                     if (softDeleted) soft++ else hard++
                     deleted++
@@ -224,9 +219,7 @@ class BatchFuelImportCoordinator @Inject constructor(
             }
             for (u in plan.updates.drop(paired.size)) {
                 try {
-                    database.withTransaction {
-                        fuelEntryRepository.updateFuelEntry(u)
-                    }
+                    fuelEntryRepository.updateFuelEntry(u)
                     updated++
                 // kept: failure stays on this call so the screen or caller can continue
                 } catch (e: CancellationException) {
@@ -239,9 +232,7 @@ class BatchFuelImportCoordinator @Inject constructor(
             }
             plan.hardDeletes.drop(paired.size).forEach { d ->
                 try {
-                    val softDeleted = database.withTransaction {
-                        absorbMergedRow(d)
-                    }
+                    val softDeleted = absorbMergedRow(d)
                     if (softDeleted) soft++ else hard++
                     deleted++
                 // kept: failure stays on this call so the screen or caller can continue

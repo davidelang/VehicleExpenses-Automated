@@ -5,6 +5,7 @@ import com.davidelang.extractmail.Extractmail
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
+import com.davidlang.vehicleexpensesautomated.data.torque.TorqueFillPayload
 import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -72,6 +73,8 @@ class FuelReceiptIngest @Inject constructor(
             syncId = syncId,
             originDeviceId = originDeviceId,
             updatedAt = System.currentTimeMillis(),
+            costSource = TorqueFillPayload.SOURCE_EMAIL,
+            volumeSource = TorqueFillPayload.SOURCE_EMAIL,
         )
         fuelEntryRepository.insertFuelEntry(entry)
         val written = fuelEntryRepository.findBySyncId(syncId)

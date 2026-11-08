@@ -474,14 +474,17 @@ fun FuelEditScreen(
                     address = locAddress.trim(),
                 )
                 val locationJson = FuelLocationJson.encode(blob)
+                val newOdo = odometer.toIntOrNull() ?: 0
+                val newCost = cost.toDoubleOrNull() ?: 0.0
+                val newGallons = VolumeUnits.toStoredGallons(
+                    volume.toDoubleOrNull() ?: 0.0,
+                    VolumeUnits.systemDefaultUnit(),
+                )
                 val updated = base.copy(
                     vehicleId = vehicleId,
-                    odometer = odometer.toIntOrNull() ?: 0,
-                    gallons = VolumeUnits.toStoredGallons(
-                        volume.toDoubleOrNull() ?: 0.0,
-                        VolumeUnits.systemDefaultUnit(),
-                    ),
-                    cost = cost.toDoubleOrNull() ?: 0.0,
+                    odometer = newOdo,
+                    gallons = newGallons,
+                    cost = newCost,
                     currency = CurrencyCodes.fromSymbolOrCode(currencySymbol),
                     timestamp = timestampMs,
                     location = locationJson,
@@ -490,6 +493,10 @@ fun FuelEditScreen(
                     isPartialFill = isPartialFill,
                     economyIgnored = economyIgnored,
                     photoUrl = photoUrl,
+                    odometerSource = if (newOdo != base.odometer) TorqueLiveDecode.SOURCE_MANUAL else base.odometerSource,
+                    torqueOdometerRawKm = if (newOdo != base.odometer) null else base.torqueOdometerRawKm,
+                    costSource = if (newCost != base.cost) TorqueLiveDecode.SOURCE_MANUAL else base.costSource,
+                    volumeSource = if (newGallons != base.gallons) TorqueLiveDecode.SOURCE_MANUAL else base.volumeSource,
                 )
                 fuelViewModel.updateFuel(updated)
                 Toast.makeText(context, S("Fill saved"), Toast.LENGTH_SHORT).show()

@@ -21,6 +21,7 @@ class VehicleRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val vehicleDao: VehicleDao,
     private val photoStorage: PhotoStorageManager,
+    private val fuelEntryRepository: FuelEntryRepository,
 ) {
 
     companion object {
@@ -56,6 +57,7 @@ class VehicleRepository @Inject constructor(
         ) {
             if (byId.integrateWithTorque) {
                 vehicleDao.updateVehicle(byId.copy(integrateWithTorque = false))
+                fuelEntryRepository.dropPendingForVehicle(byId.id)
             }
             return
         }
@@ -129,7 +131,12 @@ class VehicleRepository @Inject constructor(
                 FuelTabRenameHintStore(context).recordHint(existing.syncId, oldTab)
             }
         }
-        vehicleDao.updateVehicle(stampForWrite(refuseUnassignedOptIn(vehicle)))
+        val wasOn = existing?.integrateWithTorque == true
+        val stored = stampForWrite(refuseUnassignedOptIn(vehicle))
+        vehicleDao.updateVehicle(stored)
+        if (wasOn && !stored.integrateWithTorque) {
+            fuelEntryRepository.dropPendingForVehicle(stored.id)
+        }
     }
 
     /**
@@ -169,6 +176,9 @@ class VehicleRepository @Inject constructor(
         }
         if (existing != null) {
             vehicleDao.updateVehicle(toWrite)
+            if (existing.integrateWithTorque && !toWrite.integrateWithTorque) {
+                fuelEntryRepository.dropPendingForVehicle(toWrite.id)
+            }
         } else {
             vehicleDao.insertVehicle(toWrite)
         }

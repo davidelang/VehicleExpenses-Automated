@@ -656,6 +656,22 @@ object FuelRowMergeEngine {
         val complete = (if (odo > 0) odo else 0) > 0 && costF > 0 && galF > 0
         // Explicit partial only when complete and either side already had user override
         val preservePartial = complete && (a.isPartialFill || b.isPartialFill)
+        val odoSide = when {
+            a.odometer > 0 && b.odometer > 0 -> a
+            a.odometer > 0 -> a
+            else -> b
+        }
+        val costSide = when {
+            later.cost > 0 -> later
+            earlier.cost > 0 -> earlier
+            else -> null
+        }
+        val volSide = when {
+            later.gallons > 0 -> later
+            earlier.gallons > 0 -> earlier
+            else -> null
+        }
+        val keptOdoSource = if (odo > 0) odoSide.odometerSource else ""
         return later.copy(
             id = idKeep,
             syncId = a.syncId,
@@ -676,6 +692,10 @@ object FuelRowMergeEngine {
             location = loc,
             notes = notes,
             isPartialFill = preservePartial,
+            odometerSource = keptOdoSource,
+            torqueOdometerRawKm = if (keptOdoSource == "torque") odoSide.torqueOdometerRawKm else null,
+            costSource = costSide?.costSource ?: "",
+            volumeSource = volSide?.volumeSource ?: "",
         )
     }
 

@@ -70,4 +70,10 @@ data class FuelEntry(
     /** `torque`, `photo`, `manual`, or blank. */
     @ColumnInfo(defaultValue = "''")
     val odometerSource: String = "",
+    /** `email`, `ocr`, `manual`, or blank. The source of [cost] when the merge kept it. */
+    @ColumnInfo(defaultValue = "''")
+    val costSource: String = "",
+    /** `email`, `ocr`, `manual`, or blank. The source of [gallons] when the merge kept it. */
+    @ColumnInfo(defaultValue = "''")
+    val volumeSource: String = "",
 )

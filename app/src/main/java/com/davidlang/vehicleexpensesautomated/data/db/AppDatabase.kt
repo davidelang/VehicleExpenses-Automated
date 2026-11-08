@@ -6,17 +6,30 @@ import com.davidlang.vehicleexpensesautomated.data.dao.ExpenseEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.FuelEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.KnownStationDao
 import com.davidlang.vehicleexpensesautomated.data.dao.MergeAckDao
+import com.davidlang.vehicleexpensesautomated.data.dao.TorqueFillDao
 import com.davidlang.vehicleexpensesautomated.data.dao.VehicleDao
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.KnownStation
 import com.davidlang.vehicleexpensesautomated.data.model.MergeAck
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
+import com.davidlang.vehicleexpensesautomated.data.torque.TorqueFillOutboxEntity
+import com.davidlang.vehicleexpensesautomated.data.torque.TorqueFillProducerEntity
+import com.davidlang.vehicleexpensesautomated.data.torque.TorqueFillRevisionEntity
 
-const val APP_DB_SCHEMA_VERSION = 24
+const val APP_DB_SCHEMA_VERSION = 25
 
 @Database(
-    entities = [Vehicle::class, FuelEntry::class, ExpenseEntry::class, MergeAck::class, KnownStation::class],
+    entities = [
+        Vehicle::class,
+        FuelEntry::class,
+        ExpenseEntry::class,
+        MergeAck::class,
+        KnownStation::class,
+        TorqueFillProducerEntity::class,
+        TorqueFillRevisionEntity::class,
+        TorqueFillOutboxEntity::class,
+    ],
     version = APP_DB_SCHEMA_VERSION,
     exportSchema = false,
 )
@@ -27,4 +40,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun expenseEntryDao(): ExpenseEntryDao
     abstract fun mergeAckDao(): MergeAckDao
     abstract fun knownStationDao(): KnownStationDao
+    abstract fun torqueFillDao(): TorqueFillDao
 }

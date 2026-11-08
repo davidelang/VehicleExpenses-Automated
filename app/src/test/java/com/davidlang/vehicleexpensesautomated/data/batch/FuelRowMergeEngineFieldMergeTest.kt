@@ -240,4 +240,30 @@ class FuelRowMergeEngineFieldMergeTest {
         assertEquals(dash.id, dropped.id)
         assertEquals("dash-drop", dropped.syncId)
     }
+
+    /** The odometer source stays with the reading. Cost and volume keep the email source. */
+    @Test
+    fun mergeFields_keepsSourceOfChosenAmounts() {
+        val dash = entry(
+            id = 80,
+            odometer = 10000,
+            timestamp = t0,
+            syncId = "dash",
+        ).copy(odometerSource = "torque", torqueOdometerRawKm = "160934")
+        val email = entry(
+            id = 81,
+            odometer = 0,
+            gallons = 10.25,
+            cost = 42.5,
+            timestamp = t0 + 60_000L,
+            syncId = "mail",
+        ).copy(costSource = "email", volumeSource = "email")
+        val merged = FuelRowMergeEngine.mergeFields(dash, email, preferLatestTs = true)
+        assertEquals(10000, merged.odometer)
+        assertEquals("torque", merged.odometerSource)
+        assertEquals("160934", merged.torqueOdometerRawKm)
+        assertEquals("email", merged.costSource)
+        assertEquals("email", merged.volumeSource)
+        assertEquals(15L * 60L * 1000L, FuelRowMergeEngine.MERGE_WINDOW_MS)
+    }
 }

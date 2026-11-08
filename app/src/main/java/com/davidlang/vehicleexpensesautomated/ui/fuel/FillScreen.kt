@@ -224,6 +224,8 @@ private class FillCaptureArgs(
     val odometerState: MutableState<String>,
     val gallonsState: MutableState<String>,
     val costState: MutableState<String>,
+    val costFromOcrState: MutableState<Boolean>,
+    val volumeFromOcrState: MutableState<Boolean>,
     val pumpViewRotationState: MutableIntState,
     val watchdogUpState: MutableState<Boolean>,
     val unresolvedVehicleState: MutableState<UnresolvedVehiclePick?>,
@@ -308,6 +310,8 @@ private fun continueFillCapture(
     var odometer by args.odometerState
     var gallons by args.gallonsState
     var cost by args.costState
+    var costFromOcr by args.costFromOcrState
+    var volumeFromOcr by args.volumeFromOcrState
     var pumpViewRotation by args.pumpViewRotationState
     var watchdogUp by args.watchdogUpState
     var unresolvedVehicle by args.unresolvedVehicleState
@@ -568,8 +572,14 @@ private fun continueFillCapture(
                         instructionLine = result.error
                         Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
                     } else {
-                        result.volume?.let { gallons = it }
-                        result.cost?.let { cost = it }
+                        result.volume?.let {
+                            gallons = it
+                            volumeFromOcr = true
+                        }
+                        result.cost?.let {
+                            cost = it
+                            costFromOcr = true
+                        }
                         val parts = buildList {
                             result.cost?.let { add(S("cost %1\$s", it)) }
                             result.volume?.let { add(S("volume %1\$s", it)) }
@@ -851,6 +861,10 @@ fun FillScreen(
     val captureModeState = rememberSaveable { mutableStateOf("odo") }
     var captureMode by captureModeState
     var odoUserEdited by rememberSaveable { mutableStateOf(false) }
+    val costFromOcrState = rememberSaveable { mutableStateOf(false) }
+    var costFromOcr by costFromOcrState
+    val volumeFromOcrState = rememberSaveable { mutableStateOf(false) }
+    var volumeFromOcr by volumeFromOcrState
     var dashPhotoTaken by rememberSaveable { mutableStateOf(false) }
     var userPickedVehicle by rememberSaveable { mutableStateOf(false) }
     var torqueAppliedVehicleId by rememberSaveable { mutableIntStateOf(-1) }
@@ -919,10 +933,12 @@ fun FillScreen(
                 odoCaret = c
             }
             "cost" -> {
+                if (text != cost) costFromOcr = false
                 cost = text
                 costCaret = c
             }
             "volume" -> {
+                if (text != gallons) volumeFromOcr = false
                 gallons = text
                 volumeCaret = c
             }
@@ -1134,6 +1150,8 @@ fun FillScreen(
         odometerState = odometerState,
         gallonsState = gallonsState,
         costState = costState,
+        costFromOcrState = costFromOcrState,
+        volumeFromOcrState = volumeFromOcrState,
         pumpViewRotationState = pumpViewRotationState,
         watchdogUpState = watchdogUpState,
         unresolvedVehicleState = unresolvedVehicleState,
@@ -1459,6 +1477,16 @@ fun FillScreen(
                                 isPartialFill = false,
                                 torqueOdometerRawKm = mark.rawTenthsKm,
                                 odometerSource = mark.source,
+                                costSource = if ((costTrim.toDoubleOrNull() ?: 0.0) > 0.0) {
+                                    if (costFromOcr) "ocr" else "manual"
+                                } else {
+                                    ""
+                                },
+                                volumeSource = if (saveVolume > 0.0) {
+                                    if (volumeFromOcr) "ocr" else "manual"
+                                } else {
+                                    ""
+                                },
                             )
                         )
                         if (saveBlob.hasCoordsWithoutPlace()) {
@@ -1482,6 +1510,8 @@ fun FillScreen(
                         gallons = ""
                         notes = ""
                         odoUserEdited = false
+                        costFromOcr = false
+                        volumeFromOcr = false
                         dashPhotoTaken = false
                         torqueAppliedVehicleId = -1
                         torqueRawTenths = ""
@@ -1691,6 +1721,9 @@ fun FillScreen(
                         val temp = cost
                         cost = gallons
                         gallons = temp
+                        val tempOcr = costFromOcr
+                        costFromOcr = volumeFromOcr
+                        volumeFromOcr = tempOcr
                     },
                     modifier = Modifier.size(32.dp)
                 ) {

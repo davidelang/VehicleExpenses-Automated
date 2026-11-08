@@ -12739,3 +12739,7 @@ feature-group: label=''
 ## 2026-11-08 - live A6 prefill
 
 - A new fill can prefill a half-up odometer from Torque mode 01 A6 when an opted-in vehicle's saved VIN blob matches mode 09 02. The dash photo is skipped only for that reading.
+
+## 2026-11-08 - plugin delivery of the merged fill
+
+- Plugin delivery of the merged fill: an opted-in fill is sent to the local plugin after the existing merge, with email cost and volume when a station email pairs.

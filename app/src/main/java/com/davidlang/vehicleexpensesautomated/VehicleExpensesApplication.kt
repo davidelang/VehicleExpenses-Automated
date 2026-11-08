@@ -13,6 +13,7 @@ import com.davidlang.vehicleexpensesautomated.data.db.Importing
 import com.davidlang.vehicleexpensesautomated.data.db.Ok
 import com.davidlang.vehicleexpensesautomated.data.db.Unchecked
 import com.davidlang.vehicleexpensesautomated.data.location.KnownStationStore
+import com.davidlang.vehicleexpensesautomated.data.torque.TorqueFillDeliveryEntryPoint
 import com.davidlang.vehicleexpensesautomated.data.transfer.BackupImporter
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupManager
@@ -23,6 +24,7 @@ import com.davidlang.vehicleexpensesautomated.ui.util.AppLanguage
 import com.davidlang.vehicleexpensesautomated.ui.util.AppStrings
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.FillDebugStore
+import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -120,6 +122,18 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
         if (!loadRcloneOrFail()) return
         scheduleBackgroundWork()
         seedKnownStationsInBackground()
+        retryPendingFills()
+    }
+
+    /** Startup retries rows still pending. It does not scan old fills. */
+    private fun retryPendingFills() {
+        try {
+            EntryPointAccessors.fromApplication(this, TorqueFillDeliveryEntryPoint::class.java)
+                .torqueFillDelivery()
+                .kick()
+        } catch (e: Exception) {
+            android.util.Log.i("TorqueFill", "startup retry skipped")
+        }
     }
 
     /** One-shot rename of the debug Fill pref key and session folder. */

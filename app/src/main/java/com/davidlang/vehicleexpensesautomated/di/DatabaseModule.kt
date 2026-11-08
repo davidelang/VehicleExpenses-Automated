@@ -11,6 +11,7 @@ import com.davidlang.vehicleexpensesautomated.data.dao.ExpenseEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.FuelEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.KnownStationDao
 import com.davidlang.vehicleexpensesautomated.data.dao.MergeAckDao
+import com.davidlang.vehicleexpensesautomated.data.dao.TorqueFillDao
 import com.davidlang.vehicleexpensesautomated.data.dao.VehicleDao
 import com.davidlang.vehicleexpensesautomated.data.db.AppDatabase
 import com.davidlang.vehicleexpensesautomated.data.db.DatabaseHealthState
@@ -571,6 +572,49 @@ object DatabaseModule {
         }
     }
 
+    /**
+     * v25: local producer, per-fill revision high-water, and the pending fill payload.
+     * Cost and volume keep the source the merge or the save already chose.
+     */
+    val MIGRATION_24_25 = object : Migration(24, 25) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE fuel_entries ADD COLUMN costSource TEXT NOT NULL DEFAULT ''",
+            )
+            db.execSQL(
+                "ALTER TABLE fuel_entries ADD COLUMN volumeSource TEXT NOT NULL DEFAULT ''",
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS torque_fill_producer (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    producerId TEXT NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS torque_fill_revision (
+                    syncId TEXT NOT NULL PRIMARY KEY,
+                    highWater INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS torque_fill_outbox (
+                    syncId TEXT NOT NULL PRIMARY KEY,
+                    revision INTEGER NOT NULL,
+                    payloadHash TEXT NOT NULL,
+                    canonicalPayload TEXT NOT NULL,
+                    vehicleId INTEGER NOT NULL,
+                    held INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabaseHealthState(app: Application): DatabaseHealthState =
@@ -604,6 +648,7 @@ object DatabaseModule {
             MIGRATION_21_22,
             MIGRATION_22_23,
             MIGRATION_23_24,
+            MIGRATION_24_25,
         )
         .build()
     }
@@ -622,4 +667,7 @@ object DatabaseModule {
 
     @Provides
     fun provideKnownStationDao(database: AppDatabase): KnownStationDao = database.knownStationDao()
+
+    @Provides
+    fun provideTorqueFillDao(database: AppDatabase): TorqueFillDao = database.torqueFillDao()
 }
