@@ -1,6 +1,8 @@
 package com.davidlang.vehicleexpensesautomated.data.torque
 
 import android.util.Log
+import com.davidlang.vehicleexpensesautomated.BuildConfig
+import com.davidlang.vehicleexpensesautomated.data.dao.FuelEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.TorqueFillDao
 import com.davidlang.vehicleexpensesautomated.data.dao.VehicleDao
 import dagger.hilt.EntryPoint
@@ -21,6 +23,7 @@ import javax.inject.Singleton
 class TorqueFillDelivery @Inject constructor(
     private val dao: TorqueFillDao,
     private val vehicleDao: VehicleDao,
+    private val fuelEntryDao: FuelEntryDao,
     private val client: TorqueFillBridgeClient,
 ) {
     private val executor = Executors.newSingleThreadExecutor { runnable ->
@@ -39,6 +42,7 @@ class TorqueFillDelivery @Inject constructor(
 
     private fun drain() {
         try {
+            runBlocking { recoverHeldInvalidEvents() }
             do {
                 again.set(false)
                 flush()
@@ -48,6 +52,49 @@ class TorqueFillDelivery @Inject constructor(
         } finally {
             running.set(false)
             if (again.compareAndSet(true, false)) kick()
+        }
+    }
+
+    /**
+     * One-time rewrite of retained INVALID_EVENT rows frozen with the old
+     * odometerUnit wire. CONFLICT rows and vehicles that are no longer opted-in
+     * are left alone. A new revision is allocated so the plugin does not see
+     * the same revision with a different hash.
+     */
+    private suspend fun recoverHeldInvalidEvents() {
+        for (row in dao.held(256)) {
+            if (!TorqueFillRules.needsOldWireRecovery(row.canonicalPayload)) continue
+            val vehicle = vehicleDao.getByIdOnce(row.vehicleId)
+            if (!TorqueFillRules.eligible(vehicle) || vehicle == null) continue
+            val entry = fuelEntryDao.findBySyncId(row.syncId) ?: continue
+            val high = dao.revision(row.syncId)?.highWater ?: 0L
+            val decision = TorqueFillRules.decide(
+                changed = true,
+                eligible = true,
+                highWater = high,
+                deleted = entry.deleted,
+                trip = entry.tripType.isNotBlank(),
+                hardRemoved = false,
+            )
+            if (decision.kind == TorqueFillRules.Kind.NONE) continue
+            val next = maxOf(high, row.revision) + 1L
+            if (next <= 0L) continue
+            val frozen = if (decision.kind == TorqueFillRules.Kind.VOID) {
+                TorqueFillPayload.void(entry, vehicle, decision.voidReason ?: "deleted", BuildConfig.VERSION_NAME)
+            } else {
+                TorqueFillPayload.upsert(entry, vehicle, BuildConfig.VERSION_NAME)
+            }
+            dao.upsertRevision(TorqueFillRevisionEntity(syncId = row.syncId, highWater = next))
+            dao.upsertOutbox(
+                TorqueFillOutboxEntity(
+                    syncId = row.syncId,
+                    revision = next,
+                    payloadHash = frozen.hash,
+                    canonicalPayload = frozen.canonical,
+                    vehicleId = entry.vehicleId,
+                    held = false,
+                ),
+            )
         }
     }
 

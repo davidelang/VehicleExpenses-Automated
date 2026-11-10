@@ -6,6 +6,7 @@ import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.text.Normalizer
+import java.util.Locale
 
 /**
  * Wire payload for one fill. Stored gallons and the stored odometer integer stay as they are.
@@ -18,6 +19,7 @@ object TorqueFillPayload {
     private val LITERS_PER_GALLON = BigDecimal("3.785411784")
     private val KM_PER_MILE = BigDecimal("1.609344")
     private val DECIMAL = Regex("(?:0|[1-9][0-9]{0,17})(?:\\.[0-9]{0,8}[1-9])?")
+    private val ISO_VIN = Regex("[A-HJ-NPR-Z0-9]{17}")
     private const val MAX_EPOCH = 253402300799999L
 
     data class Frozen(val canonical: String, val hash: String)
@@ -75,12 +77,12 @@ object TorqueFillPayload {
             "operation" to operation,
             "vehicle" to mapOf(
                 "syncId" to vehicleId(vehicle),
-                "vin" to opaqueVin(vehicle.vin),
+                "vin" to wireVin(vehicle.vin),
                 "name" to bound(vehicle.name, 256),
                 "make" to bound(vehicle.make, 128),
                 "model" to bound(vehicle.model, 128),
                 "year" to year(vehicle.year),
-                "odometerUnit" to unit,
+                "displayUnits" to displayUnits(unit),
             ),
             "occurredAtEpochMs" to (epochOrNull(entry.timestamp) ?: 0L),
             "quantity" to quantity,
@@ -176,7 +178,8 @@ object TorqueFillPayload {
     }
 
     private fun provenanceSource(source: String): String = when (source) {
-        "torque", "email", "ocr", "manual", "sync", "photo", "mixed", "legacy_unknown" -> source
+        "photo" -> "ocr"
+        "torque", "email", "ocr", "manual", "sync", "mixed", "legacy_unknown" -> source
         else -> "legacy_unknown"
     }
 
@@ -208,8 +211,36 @@ object TorqueFillPayload {
         return "v${vehicle.id}"
     }
 
+    /**
+     * VIN the installed plugin will accept: 17 ISO characters, plus the North-American
+     * check digit when the WMI starts with 1-5. Other stored text is omitted so that
+     * receiver does not reject the whole event. Blank is null.
+     */
+    fun wireVin(raw: String?): String? {
+        val text = opaqueVin(raw) ?: return null
+        val vin = text.uppercase(Locale.US)
+        if (!ISO_VIN.matches(vin)) return null
+        if (vin[0] in '1'..'5' && !northAmericanCheckDigit(vin)) return null
+        return vin
+    }
+
     /** Stored characters, not a check digit. Blank is null. */
     fun opaqueVin(raw: String?): String? = bound(raw, 256)
+
+    private fun displayUnits(unit: String): String =
+        if (UnitFormat.normalizeOdometerUnit(unit) == UnitFormat.KM) "metric" else "imperial"
+
+    private fun northAmericanCheckDigit(vin: String): Boolean {
+        val letters = "ABCDEFGHJKLMNPRSTUVWXYZ"
+        val values = intArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 7, 9, 2, 3, 4, 5, 6, 7, 8, 9)
+        val weights = intArrayOf(8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2)
+        val sum = vin.indices.sumOf { i ->
+            val value = if (vin[i] in '0'..'9') vin[i] - '0' else values[letters.indexOf(vin[i])]
+            value * weights[i]
+        }
+        val expected = if (sum % 11 == 10) 'X' else ('0'.code + sum % 11).toChar()
+        return vin[8] == expected
+    }
 
     private fun bound(raw: String?, maxBytes: Int): String? {
         val text = raw?.trim().orEmpty()

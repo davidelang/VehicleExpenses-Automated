@@ -17,6 +17,10 @@ object TorqueFillRules {
 
     data class Decision(val kind: Kind, val voidReason: String?)
 
+    /** Old frozen bytes used vehicle.odometerUnit and failed plugin validation. */
+    fun needsOldWireRecovery(canonical: String): Boolean =
+        canonical.contains("\"odometerUnit\"")
+
     fun eligible(vehicle: Vehicle?): Boolean =
         vehicle != null &&
             !vehicle.deleted &&

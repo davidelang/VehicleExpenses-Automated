@@ -37,6 +37,9 @@ interface TorqueFillDao {
     @Query("SELECT * FROM torque_fill_outbox WHERE held = 0 ORDER BY syncId LIMIT :limit")
     suspend fun pending(limit: Int): List<TorqueFillOutboxEntity>
 
+    @Query("SELECT * FROM torque_fill_outbox WHERE held = 1 ORDER BY syncId LIMIT :limit")
+    suspend fun held(limit: Int): List<TorqueFillOutboxEntity>
+
     @Query(
         """
         DELETE FROM torque_fill_outbox

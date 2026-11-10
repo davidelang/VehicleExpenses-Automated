@@ -121,8 +121,9 @@ class TorqueFillDeliveryTest {
         assertTrue(email.canonical.contains("\"/cost\""))
         assertTrue(email.canonical.contains("\"/quantity\""))
         assertTrue(email.canonical.contains("\"source\":\"email\""))
-        assertTrue(email.canonical.contains("\"odometerUnit\":\"mi\""))
-        assertTrue(email.canonical.contains("\"vin\":\"opaque-vin\""))
+        assertTrue(email.canonical.contains("\"displayUnits\":\"imperial\""))
+        assertTrue(email.canonical.contains("\"vin\":null"))
+        assertFalse(email.canonical.contains("\"odometerUnit\""))
     }
 
     @Test
