@@ -1,4 +1,5 @@
 name = "paddle"
+default = false
 git_ssh = "git@github.com:davidelang/Paddle-Lite.git"
 git_https = "https://github.com/davidelang/Paddle-Lite.git"
 # Pin tip = pr-x86-android-mobile-gap (includes pr-upstream-cleanup stack).

@@ -1,4 +1,5 @@
 name = "rclone"
+default = false
 git_ssh = "git@github.com:rclone/rclone.git"
 git_https = "https://github.com/rclone/rclone.git"
 git_sha = "3f9d583cffd94105f3ae2cde2cc6c0d5a2c9d631"
