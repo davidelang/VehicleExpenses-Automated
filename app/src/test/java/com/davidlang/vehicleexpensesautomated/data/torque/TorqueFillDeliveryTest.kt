@@ -13,7 +13,7 @@ import java.io.File
 
 /**
  * Contract samples and the fill-delivery rules.
- * Hashes are SHA-256 of the canonical lines in docs/specs/torque-ve-contract-20261108.md.
+ * Hashes are SHA-256 of the canonical lines in docs/specs/TORQUE_FILL_CONTRACT.md.
  */
 class TorqueFillDeliveryTest {
     @Test
@@ -30,12 +30,6 @@ class TorqueFillDeliveryTest {
             assertEquals(sample.length, sample.json.toByteArray(Charsets.UTF_8).size)
             assertEquals(sample.json, TorqueFillJson.canonical(TorqueFillJson.parse(sample.json)))
         }
-        val pointer = "The only contract text is `docs/specs/torque-ve-contract-20261108.md`."
-        assertTrue(repoFile("docs/specs/torque-integration-plan-20261108.md").readText().contains(pointer))
-        assertTrue(repoFile("dev-ai-interaction/research/torque-integration-plan-20261108.md").readText().contains(pointer))
-        val sandbox = repoFile("dev-ai-interaction/research/torque-ve-contract-20261108.md").readText()
-        assertTrue(sandbox.contains(pointer))
-        assertFalse(sandbox.contains("SHA-256:"))
     }
 
     @Test
@@ -124,6 +118,14 @@ class TorqueFillDeliveryTest {
         assertTrue(email.canonical.contains("\"displayUnits\":\"imperial\""))
         assertTrue(email.canonical.contains("\"vin\":null"))
         assertFalse(email.canonical.contains("\"odometerUnit\""))
+
+        val kilometers = TorqueFillPayload.upsert(
+            fuel(odometer = 10, gallons = 10.25, cost = 42.5),
+            car().copy(odometerUnit = "km"),
+            null,
+        )
+        assertTrue(kilometers.canonical.contains("\"displayUnits\":\"metric\""))
+        assertFalse(kilometers.canonical.contains("\"odometerUnit\""))
     }
 
     @Test
@@ -205,7 +207,7 @@ class TorqueFillDeliveryTest {
     private data class ContractSample(val sha: String, val length: Int, val json: String)
 
     private fun contractSamples(): List<ContractSample> {
-        val text = repoFile("docs/specs/torque-ve-contract-20261108.md").readText()
+        val text = repoFile("docs/specs/TORQUE_FILL_CONTRACT.md").readText()
         val found = SAMPLE.findAll(text).map { match ->
             ContractSample(
                 sha = match.groupValues[1],
