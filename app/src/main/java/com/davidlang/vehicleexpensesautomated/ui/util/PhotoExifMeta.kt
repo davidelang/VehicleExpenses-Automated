@@ -203,7 +203,7 @@ object PhotoExifMetaReader {
         return parseExifWall(raw, offset)
     }
 
-    private fun parseExifWall(raw: String, offset: String?): Long? {
+    fun parseExifWall(raw: String, offset: String?): Long? {
         return try {
             if (offset != null && offset.matches(Regex("[+-]\\d{2}:\\d{2}"))) {
                 val fmt = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US)

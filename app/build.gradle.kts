@@ -340,11 +340,9 @@ dependencies {
     // fat libopencv_java4.so (core+imgproc+imgcodecs, 16KB pages) under jniLibs.
     // Do not re-add Maven org.opencv:opencv AAR — it ships full multi-ABI natives and would
     // override / bloat the pin .so.
-    // Unit tests (LocationBlobOverlay / pure helpers) — agent-run via ./build_app … -- testDebugUnitTest
-    // Robolectric: real org.json.JSONObject (android.jar stubs break encode/parse under JVM).
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.0.21")
-    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("org.json:json:20240303")
 
     // Instrumented OCR functional gate (paddle angle→deskew→det→crop→rec)
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

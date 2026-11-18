@@ -12758,3 +12758,7 @@ feature-group: label=''
 ## 2026-11-18 - fill contract is one stable spec
 
 - The fill contract is docs/specs/TORQUE_FILL_CONTRACT.md and the unit test reads that file only.
+
+## 2026-11-18 - Unit tests use the JVM org.json jar
+
+- Unit tests use the JVM org.json jar and do not start Robolectric.
