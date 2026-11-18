@@ -12754,3 +12754,7 @@ feature-group: label=''
 - .gitignore un-ignores third_party/VERSION (and the other kit tools where they were still ignored).
 - Pin tomls updated as needed for the new kit (example: source_kind=seed-src, default=false, sha256; heavy pins rclone/paddle/paddle-opt/opencv: default=false).
 
+
+## 2026-11-18 - fill contract is one stable spec
+
+- The fill contract is docs/specs/TORQUE_FILL_CONTRACT.md and the unit test reads that file only.
